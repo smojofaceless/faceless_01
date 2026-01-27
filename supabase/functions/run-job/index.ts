@@ -250,7 +250,7 @@ async function assembleVideo(
     ],
   };
 
-  const response = await fetch("https://api.creatomate.com/v1/renders", {
+  const response = await fetch("https://api.creatomate.com/v2/renders", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${creatomateKey}`,
@@ -284,7 +284,7 @@ async function waitForRender(
 ): Promise<string> {
   for (let i = 0; i < maxAttempts; i++) {
     const response = await fetch(
-      `https://api.creatomate.com/v1/renders/${renderId}`,
+      `https://api.creatomate.com/v2/renders/${renderId}`,
       {
         headers: {
           "Authorization": `Bearer ${creatomateKey}`,
