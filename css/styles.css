@@ -1,0 +1,71 @@
+/* =====================================================
+   SCARY STORY GENERATOR - CUSTOM STYLES
+   ===================================================== */
+
+/* Google Fonts Import */
+@import url('https://fonts.googleapis.com/css2?family=Creepster&family=Inter:wght@400;500;600;700&display=swap');
+
+/* =====================================================
+   CUSTOM FONT CLASSES
+   ===================================================== */
+.font-creepy {
+    font-family: 'Creepster', cursive;
+}
+
+/* =====================================================
+   BACKGROUND EFFECTS
+   ===================================================== */
+.bg-noise {
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%' height='100%' filter='url(%23noise)'/%3E%3C/svg%3E");
+    opacity: 0.05;
+}
+
+/* =====================================================
+   GLOW EFFECTS
+   ===================================================== */
+.glow-red {
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.5), 0 0 40px rgba(239, 68, 68, 0.3);
+}
+
+/* =====================================================
+   ANIMATIONS
+   ===================================================== */
+@keyframes pulse-glow {
+    0%, 100% {
+        box-shadow: 0 0 20px rgba(239, 68, 68, 0.5);
+    }
+    50% {
+        box-shadow: 0 0 40px rgba(239, 68, 68, 0.8);
+    }
+}
+
+.animate-pulse-glow {
+    animation: pulse-glow 2s infinite;
+}
+
+/* =====================================================
+   TAILWIND CUSTOM COLORS (fallback)
+   ===================================================== */
+.bg-dark {
+    background-color: #0f0f0f;
+}
+
+.text-primary {
+    color: #ef4444;
+}
+
+.from-primary {
+    --tw-gradient-from: #ef4444;
+}
+
+.to-secondary {
+    --tw-gradient-to: #991b1b;
+}
+
+.border-primary {
+    border-color: #ef4444;
+}
+
+.focus\:border-primary:focus {
+    border-color: #ef4444;
+}

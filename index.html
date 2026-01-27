@@ -4,37 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Scary Story Video Generator</title>
+    
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Supabase SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        primary: '#ef4444',
-                        secondary: '#991b1b',
-                        dark: '#0f0f0f',
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Creepster&family=Inter:wght@400;500;600;700&display=swap');
-        .font-creepy { font-family: 'Creepster', cursive; }
-        .bg-noise {
-            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%' height='100%' filter='url(%23noise)'/%3E%3C/svg%3E");
-            opacity: 0.05;
-        }
-        .glow-red {
-            box-shadow: 0 0 20px rgba(239, 68, 68, 0.5), 0 0 40px rgba(239, 68, 68, 0.3);
-        }
-        @keyframes pulse-glow {
-            0%, 100% { box-shadow: 0 0 20px rgba(239, 68, 68, 0.5); }
-            50% { box-shadow: 0 0 40px rgba(239, 68, 68, 0.8); }
-        }
-        .animate-pulse-glow { animation: pulse-glow 2s infinite; }
-    </style>
+    
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="css/styles.css">
 </head>
 <body class="min-h-screen bg-dark text-white font-[Inter]">
     <!-- Background noise overlay -->
@@ -195,174 +173,11 @@
         </footer>
     </div>
 
-    <script>
-        // =====================================================
-        // CONFIGURATION - UPDATE THESE VALUES
-        // =====================================================
-        const SUPABASE_URL = 'https://ustmetegzisztqqcjigt.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzdG1ldGVnemlzenRxcWNqaWd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1NDc0NzksImV4cCI6MjA4NTEyMzQ3OX0.5lEiAP6PS4yY3WwAL5v4XWFHWJS5hzBWPXQxuxWe5d4';
-        
-        // Initialize Supabase client (renamed to avoid conflict with window.supabase)
-        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        
-        let currentJobId = null;
-        let pollInterval = null;
-
-        // =====================================================
-        // MAIN FUNCTIONS
-        // =====================================================
-        async function startGeneration() {
-            const lengthPreset = document.getElementById('length-preset').value;
-            const vibePreset = document.getElementById('vibe-preset').value;
-            const visualPreset = document.getElementById('visual-preset').value;
-
-            // Show progress section
-            document.getElementById('generator-form').classList.add('opacity-50', 'pointer-events-none');
-            document.getElementById('progress-section').classList.remove('hidden');
-            document.getElementById('result-section').classList.add('hidden');
-            document.getElementById('error-section').classList.add('hidden');
-
-            try {
-                // Step 1: Create job
-                updateStatus('Creating job...', 5);
-                
-                const { data: createData, error: createError } = await supabaseClient.functions.invoke('create-job', {
-                    body: {
-                        length_preset: lengthPreset,
-                        vibe_preset: vibePreset,
-                        visual_preset: visualPreset,
-                    },
-                });
-
-                if (createError) throw new Error(createError.message);
-                if (!createData.success) throw new Error(createData.error);
-
-                currentJobId = createData.job_id;
-                console.log('Job created:', currentJobId);
-
-                // Step 2: Start job
-                updateStatus('Starting generation...', 10);
-                
-                const { data: runData, error: runError } = await supabaseClient.functions.invoke('run-job', {
-                    body: { job_id: currentJobId },
-                });
-
-                if (runError) throw new Error(runError.message);
-                if (!runData.success) throw new Error(runData.error);
-
-                // Check if we need to poll for render completion
-                if (runData.status === 'rendering' || !runData.video_url) {
-                    updateStatus('Rendering video...', 85);
-                    startPolling(currentJobId, runData.title, runData.duration_sec);
-                } else {
-                    // Success! Show result
-                    showResult(runData);
-                }
-
-            } catch (error) {
-                console.error('Generation failed:', error);
-                showError(error.message);
-            }
-        }
-
-        function startPolling(jobId, title, duration) {
-            console.log('Starting to poll for job completion...');
-            pollInterval = setInterval(async () => {
-                try {
-                    const { data, error } = await supabaseClient.functions.invoke('check-job', {
-                        body: { job_id: jobId },
-                    });
-
-                    if (error) {
-                        console.error('Poll error:', error);
-                        return;
-                    }
-
-                    console.log('Poll result:', data);
-
-                    if (data.status === 'complete' && data.video_url) {
-                        clearInterval(pollInterval);
-                        pollInterval = null;
-                        showResult(data);
-                    } else if (data.status === 'failed') {
-                        clearInterval(pollInterval);
-                        pollInterval = null;
-                        showError(data.error || 'Video generation failed');
-                    } else {
-                        // Update progress
-                        const progress = data.render_progress ? 80 + (data.render_progress * 0.2) : 85;
-                        updateStatus('Rendering video...', Math.round(progress));
-                    }
-                } catch (err) {
-                    console.error('Poll exception:', err);
-                }
-            }, 5000); // Poll every 5 seconds
-        }
-
-        function updateStatus(text, progress) {
-            document.getElementById('status-text').textContent = text;
-            document.getElementById('progress-percent').textContent = `${progress}%`;
-            document.getElementById('progress-bar').style.width = `${progress}%`;
-
-            // Update step indicators
-            if (progress >= 25) markStepComplete('step-story');
-            if (progress >= 40) markStepComplete('step-captions');
-            if (progress >= 55) markStepComplete('step-audio');
-            if (progress >= 70) markStepComplete('step-visuals');
-            if (progress >= 95) markStepComplete('step-render');
-        }
-
-        function markStepComplete(stepId) {
-            const step = document.getElementById(stepId);
-            step.classList.remove('text-gray-500');
-            step.classList.add('text-green-400');
-            step.querySelector('.step-icon').textContent = '✓';
-        }
-
-        function showResult(data) {
-            document.getElementById('progress-section').classList.add('hidden');
-            document.getElementById('result-section').classList.remove('hidden');
-            document.getElementById('generator-form').classList.remove('opacity-50', 'pointer-events-none');
-
-            document.getElementById('video-title').textContent = data.title || 'Untitled Story';
-            document.getElementById('video-duration').textContent = `Duration: ${data.duration_sec} seconds`;
-            
-            const videoPlayer = document.getElementById('video-player');
-            videoPlayer.src = data.video_url;
-            
-            const downloadBtn = document.getElementById('download-btn');
-            downloadBtn.href = data.video_url;
-        }
-
-        function showError(message) {
-            document.getElementById('progress-section').classList.add('hidden');
-            document.getElementById('error-section').classList.remove('hidden');
-            document.getElementById('generator-form').classList.remove('opacity-50', 'pointer-events-none');
-            document.getElementById('error-message').textContent = message;
-        }
-
-        function resetGenerator() {
-            currentJobId = null;
-            if (pollInterval) {
-                clearInterval(pollInterval);
-                pollInterval = null;
-            }
-            document.getElementById('generator-form').classList.remove('opacity-50', 'pointer-events-none');
-            document.getElementById('progress-section').classList.add('hidden');
-            document.getElementById('result-section').classList.add('hidden');
-            document.getElementById('error-section').classList.add('hidden');
-            
-            // Reset progress
-            updateStatus('Initializing...', 0);
-            
-            // Reset step indicators
-            ['step-story', 'step-captions', 'step-audio', 'step-visuals', 'step-render'].forEach(stepId => {
-                const step = document.getElementById(stepId);
-                step.classList.remove('text-green-400');
-                step.classList.add('text-gray-500');
-                step.querySelector('.step-icon').textContent = '○';
-            });
-        }
-    </script>
+    <!-- JavaScript (load in order: config -> supabase -> ui -> api -> app) -->
+    <script src="js/config.js"></script>
+    <script src="js/supabase.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/app.js"></script>
 </body>
 </html>

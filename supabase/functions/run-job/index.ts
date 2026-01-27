@@ -181,9 +181,17 @@ async function generateAudio(
           wordEnd = charEnds[i];
         }
         
-        if (currentWord.trim()) {
+        // Clean up the word - remove hyphens and extra punctuation for display
+        let cleanWord = currentWord.trim();
+        // Remove hyphens (but keep the word)
+        cleanWord = cleanWord.replace(/-/g, '');
+        // Keep only essential punctuation at the end (period, comma, question mark, exclamation)
+        // Remove quotes, apostrophes from display but keep letters
+        cleanWord = cleanWord.replace(/['"]/g, '');
+        
+        if (cleanWord.length > 0) {
           wordTimestamps.push({
-            word: currentWord.trim(),
+            word: cleanWord,
             start: Number(wordStart.toFixed(3)),
             end: Number(wordEnd.toFixed(3)),
           });
