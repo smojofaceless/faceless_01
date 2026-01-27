@@ -227,25 +227,180 @@ async function generateAudio(
 }
 
 // =====================================================
-// STEP 4: Select Background Video
+// STEP 4: Search Pexels for Relevant Background Video
 // =====================================================
-async function selectBackgroundVideo(
-  supabase: any,
+
+// Keyword mapping for visual presets to enhance search
+const VISUAL_KEYWORDS: Record<string, string[]> = {
+  forest: ["dark forest", "misty woods", "foggy trees", "night forest", "spooky forest"],
+  hallway: ["dark hallway", "abandoned corridor", "creepy hallway", "old building interior", "dark passage"],
+  attic: ["dusty attic", "abandoned room", "old house interior", "dark room", "cobwebs"],
+  foggy: ["thick fog", "misty atmosphere", "fog rolling", "eerie mist", "dense fog"],
+  rain: ["rain drops", "rainy night", "storm rain", "dark rain", "rain window"],
+};
+
+/**
+ * Extract mood/setting keywords from the story using OpenAI
+ */
+async function extractStoryKeywords(
+  openaiKey: string,
+  story: string,
+  visualPreset: string
+): Promise<string[]> {
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${openaiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `Extract 3 video search keywords from this horror story that would work well for stock footage. Focus on: settings, atmosphere, weather, time of day. Return ONLY a JSON array of 3 short search terms (2-3 words each). Example: ["dark forest night", "foggy path", "abandoned house"]`,
+          },
+          {
+            role: "user",
+            content: story,
+          },
+        ],
+        temperature: 0.3,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error("Failed to extract keywords, using preset defaults");
+      return VISUAL_KEYWORDS[visualPreset] || ["dark atmospheric"];
+    }
+
+    const data = await response.json();
+    const content = data.choices[0].message.content;
+    
+    // Parse JSON array from response
+    const keywords = JSON.parse(content);
+    console.log("Extracted story keywords:", keywords);
+    return keywords;
+  } catch (error) {
+    console.error("Keyword extraction error:", error);
+    return VISUAL_KEYWORDS[visualPreset] || ["dark atmospheric"];
+  }
+}
+
+/**
+ * Search Pexels for a vertical video matching keywords
+ */
+async function searchPexelsVideo(
+  pexelsKey: string,
+  keywords: string[],
   visualPreset: string
 ): Promise<{ name: string; source_url: string }> {
-  const { data: videos, error } = await supabase
-    .from("background_videos")
-    .select("*")
-    .eq("category", visualPreset)
-    .eq("is_active", true);
+  // Try each keyword until we find a good video
+  const allKeywords = [...keywords, ...(VISUAL_KEYWORDS[visualPreset] || [])];
+  
+  for (const keyword of allKeywords) {
+    try {
+      console.log(`Searching Pexels for: "${keyword}"`);
+      
+      const response = await fetch(
+        `https://api.pexels.com/videos/search?query=${encodeURIComponent(keyword)}&orientation=portrait&per_page=20`,
+        {
+          headers: {
+            "Authorization": pexelsKey,
+          },
+        }
+      );
 
-  if (error || !videos || videos.length === 0) {
-    throw new Error(`No background videos found for category: ${visualPreset}`);
+      if (!response.ok) {
+        console.error(`Pexels search failed for "${keyword}":`, response.status);
+        continue;
+      }
+
+      const data = await response.json();
+      console.log(`Pexels returned ${data.videos?.length || 0} videos for "${keyword}"`);
+      
+      if (data.videos && data.videos.length > 0) {
+        // Filter for videos that are at least 10 seconds long (more flexible)
+        let suitableVideos = data.videos.filter((v: any) => v.duration >= 10);
+        
+        // If no long videos, accept any
+        if (suitableVideos.length === 0) {
+          suitableVideos = data.videos;
+        }
+        
+        if (suitableVideos.length > 0) {
+          // Pick a random video from top results
+          const randomIndex = Math.floor(Math.random() * Math.min(suitableVideos.length, 5));
+          const video = suitableVideos[randomIndex];
+          
+          // Get the best video file - prefer HD portrait, then HD, then any
+          const videoFile = video.video_files.find((f: any) => 
+            f.quality === "hd" && f.height > f.width
+          ) || video.video_files.find((f: any) => 
+            f.quality === "hd"
+          ) || video.video_files.find((f: any) =>
+            f.quality === "sd" && f.height > f.width
+          ) || video.video_files[0];
+          
+          console.log(`Found Pexels video: "${video.url}" - ${video.duration}s, file: ${videoFile?.link}`);
+          
+          return {
+            name: `Pexels: ${keyword}`,
+            source_url: videoFile.link,
+          };
+        }
+      }
+    } catch (error) {
+      console.error(`Pexels search error for "${keyword}":`, error);
+    }
   }
+  
+  // Fallback: search for generic dark/atmospheric video
+  console.log("No specific video found, searching for generic atmospheric video");
+  try {
+    const response = await fetch(
+      `https://api.pexels.com/videos/search?query=dark%20atmospheric&orientation=portrait&size=medium&per_page=10`,
+      {
+        headers: {
+          "Authorization": pexelsKey,
+        },
+      }
+    );
 
-  // Pick random video from category
-  const randomIndex = Math.floor(Math.random() * videos.length);
-  return videos[randomIndex];
+    if (response.ok) {
+      const data = await response.json();
+      if (data.videos && data.videos.length > 0) {
+        const video = data.videos[Math.floor(Math.random() * data.videos.length)];
+        const videoFile = video.video_files.find((f: any) => f.quality === "hd") || video.video_files[0];
+        
+        return {
+          name: "Pexels: atmospheric fallback",
+          source_url: videoFile.link,
+        };
+      }
+    }
+  } catch (error) {
+    console.error("Fallback search failed:", error);
+  }
+  
+  throw new Error("Could not find any suitable background video on Pexels");
+}
+
+/**
+ * Main function to select background video (uses Pexels API)
+ */
+async function selectBackgroundVideo(
+  pexelsKey: string,
+  openaiKey: string,
+  story: string,
+  visualPreset: string
+): Promise<{ name: string; source_url: string }> {
+  // Extract relevant keywords from the story
+  const keywords = await extractStoryKeywords(openaiKey, story, visualPreset);
+  
+  // Search Pexels for a matching video
+  return await searchPexelsVideo(pexelsKey, keywords, visualPreset);
 }
 
 // =====================================================
@@ -418,6 +573,7 @@ serve(async (req) => {
   const openaiKey = Deno.env.get("OPENAI_API_KEY")!;
   const elevenLabsKey = Deno.env.get("ELEVENLABS_API_KEY")!;
   const creatomateKey = Deno.env.get("CREATOMATE_API_KEY")!;
+  const pexelsKey = Deno.env.get("PEXELS_API_KEY")!;
 
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -526,10 +682,15 @@ serve(async (req) => {
     await updateJob(supabase, job_id, { progress: 55 });
 
     // =====================================================
-    // STEP 4: Select Background Video (55% -> 70%)
+    // STEP 4: Select Background Video from Pexels (55% -> 70%)
     // =====================================================
-    console.log("Selecting background video...");
-    const bgVideo = await selectBackgroundVideo(supabase, job.visual_preset);
+    console.log("Searching Pexels for relevant background video...");
+    const bgVideo = await selectBackgroundVideo(
+      pexelsKey,
+      openaiKey,
+      storyData.story,
+      job.visual_preset
+    );
 
     // Save asset reference
     await supabase.from("job_assets").insert({
