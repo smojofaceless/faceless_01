@@ -171,14 +171,16 @@ serve(async (req) => {
       }
     }
 
-    // Return current status
+    // Return current status with actual progress
     return new Response(
       JSON.stringify({
         success: true,
         job_id: job_id,
         status: job.status,
-        progress: job.progress,
+        progress: job.progress || 0,
         title: job.title,
+        story_text: job.story_text,
+        duration_sec: job.duration_sec,
         error: job.error,
       }),
       {

@@ -963,12 +963,14 @@ async function assembleVideo(
     volume: "100%",
   });
 
-  // Background music (if enabled)
+  // Background music (if enabled) - Using Incompetech royalty-free horror ambient
+  // Alternative: Upload your own music to Supabase Storage for reliability
   if (options.music) {
     elements.push({
       type: "audio",
-      source: "https://cdn.pixabay.com/audio/2022/10/25/audio_376f3e0abc.mp3", // Creepy ambient
-      volume: "12%",
+      // Dark ambient music from Free Music Archive (CC0)
+      source: "https://files.freemusicarchive.org/storage-freemusicarchive-org/music/no_curator/Kevin_MacLeod/Horror/Kevin_MacLeod_-_Darkness_is_Coming.mp3",
+      volume: "10%",
       duration: videoDuration,
       audio_fade_out: 2,
     });

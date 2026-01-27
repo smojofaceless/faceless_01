@@ -494,8 +494,11 @@ async function loadHistory(direction) {
     pagination.classList.add('hidden');
     
     try {
+        // Get supabase client
+        const client = getSupabaseClient();
+        
         // Build query
-        let query = supabase
+        let query = client
             .from('jobs')
             .select('*', { count: 'exact' });
         

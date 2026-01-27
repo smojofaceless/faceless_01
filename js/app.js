@@ -99,18 +99,17 @@ async function startGeneration() {
         currentJobId = createData.job_id;
         console.log('Job created:', currentJobId);
 
-        // Step 2: Start job with all options
-        updateStatus('Starting generation...', 10);
-        const runData = await runJob(currentJobId, formValues);
-
-        // Check if we need to poll for render completion
-        if (runData.status === 'rendering' || !runData.video_url) {
-            updateStatus('Rendering video...', 85);
-            startPolling(currentJobId);
-        } else {
-            // Success! Show result immediately
-            showResult(runData);
-        }
+        // Step 2: Start generation - this runs async on the server
+        updateStatus('Starting generation...', 5);
+        
+        // Start polling IMMEDIATELY to get real-time progress
+        startPolling(currentJobId);
+        
+        // Also start the job (don't await - let it run in background)
+        runJob(currentJobId, formValues).catch(err => {
+            console.error('Run job error:', err);
+            // Polling will catch the error status
+        });
 
     } catch (error) {
         console.error('Generation failed:', error);
@@ -119,10 +118,11 @@ async function startGeneration() {
 }
 
 /**
- * Start polling for job completion
+ * Start polling for job completion with real progress updates
  */
 function startPolling(jobId) {
     console.log('Starting to poll for job completion...');
+    let lastProgress = 5;
     
     pollInterval = setInterval(async () => {
         try {
@@ -132,15 +132,32 @@ function startPolling(jobId) {
             if (data.status === 'complete' && data.video_url) {
                 stopPolling();
                 showResult(data);
-            } else if (data.status === 'failed') {
+            } else if (data.status === 'failed' || data.status === 'error') {
                 stopPolling();
                 showError(data.error || 'Video generation failed');
             } else {
-                // Update progress based on render progress
-                const progress = data.render_progress 
-                    ? 80 + (data.render_progress * 0.2) 
-                    : 85;
-                updateStatus('Rendering video...', Math.round(progress));
+                // Use actual progress from backend
+                let progress = data.progress || lastProgress;
+                
+                // Add render_progress if available (70-100 range)
+                if (data.render_progress && data.status === 'rendering') {
+                    progress = 70 + Math.round(data.render_progress * 0.3);
+                }
+                
+                // Ensure progress always moves forward
+                if (progress > lastProgress) {
+                    lastProgress = progress;
+                }
+                
+                // Update status text based on progress
+                let statusText = 'Initializing...';
+                if (progress >= 5 && progress < 25) statusText = 'Generating story...';
+                else if (progress >= 25 && progress < 40) statusText = 'Creating captions...';
+                else if (progress >= 40 && progress < 55) statusText = 'Generating voiceover...';
+                else if (progress >= 55 && progress < 70) statusText = 'Selecting visuals...';
+                else if (progress >= 70) statusText = 'Rendering video...';
+                
+                updateStatus(statusText, lastProgress);
             }
         } catch (err) {
             console.error('Poll exception:', err);
