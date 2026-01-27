@@ -125,6 +125,7 @@ async function generateAudio(
   text: string,
   voiceId: string
 ): Promise<ArrayBuffer> {
+  console.log("Calling ElevenLabs API...");
   const response = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
     {
@@ -135,12 +136,10 @@ async function generateAudio(
       },
       body: JSON.stringify({
         text: text,
-        model_id: "eleven_monolingual_v1",
+        model_id: "eleven_multilingual_v2",
         voice_settings: {
           stability: 0.5,
           similarity_boost: 0.75,
-          style: 0.3,
-          use_speaker_boost: true,
         },
       }),
     }
@@ -148,9 +147,11 @@ async function generateAudio(
 
   if (!response.ok) {
     const error = await response.text();
+    console.error("ElevenLabs error:", error);
     throw new Error(`ElevenLabs API error: ${response.status} - ${error}`);
   }
 
+  console.log("ElevenLabs audio generated successfully");
   return await response.arrayBuffer();
 }
 
@@ -459,45 +460,73 @@ serve(async (req) => {
       estimatedDuration
     );
 
-    await updateJob(supabase, job_id, { progress: 80 });
-
-    // Wait for render to complete
-    console.log("Waiting for render...");
-    const finalVideoUrl = await waitForRender(creatomateKey, renderId);
-
-    await updateJob(supabase, job_id, { progress: 95 });
-
-    // Save final video reference
+    // Store the render ID so we can check it later
     await supabase.from("job_assets").insert({
       job_id: job_id,
       type: "final_mp4",
-      storage_path: finalVideoUrl,
-      public_url: finalVideoUrl,
+      storage_path: renderId, // Store render ID temporarily
+      public_url: null,
+      meta: { render_id: renderId, status: "rendering" },
     });
 
-    // =====================================================
-    // DONE!
-    // =====================================================
-    await updateJob(supabase, job_id, {
-      status: "complete",
-      progress: 100,
+    await updateJob(supabase, job_id, { 
+      progress: 80,
+      meta: { render_id: renderId }
     });
 
-    console.log(`Job ${job_id} completed successfully!`);
+    // Wait for render to complete (with shorter timeout)
+    console.log("Waiting for render...");
+    try {
+      const finalVideoUrl = await waitForRender(creatomateKey, renderId, 40); // 40 attempts * 3 sec = 2 min max
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        job_id: job_id,
-        video_url: finalVideoUrl,
-        title: storyData.title,
-        duration_sec: estimatedDuration,
-      }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 200,
-      }
-    );
+      // Update asset with final URL
+      await supabase.from("job_assets")
+        .update({ 
+          storage_path: finalVideoUrl,
+          public_url: finalVideoUrl,
+          meta: { render_id: renderId, status: "complete" }
+        })
+        .eq("job_id", job_id)
+        .eq("type", "final_mp4");
+
+      await updateJob(supabase, job_id, {
+        status: "complete",
+        progress: 100,
+      });
+
+      console.log(`Job ${job_id} completed successfully!`);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          job_id: job_id,
+          video_url: finalVideoUrl,
+          title: storyData.title,
+          duration_sec: estimatedDuration,
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        }
+      );
+    } catch (renderError) {
+      // If render times out, return partial success - frontend will poll
+      console.log("Render still in progress, returning partial success");
+      return new Response(
+        JSON.stringify({
+          success: true,
+          job_id: job_id,
+          status: "rendering",
+          message: "Video is rendering. Poll for status.",
+          title: storyData.title,
+          duration_sec: estimatedDuration,
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        }
+      );
+    }
   } catch (error) {
     console.error("Job failed:", error);
 

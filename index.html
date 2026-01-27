@@ -250,13 +250,53 @@
                 if (runError) throw new Error(runError.message);
                 if (!runData.success) throw new Error(runData.error);
 
-                // Success! Show result
-                showResult(runData);
+                // Check if we need to poll for render completion
+                if (runData.status === 'rendering' || !runData.video_url) {
+                    updateStatus('Rendering video...', 85);
+                    startPolling(currentJobId, runData.title, runData.duration_sec);
+                } else {
+                    // Success! Show result
+                    showResult(runData);
+                }
 
             } catch (error) {
                 console.error('Generation failed:', error);
                 showError(error.message);
             }
+        }
+
+        function startPolling(jobId, title, duration) {
+            console.log('Starting to poll for job completion...');
+            pollInterval = setInterval(async () => {
+                try {
+                    const { data, error } = await supabase.functions.invoke('check-job', {
+                        body: { job_id: jobId },
+                    });
+
+                    if (error) {
+                        console.error('Poll error:', error);
+                        return;
+                    }
+
+                    console.log('Poll result:', data);
+
+                    if (data.status === 'complete' && data.video_url) {
+                        clearInterval(pollInterval);
+                        pollInterval = null;
+                        showResult(data);
+                    } else if (data.status === 'failed') {
+                        clearInterval(pollInterval);
+                        pollInterval = null;
+                        showError(data.error || 'Video generation failed');
+                    } else {
+                        // Update progress
+                        const progress = data.render_progress ? 80 + (data.render_progress * 0.2) : 85;
+                        updateStatus('Rendering video...', Math.round(progress));
+                    }
+                } catch (err) {
+                    console.error('Poll exception:', err);
+                }
+            }, 5000); // Poll every 5 seconds
         }
 
         function updateStatus(text, progress) {
@@ -303,6 +343,10 @@
 
         function resetGenerator() {
             currentJobId = null;
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
             document.getElementById('generator-form').classList.remove('opacity-50', 'pointer-events-none');
             document.getElementById('progress-section').classList.add('hidden');
             document.getElementById('result-section').classList.add('hidden');
