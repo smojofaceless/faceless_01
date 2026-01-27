@@ -97,39 +97,36 @@ Return JSON format:
 }
 
 // =====================================================
-// STEP 2: Generate Captions (word-level timestamps)
+// STEP 2: Generate Captions - NOW HANDLED BY ELEVENLABS
+// We get word-level timestamps directly from ElevenLabs API
 // =====================================================
-async function generateCaptions(
-  openaiKey: string,
-  story: string,
-  durationSec: number
-): Promise<{ captions: Array<{ word: string; start: number; end: number }> }> {
-  const words = story.split(/\s+/);
-  const avgWordDuration = durationSec / words.length;
-  
-  // Generate simple word-by-word timing
-  const captions = words.map((word, index) => ({
-    word: word,
-    start: Number((index * avgWordDuration).toFixed(2)),
-    end: Number(((index + 1) * avgWordDuration).toFixed(2)),
-  }));
 
-  return { captions };
+// =====================================================
+// STEP 3: Generate Audio with ElevenLabs (with word timestamps)
+// =====================================================
+interface WordTimestamp {
+  word: string;
+  start: number;
+  end: number;
 }
 
-// =====================================================
-// STEP 3: Generate Audio with ElevenLabs
-// =====================================================
+interface AudioResult {
+  audioBuffer: ArrayBuffer;
+  wordTimestamps: WordTimestamp[];
+  actualDuration: number;
+}
+
 async function generateAudio(
   elevenLabsKey: string,
   text: string,
   voiceId: string
-): Promise<ArrayBuffer> {
-  console.log(`Calling ElevenLabs API with voice ${voiceId}...`);
+): Promise<AudioResult> {
+  console.log(`Calling ElevenLabs API with voice ${voiceId} and timestamps...`);
   console.log(`Text length: ${text.length} characters`);
   
+  // Use the streaming endpoint with timestamps
   const response = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/with-timestamps`,
     {
       method: "POST",
       headers: {
@@ -153,8 +150,72 @@ async function generateAudio(
     throw new Error(`ElevenLabs API error: ${response.status} - ${error}`);
   }
 
-  console.log("ElevenLabs audio generated successfully");
-  return await response.arrayBuffer();
+  const data = await response.json();
+  console.log("ElevenLabs response received with timestamps");
+  
+  // Decode base64 audio
+  const audioBase64 = data.audio_base64;
+  const audioBuffer = Uint8Array.from(atob(audioBase64), c => c.charCodeAt(0)).buffer;
+  
+  // Extract word-level timestamps from alignment data
+  const wordTimestamps: WordTimestamp[] = [];
+  let actualDuration = 0;
+  
+  if (data.alignment && data.alignment.characters) {
+    const chars = data.alignment.characters;
+    const charStarts = data.alignment.character_start_times_seconds;
+    const charEnds = data.alignment.character_end_times_seconds;
+    
+    // Group characters into words
+    let currentWord = '';
+    let wordStart = 0;
+    let wordEnd = 0;
+    
+    for (let i = 0; i < chars.length; i++) {
+      const char = chars[i];
+      
+      if (char === ' ' || i === chars.length - 1) {
+        // End of word
+        if (i === chars.length - 1 && char !== ' ') {
+          currentWord += char;
+          wordEnd = charEnds[i];
+        }
+        
+        if (currentWord.trim()) {
+          wordTimestamps.push({
+            word: currentWord.trim(),
+            start: Number(wordStart.toFixed(3)),
+            end: Number(wordEnd.toFixed(3)),
+          });
+        }
+        
+        currentWord = '';
+        if (i + 1 < chars.length) {
+          wordStart = charStarts[i + 1];
+        }
+      } else {
+        if (currentWord === '') {
+          wordStart = charStarts[i];
+        }
+        currentWord += char;
+        wordEnd = charEnds[i];
+      }
+    }
+    
+    // Get actual audio duration from last timestamp
+    if (charEnds.length > 0) {
+      actualDuration = Math.ceil(charEnds[charEnds.length - 1]) + 1;
+    }
+  }
+  
+  console.log(`Generated ${wordTimestamps.length} word timestamps, duration: ${actualDuration}s`);
+  console.log("Sample timestamps:", wordTimestamps.slice(0, 5));
+  
+  return {
+    audioBuffer,
+    wordTimestamps,
+    actualDuration,
+  };
 }
 
 // =====================================================
@@ -408,18 +469,29 @@ serve(async (req) => {
       });
 
     // =====================================================
-    // STEP 2: Generate Captions (25% -> 40%)
+    // STEP 2 & 3: Generate Audio WITH Captions (25% -> 55%)
+    // ElevenLabs returns both audio and word-level timestamps
     // =====================================================
-    console.log("Generating captions...");
+    console.log("Generating audio with word timestamps...");
     await updateJob(supabase, job_id, { progress: 30 });
 
-    const captionsData = await generateCaptions(
-      openaiKey,
+    const audioResult = await generateAudio(
+      elevenLabsKey,
       storyData.story,
-      estimatedDuration
+      job.voice_id || ELEVENLABS_VOICE_ID
     );
 
-    // Save captions JSON
+    // Use actual duration from audio timestamps
+    const actualDuration = audioResult.actualDuration || estimatedDuration;
+    
+    // Update job with actual duration
+    await updateJob(supabase, job_id, {
+      progress: 40,
+      duration_sec: actualDuration,
+    });
+
+    // Save captions JSON (from ElevenLabs timestamps)
+    const captionsData = { captions: audioResult.wordTimestamps };
     const captionsJson = JSON.stringify(captionsData, null, 2);
     await supabase.storage
       .from("story-videos")
@@ -427,22 +499,10 @@ serve(async (req) => {
         contentType: "application/json",
       });
 
-    await updateJob(supabase, job_id, { progress: 40 });
-
-    // =====================================================
-    // STEP 3: Generate Audio (40% -> 55%)
-    // =====================================================
-    console.log("Generating audio...");
-    const audioBuffer = await generateAudio(
-      elevenLabsKey,
-      storyData.story,
-      job.voice_id || ELEVENLABS_VOICE_ID
-    );
-
     // Upload audio to storage
     const { data: audioUpload, error: audioError } = await supabase.storage
       .from("story-videos")
-      .upload(`${job_id}/audio.mp3`, audioBuffer, {
+      .upload(`${job_id}/audio.mp3`, audioResult.audioBuffer, {
         contentType: "audio/mpeg",
       });
 
@@ -482,7 +542,7 @@ serve(async (req) => {
       audioUrlData.publicUrl,
       captionsData.captions,
       bgVideo,
-      estimatedDuration
+      actualDuration
     );
 
     // Store the render ID so we can check it later
