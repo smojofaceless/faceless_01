@@ -202,8 +202,8 @@
         const SUPABASE_URL = 'https://ustmetegzisztqqcjigt.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzdG1ldGVnemlzenRxcWNqaWd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1NDc0NzksImV4cCI6MjA4NTEyMzQ3OX0.5lEiAP6PS4yY3WwAL5v4XWFHWJS5hzBWPXQxuxWe5d4';
         
-        // Initialize Supabase client
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        // Initialize Supabase client (renamed to avoid conflict with window.supabase)
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         
         let currentJobId = null;
         let pollInterval = null;
@@ -226,7 +226,7 @@
                 // Step 1: Create job
                 updateStatus('Creating job...', 5);
                 
-                const { data: createData, error: createError } = await supabase.functions.invoke('create-job', {
+                const { data: createData, error: createError } = await supabaseClient.functions.invoke('create-job', {
                     body: {
                         length_preset: lengthPreset,
                         vibe_preset: vibePreset,
@@ -243,7 +243,7 @@
                 // Step 2: Start job
                 updateStatus('Starting generation...', 10);
                 
-                const { data: runData, error: runError } = await supabase.functions.invoke('run-job', {
+                const { data: runData, error: runError } = await supabaseClient.functions.invoke('run-job', {
                     body: { job_id: currentJobId },
                 });
 
@@ -269,7 +269,7 @@
             console.log('Starting to poll for job completion...');
             pollInterval = setInterval(async () => {
                 try {
-                    const { data, error } = await supabase.functions.invoke('check-job', {
+                    const { data, error } = await supabaseClient.functions.invoke('check-job', {
                         body: { job_id: jobId },
                     });
 
