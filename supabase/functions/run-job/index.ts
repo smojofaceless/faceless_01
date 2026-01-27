@@ -125,7 +125,9 @@ async function generateAudio(
   text: string,
   voiceId: string
 ): Promise<ArrayBuffer> {
-  console.log("Calling ElevenLabs API...");
+  console.log(`Calling ElevenLabs API with voice ${voiceId}...`);
+  console.log(`Text length: ${text.length} characters`);
+  
   const response = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
     {
@@ -136,7 +138,7 @@ async function generateAudio(
       },
       body: JSON.stringify({
         text: text,
-        model_id: "eleven_multilingual_v2",
+        model_id: "eleven_turbo_v2_5",
         voice_settings: {
           stability: 0.5,
           similarity_boost: 0.75,
@@ -147,7 +149,7 @@ async function generateAudio(
 
   if (!response.ok) {
     const error = await response.text();
-    console.error("ElevenLabs error:", error);
+    console.error("ElevenLabs error response:", error);
     throw new Error(`ElevenLabs API error: ${response.status} - ${error}`);
   }
 
@@ -251,28 +253,48 @@ async function assembleVideo(
     ],
   };
 
+  console.log("Sending source to Creatomate:", JSON.stringify(source, null, 2));
+
   const response = await fetch("https://api.creatomate.com/v2/renders", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${creatomateKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ source }),
+    body: JSON.stringify(source),
   });
 
+  const responseText = await response.text();
+  console.log("Creatomate response status:", response.status);
+  console.log("Creatomate response:", responseText);
+
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Creatomate API error: ${response.status} - ${error}`);
+    throw new Error(`Creatomate API error: ${response.status} - ${responseText}`);
   }
 
-  const data = await response.json();
+  let data;
+  try {
+    data = JSON.parse(responseText);
+  } catch (e) {
+    throw new Error(`Failed to parse Creatomate response: ${responseText}`);
+  }
   
-  // Creatomate returns an array of renders
-  if (data && data[0] && data[0].id) {
+  // Creatomate v2 returns an array of renders
+  console.log("Parsed Creatomate data:", JSON.stringify(data));
+  
+  // Check if it's an array
+  if (Array.isArray(data) && data[0] && data[0].id) {
+    console.log("Render ID (array):", data[0].id);
     return data[0].id;
   }
   
-  throw new Error("Failed to start Creatomate render");
+  // Or if it's a single object
+  if (data && data.id) {
+    console.log("Render ID (object):", data.id);
+    return data.id;
+  }
+  
+  throw new Error(`Failed to start Creatomate render. Response: ${JSON.stringify(data)}`);
 }
 
 // =====================================================
@@ -330,8 +352,11 @@ serve(async (req) => {
 
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+  let job_id: string | null = null;
+  
   try {
-    const { job_id } = await req.json();
+    const body = await req.json();
+    job_id = body.job_id;
 
     if (!job_id) {
       throw new Error("job_id is required");
@@ -531,15 +556,16 @@ serve(async (req) => {
     console.error("Job failed:", error);
 
     // Try to update job as failed
-    try {
-      const { job_id } = await req.json().catch(() => ({}));
-      if (job_id) {
+    if (job_id) {
+      try {
         await updateJob(supabase, job_id, {
           status: "failed",
           error: error.message,
         });
+      } catch (updateError) {
+        console.error("Failed to update job status:", updateError);
       }
-    } catch {}
+    }
 
     return new Response(
       JSON.stringify({
