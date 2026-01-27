@@ -48,7 +48,7 @@ serve(async (req) => {
       effect_kenburns: body.effect_kenburns !== false,
       effect_transitions: body.effect_transitions !== false,
       effect_vignette: body.effect_vignette !== false,
-      audio_music: body.audio_music !== false,
+      audio_music: body.audio_music === true, // Disabled by default - requires user to upload music
       audio_sfx: body.audio_sfx === true,
       caption_style: body.caption_style || "bold",
       highlight_scary: body.highlight_scary !== false,

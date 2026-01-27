@@ -963,13 +963,16 @@ async function assembleVideo(
     volume: "100%",
   });
 
-  // Background music (if enabled) - Using Incompetech royalty-free horror ambient
-  // Alternative: Upload your own music to Supabase Storage for reliability
+  // Background music (if enabled)
+  // NOTE: Upload your own royalty-free horror music to Supabase Storage bucket "story-videos" as "music/background.mp3"
   if (options.music) {
+    // Try to use user-uploaded music from Supabase storage
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const musicUrl = `${supabaseUrl}/storage/v1/object/public/story-videos/music/background.mp3`;
+    
     elements.push({
       type: "audio",
-      // Dark ambient music from Free Music Archive (CC0)
-      source: "https://files.freemusicarchive.org/storage-freemusicarchive-org/music/no_curator/Kevin_MacLeod/Horror/Kevin_MacLeod_-_Darkness_is_Coming.mp3",
+      source: musicUrl,
       volume: "10%",
       duration: videoDuration,
       audio_fade_out: 2,
