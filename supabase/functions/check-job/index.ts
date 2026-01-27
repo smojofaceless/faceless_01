@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform",
 };
 
 serve(async (req) => {
@@ -45,6 +45,24 @@ serve(async (req) => {
         .eq("type", "final_mp4")
         .single();
 
+      // Get scene background videos
+      const { data: sceneAssets } = await supabase
+        .from("job_assets")
+        .select("*")
+        .eq("job_id", job_id)
+        .eq("type", "bg_video")
+        .order("created_at", { ascending: true });
+
+      // Format scenes for timeline
+      const scenes = sceneAssets?.map((asset: any) => ({
+        index: asset.meta?.scene_index ?? 0,
+        text: asset.meta?.scene_text || '',
+        keywords: asset.meta?.keywords || [],
+        startTime: asset.meta?.start_time ?? 0,
+        endTime: asset.meta?.end_time ?? 0,
+        videoUrl: asset.storage_path,
+      })) || [];
+
       return new Response(
         JSON.stringify({
           success: true,
@@ -55,6 +73,7 @@ serve(async (req) => {
           story_text: job.story_text,
           duration_sec: job.duration_sec,
           video_url: assets?.public_url || null,
+          scenes: scenes,
           error: job.error,
         }),
         {

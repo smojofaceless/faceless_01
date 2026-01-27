@@ -27,25 +27,40 @@
                     Scary Story Generator
                 </h1>
                 <p class="text-gray-400 text-center mt-2">Create viral horror videos in seconds</p>
+                
+                <!-- Tab Navigation -->
+                <div class="flex justify-center gap-4 mt-6">
+                    <button onclick="showTab('generate')" id="tab-generate" class="tab-btn active px-6 py-2 rounded-lg font-medium transition-all">
+                        🎬 Generate
+                    </button>
+                    <button onclick="showTab('history')" id="tab-history" class="tab-btn px-6 py-2 rounded-lg font-medium transition-all">
+                        📚 History
+                    </button>
+                </div>
             </div>
         </header>
 
         <!-- Main content -->
         <main class="max-w-4xl mx-auto px-4 py-8">
+            
+            <!-- GENERATE TAB -->
+            <div id="tab-content-generate">
             <!-- Generator Form -->
             <div id="generator-form" class="bg-gray-900/50 border border-gray-800 rounded-2xl p-6 md:p-8">
                 <h2 class="text-2xl font-bold mb-6 flex items-center gap-3">
                     <span class="text-3xl">🎬</span> Generate New Video
                 </h2>
                 
-                <div class="grid md:grid-cols-2 gap-6 mb-8">
+                <!-- Basic Options -->
+                <div class="grid md:grid-cols-2 gap-6 mb-6">
                     <!-- Length Preset -->
                     <div>
                         <label class="block text-sm font-medium text-gray-300 mb-2">Video Length</label>
                         <select id="length-preset" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors">
-                            <option value="30">30 seconds (Short)</option>
-                            <option value="45" selected>45 seconds (Optimal)</option>
-                            <option value="60">60 seconds (Long)</option>
+                            <option value="30">30 seconds (Quick)</option>
+                            <option value="45" selected>45 seconds (Short)</option>
+                            <option value="60">60 seconds (Standard)</option>
+                            <option value="90">90 seconds (Long)</option>
                         </select>
                     </div>
                     
@@ -59,7 +74,17 @@
                         </select>
                     </div>
                     
-                    <!-- Visual Preset -->
+                    <!-- Visual Source (NEW!) -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Visual Source</label>
+                        <select id="visual-source" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors">
+                            <option value="pexels" selected>📹 Pexels Stock Video (Free)</option>
+                            <option value="dalle">🎨 DALL-E AI Images (~$0.32/video)</option>
+                        </select>
+                        <p class="text-xs text-gray-500 mt-1" id="visual-source-hint">Free stock footage from Pexels</p>
+                    </div>
+                    
+                    <!-- Visual Theme -->
                     <div>
                         <label class="block text-sm font-medium text-gray-300 mb-2">Visual Theme</label>
                         <select id="visual-preset" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors">
@@ -71,20 +96,125 @@
                         </select>
                     </div>
                     
-                    <!-- Voice (locked for MVP) -->
+                    <!-- Voice Speed -->
                     <div>
-                        <label class="block text-sm font-medium text-gray-300 mb-2">Voice</label>
-                        <select id="voice-preset" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors" disabled>
-                            <option value="adam" selected>Adam (Deep & Clear)</option>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Voice Speed</label>
+                        <select id="voice-speed" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors">
+                            <option value="0.85">Slow (Creepy)</option>
+                            <option value="1.0" selected>Normal</option>
+                            <option value="1.15">Fast (Intense)</option>
                         </select>
-                        <p class="text-xs text-gray-500 mt-1">More voices coming soon</p>
+                    </div>
+                </div>
+
+                <!-- Advanced Options Toggle -->
+                <div class="border-t border-gray-700 pt-6 mb-6">
+                    <button type="button" onclick="toggleAdvancedOptions()" class="flex items-center gap-2 text-gray-300 hover:text-white transition-colors mb-4">
+                        <span id="advanced-toggle-icon">▶</span>
+                        <span class="font-medium">⚙️ Advanced Options</span>
+                    </button>
+                    
+                    <div id="advanced-options" class="hidden space-y-6">
+                        <!-- Video Effects -->
+                        <div>
+                            <h4 class="text-sm font-medium text-gray-300 mb-3">🎥 Video Effects</h4>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <label class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-750 transition-colors">
+                                    <input type="checkbox" id="effect-filter" checked class="accent-primary">
+                                    <span class="text-sm">Horror Filter</span>
+                                </label>
+                                <label class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-750 transition-colors">
+                                    <input type="checkbox" id="effect-kenburns" checked class="accent-primary">
+                                    <span class="text-sm">Ken Burns</span>
+                                </label>
+                                <label class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-750 transition-colors">
+                                    <input type="checkbox" id="effect-transitions" checked class="accent-primary">
+                                    <span class="text-sm">Transitions</span>
+                                </label>
+                                <label class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-750 transition-colors">
+                                    <input type="checkbox" id="effect-vignette" checked class="accent-primary">
+                                    <span class="text-sm">Vignette</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Audio Options -->
+                        <div>
+                            <h4 class="text-sm font-medium text-gray-300 mb-3">🔊 Audio</h4>
+                            <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                <label class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-750 transition-colors">
+                                    <input type="checkbox" id="audio-music" checked class="accent-primary">
+                                    <span class="text-sm">Background Music</span>
+                                </label>
+                                <label class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-750 transition-colors">
+                                    <input type="checkbox" id="audio-sfx" class="accent-primary">
+                                    <span class="text-sm">Sound Effects</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Caption Style -->
+                        <div>
+                            <h4 class="text-sm font-medium text-gray-300 mb-3">💬 Caption Style</h4>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <label class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-750 transition-colors">
+                                    <input type="radio" name="caption-style" value="bold" checked class="accent-primary">
+                                    <span class="text-sm font-bold">Bold</span>
+                                </label>
+                                <label class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-750 transition-colors">
+                                    <input type="radio" name="caption-style" value="typewriter" class="accent-primary">
+                                    <span class="text-sm font-mono">Typewriter</span>
+                                </label>
+                                <label class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-750 transition-colors">
+                                    <input type="radio" name="caption-style" value="horror" class="accent-primary">
+                                    <span class="text-sm" style="font-family: serif; font-style: italic;">Horror</span>
+                                </label>
+                                <label class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-750 transition-colors">
+                                    <input type="radio" name="caption-style" value="glitch" class="accent-primary">
+                                    <span class="text-sm text-red-400">Glitch</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Highlight scary words -->
+                        <div>
+                            <label class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-750 transition-colors w-fit">
+                                <input type="checkbox" id="highlight-scary" checked class="accent-primary">
+                                <span class="text-sm">Highlight scary words in <span class="text-red-500 font-bold">RED</span></span>
+                            </label>
+                        </div>
                     </div>
                 </div>
                 
-                <!-- Generate Button -->
-                <button id="generate-btn" onclick="startGeneration()" class="w-full bg-gradient-to-r from-primary to-secondary hover:from-red-600 hover:to-red-800 text-white font-bold py-4 px-8 rounded-xl text-lg transition-all transform hover:scale-[1.02] glow-red">
-                    🎥 Generate Scary Story Video
-                </button>
+                <!-- Action Buttons -->
+                <div class="flex flex-col sm:flex-row gap-4">
+                    <button id="preview-btn" onclick="startPreview()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-4 px-8 rounded-xl text-lg transition-all">
+                        👁️ Preview Storyboard
+                    </button>
+                    <button id="generate-btn" onclick="startGeneration()" class="flex-1 bg-gradient-to-r from-primary to-secondary hover:from-red-600 hover:to-red-800 text-white font-bold py-4 px-8 rounded-xl text-lg transition-all transform hover:scale-[1.02] glow-red">
+                        🎥 Generate Video
+                    </button>
+                </div>
+            </div>
+
+            <!-- Preview/Storyboard Section (hidden by default) -->
+            <div id="preview-section" class="hidden mt-8 bg-gray-900/50 border border-gray-800 rounded-2xl p-6 md:p-8">
+                <h2 class="text-2xl font-bold mb-6 flex items-center gap-3">
+                    <span class="text-3xl">👁️</span> Storyboard Preview
+                </h2>
+                
+                <div id="preview-content" class="space-y-6">
+                    <!-- Will be populated by JS -->
+                </div>
+
+                <div class="flex flex-col sm:flex-row gap-4 mt-6 pt-6 border-t border-gray-700">
+                    <button onclick="regenerateStory()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-xl transition-all">
+                        🔄 New Story
+                    </button>
+                    <button onclick="confirmAndRender()" class="flex-1 bg-gradient-to-r from-primary to-secondary hover:from-red-600 hover:to-red-800 text-white font-bold py-3 px-6 rounded-xl transition-all glow-red">
+                        ✅ Render Video
+                    </button>
+                </div>
             </div>
 
             <!-- Progress Section (hidden by default) -->
@@ -143,13 +273,27 @@
                 </div>
                 
                 <!-- Action buttons -->
-                <div class="flex flex-col sm:flex-row gap-4">
+                <div class="flex flex-col sm:flex-row gap-4 mb-8">
                     <a id="download-btn" href="#" download class="flex-1 bg-gradient-to-r from-primary to-secondary hover:from-red-600 hover:to-red-800 text-white font-bold py-4 px-8 rounded-xl text-center transition-all">
                         ⬇️ Download MP4
                     </a>
                     <button onclick="resetGenerator()" class="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-bold py-4 px-8 rounded-xl transition-all">
                         🔄 Generate Another
                     </button>
+                </div>
+
+                <!-- Timeline/Script Section -->
+                <div id="timeline-section" class="border-t border-gray-700 pt-6">
+                    <button onclick="toggleTimeline()" class="flex items-center gap-2 text-lg font-semibold mb-4 hover:text-primary transition-colors">
+                        <span id="timeline-toggle-icon">▶</span>
+                        <span>📜 Story Script & Timeline</span>
+                    </button>
+                    <div id="timeline-content" class="hidden">
+                        <p class="text-gray-400 text-sm mb-4">Each scene shows the script text and its background video</p>
+                        <div id="timeline-scenes" class="space-y-4">
+                            <!-- Scenes will be populated dynamically -->
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -163,6 +307,62 @@
                     🔄 Try Again
                 </button>
             </div>
+            </div><!-- END Generate Tab -->
+            
+            <!-- HISTORY TAB -->
+            <div id="tab-content-history" class="hidden">
+                <div class="bg-gray-900/50 border border-gray-800 rounded-2xl p-6 md:p-8">
+                    <h2 class="text-2xl font-bold mb-6 flex items-center gap-3">
+                        <span class="text-3xl">📚</span> Video History
+                    </h2>
+                    
+                    <!-- Filter/Sort Options -->
+                    <div class="flex flex-wrap gap-4 mb-6 pb-6 border-b border-gray-700">
+                        <select id="history-sort" onchange="loadHistory()" class="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-primary">
+                            <option value="newest">Newest First</option>
+                            <option value="oldest">Oldest First</option>
+                        </select>
+                        <select id="history-filter" onchange="loadHistory()" class="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-primary">
+                            <option value="completed">Completed</option>
+                            <option value="all">All Jobs</option>
+                            <option value="failed">Failed</option>
+                        </select>
+                        <button onclick="loadHistory()" class="ml-auto bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm transition-colors">
+                            🔄 Refresh
+                        </button>
+                    </div>
+                    
+                    <!-- History Grid -->
+                    <div id="history-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <!-- Loading state -->
+                        <div class="col-span-full text-center py-12 text-gray-400">
+                            <div class="animate-spin text-4xl mb-4">⏳</div>
+                            <p>Loading history...</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Empty State -->
+                    <div id="history-empty" class="hidden text-center py-12">
+                        <div class="text-6xl mb-4">👻</div>
+                        <h3 class="text-xl font-semibold text-gray-300 mb-2">No videos yet</h3>
+                        <p class="text-gray-500 mb-6">Generate your first scary video to see it here!</p>
+                        <button onclick="showTab('generate')" class="bg-gradient-to-r from-primary to-secondary text-white font-bold py-3 px-6 rounded-xl transition-all hover:from-red-600 hover:to-red-800">
+                            🎬 Create Video
+                        </button>
+                    </div>
+                    
+                    <!-- Pagination -->
+                    <div id="history-pagination" class="hidden flex justify-center gap-2 mt-6 pt-6 border-t border-gray-700">
+                        <button onclick="loadHistory('prev')" id="history-prev" class="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm transition-colors">
+                            ← Previous
+                        </button>
+                        <span id="history-page-info" class="flex items-center px-4 text-gray-400 text-sm">Page 1 of 1</span>
+                        <button onclick="loadHistory('next')" id="history-next" class="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm transition-colors">
+                            Next →
+                        </button>
+                    </div>
+                </div>
+            </div><!-- END History Tab -->
         </main>
 
         <!-- Footer -->

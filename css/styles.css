@@ -28,6 +28,25 @@
 }
 
 /* =====================================================
+   FORM ELEMENTS
+   ===================================================== */
+.accent-primary {
+    accent-color: #ef4444;
+}
+
+input[type="checkbox"], 
+input[type="radio"] {
+    width: 1.1rem;
+    height: 1.1rem;
+    cursor: pointer;
+}
+
+/* Hover state for option labels */
+.hover\:bg-gray-750:hover {
+    background-color: #374151;
+}
+
+/* =====================================================
    ANIMATIONS
    ===================================================== */
 @keyframes pulse-glow {
@@ -41,6 +60,29 @@
 
 .animate-pulse-glow {
     animation: pulse-glow 2s infinite;
+}
+
+/* Scene cards hover effect */
+.scene-item:hover {
+    border-color: #ef4444;
+}
+
+/* =====================================================
+   TAB NAVIGATION
+   ===================================================== */
+.tab-btn {
+    background-color: #1f2937;
+    color: #9ca3af;
+}
+
+.tab-btn:hover {
+    background-color: #374151;
+}
+
+.tab-btn.active {
+    background: linear-gradient(to right, #ef4444, #991b1b);
+    color: white;
+    box-shadow: 0 0 15px rgba(239, 68, 68, 0.4);
 }
 
 /* =====================================================
@@ -68,4 +110,8 @@
 
 .focus\:border-primary:focus {
     border-color: #ef4444;
+}
+
+.bg-primary\/20 {
+    background-color: rgba(239, 68, 68, 0.2);
 }
