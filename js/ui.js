@@ -497,16 +497,24 @@ async function loadHistory(direction) {
         // Get supabase client
         const client = getSupabaseClient();
         
-        // Build query
+        // Build query - also get the video assets
         let query = client
             .from('jobs')
-            .select('*', { count: 'exact' });
+            .select(`
+                *,
+                job_assets!inner(public_url, type)
+            `, { count: 'exact' });
         
         // Apply filter
         if (filter === 'completed') {
             query = query.eq('status', 'complete');
         } else if (filter === 'failed') {
             query = query.eq('status', 'error');
+        }
+        
+        // Only get jobs with final videos for complete status
+        if (filter === 'completed') {
+            query = query.eq('job_assets.type', 'final_mp4');
         }
         
         // Apply sort
@@ -516,7 +524,28 @@ async function loadHistory(direction) {
         const from = (historyPage - 1) * HISTORY_PAGE_SIZE;
         query = query.range(from, from + HISTORY_PAGE_SIZE - 1);
         
-        const { data: jobs, count, error } = await query;
+        let { data: jobs, count, error } = await query;
+        
+        // If inner join fails (no assets), try without the join
+        if (error && error.code === 'PGRST116') {
+            const fallbackQuery = client
+                .from('jobs')
+                .select('*', { count: 'exact' });
+            
+            if (filter === 'completed') {
+                fallbackQuery.eq('status', 'complete');
+            } else if (filter === 'failed') {
+                fallbackQuery.eq('status', 'error');
+            }
+            
+            fallbackQuery.order('created_at', { ascending: sort === 'oldest' });
+            fallbackQuery.range(from, from + HISTORY_PAGE_SIZE - 1);
+            
+            const fallbackResult = await fallbackQuery;
+            jobs = fallbackResult.data;
+            count = fallbackResult.count;
+            error = fallbackResult.error;
+        }
         
         if (error) throw error;
         
@@ -525,6 +554,18 @@ async function loadHistory(direction) {
             empty.classList.remove('hidden');
             return;
         }
+        
+        // Extract video URLs from job_assets
+        jobs = jobs.map(job => {
+            const assets = job.job_assets || [];
+            const videoAsset = Array.isArray(assets) 
+                ? assets.find(a => a.type === 'final_mp4')
+                : assets.type === 'final_mp4' ? assets : null;
+            return {
+                ...job,
+                video_url: videoAsset?.public_url || null
+            };
+        });
         
         // Render history items
         renderHistoryGrid(jobs);
@@ -559,8 +600,9 @@ function renderHistoryGrid(jobs) {
     
     grid.innerHTML = jobs.map(job => {
         const meta = job.meta || {};
-        const title = meta.title || 'Untitled Video';
-        const duration = meta.duration_sec ? `${meta.duration_sec}s` : '?';
+        // Use job.title first (stored directly on job), then fall back to meta
+        const title = job.title || meta.title || 'Untitled Video';
+        const duration = job.duration_sec || meta.duration_sec ? `${job.duration_sec || meta.duration_sec}s` : '?';
         const date = new Date(job.created_at).toLocaleDateString('en-US', {
             month: 'short',
             day: 'numeric',
@@ -570,23 +612,26 @@ function renderHistoryGrid(jobs) {
         
         const statusBadge = job.status === 'complete' 
             ? '<span class="bg-green-900/50 text-green-400 px-2 py-0.5 rounded text-xs">✓ Complete</span>'
-            : job.status === 'error'
+            : job.status === 'error' || job.status === 'failed'
             ? '<span class="bg-red-900/50 text-red-400 px-2 py-0.5 rounded text-xs">✗ Failed</span>'
             : '<span class="bg-yellow-900/50 text-yellow-400 px-2 py-0.5 rounded text-xs">⏳ Processing</span>';
         
-        const videoUrl = job.output_url || '';
-        const hasVideo = job.status === 'complete' && videoUrl;
+        // Use the video_url we extracted from job_assets
+        const videoUrl = job.video_url || '';
+        const hasVideo = (job.status === 'complete') && videoUrl;
         
         return `
             <div class="bg-gray-800/50 border border-gray-700 rounded-xl overflow-hidden hover:border-gray-600 transition-colors">
                 <!-- Thumbnail / Preview -->
-                <div class="aspect-[9/16] bg-gray-900 relative max-h-48 overflow-hidden">
+                <div class="aspect-[9/16] bg-gray-900 relative max-h-48 overflow-hidden cursor-pointer" 
+                     ${hasVideo ? `onclick="playHistoryVideo('${escapeHtml(videoUrl)}', '${escapeHtml(title.replace(/'/g, "\\'"))}')"` : ''}>
                     ${hasVideo ? `
                         <video 
                             src="${escapeHtml(videoUrl)}" 
                             class="w-full h-full object-cover" 
                             muted 
                             loop
+                            preload="metadata"
                             onmouseenter="this.play()" 
                             onmouseleave="this.pause(); this.currentTime=0;"
                         ></video>
@@ -608,15 +653,15 @@ function renderHistoryGrid(jobs) {
                     
                     ${hasVideo ? `
                         <div class="flex gap-2 mt-3">
-                            <button onclick="playHistoryVideo('${escapeHtml(videoUrl)}', '${escapeHtml(title)}')" class="flex-1 bg-primary/20 hover:bg-primary/30 text-primary text-xs py-1.5 rounded transition-colors">
+                            <button onclick="playHistoryVideo('${escapeHtml(videoUrl)}', '${escapeHtml(title.replace(/'/g, "\\'"))}')" class="flex-1 bg-primary/20 hover:bg-primary/30 text-primary text-xs py-1.5 rounded transition-colors">
                                 ▶ Play
                             </button>
-                            <a href="${escapeHtml(videoUrl)}" download class="flex-1 bg-gray-700 hover:bg-gray-600 text-white text-xs py-1.5 rounded text-center transition-colors">
+                            <a href="${escapeHtml(videoUrl)}" download="${escapeHtml(title)}.mp4" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white text-xs py-1.5 rounded text-center transition-colors">
                                 ⬇ Download
                             </a>
                         </div>
-                    ` : job.status === 'error' ? `
-                        <p class="text-xs text-red-400 mt-2 truncate" title="${escapeHtml(job.error || '')}">${escapeHtml(job.error || 'Unknown error')}</p>
+                    ` : job.status === 'error' || job.status === 'failed' ? `
+                        <p class="text-xs text-red-400 mt-2 truncate" title="${escapeHtml(job.error || '')}">${escapeHtml(job.error || 'Generation failed')}</p>
                     ` : ''}
                 </div>
             </div>

@@ -642,24 +642,86 @@ async function searchVideosForScenes(
 // =====================================================
 
 /**
- * Generate DALL-E image for a scene
+ * Generate a better DALL-E prompt from scene text
+ * Focuses on extracting the KEY visual element from the scene
+ */
+async function generateDallePrompt(
+  openaiKey: string,
+  sceneText: string,
+  sceneIndex: number,
+  totalScenes: number
+): Promise<string> {
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${openaiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `You are a horror cinematographer creating image prompts for DALL-E.
+
+Given a scene from a horror story, create ONE detailed image prompt that captures the EXACT visual moment.
+
+RULES:
+1. Focus on the SPECIFIC setting/location mentioned (woods, bedroom, hallway, etc.)
+2. Include specific characters/figures if mentioned (person, friend, shadow, creature)
+3. Describe the mood, lighting, and atmosphere
+4. Use cinematic terms: "wide shot", "close-up", "POV shot", "silhouette"
+5. Add horror-specific details: fog, shadows, dim lighting, moonlight
+6. NEVER include text, words, or letters in the prompt
+7. Keep it under 200 words
+
+Return ONLY the image prompt, nothing else.`,
+          },
+          {
+            role: "user",
+            content: `Scene ${sceneIndex + 1} of ${totalScenes}:\n"${sceneText}"\n\nCreate a cinematic horror image prompt:`,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 300,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to generate prompt");
+    }
+
+    const data = await response.json();
+    return data.choices[0].message.content.trim();
+  } catch (error) {
+    console.error("Failed to generate DALL-E prompt:", error);
+    // Fallback to using scene text directly
+    return `Cinematic horror scene: ${sceneText.substring(0, 150)}. Dark, moody, atmospheric lighting. Photorealistic horror photography style.`;
+  }
+}
+
+/**
+ * Generate DALL-E image for a scene with improved prompts
  */
 async function generateDalleImage(
   openaiKey: string,
   sceneText: string,
-  keywords: string[]
+  sceneIndex: number,
+  totalScenes: number
 ): Promise<string | null> {
   try {
-    const keywordString = keywords.join(", ");
+    // First, generate a better prompt using GPT
+    const imagePrompt = await generateDallePrompt(openaiKey, sceneText, sceneIndex, totalScenes);
     
-    const prompt = `Cinematic horror scene: ${keywordString}. 
-Dark, atmospheric, moody lighting. 
-Style: Photorealistic horror cinematography, vertical 9:16 aspect ratio for social media.
-The scene suggests: "${sceneText.substring(0, 200)}"
-NO text, NO words, NO letters in the image.
-Focus on atmosphere, shadows, and dread.`;
+    // Add style instructions
+    const fullPrompt = `${imagePrompt}
 
-    console.log(`Generating DALL-E image with prompt: ${prompt.substring(0, 100)}...`);
+Style: Ultra-realistic horror cinematography, dramatic lighting, film grain, 
+desaturated colors with hints of cold blue. Portrait orientation (9:16).
+Absolutely NO text, NO words, NO letters, NO writing anywhere in the image.`;
+
+    console.log(`DALL-E prompt for scene ${sceneIndex + 1}: ${imagePrompt.substring(0, 150)}...`);
 
     const response = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST",
@@ -669,10 +731,10 @@ Focus on atmosphere, shadows, and dread.`;
       },
       body: JSON.stringify({
         model: "dall-e-3",
-        prompt: prompt,
+        prompt: fullPrompt,
         n: 1,
         size: "1024x1792", // Portrait for 9:16 video
-        quality: "standard",
+        quality: "hd", // Higher quality for better results
         response_format: "url",
       }),
     });
@@ -687,7 +749,7 @@ Focus on atmosphere, shadows, and dread.`;
     const imageUrl = data.data?.[0]?.url;
     
     if (imageUrl) {
-      console.log(`DALL-E image generated successfully`);
+      console.log(`DALL-E image generated successfully for scene ${sceneIndex + 1}`);
       return imageUrl;
     }
     
@@ -706,19 +768,15 @@ async function generateImagesForScenes(
   scenes: StoryScene[],
   visualPreset: string
 ): Promise<StoryScene[]> {
-  const fallbackKeywords = VISUAL_KEYWORDS[visualPreset] || ["dark atmospheric", "horror", "shadows"];
   
   for (let i = 0; i < scenes.length; i++) {
     const scene = scenes[i];
     console.log(`Generating DALL-E image for scene ${i + 1}/${scenes.length}...`);
+    console.log(`Scene text: ${scene.text.substring(0, 100)}...`);
     
-    // Combine scene keywords with fallback
-    const keywords = [...scene.keywords, ...fallbackKeywords.slice(0, 1)];
-    
-    const imageUrl = await generateDalleImage(openaiKey, scene.text, keywords);
+    const imageUrl = await generateDalleImage(openaiKey, scene.text, i, scenes.length);
     
     if (imageUrl) {
-      // Store as imageUrl (we'll handle differently in video assembly)
       scene.videoUrl = imageUrl;
     } else {
       console.warn(`Failed to generate DALL-E image for scene ${i + 1}, will use fallback`);
@@ -726,7 +784,7 @@ async function generateImagesForScenes(
     
     // Add a small delay between API calls to avoid rate limiting
     if (i < scenes.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }
   
