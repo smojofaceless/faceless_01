@@ -1,195 +1,848 @@
 // =====================================================
-// MAIN APPLICATION
+// SCARY STORY GENERATOR - MAIN APP
+// Step-by-step wizard workflow
 // =====================================================
 
-// State
+// Global state
 let currentJobId = null;
-let currentPreviewData = null;
+let currentScenes = [];
 let pollInterval = null;
-
-/**
- * Start the preview/storyboard generation (no rendering)
- */
-async function startPreview() {
-    const formValues = getFormValues();
-
-    // Show progress UI
-    showProgress();
-
-    try {
-        // Step 1: Create job
-        updateStatus('Creating job...', 5);
-        const createData = await createJob(formValues);
-        
-        currentJobId = createData.job_id;
-        console.log('Job created for preview:', currentJobId);
-
-        // Step 2: Generate story and scenes only (preview mode)
-        updateStatus('Generating story...', 15);
-        const previewData = await previewJob(currentJobId);
-        
-        currentPreviewData = previewData;
-        console.log('Preview data:', previewData);
-
-        // Show the preview/storyboard
-        showPreview(previewData);
-
-    } catch (error) {
-        console.error('Preview failed:', error);
-        showError(error.message);
-    }
-}
-
-/**
- * Regenerate story (new story, same settings)
- */
-async function regenerateStory() {
-    currentJobId = null;
-    currentPreviewData = null;
-    startPreview();
-}
-
-/**
- * Confirm preview and render the full video
- */
-async function confirmAndRender() {
-    if (!currentJobId) {
-        showError('No job to render. Please preview first.');
-        return;
-    }
-
-    const formValues = getFormValues();
-
-    // Hide preview, show progress
-    document.getElementById('preview-section').classList.add('hidden');
-    showProgress();
-
-    try {
-        updateStatus('Rendering video...', 70);
-        const runData = await runJob(currentJobId, formValues);
-
-        // Poll for render completion
-        if (runData.status === 'rendering' || !runData.video_url) {
-            updateStatus('Rendering video...', 85);
-            startPolling(currentJobId);
-        } else {
-            showResult(runData);
-        }
-
-    } catch (error) {
-        console.error('Render failed:', error);
-        showError(error.message);
-    }
-}
-
-/**
- * Start the video generation process (direct, no preview)
- */
-async function startGeneration() {
-    const formValues = getFormValues();
-
-    // Show progress UI
-    showProgress();
-
-    try {
-        // Step 1: Create job
-        updateStatus('Creating job...', 5);
-        const createData = await createJob(formValues);
-        
-        currentJobId = createData.job_id;
-        console.log('Job created:', currentJobId);
-
-        // Step 2: Start generation - this runs async on the server
-        updateStatus('Starting generation...', 5);
-        
-        // Start polling IMMEDIATELY to get real-time progress
-        startPolling(currentJobId);
-        
-        // Also start the job (don't await - let it run in background)
-        runJob(currentJobId, formValues).catch(err => {
-            console.error('Run job error:', err);
-            // Polling will catch the error status
-        });
-
-    } catch (error) {
-        console.error('Generation failed:', error);
-        showError(error.message);
-    }
-}
-
-/**
- * Start polling for job completion with real progress updates
- */
-function startPolling(jobId) {
-    console.log('Starting to poll for job completion...');
-    let lastProgress = 5;
-    
-    pollInterval = setInterval(async () => {
-        try {
-            const data = await checkJob(jobId);
-            console.log('Poll result:', data);
-
-            if (data.status === 'complete' && data.video_url) {
-                stopPolling();
-                showResult(data);
-            } else if (data.status === 'failed' || data.status === 'error') {
-                stopPolling();
-                showError(data.error || 'Video generation failed');
-            } else {
-                // Use actual progress from backend
-                let progress = data.progress || lastProgress;
-                
-                // Add render_progress if available (70-100 range)
-                if (data.render_progress && data.status === 'rendering') {
-                    progress = 70 + Math.round(data.render_progress * 0.3);
-                }
-                
-                // Ensure progress always moves forward
-                if (progress > lastProgress) {
-                    lastProgress = progress;
-                }
-                
-                // Update status text based on progress
-                let statusText = 'Initializing...';
-                if (progress >= 5 && progress < 25) statusText = 'Generating story...';
-                else if (progress >= 25 && progress < 40) statusText = 'Creating captions...';
-                else if (progress >= 40 && progress < 55) statusText = 'Generating voiceover...';
-                else if (progress >= 55 && progress < 70) statusText = 'Selecting visuals...';
-                else if (progress >= 70) statusText = 'Rendering video...';
-                
-                updateStatus(statusText, lastProgress);
-            }
-        } catch (err) {
-            console.error('Poll exception:', err);
-        }
-    }, CONFIG.POLL_INTERVAL);
-}
-
-/**
- * Stop the polling interval
- */
-function stopPolling() {
-    if (pollInterval) {
-        clearInterval(pollInterval);
-        pollInterval = null;
-    }
-}
-
-/**
- * Reset the generator to initial state
- */
-function resetGenerator() {
-    currentJobId = null;
-    currentPreviewData = null;
-    stopPolling();
-    resetUI();
-}
 
 // =====================================================
 // INITIALIZATION
 // =====================================================
+
 document.addEventListener('DOMContentLoaded', () => {
-    // Initialize Supabase client
-    initSupabase();
     console.log('Scary Story Generator initialized');
+    
+    // Scene count slider
+    const sceneSlider = document.getElementById('scene-count');
+    if (sceneSlider) {
+        sceneSlider.addEventListener('input', (e) => {
+            document.getElementById('scene-count-display').textContent = e.target.value;
+            updateCostEstimate();
+        });
+    }
+    
+    // Visual source change
+    document.querySelectorAll('input[name="visual-source"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            updateCostEstimate();
+            // Show/hide art style based on visual source
+            const artStyleContainer = document.getElementById('art-style-container');
+            if (artStyleContainer) {
+                artStyleContainer.style.display = e.target.value === 'dalle' ? 'block' : 'none';
+            }
+        });
+    });
+    
+    // Art style preview
+    const artStyleSelect = document.getElementById('art-style');
+    if (artStyleSelect) {
+        artStyleSelect.addEventListener('change', updateArtStylePreview);
+        updateArtStylePreview(); // Initialize
+    }
+    
+    // Load custom art styles into dropdown
+    updateCustomStyleDropdown();
+    
+    // Initialize cost
+    updateCostEstimate();
 });
+
+// =====================================================
+// ART STYLE PREVIEWS
+// =====================================================
+
+const ART_STYLE_INFO = {
+    "cinematic-dark": {
+        icon: "🎬",
+        name: "Cinematic Dark Photography",
+        desc: "A24 horror film aesthetic. Moody desaturated colors, deep shadows, film grain, shallow depth of field, realistic but atmospheric."
+    },
+    "analog-horror": {
+        icon: "📼",
+        name: "Analog Horror / VHS Glitch",
+        desc: "Heavy VHS static, glitch artifacts, scanlines, digital noise. Shadow entities with glowing eyes, low exposure, found-footage style, deeply unsettling."
+    },
+    "editorial-cartoon": {
+        icon: "📰",
+        name: "Editorial Cartoon / Satirical Comic",
+        desc: "Clean bold linework, exaggerated expressions, large expressive eyes. Web-comic style with soft gradients, satirical and slightly unsettling humor."
+    },
+    "horror-anime": {
+        icon: "🎌",
+        name: "Dark Anime / Manga Style",
+        desc: "Junji Ito / Berserk inspired. Detailed manga linework, heavy cross-hatching, dramatic poses, high contrast black and white with color accents."
+    },
+    "oil-painting": {
+        icon: "🖼️",
+        name: "Classic Oil Painting",
+        desc: "Renaissance masters meets dark romanticism. Caravaggio chiaroscuro, Goya's Black Paintings style. Rich textures, dramatic lighting, timeless."
+    },
+    "found-footage": {
+        icon: "📹",
+        name: "Found Footage / Grainy",
+        desc: "Blair Witch aesthetic. Grainy VHS quality, security camera look, night vision green, analog distortion. Accidental capture feel."
+    },
+    "surreal-nightmare": {
+        icon: "🌀",
+        name: "Surreal Nightmare",
+        desc: "Beksiński / H.R. Giger style. Impossible geometry, melting forms, biomechanical horror, dream logic. Subconscious terror made visible."
+    }
+};
+
+function updateArtStylePreview() {
+    const style = document.getElementById('art-style')?.value || 'cinematic-dark';
+    
+    // Check built-in styles first, then custom styles
+    let info = ART_STYLE_INFO[style];
+    if (!info && style.startsWith('custom-')) {
+        const customStyle = customArtStyles[style];
+        if (customStyle) {
+            info = {
+                icon: customStyle.icon || '🎨',
+                name: customStyle.name,
+                desc: customStyle.basePrompt.substring(0, 150) + '...'
+            };
+        }
+    }
+    if (!info) info = ART_STYLE_INFO['cinematic-dark'];
+    
+    const iconEl = document.getElementById('art-style-icon');
+    const nameEl = document.getElementById('art-style-name');
+    const descEl = document.getElementById('art-style-desc');
+    
+    if (iconEl) iconEl.textContent = info.icon;
+    if (nameEl) nameEl.textContent = info.name;
+    if (descEl) descEl.textContent = info.desc;
+}
+
+// =====================================================
+// COST ESTIMATION
+// =====================================================
+
+function updateCostEstimate() {
+    const sceneCount = parseInt(document.getElementById('scene-count')?.value || 4);
+    const visualSource = document.querySelector('input[name="visual-source"]:checked')?.value || 'dalle';
+    
+    const imageCost = visualSource === 'dalle' ? sceneCount * 0.08 : 0;
+    const totalCost = 0.01 + 0.05 + imageCost;
+    
+    const costImages = document.getElementById('cost-images');
+    if (costImages) {
+        costImages.textContent = visualSource === 'dalle' ? `~$${imageCost.toFixed(2)}` : 'Free';
+        costImages.className = visualSource === 'dalle' ? 'font-bold text-purple-400' : 'font-bold text-green-400';
+    }
+    
+    const costTotal = document.getElementById('cost-total');
+    if (costTotal) {
+        costTotal.textContent = `~$${totalCost.toFixed(2)}`;
+    }
+    
+    return totalCost;
+}
+
+// =====================================================
+// TAB NAVIGATION
+// =====================================================
+
+function showTab(tab) {
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('bg-primary/20', 'text-primary');
+        btn.classList.add('text-gray-400');
+    });
+    
+    const activeTab = document.getElementById(`tab-${tab}`);
+    if (activeTab) {
+        activeTab.classList.add('bg-primary/20', 'text-primary');
+        activeTab.classList.remove('text-gray-400');
+    }
+    
+    document.getElementById('tab-content-create')?.classList.toggle('hidden', tab !== 'create');
+    document.getElementById('tab-content-styles')?.classList.toggle('hidden', tab !== 'styles');
+    document.getElementById('tab-content-history')?.classList.toggle('hidden', tab !== 'history');
+    
+    if (tab === 'history') {
+        loadHistory();
+    }
+    
+    if (tab === 'styles') {
+        loadStylesEditor();
+    }
+}
+
+// =====================================================
+// ART STYLE EDITOR
+// =====================================================
+
+// Full art style data for editor
+const BUILTIN_ART_STYLES = {
+    "cinematic-dark": {
+        name: "Cinematic Dark Photography",
+        icon: "🎬",
+        basePrompt: "Cinematic dark photography. Moody desaturated colors, deep shadows, film grain, A24 horror film aesthetic. Realistic but atmospheric, shallow depth of field, dramatic lighting.",
+        colorOverride: "muted colors, deep shadows, film grain, desaturated with selective color",
+        technicalStyle: "cinematic horror, film grain, shallow depth of field, realistic lighting, professional photography",
+        negativePrompt: "cartoon, anime, illustration, bright colors, cheerful, text, words, letters, symbols"
+    },
+    "analog-horror": {
+        name: "Analog Horror / VHS Glitch",
+        icon: "📼",
+        basePrompt: "Dark analog horror image with heavy VHS static, glitch artifacts, scanlines, and digital noise distorting the scene. Figures are mostly obscured by shadow with possible glowing eyes or unnatural grins barely visible. Low exposure, eerie dim lighting, muted washed-out colors.",
+        colorOverride: "washed out colors, VHS grain, digital artifacts, scanlines, low exposure, muted greens and grays",
+        technicalStyle: "analog horror, VHS aesthetic, glitch art, scanlines, digital noise, found footage, surveillance camera, lo-fi horror",
+        negativePrompt: "high quality, clean, professional, sharp, colorful, cartoon, anime, bright, text, words, letters"
+    },
+    "editorial-cartoon": {
+        name: "Editorial Cartoon / Satirical Comic",
+        icon: "📰",
+        basePrompt: "Editorial cartoon illustration in a modern web-comic style. Clean, bold linework with smooth confident outlines. Semi-flat digital coloring with soft gradients and minimal texture.",
+        colorOverride: "saturated but controlled color palette, clean digital colors, soft gradients, no painterly texture",
+        technicalStyle: "editorial cartoon, satirical comic illustration, modern digital comic, bold outlines, clean vector-style shading",
+        negativePrompt: "photorealism, oil painting, watercolor, anime style, sketchy lines, hyper realism, text, words, letters"
+    },
+    "horror-anime": {
+        name: "Dark Anime / Manga Style",
+        icon: "🎌",
+        basePrompt: "Dark anime horror illustration. Detailed manga-style linework with heavy cross-hatching for shadows. Style of Junji Ito or Berserk manga.",
+        colorOverride: "high contrast, dramatic blacks, selective color accents, manga shading",
+        technicalStyle: "dark anime, horror manga, detailed linework, dramatic lighting, Japanese horror aesthetic",
+        negativePrompt: "cute, chibi, kawaii, bright happy colors, simple cartoon, text, words, letters"
+    },
+    "oil-painting": {
+        name: "Classic Oil Painting",
+        icon: "🖼️",
+        basePrompt: "Classic oil painting horror art. Renaissance masters meets dark romanticism. Rich textures, dramatic chiaroscuro lighting. Style of Caravaggio, Goya's Black Paintings.",
+        colorOverride: "rich deep colors, warm shadows, golden highlights, classical palette",
+        technicalStyle: "oil painting, fine art, chiaroscuro, baroque lighting, museum quality, painterly brushstrokes",
+        negativePrompt: "digital art, cartoon, anime, modern, photography, text, words, letters"
+    },
+    "found-footage": {
+        name: "Found Footage / Grainy",
+        icon: "📹",
+        basePrompt: "Found footage horror aesthetic. Grainy VHS quality, security camera look, analog distortion. Night vision green or washed out colors.",
+        colorOverride: "washed out colors, VHS grain, night vision green, analog artifacts",
+        technicalStyle: "found footage, VHS aesthetic, security camera, analog horror, lo-fi, grainy",
+        negativePrompt: "high quality, clean, professional, sharp, colorful, text, words, letters"
+    },
+    "surreal-nightmare": {
+        name: "Surreal Nightmare",
+        icon: "🌀",
+        basePrompt: "Surrealist nightmare horror. Impossible geometry, melting forms, dream logic. Style of Zdzisław Beksiński, H.R. Giger, or Salvador Dali.",
+        colorOverride: "muted earth tones, sepia, burnt oranges, biomechanical grays",
+        technicalStyle: "surrealist art, nightmare imagery, biomechanical horror, Beksiński style, dreamlike",
+        negativePrompt: "realistic, normal, cheerful, bright colors, cartoon, text, words, letters"
+    }
+};
+
+// Custom styles stored in localStorage
+let customArtStyles = JSON.parse(localStorage.getItem('customArtStyles') || '{}');
+
+function loadStylesEditor() {
+    renderBuiltinStyles();
+    renderCustomStyles();
+}
+
+function renderBuiltinStyles() {
+    const container = document.getElementById('builtin-styles-grid');
+    if (!container) return;
+    
+    container.innerHTML = Object.entries(BUILTIN_ART_STYLES).map(([key, style]) => `
+        <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700">
+            <div class="flex items-center gap-2 mb-2">
+                <span class="text-2xl">${style.icon}</span>
+                <h4 class="font-semibold text-sm">${style.name}</h4>
+            </div>
+            <div class="text-xs space-y-2">
+                <p><strong class="text-purple-400">Base:</strong> <span class="text-gray-400">${style.basePrompt.substring(0, 80)}...</span></p>
+                <p><strong class="text-blue-400">Colors:</strong> <span class="text-gray-400">${style.colorOverride.substring(0, 50)}...</span></p>
+                <p><strong class="text-green-400">Technical:</strong> <span class="text-gray-400">${style.technicalStyle.substring(0, 50)}...</span></p>
+            </div>
+        </div>
+    `).join('');
+}
+
+function renderCustomStyles() {
+    const container = document.getElementById('custom-styles-container');
+    if (!container) return;
+    
+    const customKeys = Object.keys(customArtStyles);
+    
+    if (customKeys.length === 0) {
+        container.innerHTML = `
+            <div class="bg-gray-800/30 rounded-xl p-6 border border-dashed border-gray-700 text-center">
+                <p class="text-gray-500">No custom styles yet. Click "+ Add Custom Style" to create one!</p>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = customKeys.map(key => {
+        const style = customArtStyles[key];
+        return `
+            <div class="bg-gray-800/50 rounded-xl p-4 border border-purple-800/50">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="text-2xl">${style.icon || '🎨'}</span>
+                        <h4 class="font-semibold">${style.name}</h4>
+                        <span class="bg-purple-900/50 text-purple-400 px-2 py-0.5 rounded text-xs">Custom</span>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="editCustomStyle('${key}')" class="text-blue-400 hover:text-blue-300 text-sm">Edit</button>
+                        <button onclick="deleteCustomStyle('${key}')" class="text-red-400 hover:text-red-300 text-sm">Delete</button>
+                    </div>
+                </div>
+                <div class="text-xs space-y-1 text-gray-400">
+                    <p><strong class="text-purple-400">Base:</strong> ${style.basePrompt.substring(0, 100)}...</p>
+                    <p><strong class="text-blue-400">Colors:</strong> ${style.colorOverride}</p>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function addNewCustomStyle() {
+    const styleId = 'custom-' + Date.now();
+    openStyleEditor(styleId, {
+        name: 'New Custom Style',
+        icon: '🎨',
+        basePrompt: '',
+        colorOverride: '',
+        technicalStyle: '',
+        negativePrompt: 'text, words, letters, symbols'
+    });
+}
+
+function editCustomStyle(key) {
+    const style = customArtStyles[key];
+    if (style) {
+        openStyleEditor(key, style);
+    }
+}
+
+function deleteCustomStyle(key) {
+    if (confirm('Delete this custom style?')) {
+        delete customArtStyles[key];
+        localStorage.setItem('customArtStyles', JSON.stringify(customArtStyles));
+        renderCustomStyles();
+        updateCustomStyleDropdown();
+    }
+}
+
+function openStyleEditor(styleId, style) {
+    const modal = document.createElement('div');
+    modal.id = 'style-editor-modal';
+    modal.className = 'fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4';
+    modal.innerHTML = `
+        <div class="bg-gray-900 rounded-2xl border border-gray-700 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div class="p-6">
+                <h3 class="text-xl font-bold mb-4">🎨 Edit Art Style</h3>
+                
+                <div class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-semibold mb-1">Style Name</label>
+                            <input type="text" id="style-name" value="${escapeHtml(style.name)}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold mb-1">Icon (emoji)</label>
+                            <input type="text" id="style-icon" value="${style.icon || '🎨'}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm" maxlength="4">
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-semibold mb-1">Base Prompt <span class="text-purple-400">(main style description)</span></label>
+                        <textarea id="style-base" rows="3" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">${escapeHtml(style.basePrompt)}</textarea>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-semibold mb-1">Color Override <span class="text-blue-400">(color palette)</span></label>
+                        <input type="text" id="style-colors" value="${escapeHtml(style.colorOverride)}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-semibold mb-1">Technical Style <span class="text-green-400">(rendering keywords)</span></label>
+                        <input type="text" id="style-technical" value="${escapeHtml(style.technicalStyle)}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-semibold mb-1">Negative Prompt <span class="text-red-400">(what to avoid)</span></label>
+                        <input type="text" id="style-negative" value="${escapeHtml(style.negativePrompt)}" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+                    </div>
+                </div>
+                
+                <div class="flex justify-end gap-3 mt-6">
+                    <button onclick="closeStyleEditor()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm">Cancel</button>
+                    <button onclick="saveCustomStyle('${styleId}')" class="px-4 py-2 bg-primary hover:bg-primary/80 rounded-lg text-sm font-semibold">Save Style</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+function closeStyleEditor() {
+    document.getElementById('style-editor-modal')?.remove();
+}
+
+function saveCustomStyle(styleId) {
+    const style = {
+        name: document.getElementById('style-name').value,
+        icon: document.getElementById('style-icon').value || '🎨',
+        basePrompt: document.getElementById('style-base').value,
+        colorOverride: document.getElementById('style-colors').value,
+        technicalStyle: document.getElementById('style-technical').value,
+        negativePrompt: document.getElementById('style-negative').value
+    };
+    
+    customArtStyles[styleId] = style;
+    localStorage.setItem('customArtStyles', JSON.stringify(customArtStyles));
+    
+    closeStyleEditor();
+    renderCustomStyles();
+    updateCustomStyleDropdown();
+}
+
+function updateCustomStyleDropdown() {
+    const select = document.getElementById('art-style');
+    if (!select) return;
+    
+    // Remove existing custom options
+    Array.from(select.options).forEach(opt => {
+        if (opt.value.startsWith('custom-')) {
+            select.removeChild(opt);
+        }
+    });
+    
+    // Add custom styles
+    Object.entries(customArtStyles).forEach(([key, style]) => {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = `${style.icon} ${style.name} (Custom)`;
+        select.appendChild(option);
+    });
+}
+
+// =====================================================
+// STEP NAVIGATION
+// =====================================================
+
+function goToStep(step) {
+    // Update indicators
+    for (let i = 1; i <= 4; i++) {
+        const indicator = document.getElementById(`step-${i}-indicator`);
+        if (!indicator) continue;
+        
+        indicator.classList.remove('active', 'completed');
+        indicator.classList.add('bg-gray-700');
+        
+        if (i < step) {
+            indicator.classList.remove('bg-gray-700');
+            indicator.classList.add('completed');
+        } else if (i === step) {
+            indicator.classList.remove('bg-gray-700');
+            indicator.classList.add('active');
+        }
+    }
+    
+    // Show/hide content
+    document.querySelectorAll('.step-content').forEach(el => el.classList.add('hidden'));
+    document.getElementById(`step-${step}`)?.classList.remove('hidden');
+    
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function resetGenerator() {
+    currentJobId = null;
+    currentScenes = [];
+    if (pollInterval) clearInterval(pollInterval);
+    
+    document.getElementById('story-title').value = '';
+    document.getElementById('story-text').value = '';
+    document.getElementById('scene-breakdown').innerHTML = '';
+    document.getElementById('image-generation-grid').innerHTML = '';
+    document.getElementById('generation-log').innerHTML = '<p>Waiting to start...</p>';
+    
+    goToStep(1);
+}
+
+// =====================================================
+// STEP 1 -> 2: Generate Story Preview
+// =====================================================
+
+async function generateStoryPreview() {
+    const btn = document.getElementById('btn-generate-story');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin inline-block">⏳</span> Generating Story...';
+    
+    try {
+        const settings = getSettings();
+        
+        // If using custom style, include the custom style data
+        if (settings.art_style?.startsWith('custom-')) {
+            settings.custom_style = customArtStyles[settings.art_style];
+        }
+        
+        // Create job in preview mode - this returns the story immediately!
+        const result = await createJob({
+            ...settings,
+            preview_only: true
+        });
+        
+        console.log('Preview result:', result);
+        
+        if (!result.success) {
+            throw new Error(result.error || 'Failed to create job');
+        }
+        
+        currentJobId = result.job_id;
+        
+        // Check if story is already in the response (it should be!)
+        if (result.status === 'preview' && result.title && result.story_text) {
+            // Story came back immediately - use it!
+            displayStoryPreview(result);
+            goToStep(2);
+        } else {
+            // Fallback: poll for story (shouldn't happen normally)
+            console.log('Story not in response, polling...');
+            let attempts = 0;
+            const maxAttempts = 30;
+            
+            while (attempts < maxAttempts) {
+                await sleep(2000);
+                const status = await checkJob(currentJobId);
+                console.log('Preview status:', status);
+                
+                if (status.status === 'preview' || status.status === 'complete') {
+                    displayStoryPreview(status);
+                    goToStep(2);
+                    break;
+                } else if (status.status === 'error' || status.status === 'failed') {
+                    throw new Error(status.error || 'Story generation failed');
+                }
+                
+                attempts++;
+            }
+            
+            if (attempts >= maxAttempts) {
+                throw new Error('Timeout waiting for story generation');
+            }
+        }
+        
+    } catch (error) {
+        console.error('Story preview error:', error);
+        showError(error.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '✨ Generate Story Preview';
+    }
+}
+
+function displayStoryPreview(data) {
+    document.getElementById('story-title').value = data.title || 'Untitled Story';
+    document.getElementById('story-text').value = data.story_text || '';
+    
+    // Parse scenes from the response
+    currentScenes = data.scenes || [];
+    
+    // If no scenes, create placeholder scenes based on story
+    if (currentScenes.length === 0 && data.story_text) {
+        const sceneCount = parseInt(document.getElementById('scene-count').value);
+        const sentences = data.story_text.match(/[^.!?]+[.!?]+/g) || [data.story_text];
+        const sentencesPerScene = Math.ceil(sentences.length / sceneCount);
+        
+        for (let i = 0; i < sceneCount; i++) {
+            const start = i * sentencesPerScene;
+            const end = Math.min(start + sentencesPerScene, sentences.length);
+            const sceneText = sentences.slice(start, end).join(' ').trim();
+            
+            currentScenes.push({
+                index: i,
+                text: sceneText,
+                keywords: [],
+                startTime: 0,
+                endTime: 0
+            });
+        }
+    }
+    
+    // Render scene breakdown
+    renderSceneBreakdown(currentScenes);
+    
+    // Update cost
+    const cost = updateCostEstimate();
+    document.getElementById('step2-cost').textContent = `~$${cost.toFixed(2)}`;
+}
+
+function renderSceneBreakdown(scenes) {
+    const container = document.getElementById('scene-breakdown');
+    if (!container) return;
+    
+    const visualSource = document.querySelector('input[name="visual-source"]:checked')?.value || 'dalle';
+    
+    container.innerHTML = scenes.map((scene, i) => `
+        <div class="scene-card bg-gray-800/50 rounded-xl p-4 border border-gray-700">
+            <div class="flex gap-4">
+                <div class="w-20 h-28 flex-shrink-0 image-placeholder rounded-lg flex items-center justify-center text-gray-500">
+                    <span class="text-2xl">🖼️</span>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="bg-primary/20 text-primary px-2 py-0.5 rounded text-xs font-semibold">Scene ${i + 1}</span>
+                        <span class="text-xs text-gray-500">${visualSource === 'dalle' ? '🎨 DALL-E' : '📹 Pexels'}</span>
+                    </div>
+                    <p class="text-sm text-gray-300 line-clamp-3">${escapeHtml(scene.text)}</p>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// =====================================================
+// STEP 2 -> 3 -> 4: Generate Images & Video
+// =====================================================
+
+async function generateImages() {
+    const btn = document.getElementById('btn-generate-images');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin inline-block">⏳</span> Starting...';
+    
+    goToStep(3);
+    
+    // Setup image generation grid
+    const sceneCount = currentScenes.length;
+    const visualSource = document.querySelector('input[name="visual-source"]:checked')?.value || 'dalle';
+    
+    const grid = document.getElementById('image-generation-grid');
+    grid.innerHTML = currentScenes.map((scene, i) => `
+        <div id="scene-image-${i}" class="bg-gray-800/50 rounded-xl overflow-hidden border border-gray-700">
+            <div class="aspect-[9/16] image-placeholder flex items-center justify-center">
+                <span class="text-gray-500">⏳</span>
+            </div>
+            <div class="p-2">
+                <p class="text-xs text-gray-400 truncate">Scene ${i + 1}</p>
+                <p class="text-xs text-gray-600 truncate">Waiting...</p>
+            </div>
+        </div>
+    `).join('');
+    
+    try {
+        // Get updated story text (user may have edited it)
+        const storyTitle = document.getElementById('story-title').value;
+        const storyText = document.getElementById('story-text').value;
+        
+        // Run the full job
+        addLog('Starting full video generation...');
+        updateProgress(5, 'Initializing...');
+        
+        const result = await runJob(currentJobId, {
+            title: storyTitle,
+            story_text: storyText
+        });
+        
+        if (!result.success) {
+            throw new Error(result.error || 'Failed to start generation');
+        }
+        
+        addLog('Job started, polling for progress...');
+        
+        // Poll for completion
+        pollForCompletion();
+        
+    } catch (error) {
+        console.error('Generation error:', error);
+        addLog(`Error: ${error.message}`);
+        showError(error.message);
+        btn.disabled = false;
+        btn.innerHTML = '🎨 Generate Images & Video';
+    }
+}
+
+function pollForCompletion() {
+    if (pollInterval) clearInterval(pollInterval);
+    
+    pollInterval = setInterval(async () => {
+        try {
+            const status = await checkJob(currentJobId);
+            console.log('Poll result:', status);
+            
+            // Update progress
+            const progress = status.progress || 0;
+            updateProgress(progress, getProgressLabel(progress, status.status));
+            
+            // Update scenes if available
+            if (status.scenes && status.scenes.length > 0) {
+                updateSceneImages(status.scenes);
+            }
+            
+            // Check completion
+            if (status.status === 'complete') {
+                clearInterval(pollInterval);
+                addLog('✓ Video generation complete!');
+                displayFinalResult(status);
+                goToStep(4);
+            } else if (status.status === 'error' || status.status === 'failed') {
+                clearInterval(pollInterval);
+                throw new Error(status.error || 'Generation failed');
+            }
+            
+        } catch (error) {
+            console.error('Poll error:', error);
+            clearInterval(pollInterval);
+            addLog(`Error: ${error.message}`);
+            showError(error.message);
+        }
+    }, 3000);
+}
+
+function getProgressLabel(progress, status) {
+    if (progress < 20) return 'Generating story...';
+    if (progress < 40) return 'Creating voiceover...';
+    if (progress < 60) return 'Processing audio...';
+    if (progress < 70) return 'Generating images...';
+    if (progress < 80) return 'Assembling video...';
+    if (progress < 100) return 'Rendering final video...';
+    return 'Complete!';
+}
+
+function updateProgress(percent, label) {
+    document.getElementById('progress-bar').style.width = `${percent}%`;
+    document.getElementById('progress-percent').textContent = `${percent}%`;
+    document.getElementById('progress-label').textContent = label;
+    document.getElementById('generation-status').textContent = label;
+}
+
+function updateSceneImages(scenes) {
+    scenes.forEach((scene, i) => {
+        const card = document.getElementById(`scene-image-${i}`);
+        if (!card) return;
+        
+        const imageUrl = scene.videoUrl;
+        const isImage = scene.source === 'dalle' || (imageUrl && imageUrl.includes('oaidalleapi'));
+        
+        if (imageUrl) {
+            card.innerHTML = `
+                <div class="aspect-[9/16] bg-gray-900">
+                    ${isImage 
+                        ? `<img src="${escapeHtml(imageUrl)}" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/200x350?text=Error'" loading="lazy">`
+                        : `<video src="${escapeHtml(imageUrl)}" class="w-full h-full object-cover" muted loop onmouseenter="this.play()" onmouseleave="this.pause()"></video>`
+                    }
+                </div>
+                <div class="p-2">
+                    <p class="text-xs text-green-400">✓ Scene ${i + 1}</p>
+                    ${scene.visualBeat ? `<p class="text-xs text-purple-400 truncate" title="${escapeHtml(scene.visualBeat)}">${escapeHtml(scene.visualBeat.substring(0, 30))}...</p>` : ''}
+                </div>
+            `;
+        }
+    });
+}
+
+function addLog(message) {
+    const log = document.getElementById('generation-log');
+    const time = new Date().toLocaleTimeString();
+    log.innerHTML += `<p>[${time}] ${escapeHtml(message)}</p>`;
+    log.scrollTop = log.scrollHeight;
+}
+
+// =====================================================
+// STEP 4: Display Final Result
+// =====================================================
+
+function displayFinalResult(data) {
+    document.getElementById('result-video').src = data.video_url;
+    document.getElementById('download-btn').href = data.video_url;
+    document.getElementById('result-title').textContent = data.title || 'Untitled';
+    document.getElementById('result-duration').textContent = data.duration_sec || 0;
+    document.getElementById('result-scenes').textContent = data.scenes?.length || 0;
+    document.getElementById('result-story').textContent = data.story_text || '';
+    
+    // Scene gallery - improved detection
+    const gallery = document.getElementById('result-scenes-gallery');
+    if (data.scenes && gallery) {
+        gallery.innerHTML = data.scenes.map((scene, i) => {
+            const url = scene.videoUrl || scene.storage_path || '';
+            // Better detection: check source field, or URL patterns
+            const isImage = scene.source === 'dalle' || 
+                           url.includes('oaidalleapi') || 
+                           url.includes('openai') ||
+                           url.match(/\.(jpg|jpeg|png|webp|gif)(\?|$)/i);
+            
+            if (!url) {
+                return `<div class="aspect-[9/16] bg-gray-800 rounded-lg flex items-center justify-center text-gray-500 text-xs">No image</div>`;
+            }
+            
+            return `
+                <div class="aspect-[9/16] bg-gray-900 rounded-lg overflow-hidden cursor-pointer hover:ring-2 hover:ring-primary transition-all" onclick="showImageModal('${escapeHtml(url)}')">
+                    ${isImage 
+                        ? `<img src="${escapeHtml(url)}" class="w-full h-full object-cover" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'flex items-center justify-center h-full text-gray-500 text-xs\\'>Failed</div>'">`
+                        : `<video src="${escapeHtml(url)}" class="w-full h-full object-cover" muted></video>`
+                    }
+                </div>
+            `;
+        }).join('');
+    }
+    
+    // Cost breakdown
+    const sceneCount = data.scenes?.length || 4;
+    const visualSource = document.querySelector('input[name="visual-source"]:checked')?.value || 'dalle';
+    const imageCost = visualSource === 'dalle' ? sceneCount * 0.08 : 0;
+    const totalCost = 0.01 + 0.05 + imageCost;
+    
+    // Update detailed cost elements
+    const imageCountEl = document.getElementById('result-image-count');
+    const imageCostEl = document.getElementById('result-image-cost');
+    const totalCostEl = document.getElementById('result-cost');
+    
+    if (imageCountEl) imageCountEl.textContent = sceneCount;
+    if (imageCostEl) {
+        if (visualSource === 'dalle') {
+            imageCostEl.textContent = `~$${imageCost.toFixed(2)}`;
+            imageCostEl.className = 'text-purple-400';
+        } else {
+            imageCostEl.textContent = 'Free';
+            imageCostEl.className = 'text-green-400';
+        }
+    }
+    if (totalCostEl) totalCostEl.textContent = `~$${totalCost.toFixed(2)}`;
+}
+
+// =====================================================
+// ERROR HANDLING
+// =====================================================
+
+function showError(message) {
+    document.getElementById('error-message').textContent = message;
+    document.getElementById('error-modal').classList.remove('hidden');
+}
+
+function closeErrorModal() {
+    document.getElementById('error-modal').classList.add('hidden');
+}
+
+// =====================================================
+// HELPER FUNCTIONS
+// =====================================================
+
+function getSettings() {
+    return {
+        theme: document.getElementById('theme')?.value || 'general',
+        visual_source: document.querySelector('input[name="visual-source"]:checked')?.value || 'dalle',
+        art_style: document.getElementById('art-style')?.value || 'cinematic-dark',
+        visual_preset: document.getElementById('visual-preset')?.value || 'forest',
+        duration: document.getElementById('duration')?.value || 'medium',
+        caption_style: document.getElementById('caption-style')?.value || 'bold',
+        scene_count: parseInt(document.getElementById('scene-count')?.value || 4),
+        effects: {
+            filter: document.getElementById('effect-filter')?.checked ?? true,
+            kenburns: document.getElementById('effect-kenburns')?.checked ?? true,
+            vignette: document.getElementById('effect-vignette')?.checked ?? true,
+            highlight: document.getElementById('effect-highlight')?.checked ?? true,
+            transitions: document.getElementById('effect-transitions')?.checked ?? true
+        }
+    };
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}

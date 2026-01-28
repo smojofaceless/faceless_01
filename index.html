@@ -4,381 +4,570 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Scary Story Video Generator</title>
-    
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Supabase SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    
-    <!-- Custom Styles -->
-    <link rel="stylesheet" href="css/styles.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👻</text></svg>">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#ff6b6b',
+                        secondary: '#9b59b6',
+                        dark: '#0a0a0f',
+                        darker: '#050508',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        
+        .gradient-bg {
+            background: linear-gradient(135deg, #0a0a0f 0%, #1a0a1a 50%, #0a0a0f 100%);
+        }
+        
+        .glow-red { box-shadow: 0 0 30px rgba(255, 107, 107, 0.3); }
+        .glow-purple { box-shadow: 0 0 30px rgba(155, 89, 182, 0.3); }
+        
+        .step-indicator { transition: all 0.3s ease; }
+        .step-indicator.active {
+            background: linear-gradient(135deg, #ff6b6b, #9b59b6);
+            box-shadow: 0 0 20px rgba(255, 107, 107, 0.5);
+        }
+        .step-indicator.completed { background: #22c55e; }
+        
+        .scene-card { transition: all 0.3s ease; }
+        .scene-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        
+        .image-placeholder {
+            background: repeating-linear-gradient(45deg, #1a1a2e, #1a1a2e 10px, #16162a 10px, #16162a 20px);
+        }
+        
+        .video-thumbnail {
+            aspect-ratio: 9/16;
+            object-fit: cover;
+        }
+        
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .pulse-glow { animation: pulseGlow 2s ease-in-out infinite; }
+        @keyframes pulseGlow {
+            0%, 100% { box-shadow: 0 0 20px rgba(255, 107, 107, 0.3); }
+            50% { box-shadow: 0 0 40px rgba(255, 107, 107, 0.6); }
+        }
+        
+        .spin { animation: spin 1s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    </style>
 </head>
-<body class="min-h-screen bg-dark text-white font-[Inter]">
-    <!-- Background noise overlay -->
-    <div class="fixed inset-0 bg-noise pointer-events-none"></div>
-    
-    <!-- Main container -->
-    <div class="relative z-10 min-h-screen">
-        <!-- Header -->
-        <header class="border-b border-gray-800 bg-black/50 backdrop-blur-sm">
-            <div class="max-w-4xl mx-auto px-4 py-6">
-                <h1 class="text-4xl md:text-5xl font-creepy text-primary tracking-wider text-center">
-                    Scary Story Generator
-                </h1>
-                <p class="text-gray-400 text-center mt-2">Create viral horror videos in seconds</p>
-                
-                <!-- Tab Navigation -->
-                <div class="flex justify-center gap-4 mt-6">
-                    <button onclick="showTab('generate')" id="tab-generate" class="tab-btn active px-6 py-2 rounded-lg font-medium transition-all">
-                        🎬 Generate
+<body class="gradient-bg min-h-screen text-white">
+    <!-- Navigation -->
+    <nav class="border-b border-gray-800 bg-darker/80 backdrop-blur-lg sticky top-0 z-50">
+        <div class="max-w-6xl mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <span class="text-3xl">👻</span>
+                    <h1 class="text-xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+                        Scary Story Generator
+                    </h1>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="showTab('create')" id="tab-create" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-all bg-primary/20 text-primary">
+                        ✨ Create
                     </button>
-                    <button onclick="showTab('history')" id="tab-history" class="tab-btn px-6 py-2 rounded-lg font-medium transition-all">
-                        📚 History
+                    <button onclick="showTab('styles')" id="tab-styles" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-400 hover:text-white">
+                        🎨 Styles
+                    </button>
+                    <button onclick="showTab('history')" id="tab-history" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-400 hover:text-white">
+                        📜 History
                     </button>
                 </div>
             </div>
-        </header>
+        </div>
+    </nav>
 
-        <!-- Main content -->
-        <main class="max-w-4xl mx-auto px-4 py-8">
-            
-            <!-- GENERATE TAB -->
-            <div id="tab-content-generate">
-            <!-- Generator Form -->
-            <div id="generator-form" class="bg-gray-900/50 border border-gray-800 rounded-2xl p-6 md:p-8">
-                <h2 class="text-2xl font-bold mb-6 flex items-center gap-3">
-                    <span class="text-3xl">🎬</span> Generate New Video
-                </h2>
-                
-                <!-- Basic Options -->
-                <div class="grid md:grid-cols-2 gap-6 mb-6">
-                    <!-- Length Preset -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300 mb-2">Video Length</label>
-                        <select id="length-preset" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors">
-                            <option value="30">30 seconds (Quick)</option>
-                            <option value="45" selected>45 seconds (Short)</option>
-                            <option value="60">60 seconds (Standard)</option>
-                            <option value="90">90 seconds (Long)</option>
-                        </select>
-                    </div>
-                    
-                    <!-- Vibe Preset -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300 mb-2">Story Vibe</label>
-                        <select id="vibe-preset" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors">
-                            <option value="slow_creepy" selected>Slow Creepy (Building Dread)</option>
-                            <option value="punchy_shock">Punchy Shock (Fast & Scary)</option>
-                            <option value="atmospheric">Atmospheric (Moody & Dark)</option>
-                        </select>
-                    </div>
-                    
-                    <!-- Visual Source (NEW!) -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300 mb-2">Visual Source</label>
-                        <select id="visual-source" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors">
-                            <option value="pexels" selected>📹 Pexels Stock Video (Free)</option>
-                            <option value="dalle">🎨 DALL-E AI Images (~$0.32/video)</option>
-                        </select>
-                        <p class="text-xs text-gray-500 mt-1" id="visual-source-hint">Free stock footage from Pexels</p>
-                    </div>
-                    
-                    <!-- Visual Theme -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300 mb-2">Visual Theme</label>
-                        <select id="visual-preset" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors">
-                            <option value="forest" selected>🌲 Dark Forest</option>
-                            <option value="hallway">🚪 Creepy Hallway</option>
-                            <option value="foggy">🌫️ Foggy Mist</option>
-                            <option value="rain">🌧️ Rainy Night</option>
-                            <option value="attic">🏚️ Dusty Attic</option>
-                        </select>
-                    </div>
-                    
-                    <!-- Voice Speed -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-300 mb-2">Voice Speed</label>
-                        <select id="voice-speed" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors">
-                            <option value="0.85">Slow (Creepy)</option>
-                            <option value="1.0" selected>Normal</option>
-                            <option value="1.15">Fast (Intense)</option>
-                        </select>
-                    </div>
+    <!-- Main Content -->
+    <main class="max-w-6xl mx-auto px-4 py-8">
+        
+        <!-- CREATE TAB -->
+        <div id="tab-content-create">
+            <!-- Step Indicators -->
+            <div class="flex items-center justify-center gap-4 mb-8">
+                <div class="flex items-center gap-2">
+                    <div id="step-1-indicator" class="step-indicator w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm active">1</div>
+                    <span class="text-sm font-medium hidden sm:block">Settings</span>
                 </div>
+                <div class="w-8 md:w-12 h-0.5 bg-gray-700"></div>
+                <div class="flex items-center gap-2">
+                    <div id="step-2-indicator" class="step-indicator w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-gray-700">2</div>
+                    <span class="text-sm font-medium text-gray-500 hidden sm:block">Story</span>
+                </div>
+                <div class="w-8 md:w-12 h-0.5 bg-gray-700"></div>
+                <div class="flex items-center gap-2">
+                    <div id="step-3-indicator" class="step-indicator w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-gray-700">3</div>
+                    <span class="text-sm font-medium text-gray-500 hidden sm:block">Images</span>
+                </div>
+                <div class="w-8 md:w-12 h-0.5 bg-gray-700"></div>
+                <div class="flex items-center gap-2">
+                    <div id="step-4-indicator" class="step-indicator w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-gray-700">4</div>
+                    <span class="text-sm font-medium text-gray-500 hidden sm:block">Video</span>
+                </div>
+            </div>
 
-                <!-- Advanced Options Toggle -->
-                <div class="border-t border-gray-700 pt-6 mb-6">
-                    <button type="button" onclick="toggleAdvancedOptions()" class="flex items-center gap-2 text-gray-300 hover:text-white transition-colors mb-4">
-                        <span id="advanced-toggle-icon">▶</span>
-                        <span class="font-medium">⚙️ Advanced Options</span>
-                    </button>
+            <!-- STEP 1: Settings -->
+            <section id="step-1" class="step-content">
+                <div class="bg-gray-900/50 rounded-2xl border border-gray-800 p-6 md:p-8">
+                    <h2 class="text-2xl font-bold mb-6">🎬 Configure Your Video</h2>
                     
-                    <div id="advanced-options" class="hidden space-y-6">
-                        <!-- Video Effects -->
-                        <div>
-                            <h4 class="text-sm font-medium text-gray-300 mb-3">🎥 Video Effects</h4>
-                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                <label class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-750 transition-colors">
-                                    <input type="checkbox" id="effect-filter" checked class="accent-primary">
-                                    <span class="text-sm">Horror Filter</span>
-                                </label>
-                                <label class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-750 transition-colors">
-                                    <input type="checkbox" id="effect-kenburns" checked class="accent-primary">
-                                    <span class="text-sm">Ken Burns</span>
-                                </label>
-                                <label class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-750 transition-colors">
-                                    <input type="checkbox" id="effect-transitions" checked class="accent-primary">
-                                    <span class="text-sm">Transitions</span>
-                                </label>
-                                <label class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-750 transition-colors">
-                                    <input type="checkbox" id="effect-vignette" checked class="accent-primary">
-                                    <span class="text-sm">Vignette</span>
-                                </label>
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <!-- Left Column -->
+                        <div class="space-y-5">
+                            <!-- Theme -->
+                            <div>
+                                <label class="block text-sm font-semibold mb-2">🎭 Horror Theme</label>
+                                <select id="theme" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 focus:border-primary focus:outline-none">
+                                    <option value="general">General Horror</option>
+                                    <option value="paranormal">Paranormal / Ghosts</option>
+                                    <option value="creature">Creature Horror</option>
+                                    <option value="psychological">Psychological Horror</option>
+                                    <option value="folklore">Folklore / Urban Legend</option>
+                                    <option value="cosmic">Cosmic Horror</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Visual Source -->
+                            <div>
+                                <label class="block text-sm font-semibold mb-2">🖼️ Visual Source</label>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <label class="relative cursor-pointer">
+                                        <input type="radio" name="visual-source" value="dalle" class="peer sr-only" checked>
+                                        <div class="bg-gray-800 border-2 border-gray-700 peer-checked:border-purple-500 peer-checked:bg-purple-900/20 rounded-xl p-4 transition-all">
+                                            <div class="text-2xl mb-2">🎨</div>
+                                            <div class="font-semibold text-sm">DALL-E 3</div>
+                                            <div class="text-xs text-gray-400 mt-1">AI-generated art</div>
+                                            <div class="text-xs text-yellow-500 mt-1">~$0.08/image</div>
+                                        </div>
+                                    </label>
+                                    <label class="relative cursor-pointer">
+                                        <input type="radio" name="visual-source" value="pexels" class="peer sr-only">
+                                        <div class="bg-gray-800 border-2 border-gray-700 peer-checked:border-blue-500 peer-checked:bg-blue-900/20 rounded-xl p-4 transition-all">
+                                            <div class="text-2xl mb-2">📹</div>
+                                            <div class="font-semibold text-sm">Pexels</div>
+                                            <div class="text-xs text-gray-400 mt-1">Stock video clips</div>
+                                            <div class="text-xs text-green-500 mt-1">Free</div>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <!-- Art Style (for DALL-E) -->
+                            <div id="art-style-container">
+                                <label class="block text-sm font-semibold mb-2">🎨 Art Style</label>
+                                <select id="art-style" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 focus:border-primary focus:outline-none mb-3">
+                                    <option value="cinematic-dark">🎬 Cinematic Dark Photography</option>
+                                    <option value="analog-horror">📼 Analog Horror / VHS Glitch</option>
+                                    <option value="editorial-cartoon">📰 Editorial Cartoon / Satirical Comic</option>
+                                    <option value="horror-anime">🎌 Dark Anime / Manga Style</option>
+                                    <option value="oil-painting">🖼️ Classic Oil Painting</option>
+                                    <option value="found-footage">📹 Found Footage / Grainy</option>
+                                    <option value="surreal-nightmare">🌀 Surreal Nightmare</option>
+                                </select>
+                                <!-- Art Style Preview -->
+                                <div id="art-style-preview" class="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
+                                    <div class="flex items-start gap-3">
+                                        <div id="art-style-icon" class="text-3xl">🎬</div>
+                                        <div class="flex-1">
+                                            <div id="art-style-name" class="font-semibold text-sm">Cinematic Dark Photography</div>
+                                            <p id="art-style-desc" class="text-xs text-gray-400 mt-1">A24 horror film aesthetic. Moody desaturated colors, deep shadows, film grain, shallow depth of field, realistic but atmospheric.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Visual Preset -->
+                            <div>
+                                <label class="block text-sm font-semibold mb-2">🌲 Visual Environment</label>
+                                <select id="visual-preset" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 focus:border-primary focus:outline-none">
+                                    <option value="forest">Dark Forest</option>
+                                    <option value="hallway">Abandoned Hallway</option>
+                                    <option value="attic">Dusty Attic</option>
+                                    <option value="foggy">Foggy Landscape</option>
+                                    <option value="rain">Rainy Night</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Number of Scenes -->
+                            <div>
+                                <label class="block text-sm font-semibold mb-2">📷 Number of Scenes</label>
+                                <div class="flex items-center gap-4">
+                                    <input type="range" id="scene-count" min="3" max="6" value="4" class="flex-1 accent-primary">
+                                    <span id="scene-count-display" class="bg-gray-800 px-4 py-2 rounded-lg font-bold text-primary w-12 text-center">4</span>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-1">More scenes = longer video, higher cost</p>
                             </div>
                         </div>
-
-                        <!-- Audio Options -->
-                        <div>
-                            <h4 class="text-sm font-medium text-gray-300 mb-3">🔊 Audio</h4>
-                            <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                <label class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-750 transition-colors" title="Upload music/background.mp3 to Supabase Storage first">
-                                    <input type="checkbox" id="audio-music" class="accent-primary">
-                                    <span class="text-sm">Background Music 🎵</span>
-                                </label>
-                                <label class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-750 transition-colors">
-                                    <input type="checkbox" id="audio-sfx" class="accent-primary">
-                                    <span class="text-sm">Sound Effects</span>
-                                </label>
+                        
+                        <!-- Right Column -->
+                        <div class="space-y-5">
+                            <!-- Duration -->
+                            <div>
+                                <label class="block text-sm font-semibold mb-2">⏱️ Video Duration</label>
+                                <select id="duration" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 focus:border-primary focus:outline-none">
+                                    <option value="short">Short (~30 seconds)</option>
+                                    <option value="medium" selected>Medium (~45 seconds)</option>
+                                    <option value="long">Long (~60 seconds)</option>
+                                </select>
                             </div>
-                            <p class="text-xs text-gray-500 mt-2">💡 To enable music: Upload an MP3 to Supabase Storage → story-videos/music/background.mp3</p>
-                        </div>
-
-                        <!-- Caption Style -->
-                        <div>
-                            <h4 class="text-sm font-medium text-gray-300 mb-3">💬 Caption Style</h4>
-                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                <label class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-750 transition-colors">
-                                    <input type="radio" name="caption-style" value="bold" checked class="accent-primary">
-                                    <span class="text-sm font-bold">Bold</span>
-                                </label>
-                                <label class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-750 transition-colors">
-                                    <input type="radio" name="caption-style" value="typewriter" class="accent-primary">
-                                    <span class="text-sm font-mono">Typewriter</span>
-                                </label>
-                                <label class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-750 transition-colors">
-                                    <input type="radio" name="caption-style" value="horror" class="accent-primary">
-                                    <span class="text-sm" style="font-family: serif; font-style: italic;">Horror</span>
-                                </label>
-                                <label class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-750 transition-colors">
-                                    <input type="radio" name="caption-style" value="glitch" class="accent-primary">
-                                    <span class="text-sm text-red-400">Glitch</span>
-                                </label>
+                            
+                            <!-- Caption Style -->
+                            <div>
+                                <label class="block text-sm font-semibold mb-2">💬 Caption Style</label>
+                                <select id="caption-style" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 focus:border-primary focus:outline-none">
+                                    <option value="bold">Bold Impact</option>
+                                    <option value="horror">Horror Drip</option>
+                                    <option value="glitch">Glitch Effect</option>
+                                    <option value="minimal">Minimal Clean</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Effects -->
+                            <div>
+                                <label class="block text-sm font-semibold mb-2">✨ Video Effects</label>
+                                <div class="space-y-2">
+                                    <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-3 cursor-pointer hover:bg-gray-800">
+                                        <input type="checkbox" id="effect-filter" checked class="accent-primary w-4 h-4">
+                                        <span class="text-sm">🎨 Horror Color Grading</span>
+                                    </label>
+                                    <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-3 cursor-pointer hover:bg-gray-800">
+                                        <input type="checkbox" id="effect-kenburns" checked class="accent-primary w-4 h-4">
+                                        <span class="text-sm">🎥 Ken Burns Effect</span>
+                                    </label>
+                                    <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-3 cursor-pointer hover:bg-gray-800">
+                                        <input type="checkbox" id="effect-transitions" checked class="accent-primary w-4 h-4">
+                                        <span class="text-sm">✨ Scene Transitions</span>
+                                    </label>
+                                    <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-3 cursor-pointer hover:bg-gray-800">
+                                        <input type="checkbox" id="effect-vignette" checked class="accent-primary w-4 h-4">
+                                        <span class="text-sm">🔲 Vignette</span>
+                                    </label>
+                                    <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-3 cursor-pointer hover:bg-gray-800">
+                                        <input type="checkbox" id="effect-highlight" checked class="accent-primary w-4 h-4">
+                                        <span class="text-sm">🩸 Highlight Scary Words</span>
+                                    </label>
+                                </div>
                             </div>
                         </div>
+                    </div>
+                    
+                    <!-- Info: How Art Style Works -->
+                    <div class="mt-6 bg-gradient-to-r from-purple-900/30 to-blue-900/30 rounded-xl p-4 border border-purple-800/50">
+                        <div class="flex items-start gap-3">
+                            <span class="text-2xl">🎨</span>
+                            <div>
+                                <h3 class="font-semibold text-sm mb-2">How Image Generation Works</h3>
+                                <div class="text-xs text-gray-300 space-y-1.5">
+                                    <p><strong>1. Story Anchor:</strong> AI analyzes your story to create a "visual bible" - consistent environment, colors, and mood.</p>
+                                    <p><strong>2. Art Style Applied:</strong> Your selected style (e.g., "Analog Horror") defines the aesthetic - VHS grain, colors, lighting.</p>
+                                    <p><strong>3. Visual Beats:</strong> Each scene gets camera angles and mood levels that escalate tension.</p>
+                                    <p><strong>4. DALL-E Generation:</strong> Images are created using: <code class="bg-gray-800 px-1 rounded">Art Style + Story Anchor + Scene Beat</code></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Cost Estimate -->
+                    <div id="cost-estimate" class="mt-6 bg-gray-800/50 rounded-xl p-4 border border-gray-700">
+                        <h3 class="font-semibold text-sm mb-3">💰 Estimated Cost Breakdown</h3>
+                        <div class="grid grid-cols-2 md:grid-cols-5 gap-3 text-center text-sm">
+                            <div class="bg-gray-900/50 rounded-lg p-2">
+                                <div class="text-gray-400 text-xs">Story (GPT)</div>
+                                <div class="font-bold text-green-400">~$0.01</div>
+                            </div>
+                            <div class="bg-gray-900/50 rounded-lg p-2">
+                                <div class="text-gray-400 text-xs">Voice (11Labs)</div>
+                                <div class="font-bold text-blue-400">~$0.05</div>
+                            </div>
+                            <div class="bg-gray-900/50 rounded-lg p-2">
+                                <div class="text-gray-400 text-xs">Images</div>
+                                <div id="cost-images" class="font-bold text-purple-400">~$0.32</div>
+                            </div>
+                            <div class="bg-gray-900/50 rounded-lg p-2">
+                                <div class="text-gray-400 text-xs">Video Render</div>
+                                <div class="font-bold text-orange-400">Plan-based</div>
+                            </div>
+                            <div class="bg-gray-900/50 rounded-lg p-2 border border-primary/50">
+                                <div class="text-gray-400 text-xs">Total Est.</div>
+                                <div id="cost-total" class="font-bold text-primary">~$0.38</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Generate Story Button -->
+                    <button onclick="generateStoryPreview()" id="btn-generate-story" class="w-full mt-6 bg-gradient-to-r from-primary to-secondary hover:opacity-90 text-white font-bold py-4 rounded-xl transition-all pulse-glow">
+                        ✨ Generate Story Preview
+                    </button>
+                </div>
+            </section>
 
-                        <!-- Highlight scary words -->
+            <!-- STEP 2: Story & Scene Preview -->
+            <section id="step-2" class="step-content hidden">
+                <div class="bg-gray-900/50 rounded-2xl border border-gray-800 p-6 md:p-8">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-2xl font-bold">📖 Story & Scene Breakdown</h2>
+                        <button onclick="goToStep(1)" class="text-gray-400 hover:text-white text-sm">← Back</button>
+                    </div>
+                    
+                    <!-- Story Title -->
+                    <div class="mb-4">
+                        <label class="block text-sm font-semibold mb-2">📝 Title</label>
+                        <input type="text" id="story-title" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 focus:border-primary focus:outline-none text-lg font-semibold">
+                    </div>
+                    
+                    <!-- Full Story -->
+                    <div class="mb-6">
+                        <label class="block text-sm font-semibold mb-2">📜 Full Story <span class="text-gray-500 font-normal">(editable)</span></label>
+                        <textarea id="story-text" rows="4" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 focus:border-primary focus:outline-none resize-none"></textarea>
+                    </div>
+                    
+                    <!-- Scene Breakdown -->
+                    <div class="mb-6">
+                        <div class="flex items-center justify-between mb-3">
+                            <label class="text-sm font-semibold">🎬 Scene Breakdown <span class="text-gray-500 font-normal">(where images will appear)</span></label>
+                        </div>
+                        <div id="scene-breakdown" class="space-y-3">
+                            <!-- Scenes rendered here -->
+                        </div>
+                    </div>
+                    
+                    <!-- Cost -->
+                    <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700 mb-6">
+                        <div class="flex items-center justify-between">
+                            <span class="font-semibold">Estimated Cost:</span>
+                            <span id="step2-cost" class="text-2xl font-bold text-primary">~$0.38</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Buttons -->
+                    <div class="flex gap-4">
+                        <button onclick="goToStep(1)" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-4 rounded-xl transition-all">
+                            ← Back
+                        </button>
+                        <button onclick="generateImages()" id="btn-generate-images" class="flex-1 bg-gradient-to-r from-primary to-secondary hover:opacity-90 text-white font-bold py-4 rounded-xl transition-all pulse-glow">
+                            🎨 Generate Images & Video
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- STEP 3: Generation Progress -->
+            <section id="step-3" class="step-content hidden">
+                <div class="bg-gray-900/50 rounded-2xl border border-gray-800 p-6 md:p-8">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-2xl font-bold">🎨 Generating Your Video</h2>
+                        <div id="generation-status" class="text-sm text-gray-400">Preparing...</div>
+                    </div>
+                    
+                    <!-- Progress Bar -->
+                    <div class="mb-8">
+                        <div class="flex justify-between text-sm mb-2">
+                            <span id="progress-label">Starting...</span>
+                            <span id="progress-percent">0%</span>
+                        </div>
+                        <div class="h-3 bg-gray-800 rounded-full overflow-hidden">
+                            <div id="progress-bar" class="h-full bg-gradient-to-r from-primary to-secondary transition-all duration-500" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Scene Images Grid -->
+                    <div class="mb-6">
+                        <h3 class="text-lg font-semibold mb-4">🖼️ Scene Images</h3>
+                        <div id="image-generation-grid" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <!-- Image cards rendered here -->
+                        </div>
+                    </div>
+                    
+                    <!-- Log -->
+                    <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700">
+                        <h4 class="text-sm font-semibold mb-2">📋 Log</h4>
+                        <div id="generation-log" class="text-xs text-gray-400 space-y-1 max-h-32 overflow-y-auto hide-scrollbar font-mono">
+                            <p>Waiting to start...</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- STEP 4: Final Result -->
+            <section id="step-4" class="step-content hidden">
+                <div class="bg-gray-900/50 rounded-2xl border border-gray-800 p-6 md:p-8">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-2xl font-bold">🎉 Your Video is Ready!</h2>
+                        <button onclick="resetGenerator()" class="text-primary hover:underline text-sm">+ Create Another</button>
+                    </div>
+                    
+                    <div class="grid md:grid-cols-2 gap-8">
+                        <!-- Video Player -->
                         <div>
-                            <label class="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-750 transition-colors w-fit">
-                                <input type="checkbox" id="highlight-scary" checked class="accent-primary">
-                                <span class="text-sm">Highlight scary words in <span class="text-red-500 font-bold">RED</span></span>
-                            </label>
+                            <div class="bg-black rounded-xl overflow-hidden aspect-[9/16] max-h-[500px] mx-auto">
+                                <video id="result-video" controls class="w-full h-full object-contain"></video>
+                            </div>
+                            <a id="download-btn" href="#" download class="block w-full mt-4 bg-gradient-to-r from-primary to-secondary text-white font-bold py-3 rounded-xl text-center hover:opacity-90 transition-all">
+                                ⬇️ Download Video
+                            </a>
+                        </div>
+                        
+                        <!-- Details -->
+                        <div class="space-y-4">
+                            <div class="bg-gray-800/50 rounded-xl p-4">
+                                <h3 id="result-title" class="text-xl font-bold mb-2">Title</h3>
+                                <p class="text-gray-400 text-sm"><span id="result-duration">0</span>s • <span id="result-scenes">0</span> scenes</p>
+                            </div>
+                            
+                            <div class="bg-gray-800/50 rounded-xl p-4">
+                                <h4 class="font-semibold text-sm mb-2">📖 Story</h4>
+                                <p id="result-story" class="text-gray-300 text-sm leading-relaxed"></p>
+                            </div>
+                            
+                            <div class="bg-gray-800/50 rounded-xl p-4">
+                                <h4 class="font-semibold text-sm mb-3">🎬 Scenes</h4>
+                                <div id="result-scenes-gallery" class="grid grid-cols-4 gap-2"></div>
+                            </div>
+                            
+                            <div class="bg-gray-800/50 rounded-xl p-4 border border-green-900/50">
+                                <h4 class="font-semibold text-sm mb-3">💰 Cost Breakdown</h4>
+                                <div class="space-y-2 text-sm">
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-400">Story (GPT-4o-mini)</span>
+                                        <span class="text-green-400">~$0.01</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-400">Voice (ElevenLabs)</span>
+                                        <span class="text-blue-400">~$0.05</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-400">Images (<span id="result-image-count">4</span>x DALL-E)</span>
+                                        <span id="result-image-cost" class="text-purple-400">~$0.32</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-400">Video Render</span>
+                                        <span class="text-orange-400">Plan-based</span>
+                                    </div>
+                                    <div class="border-t border-gray-700 my-2"></div>
+                                    <div class="flex justify-between font-bold">
+                                        <span>Total Estimated</span>
+                                        <span id="result-cost" class="text-green-400">~$0.38</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
-                
-                <!-- Action Buttons -->
-                <div class="flex flex-col sm:flex-row gap-4">
-                    <button id="preview-btn" onclick="startPreview()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-4 px-8 rounded-xl text-lg transition-all">
-                        👁️ Preview Storyboard
-                    </button>
-                    <button id="generate-btn" onclick="startGeneration()" class="flex-1 bg-gradient-to-r from-primary to-secondary hover:from-red-600 hover:to-red-800 text-white font-bold py-4 px-8 rounded-xl text-lg transition-all transform hover:scale-[1.02] glow-red">
-                        🎥 Generate Video
-                    </button>
-                </div>
-            </div>
+            </section>
+        </div>
 
-            <!-- Preview/Storyboard Section (hidden by default) -->
-            <div id="preview-section" class="hidden mt-8 bg-gray-900/50 border border-gray-800 rounded-2xl p-6 md:p-8">
-                <h2 class="text-2xl font-bold mb-6 flex items-center gap-3">
-                    <span class="text-3xl">👁️</span> Storyboard Preview
-                </h2>
-                
-                <div id="preview-content" class="space-y-6">
-                    <!-- Will be populated by JS -->
-                </div>
-
-                <div class="flex flex-col sm:flex-row gap-4 mt-6 pt-6 border-t border-gray-700">
-                    <button onclick="regenerateStory()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-xl transition-all">
-                        🔄 New Story
-                    </button>
-                    <button onclick="confirmAndRender()" class="flex-1 bg-gradient-to-r from-primary to-secondary hover:from-red-600 hover:to-red-800 text-white font-bold py-3 px-6 rounded-xl transition-all glow-red">
-                        ✅ Render Video
-                    </button>
-                </div>
-            </div>
-
-            <!-- Progress Section (hidden by default) -->
-            <div id="progress-section" class="hidden mt-8 bg-gray-900/50 border border-gray-800 rounded-2xl p-6 md:p-8">
-                <h2 class="text-2xl font-bold mb-6 flex items-center gap-3">
-                    <span class="text-3xl animate-pulse">⚙️</span> Generating Your Video
-                </h2>
-                
-                <!-- Progress bar -->
-                <div class="mb-6">
-                    <div class="flex justify-between text-sm text-gray-400 mb-2">
-                        <span id="status-text">Initializing...</span>
-                        <span id="progress-percent">0%</span>
-                    </div>
-                    <div class="w-full bg-gray-800 rounded-full h-4 overflow-hidden">
-                        <div id="progress-bar" class="bg-gradient-to-r from-primary to-secondary h-full rounded-full transition-all duration-500" style="width: 0%"></div>
-                    </div>
-                </div>
-                
-                <!-- Status steps -->
-                <div class="space-y-3 text-sm">
-                    <div id="step-story" class="flex items-center gap-3 text-gray-500">
-                        <span class="step-icon">○</span> Generating story...
-                    </div>
-                    <div id="step-captions" class="flex items-center gap-3 text-gray-500">
-                        <span class="step-icon">○</span> Creating captions...
-                    </div>
-                    <div id="step-audio" class="flex items-center gap-3 text-gray-500">
-                        <span class="step-icon">○</span> Generating voiceover...
-                    </div>
-                    <div id="step-visuals" class="flex items-center gap-3 text-gray-500">
-                        <span class="step-icon">○</span> Selecting visuals...
-                    </div>
-                    <div id="step-render" class="flex items-center gap-3 text-gray-500">
-                        <span class="step-icon">○</span> Rendering video...
-                    </div>
-                </div>
-            </div>
-
-            <!-- Result Section (hidden by default) -->
-            <div id="result-section" class="hidden mt-8 bg-gray-900/50 border border-gray-800 rounded-2xl p-6 md:p-8">
-                <h2 class="text-2xl font-bold mb-6 flex items-center gap-3">
-                    <span class="text-3xl">✅</span> Video Ready!
-                </h2>
-                
-                <div class="mb-6">
-                    <h3 id="video-title" class="text-xl font-semibold text-primary mb-2"></h3>
-                    <p id="video-duration" class="text-gray-400 text-sm"></p>
-                </div>
-                
-                <!-- Video player -->
-                <div class="bg-black rounded-xl overflow-hidden mb-6 aspect-[9/16] max-h-[500px] mx-auto">
-                    <video id="video-player" controls class="w-full h-full object-contain">
-                        Your browser does not support video playback.
-                    </video>
-                </div>
-                
-                <!-- Action buttons -->
-                <div class="flex flex-col sm:flex-row gap-4 mb-8">
-                    <a id="download-btn" href="#" download class="flex-1 bg-gradient-to-r from-primary to-secondary hover:from-red-600 hover:to-red-800 text-white font-bold py-4 px-8 rounded-xl text-center transition-all">
-                        ⬇️ Download MP4
-                    </a>
-                    <button onclick="resetGenerator()" class="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-bold py-4 px-8 rounded-xl transition-all">
-                        🔄 Generate Another
-                    </button>
-                </div>
-
-                <!-- Timeline/Script Section -->
-                <div id="timeline-section" class="border-t border-gray-700 pt-6">
-                    <button onclick="toggleTimeline()" class="flex items-center gap-2 text-lg font-semibold mb-4 hover:text-primary transition-colors">
-                        <span id="timeline-toggle-icon">▶</span>
-                        <span>📜 Story Script & Timeline</span>
-                    </button>
-                    <div id="timeline-content" class="hidden">
-                        <p class="text-gray-400 text-sm mb-4">Each scene shows the script text and its background video</p>
-                        <div id="timeline-scenes" class="space-y-4">
-                            <!-- Scenes will be populated dynamically -->
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Error Section (hidden by default) -->
-            <div id="error-section" class="hidden mt-8 bg-red-900/20 border border-red-800 rounded-2xl p-6 md:p-8">
-                <h2 class="text-2xl font-bold mb-4 flex items-center gap-3 text-red-400">
-                    <span class="text-3xl">❌</span> Generation Failed
-                </h2>
-                <p id="error-message" class="text-gray-300 mb-6"></p>
-                <button onclick="resetGenerator()" class="bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 px-6 rounded-xl transition-all">
-                    🔄 Try Again
+        <!-- STYLES TAB -->
+        <div id="tab-content-styles" class="hidden">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl font-bold">🎨 Art Style Editor</h2>
+                <button onclick="addNewCustomStyle()" class="bg-primary hover:bg-primary/80 px-4 py-2 rounded-lg text-sm font-medium transition-all">
+                    + Add Custom Style
                 </button>
             </div>
-            </div><!-- END Generate Tab -->
             
-            <!-- HISTORY TAB -->
-            <div id="tab-content-history" class="hidden">
-                <div class="bg-gray-900/50 border border-gray-800 rounded-2xl p-6 md:p-8">
-                    <h2 class="text-2xl font-bold mb-6 flex items-center gap-3">
-                        <span class="text-3xl">📚</span> Video History
-                    </h2>
-                    
-                    <!-- Filter/Sort Options -->
-                    <div class="flex flex-wrap gap-4 mb-6 pb-6 border-b border-gray-700">
-                        <select id="history-sort" onchange="loadHistory()" class="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-primary">
-                            <option value="newest">Newest First</option>
-                            <option value="oldest">Oldest First</option>
-                        </select>
-                        <select id="history-filter" onchange="loadHistory()" class="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-primary">
-                            <option value="completed">Completed</option>
-                            <option value="all">All Jobs</option>
-                            <option value="failed">Failed</option>
-                        </select>
-                        <button onclick="loadHistory()" class="ml-auto bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm transition-colors">
-                            🔄 Refresh
-                        </button>
-                    </div>
-                    
-                    <!-- History Grid -->
-                    <div id="history-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <!-- Loading state -->
-                        <div class="col-span-full text-center py-12 text-gray-400">
-                            <div class="animate-spin text-4xl mb-4">⏳</div>
-                            <p>Loading history...</p>
+            <!-- Info Section -->
+            <div class="bg-blue-900/30 rounded-xl p-4 border border-blue-800/50 mb-6">
+                <h3 class="font-semibold text-sm mb-2">📖 How Art Styles Work in Image Generation</h3>
+                <div class="text-xs text-gray-300 space-y-2">
+                    <p>Each art style has 4 key components that get injected into the DALL-E prompt:</p>
+                    <div class="grid md:grid-cols-2 gap-3 mt-3">
+                        <div class="bg-gray-800/50 rounded-lg p-3">
+                            <strong class="text-purple-400">Base Prompt:</strong>
+                            <p class="text-gray-400 mt-1">The main style description. Sets the overall look (e.g., "VHS static, glitch artifacts, scanlines").</p>
+                        </div>
+                        <div class="bg-gray-800/50 rounded-lg p-3">
+                            <strong class="text-blue-400">Color Override:</strong>
+                            <p class="text-gray-400 mt-1">Color palette to use (e.g., "washed out colors, muted greens and grays").</p>
+                        </div>
+                        <div class="bg-gray-800/50 rounded-lg p-3">
+                            <strong class="text-green-400">Technical Style:</strong>
+                            <p class="text-gray-400 mt-1">Keywords for the rendering method (e.g., "lo-fi horror, found footage").</p>
+                        </div>
+                        <div class="bg-gray-800/50 rounded-lg p-3">
+                            <strong class="text-red-400">Negative Prompt:</strong>
+                            <p class="text-gray-400 mt-1">What to avoid (e.g., "bright colors, clean, professional").</p>
                         </div>
                     </div>
-                    
-                    <!-- Empty State -->
-                    <div id="history-empty" class="hidden text-center py-12">
-                        <div class="text-6xl mb-4">👻</div>
-                        <h3 class="text-xl font-semibold text-gray-300 mb-2">No videos yet</h3>
-                        <p class="text-gray-500 mb-6">Generate your first scary video to see it here!</p>
-                        <button onclick="showTab('generate')" class="bg-gradient-to-r from-primary to-secondary text-white font-bold py-3 px-6 rounded-xl transition-all hover:from-red-600 hover:to-red-800">
-                            🎬 Create Video
-                        </button>
-                    </div>
-                    
-                    <!-- Pagination -->
-                    <div id="history-pagination" class="hidden flex justify-center gap-2 mt-6 pt-6 border-t border-gray-700">
-                        <button onclick="loadHistory('prev')" id="history-prev" class="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm transition-colors">
-                            ← Previous
-                        </button>
-                        <span id="history-page-info" class="flex items-center px-4 text-gray-400 text-sm">Page 1 of 1</span>
-                        <button onclick="loadHistory('next')" id="history-next" class="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm transition-colors">
-                            Next →
-                        </button>
-                    </div>
                 </div>
-            </div><!-- END History Tab -->
-        </main>
-
-        <!-- Footer -->
-        <footer class="border-t border-gray-800 mt-12 py-6">
-            <div class="max-w-4xl mx-auto px-4 text-center text-gray-500 text-sm">
-                <p>Faceless Video Generator v1.0 • Personal Use</p>
             </div>
-        </footer>
+            
+            <!-- Custom Styles -->
+            <div id="custom-styles-container" class="space-y-4 mb-6">
+                <!-- Custom styles rendered here -->
+            </div>
+            
+            <!-- Built-in Styles (Read-only) -->
+            <div class="bg-gray-900/50 rounded-2xl border border-gray-800 p-6">
+                <h3 class="text-lg font-semibold mb-4">📦 Built-in Styles (Reference)</h3>
+                <div id="builtin-styles-grid" class="grid md:grid-cols-2 gap-4">
+                    <!-- Built-in styles rendered here by JS -->
+                </div>
+            </div>
+        </div>
+
+        <!-- HISTORY TAB -->
+        <div id="tab-content-history" class="hidden">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl font-bold">📜 History</h2>
+                <div class="flex gap-3">
+                    <select id="history-filter" onchange="loadHistory()" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+                        <option value="completed">✓ Completed</option>
+                        <option value="all">All</option>
+                        <option value="failed">✗ Failed</option>
+                    </select>
+                    <select id="history-sort" onchange="loadHistory()" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+                        <option value="newest">Newest</option>
+                        <option value="oldest">Oldest</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div id="history-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4"></div>
+            
+            <div id="history-empty" class="hidden text-center py-16">
+                <div class="text-6xl mb-4">👻</div>
+                <p class="text-gray-400">No videos yet</p>
+                <button onclick="showTab('create')" class="mt-4 text-primary hover:underline">Create your first →</button>
+            </div>
+            
+            <div id="history-pagination" class="hidden flex items-center justify-center gap-4 mt-8">
+                <button onclick="loadHistory('prev')" id="history-prev" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-lg disabled:opacity-50">← Prev</button>
+                <span id="history-page-info" class="text-gray-400">Page 1</span>
+                <button onclick="loadHistory('next')" id="history-next" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-lg disabled:opacity-50">Next →</button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Error Modal -->
+    <div id="error-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+        <div class="bg-gray-900 rounded-2xl p-6 max-w-md w-full border border-red-900/50">
+            <div class="text-4xl text-center mb-4">😱</div>
+            <h3 class="text-xl font-bold text-center text-red-400 mb-2">Error</h3>
+            <p id="error-message" class="text-gray-400 text-center text-sm mb-6">Something went wrong...</p>
+            <button onclick="closeErrorModal()" class="w-full bg-gray-700 hover:bg-gray-600 py-3 rounded-xl font-semibold">Close</button>
+        </div>
     </div>
 
-    <!-- JavaScript (load in order: config -> supabase -> ui -> api -> app) -->
+    <!-- Scripts -->
     <script src="js/config.js"></script>
     <script src="js/supabase.js"></script>
-    <script src="js/ui.js"></script>
     <script src="js/api.js"></script>
+    <script src="js/ui.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

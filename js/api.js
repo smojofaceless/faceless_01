@@ -8,44 +8,37 @@
 async function createJob(options) {
     const client = getSupabaseClient();
     
-    const { data, error } = await client.functions.invoke('create-job', {
-        body: {
-            length_preset: options.lengthPreset,
-            vibe_preset: options.vibePreset,
-            visual_preset: options.visualPreset,
-            visual_source: options.visualSource, // 'pexels' or 'dalle'
-            voice_speed: options.voiceSpeed,
-            // Video effects
-            effect_filter: options.effectFilter,
-            effect_kenburns: options.effectKenburns,
-            effect_transitions: options.effectTransitions,
-            effect_vignette: options.effectVignette,
-            // Audio
-            audio_music: options.audioMusic,
-            audio_sfx: options.audioSfx,
-            // Captions
-            caption_style: options.captionStyle,
-            highlight_scary: options.highlightScary,
-        },
-    });
-
-    if (error) throw new Error(error.message);
-    if (!data.success) throw new Error(data.error);
-
-    return data;
-}
-
-/**
- * Preview job - generate story and scenes without rendering
- */
-async function previewJob(jobId) {
-    const client = getSupabaseClient();
+    // Build the request body
+    const requestBody = {
+        // Theme and content
+        theme: options.theme || 'general',
+        length_preset: options.duration || 'medium',
+        visual_preset: options.visual_preset || 'forest',
+        visual_source: options.visual_source || 'dalle',
+        art_style: options.art_style || 'cinematic-dark',
+        scene_count: options.scene_count || 4,
+        // Preview mode
+        preview_only: options.preview_only || false,
+        // Video effects
+        effect_filter: options.effects?.filter ?? true,
+        effect_kenburns: options.effects?.kenburns ?? true,
+        effect_transitions: options.effects?.transitions ?? true,
+        effect_vignette: options.effects?.vignette ?? true,
+        // Audio (disabled by default now)
+        audio_music: false,
+        audio_sfx: false,
+        // Captions
+        caption_style: options.caption_style || 'bold',
+        highlight_scary: options.effects?.highlight ?? true,
+    };
     
-    const { data, error } = await client.functions.invoke('run-job', {
-        body: { 
-            job_id: jobId,
-            preview_only: true,
-        },
+    // If custom style, include the custom style data
+    if (options.art_style?.startsWith('custom-') && options.custom_style) {
+        requestBody.custom_style = options.custom_style;
+    }
+    
+    const { data, error } = await client.functions.invoke('create-job', {
+        body: requestBody,
     });
 
     if (error) throw new Error(error.message);
@@ -64,16 +57,9 @@ async function runJob(jobId, options = {}) {
         body: { 
             job_id: jobId,
             preview_only: false,
-            // Pass all effect options for rendering
-            visual_source: options.visualSource,
-            effect_filter: options.effectFilter,
-            effect_kenburns: options.effectKenburns,
-            effect_transitions: options.effectTransitions,
-            effect_vignette: options.effectVignette,
-            audio_music: options.audioMusic,
-            audio_sfx: options.audioSfx,
-            caption_style: options.captionStyle,
-            highlight_scary: options.highlightScary,
+            // Optional story overrides
+            title: options.title,
+            story_text: options.story_text,
         },
     });
 

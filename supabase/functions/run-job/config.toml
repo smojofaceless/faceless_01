@@ -1,0 +1,6 @@
+# run-job function configuration
+# Increase timeout to maximum (150 seconds) for DALL-E generation
+[function]
+max_request_body_size = "2mb"
+# Maximum execution time in seconds (max is 150 for paid plans, 60 for free)
+# This allows time for DALL-E image generation
