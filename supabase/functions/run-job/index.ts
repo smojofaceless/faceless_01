@@ -1618,117 +1618,220 @@ function getImageModel(): "dall-e-3" | "gpt-4o" | "flux" {
 // REPLICATE / FLUX IMAGE GENERATION
 // =====================================================
 
+// =====================================================
+// REPLICATE / FLUX IMAGE GENERATION
+// Two-model approach for consistency:
+// - Scene 1: flux-1.1-pro (text→image, best quality)
+// - Scene 2+: flux-redux-dev (image→image with reference)
+// =====================================================
+
 /**
- * Generate image using FLUX.1 Dev via Replicate
- * ~$0.025/image, supports reference-image conditioning for character consistency
+ * Generate image using FLUX 1.1 Pro (Scene 1 - Master Frame)
+ * $0.04/image, best quality + prompt adherence
+ */
+async function generateFluxProImage(
+  replicateKey: string,
+  prompt: string,
+  sceneIndex: number
+): Promise<string | null> {
+  try {
+    console.log(`[FLUX-PRO] Generating scene ${sceneIndex + 1} (master frame)...`);
+    
+    // Use models endpoint for official models
+    const response = await fetch("https://api.replicate.com/v1/models/black-forest-labs/flux-1.1-pro/predictions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${replicateKey}`,
+        "Content-Type": "application/json",
+        "Prefer": "wait",  // Wait for result (up to 60s)
+      },
+      body: JSON.stringify({
+        input: {
+          prompt: prompt,
+          width: 768,              // Explicit 9:16 portrait dimensions
+          height: 1344,            // (768 * 16/9 ≈ 1365, using 1344 for compatibility)
+          aspect_ratio: "9:16",    // Also specify ratio as backup
+          output_format: "webp",
+          output_quality: 90,
+          safety_tolerance: 5,     // Allow horror content
+          prompt_upsampling: false // CRITICAL: Disable to prevent style drift
+        }
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error("[FLUX-PRO] API error:", response.status, error);
+      return null;
+    }
+
+    const result = await response.json();
+    
+    // Handle both sync (Prefer: wait) and async responses
+    if (result.output) {
+      // Sync response - output is directly available
+      const imageUrl = typeof result.output === 'string' ? result.output : result.output[0];
+      if (imageUrl) {
+        console.log(`[FLUX-PRO] ✓ Scene ${sceneIndex + 1} master frame generated`);
+        return imageUrl;
+      }
+    }
+    
+    // If we got a prediction ID, poll for it
+    if (result.id) {
+      return await pollReplicatePrediction(replicateKey, result.id, sceneIndex, "FLUX-PRO");
+    }
+    
+    console.error("[FLUX-PRO] Unexpected response format:", result);
+    return null;
+  } catch (error) {
+    console.error("[FLUX-PRO] Generation error:", error);
+    return null;
+  }
+}
+
+/**
+ * Generate image using FLUX Redux (Scenes 2+ - Reference-based)
+ * Uses Scene 1 as style/character reference for consistency
+ */
+async function generateFluxReduxImage(
+  replicateKey: string,
+  prompt: string,
+  sceneIndex: number,
+  referenceImageUrl: string
+): Promise<string | null> {
+  try {
+    console.log(`[FLUX-REDUX] Generating scene ${sceneIndex + 1} with reference...`);
+    console.log(`[FLUX-REDUX] Reference: ${referenceImageUrl.substring(0, 80)}...`);
+    
+    // FLUX Redux Dev - img2img with reference conditioning
+    const response = await fetch("https://api.replicate.com/v1/models/black-forest-labs/flux-redux-dev/predictions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${replicateKey}`,
+        "Content-Type": "application/json",
+        "Prefer": "wait",
+      },
+      body: JSON.stringify({
+        input: {
+          prompt: prompt,
+          redux_image: referenceImageUrl,  // Reference image for style/character
+          width: 768,
+          height: 1344,
+          aspect_ratio: "9:16",
+          num_outputs: 1,
+          output_format: "webp",
+          output_quality: 90,
+          megapixels: "1",           // Keep consistent resolution
+          guidance: 3.5,             // Lower guidance = more reference adherence
+          num_inference_steps: 28,
+        }
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error("[FLUX-REDUX] API error:", response.status, error);
+      // Fall back to FLUX Pro if Redux fails
+      console.log("[FLUX-REDUX] Falling back to FLUX Pro...");
+      return await generateFluxProImage(replicateKey, prompt, sceneIndex);
+    }
+
+    const result = await response.json();
+    
+    if (result.output) {
+      const imageUrl = Array.isArray(result.output) ? result.output[0] : result.output;
+      if (imageUrl) {
+        console.log(`[FLUX-REDUX] ✓ Scene ${sceneIndex + 1} generated with reference`);
+        return imageUrl;
+      }
+    }
+    
+    if (result.id) {
+      return await pollReplicatePrediction(replicateKey, result.id, sceneIndex, "FLUX-REDUX");
+    }
+    
+    console.error("[FLUX-REDUX] Unexpected response:", result);
+    return null;
+  } catch (error) {
+    console.error("[FLUX-REDUX] Generation error:", error);
+    return null;
+  }
+}
+
+/**
+ * Poll Replicate prediction until complete
+ */
+async function pollReplicatePrediction(
+  replicateKey: string,
+  predictionId: string,
+  sceneIndex: number,
+  modelName: string
+): Promise<string | null> {
+  const maxWait = 120000;
+  const pollInterval = 2000;
+  let elapsed = 0;
+  
+  console.log(`[${modelName}] Polling prediction ${predictionId}...`);
+  
+  while (elapsed < maxWait) {
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+    elapsed += pollInterval;
+    
+    const statusResponse = await fetch(
+      `https://api.replicate.com/v1/predictions/${predictionId}`,
+      {
+        headers: { "Authorization": `Bearer ${replicateKey}` },
+      }
+    );
+    
+    if (!statusResponse.ok) {
+      console.error(`[${modelName}] Status check failed:`, statusResponse.status);
+      continue;
+    }
+    
+    const status = await statusResponse.json();
+    
+    if (status.status === "succeeded") {
+      const imageUrl = Array.isArray(status.output) ? status.output[0] : status.output;
+      if (imageUrl) {
+        console.log(`[${modelName}] ✓ Scene ${sceneIndex + 1} generated`);
+        return imageUrl;
+      }
+      console.error(`[${modelName}] No output URL`);
+      return null;
+    }
+    
+    if (status.status === "failed" || status.status === "canceled") {
+      console.error(`[${modelName}] Prediction ${status.status}:`, status.error);
+      return null;
+    }
+    
+    console.log(`[${modelName}] Status: ${status.status} (${elapsed/1000}s)`);
+  }
+  
+  console.error(`[${modelName}] Timed out after 120s`);
+  return null;
+}
+
+/**
+ * Main FLUX generation function - routes to Pro or Redux based on scene
+ * Scene 1: flux-1.1-pro (text→image)
+ * Scene 2+: flux-redux-dev (img2img with reference)
  */
 async function generateFluxImage(
   replicateKey: string,
   prompt: string,
   sceneIndex: number,
-  referenceImageUrl?: string  // Pass scene 0's image URL for consistency
+  referenceImageUrl?: string
 ): Promise<string | null> {
-  try {
-    console.log(`[FLUX] Generating scene ${sceneIndex + 1} image...`);
-    if (referenceImageUrl) {
-      console.log(`[FLUX] Using reference image for character consistency`);
-    }
-    
-    // FLUX.1 Dev model on Replicate
-    const modelVersion = "black-forest-labs/flux-dev";
-    
-    // Build input payload
-    const input: Record<string, any> = {
-      prompt: prompt,
-      width: 576,   // Portrait ratio close to 9:16
-      height: 1024,
-      num_outputs: 1,
-      guidance_scale: 3.5,  // FLUX works well with lower guidance
-      num_inference_steps: 28,
-      output_format: "webp",
-      output_quality: 90,
-    };
-    
-    // Add reference image conditioning if available (scene 2+ only)
-    // This uses IP-Adapter style conditioning for character consistency
-    if (referenceImageUrl && sceneIndex > 0) {
-      input.image = referenceImageUrl;
-      input.prompt_strength = 0.8;  // Balance between reference and new prompt
-      console.log(`[FLUX] Reference conditioning enabled (strength: 0.8)`);
-    }
-    
-    // Start prediction
-    const createResponse = await fetch("https://api.replicate.com/v1/predictions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${replicateKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        version: "black-forest-labs/flux-dev",
-        input: input,
-      }),
-    });
-
-    if (!createResponse.ok) {
-      const error = await createResponse.text();
-      console.error("[FLUX] Create prediction error:", createResponse.status, error);
-      return null;
-    }
-
-    const prediction = await createResponse.json();
-    console.log(`[FLUX] Prediction started: ${prediction.id}`);
-    
-    // Poll for completion (max 120 seconds)
-    const maxWait = 120000;
-    const pollInterval = 2000;
-    let elapsed = 0;
-    
-    while (elapsed < maxWait) {
-      await new Promise(resolve => setTimeout(resolve, pollInterval));
-      elapsed += pollInterval;
-      
-      const statusResponse = await fetch(
-        `https://api.replicate.com/v1/predictions/${prediction.id}`,
-        {
-          headers: {
-            "Authorization": `Bearer ${replicateKey}`,
-          },
-        }
-      );
-      
-      if (!statusResponse.ok) {
-        console.error("[FLUX] Status check failed:", statusResponse.status);
-        continue;
-      }
-      
-      const status = await statusResponse.json();
-      
-      if (status.status === "succeeded") {
-        const imageUrl = status.output?.[0];
-        if (imageUrl) {
-          console.log(`[FLUX] ✓ Scene ${sceneIndex + 1} image generated`);
-          return imageUrl;
-        }
-        console.error("[FLUX] No output URL in response");
-        return null;
-      }
-      
-      if (status.status === "failed" || status.status === "canceled") {
-        console.error(`[FLUX] Prediction ${status.status}:`, status.error);
-        return null;
-      }
-      
-      // Still processing
-      console.log(`[FLUX] Status: ${status.status} (${elapsed/1000}s)`);
-    }
-    
-    console.error("[FLUX] Prediction timed out after 120s");
-    return null;
-  } catch (error) {
-    console.error("[FLUX] Generation error:", error);
-    return null;
+  // Scene 1 (index 0): Use FLUX Pro for master frame
+  if (sceneIndex === 0 || !referenceImageUrl) {
+    return await generateFluxProImage(replicateKey, prompt, sceneIndex);
   }
+  
+  // Scenes 2+: Use FLUX Redux with reference for consistency
+  return await generateFluxReduxImage(replicateKey, prompt, sceneIndex, referenceImageUrl);
 }
 
 /**
