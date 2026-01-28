@@ -1597,7 +1597,72 @@ Return JSON array: {"contracts": [...]}`,
 }
 
 /**
- * Generate DALL-E image using Story Anchor + Visual Beat
+ * Determine which image model to use
+ * GPT-4o images are ~60-80% cheaper than DALL-E 3
+ */
+function getImageModel(): "dall-e-3" | "gpt-4o" {
+  const model = Deno.env.get("IMAGE_MODEL");
+  if (model === "gpt-4o" || model === "gpt-image-1") {
+    return "gpt-4o";
+  }
+  // Default to DALL-E 3 for now (more stable)
+  return "dall-e-3";
+}
+
+/**
+ * Generate image using GPT-4o's image generation capability
+ * ~60-80% cheaper than DALL-E 3, better character consistency
+ */
+async function generateGPT4oImage(
+  openaiKey: string,
+  prompt: string,
+  sceneIndex: number
+): Promise<string | null> {
+  try {
+    console.log(`[GPT-4o] Generating scene ${sceneIndex + 1} image...`);
+    
+    const response = await fetch("https://api.openai.com/v1/images/generations", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${openaiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-image-1",  // GPT-4o image generation model
+        prompt: prompt,
+        n: 1,
+        size: "1024x1792",  // Portrait for vertical video
+        quality: "high",
+        response_format: "url",
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error("[GPT-4o] Image API error:", response.status, error);
+      // Fall back to DALL-E 3 on error
+      console.log("[GPT-4o] Falling back to DALL-E 3...");
+      return null;
+    }
+
+    const data = await response.json();
+    const imageUrl = data.data?.[0]?.url;
+    
+    if (imageUrl) {
+      console.log(`[GPT-4o] ✓ Scene ${sceneIndex + 1} image generated`);
+      return imageUrl;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error("[GPT-4o] Generation error:", error);
+    return null;
+  }
+}
+
+/**
+ * Generate image using Story Anchor + Visual Beat
+ * Supports both DALL-E 3 and GPT-4o image models
  */
 async function generateDalleImageWithAnchor(
   openaiKey: string,
@@ -1627,15 +1692,29 @@ async function generateDalleImageWithAnchor(
     if (isCustomStyle && styleConfig?.technicalStyle) {
       // Custom style: use ONLY the custom technicalStyle, not anchor's cameraStyle
       fullPrompt = `${prompt}\n\nCRITICAL: Portrait orientation (9:16 aspect ratio). Absolutely NO text, NO words, NO letters, NO writing anywhere in the image.`;
-      console.log(`[DALLE] Custom style active - NOT appending anchor.cameraStyle`);
+      console.log(`[IMAGE] Custom style active - NOT appending anchor.cameraStyle`);
     } else {
       // Built-in style: use anchor's camera style and palette
       fullPrompt = `${prompt}\n\nTechnical: ${storyAnchor.cameraStyle}\nColors: ${storyAnchor.colorPalette}\nRecurring elements: ${storyAnchor.recurringMotifs}\n\nCRITICAL: Portrait orientation (9:16 aspect ratio). Absolutely NO text, NO words, NO letters, NO writing, NO symbols with text anywhere in the image.`;
     }
 
     console.log(`Scene ${sceneIndex + 1} prompt (mood ${beat.moodLevel}/10):`, beat.visualBeat);
-    console.log(`[DALLE] Full prompt length: ${fullPrompt.length} chars`);
+    console.log(`[IMAGE] Full prompt length: ${fullPrompt.length} chars`);
 
+    // Check which model to use
+    const imageModel = getImageModel();
+    console.log(`[IMAGE] Using model: ${imageModel}`);
+    
+    // Try GPT-4o first if configured
+    if (imageModel === "gpt-4o") {
+      const gpt4oResult = await generateGPT4oImage(openaiKey, fullPrompt, sceneIndex);
+      if (gpt4oResult) {
+        return gpt4oResult;
+      }
+      console.log(`[IMAGE] GPT-4o failed, falling back to DALL-E 3...`);
+    }
+    
+    // Use DALL-E 3 (default or fallback)
     const response = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST",
       headers: {
@@ -1654,7 +1733,7 @@ async function generateDalleImageWithAnchor(
 
     if (!response.ok) {
       const error = await response.text();
-      console.error("DALL-E API error:", response.status, error);
+      console.error("[DALL-E] API error:", response.status, error);
       return null;
     }
 
@@ -1662,13 +1741,13 @@ async function generateDalleImageWithAnchor(
     const imageUrl = data.data?.[0]?.url;
     
     if (imageUrl) {
-      console.log(`✓ Scene ${sceneIndex + 1} image generated`);
+      console.log(`[DALL-E] ✓ Scene ${sceneIndex + 1} image generated`);
       return imageUrl;
     }
     
     return null;
   } catch (error) {
-    console.error("DALL-E generation error:", error);
+    console.error("[IMAGE] Generation error:", error);
     return null;
   }
 }

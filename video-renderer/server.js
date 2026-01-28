@@ -30,6 +30,10 @@ const jobs = new Map();
 const TEMP_DIR = process.env.TEMP_DIR || '/tmp/renders';
 const OUTPUT_DIR = process.env.OUTPUT_DIR || '/tmp/outputs';
 
+// Memory optimization: limit concurrent FFmpeg processes
+let activeRenders = 0;
+const MAX_CONCURRENT_RENDERS = 1; // Only 1 at a time on 512MB
+
 // Ensure directories exist
 async function ensureDirs() {
   await fs.mkdir(TEMP_DIR, { recursive: true });
@@ -45,6 +49,7 @@ async function downloadFile(url, outputPath) {
     method: 'GET',
     url: url,
     responseType: 'stream',
+    timeout: 60000, // 60s timeout
   });
   
   const writer = fsSync.createWriteStream(outputPath);
@@ -57,47 +62,51 @@ async function downloadFile(url, outputPath) {
 }
 
 /**
- * Generate Ken Burns effect filter for an image
+ * MEMORY-OPTIMIZED Ken Burns - simpler filter, less memory
+ * Uses scale instead of zoompan for lower memory footprint
  */
-function getKenBurnsFilter(index, duration, width = 1080, height = 1920) {
-  // Alternate between zoom-in and zoom-out, with slight pan
+function getSimpleKenBurnsFilter(index, duration, width = 1080, height = 1920) {
+  // Simple scale + slight motion - much less memory than zoompan
   const effects = [
-    // Slow zoom in from center
-    `zoompan=z='min(zoom+0.0015,1.3)':d=${duration * 30}:fps=30:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}`,
-    // Slow zoom out
-    `zoompan=z='if(lte(zoom,1.0),1.3,max(1.001,zoom-0.0015))':d=${duration * 30}:fps=30:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}`,
-    // Pan left to right with slight zoom
-    `zoompan=z='min(zoom+0.001,1.2)':d=${duration * 30}:fps=30:x='if(lte(on,1),0,min(x+2,iw-iw/zoom))':y='ih/2-(ih/zoom/2)':s=${width}x${height}`,
-    // Pan top to bottom
-    `zoompan=z='1.2':d=${duration * 30}:fps=30:x='iw/2-(iw/zoom/2)':y='if(lte(on,1),0,min(y+1,ih-ih/zoom))':s=${width}x${height}`,
+    // Slight zoom in via scale + crop
+    `scale=1200:2133,crop=${width}:${height}:60:107`,
+    // Different crop position for variety
+    `scale=1200:2133,crop=${width}:${height}:0:0`,
+    `scale=1200:2133,crop=${width}:${height}:120:213`,
+    `scale=1200:2133,crop=${width}:${height}:60:0`,
   ];
-  
   return effects[index % effects.length];
 }
 
 /**
- * Create video from images with Ken Burns effect
+ * MEMORY-OPTIMIZED: Create video from images
+ * Processes one scene at a time, cleans up immediately
  */
 async function createVideoFromImages(jobId, images, durations, outputPath, options = {}) {
   const { kenBurns = true, fadeTransitions = true } = options;
   const tempVideos = [];
   
-  // Step 1: Create individual video clips for each image
+  console.log(`[${jobId}] Processing ${images.length} images (memory-optimized mode)`);
+  
+  // Step 1: Create individual video clips for each image (ONE AT A TIME)
   for (let i = 0; i < images.length; i++) {
     const imagePath = images[i];
     const duration = durations[i] || 5;
     const tempVideo = path.join(TEMP_DIR, `${jobId}_scene_${i}.mp4`);
     tempVideos.push(tempVideo);
     
+    // Force garbage collection hint
+    if (global.gc) global.gc();
+    
     await new Promise((resolve, reject) => {
       let cmd = ffmpeg(imagePath)
-        .loop(duration)
-        .inputOptions(['-framerate', '30']);
+        .inputOptions(['-loop', '1', '-framerate', '24']) // 24fps instead of 30 = less memory
+        .duration(duration);
       
-      // Apply Ken Burns effect
+      // Apply simplified Ken Burns effect (or just scale)
       if (kenBurns) {
-        const kenBurnsFilter = getKenBurnsFilter(i, duration);
-        cmd = cmd.complexFilter([kenBurnsFilter]);
+        const filter = getSimpleKenBurnsFilter(i, duration);
+        cmd = cmd.videoFilter(filter);
       } else {
         // Just scale to output size
         cmd = cmd.videoFilter(`scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2`);
@@ -106,9 +115,12 @@ async function createVideoFromImages(jobId, images, durations, outputPath, optio
       cmd
         .outputOptions([
           '-c:v', 'libx264',
+          '-preset', 'ultrafast', // Faster = less memory
+          '-crf', '28', // Slightly lower quality = smaller files
           '-t', String(duration),
           '-pix_fmt', 'yuv420p',
-          '-r', '30',
+          '-r', '24',
+          '-threads', '1', // Single thread = less memory
         ])
         .output(tempVideo)
         .on('end', resolve)
@@ -117,74 +129,35 @@ async function createVideoFromImages(jobId, images, durations, outputPath, optio
     });
     
     console.log(`[${jobId}] Created scene ${i + 1}/${images.length}`);
+    
+    // Delete source image immediately after processing
+    await fs.unlink(imagePath).catch(() => {});
   }
   
-  // Step 2: Concatenate all clips
+  // Step 2: Concatenate all clips (simple method - less memory)
   const listFile = path.join(TEMP_DIR, `${jobId}_list.txt`);
   const listContent = tempVideos.map(v => `file '${v}'`).join('\n');
   await fs.writeFile(listFile, listContent);
   
-  // Step 3: Concatenate with optional fade transitions
+  // Simple concatenation (xfade uses too much memory on free tier)
   await new Promise((resolve, reject) => {
-    let cmd = ffmpeg();
-    
-    if (fadeTransitions && tempVideos.length > 1) {
-      // Use xfade filter for smooth transitions
-      tempVideos.forEach((v, i) => {
-        cmd = cmd.input(v);
-      });
-      
-      // Build xfade filter chain
-      let filterChain = '';
-      let lastOutput = '[0:v]';
-      
-      for (let i = 1; i < tempVideos.length; i++) {
-        const offset = durations.slice(0, i).reduce((a, b) => a + b, 0) - 0.5; // 0.5s overlap
-        const outputLabel = i === tempVideos.length - 1 ? 'outv' : `v${i}`;
-        filterChain += `${lastOutput}[${i}:v]xfade=transition=fade:duration=0.5:offset=${offset}[${outputLabel}];`;
-        lastOutput = `[${outputLabel}]`;
-      }
-      
-      // Remove trailing semicolon
-      filterChain = filterChain.slice(0, -1);
-      
-      cmd
-        .complexFilter(filterChain, 'outv')
-        .outputOptions([
-          '-c:v', 'libx264',
-          '-crf', '23',
-          '-preset', 'medium',
-          '-pix_fmt', 'yuv420p',
-        ])
-        .output(outputPath)
-        .on('end', resolve)
-        .on('error', (err) => {
-          console.error('Xfade failed, falling back to concat:', err.message);
-          // Fallback to simple concat
-          ffmpeg()
-            .input(listFile)
-            .inputOptions(['-f', 'concat', '-safe', '0'])
-            .outputOptions(['-c:v', 'libx264', '-crf', '23', '-pix_fmt', 'yuv420p'])
-            .output(outputPath)
-            .on('end', resolve)
-            .on('error', reject)
-            .run();
-        })
-        .run();
-    } else {
-      // Simple concatenation
-      cmd
-        .input(listFile)
-        .inputOptions(['-f', 'concat', '-safe', '0'])
-        .outputOptions(['-c:v', 'libx264', '-crf', '23', '-pix_fmt', 'yuv420p'])
-        .output(outputPath)
-        .on('end', resolve)
-        .on('error', reject)
-        .run();
-    }
+    ffmpeg()
+      .input(listFile)
+      .inputOptions(['-f', 'concat', '-safe', '0'])
+      .outputOptions([
+        '-c:v', 'libx264',
+        '-preset', 'ultrafast',
+        '-crf', '26',
+        '-pix_fmt', 'yuv420p',
+        '-threads', '1',
+      ])
+      .output(outputPath)
+      .on('end', resolve)
+      .on('error', reject)
+      .run();
   });
   
-  // Cleanup temp videos
+  // Cleanup temp videos immediately
   for (const v of tempVideos) {
     await fs.unlink(v).catch(() => {});
   }
@@ -215,13 +188,19 @@ async function addAudioToVideo(videoPath, audioPath, outputPath) {
 }
 
 /**
- * Add vignette effect
+ * Add vignette effect (memory-optimized)
  */
 async function addVignette(inputPath, outputPath) {
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
       .videoFilter('vignette=PI/4')
-      .outputOptions(['-c:a', 'copy'])
+      .outputOptions([
+        '-c:v', 'libx264',
+        '-preset', 'ultrafast',
+        '-crf', '26',
+        '-c:a', 'copy',
+        '-threads', '1',
+      ])
       .output(outputPath)
       .on('end', resolve)
       .on('error', reject)
@@ -230,17 +209,22 @@ async function addVignette(inputPath, outputPath) {
 }
 
 /**
- * Add horror color grading
+ * Add horror color grading (memory-optimized - simplified filter)
  */
 async function addHorrorGrade(inputPath, outputPath) {
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
       .videoFilter([
-        // Desaturate slightly, boost contrast, add blue tint to shadows
-        'eq=saturation=0.8:contrast=1.1',
-        'curves=b=0/0.1 0.5/0.5 1/0.9',
+        // Simplified: just desaturate + contrast (curves uses more memory)
+        'eq=saturation=0.75:contrast=1.15:brightness=-0.05',
       ].join(','))
-      .outputOptions(['-c:a', 'copy'])
+      .outputOptions([
+        '-c:v', 'libx264',
+        '-preset', 'ultrafast',
+        '-crf', '26',
+        '-c:a', 'copy',
+        '-threads', '1',
+      ])
       .output(outputPath)
       .on('end', resolve)
       .on('error', reject)
@@ -252,6 +236,14 @@ async function addHorrorGrade(inputPath, outputPath) {
  * Main render endpoint
  */
 app.post('/render', async (req, res) => {
+  // Check if we're at capacity (memory protection)
+  if (activeRenders >= MAX_CONCURRENT_RENDERS) {
+    return res.status(503).json({ 
+      error: 'Server busy - try again in 60 seconds',
+      retry_after: 60,
+    });
+  }
+  
   const jobId = uuidv4();
   
   try {
@@ -296,6 +288,7 @@ app.post('/render', async (req, res) => {
  * Async render processing
  */
 async function processRender(jobId, imageUrls, audioUrl, durations, effects, webhookUrl) {
+  activeRenders++;
   const jobDir = path.join(TEMP_DIR, jobId);
   await fs.mkdir(jobDir, { recursive: true });
   
@@ -383,11 +376,17 @@ async function processRender(jobId, imageUrls, audioUrl, durations, effects, web
       }
     }
     
+    // Release render slot
+    activeRenders--;
+    
   } catch (error) {
     console.error(`[${jobId}] Render failed:`, error);
     const job = jobs.get(jobId);
     job.status = 'failed';
     job.error = error.message;
+    
+    // Release render slot
+    activeRenders--;
     
     // Cleanup on failure
     await fs.rm(jobDir, { recursive: true, force: true }).catch(() => {});
