@@ -1598,15 +1598,137 @@ Return JSON array: {"contracts": [...]}`,
 
 /**
  * Determine which image model to use
- * GPT-4o images are ~60-80% cheaper than DALL-E 3
+ * - dall-e-3: High quality, $0.12/image (default)
+ * - gpt-4o: Good quality, ~$0.03/image (75% cheaper)
+ * - flux: FLUX.1 Dev via Replicate, ~$0.025/image + reference conditioning
  */
-function getImageModel(): "dall-e-3" | "gpt-4o" {
+function getImageModel(): "dall-e-3" | "gpt-4o" | "flux" {
   const model = Deno.env.get("IMAGE_MODEL");
   if (model === "gpt-4o" || model === "gpt-image-1") {
     return "gpt-4o";
   }
-  // Default to DALL-E 3 for now (more stable)
+  if (model === "flux" || model === "replicate") {
+    return "flux";
+  }
+  // Default to DALL-E 3 for now (most stable)
   return "dall-e-3";
+}
+
+// =====================================================
+// REPLICATE / FLUX IMAGE GENERATION
+// =====================================================
+
+/**
+ * Generate image using FLUX.1 Dev via Replicate
+ * ~$0.025/image, supports reference-image conditioning for character consistency
+ */
+async function generateFluxImage(
+  replicateKey: string,
+  prompt: string,
+  sceneIndex: number,
+  referenceImageUrl?: string  // Pass scene 0's image URL for consistency
+): Promise<string | null> {
+  try {
+    console.log(`[FLUX] Generating scene ${sceneIndex + 1} image...`);
+    if (referenceImageUrl) {
+      console.log(`[FLUX] Using reference image for character consistency`);
+    }
+    
+    // FLUX.1 Dev model on Replicate
+    const modelVersion = "black-forest-labs/flux-dev";
+    
+    // Build input payload
+    const input: Record<string, any> = {
+      prompt: prompt,
+      width: 576,   // Portrait ratio close to 9:16
+      height: 1024,
+      num_outputs: 1,
+      guidance_scale: 3.5,  // FLUX works well with lower guidance
+      num_inference_steps: 28,
+      output_format: "webp",
+      output_quality: 90,
+    };
+    
+    // Add reference image conditioning if available (scene 2+ only)
+    // This uses IP-Adapter style conditioning for character consistency
+    if (referenceImageUrl && sceneIndex > 0) {
+      input.image = referenceImageUrl;
+      input.prompt_strength = 0.8;  // Balance between reference and new prompt
+      console.log(`[FLUX] Reference conditioning enabled (strength: 0.8)`);
+    }
+    
+    // Start prediction
+    const createResponse = await fetch("https://api.replicate.com/v1/predictions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${replicateKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        version: "black-forest-labs/flux-dev",
+        input: input,
+      }),
+    });
+
+    if (!createResponse.ok) {
+      const error = await createResponse.text();
+      console.error("[FLUX] Create prediction error:", createResponse.status, error);
+      return null;
+    }
+
+    const prediction = await createResponse.json();
+    console.log(`[FLUX] Prediction started: ${prediction.id}`);
+    
+    // Poll for completion (max 120 seconds)
+    const maxWait = 120000;
+    const pollInterval = 2000;
+    let elapsed = 0;
+    
+    while (elapsed < maxWait) {
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+      elapsed += pollInterval;
+      
+      const statusResponse = await fetch(
+        `https://api.replicate.com/v1/predictions/${prediction.id}`,
+        {
+          headers: {
+            "Authorization": `Bearer ${replicateKey}`,
+          },
+        }
+      );
+      
+      if (!statusResponse.ok) {
+        console.error("[FLUX] Status check failed:", statusResponse.status);
+        continue;
+      }
+      
+      const status = await statusResponse.json();
+      
+      if (status.status === "succeeded") {
+        const imageUrl = status.output?.[0];
+        if (imageUrl) {
+          console.log(`[FLUX] ✓ Scene ${sceneIndex + 1} image generated`);
+          return imageUrl;
+        }
+        console.error("[FLUX] No output URL in response");
+        return null;
+      }
+      
+      if (status.status === "failed" || status.status === "canceled") {
+        console.error(`[FLUX] Prediction ${status.status}:`, status.error);
+        return null;
+      }
+      
+      // Still processing
+      console.log(`[FLUX] Status: ${status.status} (${elapsed/1000}s)`);
+    }
+    
+    console.error("[FLUX] Prediction timed out after 120s");
+    return null;
+  } catch (error) {
+    console.error("[FLUX] Generation error:", error);
+    return null;
+  }
 }
 
 /**
@@ -1662,7 +1784,7 @@ async function generateGPT4oImage(
 
 /**
  * Generate image using Story Anchor + Visual Beat
- * Supports both DALL-E 3 and GPT-4o image models
+ * Supports DALL-E 3, GPT-4o, and FLUX via Replicate
  */
 async function generateDalleImageWithAnchor(
   openaiKey: string,
@@ -1672,7 +1794,8 @@ async function generateDalleImageWithAnchor(
   totalScenes: number,
   styleConfig?: { name: string; negativePrompt?: string; basePrompt?: string; colorOverride?: string; technicalStyle?: string },
   isCustomStyle: boolean = false,
-  visualPreset: string = "dalle"
+  visualPreset: string = "dalle",
+  referenceImageUrl?: string  // For FLUX: pass scene 0's URL for character consistency
 ): Promise<string | null> {
   try {
     // Build the complete prompt using the deterministic template function
@@ -1705,7 +1828,26 @@ async function generateDalleImageWithAnchor(
     const imageModel = getImageModel();
     console.log(`[IMAGE] Using model: ${imageModel}`);
     
-    // Try GPT-4o first if configured
+    // Try FLUX first if configured
+    if (imageModel === "flux") {
+      const replicateKey = Deno.env.get("REPLICATE_API_TOKEN");
+      if (replicateKey) {
+        const fluxResult = await generateFluxImage(
+          replicateKey, 
+          fullPrompt, 
+          sceneIndex,
+          referenceImageUrl  // Pass reference for character consistency
+        );
+        if (fluxResult) {
+          return fluxResult;
+        }
+        console.log(`[IMAGE] FLUX failed, falling back to DALL-E 3...`);
+      } else {
+        console.log(`[IMAGE] REPLICATE_API_TOKEN not set, falling back to DALL-E 3...`);
+      }
+    }
+    
+    // Try GPT-4o if configured
     if (imageModel === "gpt-4o") {
       const gpt4oResult = await generateGPT4oImage(openaiKey, fullPrompt, sceneIndex);
       if (gpt4oResult) {
@@ -1827,6 +1969,9 @@ async function generateImagesForScenes(
   const isCustomStyle = artStyle.startsWith('custom-') && !!customStyle;
   console.log(`[IMAGES] isCustomStyle: ${isCustomStyle}`);
   
+  // Track first scene's image URL for FLUX reference conditioning
+  let referenceImageUrl: string | undefined = undefined;
+  
   for (let i = 0; i < scenes.length; i++) {
     const scene = scenes[i];
     const beat = visualBeats[i] || {
@@ -1874,8 +2019,15 @@ async function generateImagesForScenes(
         scenes.length,
         styleConfig,
         isCustomStyle,
-        visualPreset
+        visualPreset,
+        referenceImageUrl  // Pass scene 0's URL for FLUX character consistency
       );
+      
+      // Store first scene's URL as reference for subsequent scenes (FLUX only)
+      if (i === 0 && imageUrl && getImageModel() === "flux") {
+        referenceImageUrl = imageUrl;
+        console.log(`[FLUX] Scene 1 stored as reference for character consistency`);
+      }
     } catch (imgError) {
       console.error(`Scene ${i + 1} DALL-E error:`, imgError);
       imageUrl = null;
@@ -3005,6 +3157,24 @@ async function runImagesPhase(
     
     await updateJob(supabase, job_id, { progress: 62 });
     
+    // For FLUX: Get reference image URL from scene 0 (if already generated)
+    let referenceImageUrl: string | undefined = undefined;
+    if (getImageModel() === "flux" && imagesGenerated > 0) {
+      // Fetch scene 0's image URL from database
+      const { data: scene0Asset } = await supabase
+        .from("job_assets")
+        .select("storage_path")
+        .eq("job_id", job_id)
+        .eq("type", "dalle_image")
+        .eq("meta->>scene_index", "0")
+        .single();
+      
+      if (scene0Asset?.storage_path) {
+        referenceImageUrl = scene0Asset.storage_path;
+        console.log(`[FLUX] Retrieved scene 0 as reference for character consistency`);
+      }
+    }
+    
     // Generate remaining images one at a time
     for (let i = imagesGenerated; i < scenes.length; i++) {
       const scene = scenes[i];
@@ -3035,8 +3205,15 @@ async function runImagesPhase(
           scenes.length,
           styleConfig,
           isCustomStyle,
-          visualPreset
+          visualPreset,
+          referenceImageUrl  // Pass reference for FLUX character consistency
         );
+        
+        // Store first scene as reference if FLUX
+        if (i === 0 && imageUrl && getImageModel() === "flux") {
+          referenceImageUrl = imageUrl;
+          console.log(`[FLUX] Scene 1 stored as reference for character consistency`);
+        }
       } catch (imgError) {
         console.error(`[IMAGES] Scene ${i + 1} DALL-E error:`, imgError);
         // Fallback to Pexels
