@@ -304,6 +304,18 @@ serve(async (req) => {
         next_phase: nextPhase,
         phase_triggered: phaseTriggered,
         scene_count: sceneCount || 0,
+        // Debug info - image model being used
+        image_model: jobMeta.image_model || null,
+        visual_source: jobMeta.visual_source || null,
+        meta: {
+          image_model: jobMeta.image_model,
+          visual_source: jobMeta.visual_source,
+          art_style: jobMeta.art_style,
+          scene_count: jobMeta.scene_count,
+          images_phase_running: jobMeta.images_phase_running,
+        },
+        // Backend logs (if any)
+        logs: jobMeta.generation_logs || [],
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

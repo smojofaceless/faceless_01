@@ -632,6 +632,60 @@ function renderSceneBreakdown(scenes) {
 // STEP 2 -> 3 -> 4: Generate Images & Video
 // =====================================================
 
+// Debug panel toggle
+function toggleDebugPanel() {
+    const panel = document.getElementById('debug-panel');
+    if (panel) {
+        panel.classList.toggle('hidden');
+    }
+}
+
+// Update debug info
+function updateDebugInfo(data) {
+    const jobIdEl = document.getElementById('debug-job-id');
+    const selectedModelEl = document.getElementById('debug-selected-model');
+    const backendModelEl = document.getElementById('debug-backend-model');
+    const visualSourceEl = document.getElementById('debug-visual-source');
+    const backendLogsEl = document.getElementById('debug-backend-logs');
+    
+    if (jobIdEl && currentJobId) {
+        jobIdEl.textContent = currentJobId;
+    }
+    
+    // Show what the user selected
+    const aiModel = document.getElementById('ai-model')?.value || 'gpt-4o';
+    const visualSource = document.querySelector('input[name="visual-source"]:checked')?.value || 'ai';
+    
+    if (selectedModelEl) {
+        selectedModelEl.textContent = `${AI_MODEL_NAMES[aiModel] || aiModel} (${aiModel})`;
+    }
+    if (visualSourceEl) {
+        visualSourceEl.textContent = visualSource;
+    }
+    
+    // Show what the backend is reporting
+    if (data) {
+        if (backendModelEl && data.image_model) {
+            backendModelEl.textContent = data.image_model;
+            backendModelEl.className = data.image_model === aiModel 
+                ? 'text-green-400 bg-gray-800 rounded px-2 py-1'  // Matches!
+                : 'text-red-400 bg-gray-800 rounded px-2 py-1';   // Mismatch!
+        }
+        
+        // Backend logs
+        if (backendLogsEl && data.logs && data.logs.length > 0) {
+            backendLogsEl.innerHTML = data.logs.map(log => 
+                `<p class="${log.includes('ERROR') ? 'text-red-400' : log.includes('FLUX') ? 'text-purple-400' : 'text-green-400'}">${escapeHtml(log)}</p>`
+            ).join('');
+        }
+        
+        // Also log meta info
+        if (data.meta?.image_model) {
+            addLog(`📊 Job image_model in meta: ${data.meta.image_model}`);
+        }
+    }
+}
+
 async function generateImages() {
     const btn = document.getElementById('btn-generate-images');
     btn.disabled = true;
@@ -642,6 +696,12 @@ async function generateImages() {
     // Setup image generation grid
     const sceneCount = currentScenes.length;
     const visualSource = document.querySelector('input[name="visual-source"]:checked')?.value || 'ai';
+    const aiModel = document.getElementById('ai-model')?.value || 'gpt-4o';
+    
+    // Initialize debug panel
+    updateDebugInfo(null);
+    addLog(`🎯 Selected model: ${AI_MODEL_NAMES[aiModel]} (${aiModel})`);
+    addLog(`🎯 Visual source: ${visualSource}`);
     
     const grid = document.getElementById('image-generation-grid');
     grid.innerHTML = currentScenes.map((scene, i) => `
@@ -696,9 +756,17 @@ function pollForCompletion() {
             const status = await checkJob(currentJobId);
             console.log('Poll result:', status);
             
+            // Update debug panel with backend info
+            updateDebugInfo(status);
+            
             // Update progress
             const progress = status.progress || 0;
             updateProgress(progress, getProgressLabel(progress, status.status));
+            
+            // Log image model info when in images phase
+            if (progress >= 55 && progress < 70 && status.image_model) {
+                addLog(`🔧 Backend using: ${status.image_model}`);
+            }
             
             // Update scenes if available
             if (status.scenes && status.scenes.length > 0) {

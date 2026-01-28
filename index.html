@@ -405,9 +405,41 @@
                     
                     <!-- Log -->
                     <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700">
-                        <h4 class="text-sm font-semibold mb-2">📋 Log</h4>
+                        <div class="flex items-center justify-between mb-2">
+                            <h4 class="text-sm font-semibold">📋 Generation Log</h4>
+                            <button onclick="toggleDebugPanel()" class="text-xs text-purple-400 hover:text-purple-300">🔧 Debug Info</button>
+                        </div>
                         <div id="generation-log" class="text-xs text-gray-400 space-y-1 max-h-32 overflow-y-auto hide-scrollbar font-mono">
                             <p>Waiting to start...</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Debug Panel (hidden by default) -->
+                    <div id="debug-panel" class="hidden mt-4 bg-purple-900/30 rounded-xl p-4 border border-purple-700">
+                        <h4 class="text-sm font-semibold mb-3 text-purple-300">🔧 Debug Information</h4>
+                        <div class="grid md:grid-cols-2 gap-4 text-xs font-mono">
+                            <div>
+                                <p class="text-gray-400 mb-1">Job ID:</p>
+                                <p id="debug-job-id" class="text-white bg-gray-800 rounded px-2 py-1">-</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-400 mb-1">Image Model (Selected):</p>
+                                <p id="debug-selected-model" class="text-white bg-gray-800 rounded px-2 py-1">-</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-400 mb-1">Image Model (Backend):</p>
+                                <p id="debug-backend-model" class="text-yellow-400 bg-gray-800 rounded px-2 py-1">Waiting for response...</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-400 mb-1">Visual Source:</p>
+                                <p id="debug-visual-source" class="text-white bg-gray-800 rounded px-2 py-1">-</p>
+                            </div>
+                            <div class="md:col-span-2">
+                                <p class="text-gray-400 mb-1">Backend Logs:</p>
+                                <div id="debug-backend-logs" class="text-green-400 bg-gray-900 rounded px-2 py-1 max-h-40 overflow-y-auto">
+                                    <p class="text-gray-500">No logs yet...</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -3114,6 +3114,17 @@ async function runImagesPhase(
   console.log(`[IMAGES] Starting images phase for job ${job_id}`);
   const resolvedImageModel = getImageModel(imageModel || undefined);
   
+  // Log model selection for debugging
+  console.log(`[IMAGES] 🔧 Model selection debug:`);
+  console.log(`[IMAGES]   - imageModel param: ${imageModel}`);
+  console.log(`[IMAGES]   - jobMeta.image_model: ${jobMeta.image_model}`);
+  console.log(`[IMAGES]   - ENV IMAGE_MODEL: ${Deno.env.get("IMAGE_MODEL")}`);
+  console.log(`[IMAGES]   - Resolved to: ${resolvedImageModel}`);
+  
+  // Store generation logs in job meta for frontend debug panel
+  const generationLogs: string[] = jobMeta.generation_logs || [];
+  generationLogs.push(`[${new Date().toISOString()}] Image model: ${resolvedImageModel} (param: ${imageModel || 'null'}, meta: ${jobMeta.image_model || 'null'})`);
+  
   // Check if images phase is already running (prevent concurrent runs)
   if (jobMeta.images_phase_running) {
     const startedAt = new Date(jobMeta.images_phase_started_at || 0).getTime();
@@ -3131,7 +3142,9 @@ async function runImagesPhase(
     meta: { 
       ...jobMeta, 
       images_phase_running: true,
-      images_phase_started_at: new Date().toISOString()
+      images_phase_started_at: new Date().toISOString(),
+      resolved_image_model: resolvedImageModel,  // Store for debug
+      generation_logs: generationLogs,
     }
   });
   
@@ -3314,7 +3327,7 @@ async function runImagesPhase(
         moodLevel: 5,
       };
       
-      console.log(`[IMAGES] Generating scene ${i + 1}/${scenes.length}...`);
+      console.log(`[IMAGES] Generating scene ${i + 1}/${scenes.length} using ${resolvedImageModel}...`);
       if (beat.visualContract) {
         console.log(`[CONTRACT] Location: ${beat.visualContract.location}`);
         console.log(`[CONTRACT] Pose: ${beat.visualContract.characterPose}`);
@@ -3322,6 +3335,12 @@ async function runImagesPhase(
       
       const isCustomStyle = artStyle.startsWith('custom-');
       const visualPreset = job.visual_preset || "forest";
+      
+      // Update generation logs
+      const currentMeta = (await supabase.from("jobs").select("meta").eq("id", job_id).single()).data?.meta || {};
+      const logs = currentMeta.generation_logs || [];
+      logs.push(`[${new Date().toISOString()}] Generating scene ${i + 1}/${scenes.length} with ${resolvedImageModel}`);
+      await updateJob(supabase, job_id, { meta: { ...currentMeta, generation_logs: logs } });
       
       let imageUrl: string | null = null;
       try {
@@ -3342,6 +3361,11 @@ async function runImagesPhase(
         if (i === 0 && imageUrl && resolvedImageModel === "flux") {
           referenceImageUrl = imageUrl;
           console.log(`[FLUX] Scene 1 stored as reference for character consistency`);
+          // Log it
+          const meta2 = (await supabase.from("jobs").select("meta").eq("id", job_id).single()).data?.meta || {};
+          const logs2 = meta2.generation_logs || [];
+          logs2.push(`[${new Date().toISOString()}] [FLUX] Scene 1 stored as reference for consistency`);
+          await updateJob(supabase, job_id, { meta: { ...meta2, generation_logs: logs2 } });
         }
       } catch (imgError) {
         console.error(`[IMAGES] Scene ${i + 1} DALL-E error:`, imgError);
