@@ -11,7 +11,8 @@ interface CreateJobRequest {
   theme?: string;
   length_preset?: "short" | "medium" | "long" | "30" | "45" | "60" | "90";
   visual_preset?: "forest" | "hallway" | "attic" | "foggy" | "rain";
-  visual_source?: "pexels" | "dalle";
+  visual_source?: "pexels" | "ai";
+  image_model?: "dall-e-3" | "gpt-4o" | "flux";  // AI image model selection
   art_style?: string; // Built-in style key or "custom-*" for custom styles
   custom_style?: {    // Custom style data (only when art_style starts with "custom-")
     name: string;
@@ -69,7 +70,8 @@ serve(async (req) => {
     // Build options meta object
     const optionsMeta: Record<string, any> = {
       theme: body.theme || "general",
-      visual_source: body.visual_source || "dalle",
+      visual_source: body.visual_source || "ai",
+      image_model: body.image_model || "gpt-4o",  // Default to GPT-4o for balanced cost/quality
       art_style: body.art_style || "cinematic-dark",
       scene_count: body.scene_count || 4,
       effect_filter: body.effect_filter !== false,

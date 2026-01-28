@@ -147,12 +147,12 @@
                                 <label class="block text-sm font-semibold mb-2">🖼️ Visual Source</label>
                                 <div class="grid grid-cols-2 gap-3">
                                     <label class="relative cursor-pointer">
-                                        <input type="radio" name="visual-source" value="dalle" class="peer sr-only" checked>
+                                        <input type="radio" name="visual-source" value="ai" class="peer sr-only" checked>
                                         <div class="bg-gray-800 border-2 border-gray-700 peer-checked:border-purple-500 peer-checked:bg-purple-900/20 rounded-xl p-4 transition-all">
                                             <div class="text-2xl mb-2">🎨</div>
-                                            <div class="font-semibold text-sm">DALL-E 3</div>
-                                            <div class="text-xs text-gray-400 mt-1">AI-generated art</div>
-                                            <div class="text-xs text-yellow-500 mt-1">~$0.08/image</div>
+                                            <div class="font-semibold text-sm">AI Generated</div>
+                                            <div class="text-xs text-gray-400 mt-1">DALL-E, GPT-4o, FLUX</div>
+                                            <div class="text-xs text-yellow-500 mt-1">~$0.03-0.12/image</div>
                                         </div>
                                     </label>
                                     <label class="relative cursor-pointer">
@@ -165,9 +165,19 @@
                                         </div>
                                     </label>
                                 </div>
+                                <!-- AI Model Selection (shown when AI is selected) -->
+                                <div id="ai-model-container" class="mt-3">
+                                    <label class="block text-xs font-medium text-gray-400 mb-2">AI Image Model</label>
+                                    <select id="ai-model" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:border-primary focus:outline-none">
+                                        <option value="dall-e-3">DALL-E 3 - Best quality (~$0.12/img)</option>
+                                        <option value="gpt-4o" selected>GPT-4o Images - Balanced (~$0.03/img)</option>
+                                        <option value="flux">FLUX Pro - Character consistency (~$0.04/img)</option>
+                                    </select>
+                                    <p id="ai-model-hint" class="text-xs text-gray-500 mt-1">GPT-4o offers great quality at lower cost. FLUX uses reference-based generation for consistent characters.</p>
+                                </div>
                             </div>
                             
-                            <!-- Art Style (for DALL-E) -->
+                            <!-- Art Style (for AI Images) -->
                             <div id="art-style-container">
                                 <label class="block text-sm font-semibold mb-2">🎨 Art Style</label>
                                 <select id="art-style" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 focus:border-primary focus:outline-none mb-3">
@@ -276,7 +286,7 @@
                                     <p><strong>1. Story Anchor:</strong> AI analyzes your story to create a "visual bible" - consistent environment, colors, and mood.</p>
                                     <p><strong>2. Art Style Applied:</strong> Your selected style (e.g., "Analog Horror") defines the aesthetic - VHS grain, colors, lighting.</p>
                                     <p><strong>3. Visual Beats:</strong> Each scene gets camera angles and mood levels that escalate tension.</p>
-                                    <p><strong>4. DALL-E Generation:</strong> Images are created using: <code class="bg-gray-800 px-1 rounded">Art Style + Story Anchor + Scene Beat</code></p>
+                                    <p><strong>4. AI Generation:</strong> Images created using: <code class="bg-gray-800 px-1 rounded">Art Style + Story Anchor + Scene Beat</code> (FLUX uses Scene 1 as reference)</p>
                                 </div>
                             </div>
                         </div>
@@ -451,8 +461,8 @@
                                         <span class="text-blue-400">~$0.05</span>
                                     </div>
                                     <div class="flex justify-between">
-                                        <span class="text-gray-400">Images (<span id="result-image-count">4</span>x DALL-E)</span>
-                                        <span id="result-image-cost" class="text-purple-400">~$0.32</span>
+                                        <span class="text-gray-400">Images (<span id="result-image-count">4</span>x <span id="result-image-model">AI</span>)</span>
+                                        <span id="result-image-cost" class="text-purple-400">~$0.12</span>
                                     </div>
                                     <div class="flex justify-between">
                                         <span class="text-gray-400">Video Render</span>
@@ -484,7 +494,7 @@
             <div class="bg-blue-900/30 rounded-xl p-4 border border-blue-800/50 mb-6">
                 <h3 class="font-semibold text-sm mb-2">📖 How Art Styles Work in Image Generation</h3>
                 <div class="text-xs text-gray-300 space-y-2">
-                    <p>Each art style has 4 key components that get injected into the DALL-E prompt:</p>
+                    <p>Each art style has 4 key components that get injected into the AI image prompt:</p>
                     <div class="grid md:grid-cols-2 gap-3 mt-3">
                         <div class="bg-gray-800/50 rounded-lg p-3">
                             <strong class="text-purple-400">Base Prompt:</strong>

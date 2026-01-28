@@ -14,7 +14,8 @@ async function createJob(options) {
         theme: options.theme || 'general',
         length_preset: options.duration || 'medium',
         visual_preset: options.visual_preset || 'forest',
-        visual_source: options.visual_source || 'dalle',
+        visual_source: options.visual_source || 'ai',
+        image_model: options.image_model || 'gpt-4o',  // dall-e-3, gpt-4o, or flux
         art_style: options.art_style || 'cinematic-dark',
         scene_count: options.scene_count || 4,
         // Preview mode

@@ -28,13 +28,24 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('input[name="visual-source"]').forEach(radio => {
         radio.addEventListener('change', (e) => {
             updateCostEstimate();
-            // Show/hide art style based on visual source
+            // Show/hide art style and AI model based on visual source
             const artStyleContainer = document.getElementById('art-style-container');
+            const aiModelContainer = document.getElementById('ai-model-container');
+            const isAI = e.target.value === 'ai';
             if (artStyleContainer) {
-                artStyleContainer.style.display = e.target.value === 'dalle' ? 'block' : 'none';
+                artStyleContainer.style.display = isAI ? 'block' : 'none';
+            }
+            if (aiModelContainer) {
+                aiModelContainer.style.display = isAI ? 'block' : 'none';
             }
         });
     });
+    
+    // AI model change
+    const aiModelSelect = document.getElementById('ai-model');
+    if (aiModelSelect) {
+        aiModelSelect.addEventListener('change', updateCostEstimate);
+    }
     
     // Art style preview
     const artStyleSelect = document.getElementById('art-style');
@@ -122,17 +133,33 @@ function updateArtStylePreview() {
 // COST ESTIMATION
 // =====================================================
 
+// AI model pricing per image
+const AI_MODEL_COSTS = {
+    'dall-e-3': 0.12,
+    'gpt-4o': 0.03,
+    'flux': 0.04  // Average: Scene 1 = $0.04, Scenes 2+ = ~$0.025
+};
+
+const AI_MODEL_NAMES = {
+    'dall-e-3': 'DALL-E 3',
+    'gpt-4o': 'GPT-4o',
+    'flux': 'FLUX'
+};
+
 function updateCostEstimate() {
     const sceneCount = parseInt(document.getElementById('scene-count')?.value || 4);
-    const visualSource = document.querySelector('input[name="visual-source"]:checked')?.value || 'dalle';
+    const visualSource = document.querySelector('input[name="visual-source"]:checked')?.value || 'ai';
+    const aiModel = document.getElementById('ai-model')?.value || 'gpt-4o';
     
-    const imageCost = visualSource === 'dalle' ? sceneCount * 0.08 : 0;
+    const isAI = visualSource === 'ai';
+    const costPerImage = AI_MODEL_COSTS[aiModel] || 0.03;
+    const imageCost = isAI ? sceneCount * costPerImage : 0;
     const totalCost = 0.01 + 0.05 + imageCost;
     
     const costImages = document.getElementById('cost-images');
     if (costImages) {
-        costImages.textContent = visualSource === 'dalle' ? `~$${imageCost.toFixed(2)}` : 'Free';
-        costImages.className = visualSource === 'dalle' ? 'font-bold text-purple-400' : 'font-bold text-green-400';
+        costImages.textContent = isAI ? `~$${imageCost.toFixed(2)}` : 'Free';
+        costImages.className = isAI ? 'font-bold text-purple-400' : 'font-bold text-green-400';
     }
     
     const costTotal = document.getElementById('cost-total');
@@ -579,7 +606,9 @@ function renderSceneBreakdown(scenes) {
     const container = document.getElementById('scene-breakdown');
     if (!container) return;
     
-    const visualSource = document.querySelector('input[name="visual-source"]:checked')?.value || 'dalle';
+    const visualSource = document.querySelector('input[name="visual-source"]:checked')?.value || 'ai';
+    const aiModel = document.getElementById('ai-model')?.value || 'gpt-4o';
+    const modelName = AI_MODEL_NAMES[aiModel] || 'AI';
     
     container.innerHTML = scenes.map((scene, i) => `
         <div class="scene-card bg-gray-800/50 rounded-xl p-4 border border-gray-700">
@@ -590,7 +619,7 @@ function renderSceneBreakdown(scenes) {
                 <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 mb-2">
                         <span class="bg-primary/20 text-primary px-2 py-0.5 rounded text-xs font-semibold">Scene ${i + 1}</span>
-                        <span class="text-xs text-gray-500">${visualSource === 'dalle' ? '🎨 DALL-E' : '📹 Pexels'}</span>
+                        <span class="text-xs text-gray-500">${visualSource === 'ai' ? `🎨 ${modelName}` : '📹 Pexels'}</span>
                     </div>
                     <p class="text-sm text-gray-300 line-clamp-3">${escapeHtml(scene.text)}</p>
                 </div>
@@ -612,7 +641,7 @@ async function generateImages() {
     
     // Setup image generation grid
     const sceneCount = currentScenes.length;
-    const visualSource = document.querySelector('input[name="visual-source"]:checked')?.value || 'dalle';
+    const visualSource = document.querySelector('input[name="visual-source"]:checked')?.value || 'ai';
     
     const grid = document.getElementById('image-generation-grid');
     grid.innerHTML = currentScenes.map((scene, i) => `
@@ -719,7 +748,9 @@ function updateSceneImages(scenes) {
         if (!card) return;
         
         const imageUrl = scene.videoUrl;
-        const isImage = scene.source === 'dalle' || (imageUrl && imageUrl.includes('oaidalleapi'));
+        // Check if it's an AI-generated image (DALL-E, GPT-4o, FLUX, or Replicate)
+        const isImage = scene.source === 'ai' || scene.source === 'dalle' || 
+            (imageUrl && (imageUrl.includes('oaidalleapi') || imageUrl.includes('replicate.delivery')));
         
         if (imageUrl) {
             card.innerHTML = `
@@ -785,18 +816,23 @@ function displayFinalResult(data) {
     
     // Cost breakdown
     const sceneCount = data.scenes?.length || 4;
-    const visualSource = document.querySelector('input[name="visual-source"]:checked')?.value || 'dalle';
-    const imageCost = visualSource === 'dalle' ? sceneCount * 0.08 : 0;
+    const visualSource = document.querySelector('input[name="visual-source"]:checked')?.value || 'ai';
+    const aiModel = document.getElementById('ai-model')?.value || 'gpt-4o';
+    const isAI = visualSource === 'ai';
+    const costPerImage = AI_MODEL_COSTS[aiModel] || 0.03;
+    const imageCost = isAI ? sceneCount * costPerImage : 0;
     const totalCost = 0.01 + 0.05 + imageCost;
     
     // Update detailed cost elements
     const imageCountEl = document.getElementById('result-image-count');
+    const imageModelEl = document.getElementById('result-image-model');
     const imageCostEl = document.getElementById('result-image-cost');
     const totalCostEl = document.getElementById('result-cost');
     
     if (imageCountEl) imageCountEl.textContent = sceneCount;
+    if (imageModelEl) imageModelEl.textContent = isAI ? AI_MODEL_NAMES[aiModel] : 'Pexels';
     if (imageCostEl) {
-        if (visualSource === 'dalle') {
+        if (isAI) {
             imageCostEl.textContent = `~$${imageCost.toFixed(2)}`;
             imageCostEl.className = 'text-purple-400';
         } else {
@@ -827,7 +863,8 @@ function closeErrorModal() {
 function getSettings() {
     return {
         theme: document.getElementById('theme')?.value || 'general',
-        visual_source: document.querySelector('input[name="visual-source"]:checked')?.value || 'dalle',
+        visual_source: document.querySelector('input[name="visual-source"]:checked')?.value || 'ai',
+        image_model: document.getElementById('ai-model')?.value || 'gpt-4o',
         art_style: document.getElementById('art-style')?.value || 'cinematic-dark',
         visual_preset: document.getElementById('visual-preset')?.value || 'forest',
         duration: document.getElementById('duration')?.value || 'medium',

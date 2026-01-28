@@ -1598,11 +1598,26 @@ Return JSON array: {"contracts": [...]}`,
 
 /**
  * Determine which image model to use
- * - dall-e-3: High quality, $0.12/image (default)
- * - gpt-4o: Good quality, ~$0.03/image (75% cheaper)
- * - flux: FLUX.1 Dev via Replicate, ~$0.025/image + reference conditioning
+ * Priority: job meta > environment variable > default
+ * - dall-e-3: High quality, $0.12/image
+ * - gpt-4o: Good quality, ~$0.03/image (75% cheaper) - default
+ * - flux: FLUX.1 Pro/Redux via Replicate, ~$0.04/image + reference conditioning
  */
-function getImageModel(): "dall-e-3" | "gpt-4o" | "flux" {
+function getImageModel(jobModel?: string): "dall-e-3" | "gpt-4o" | "flux" {
+  // First check job-specific setting
+  if (jobModel) {
+    if (jobModel === "dall-e-3" || jobModel === "dalle-3" || jobModel === "dalle") {
+      return "dall-e-3";
+    }
+    if (jobModel === "gpt-4o" || jobModel === "gpt-image-1") {
+      return "gpt-4o";
+    }
+    if (jobModel === "flux" || jobModel === "replicate") {
+      return "flux";
+    }
+  }
+  
+  // Fall back to environment variable
   const model = Deno.env.get("IMAGE_MODEL");
   if (model === "gpt-4o" || model === "gpt-image-1") {
     return "gpt-4o";
@@ -1610,8 +1625,11 @@ function getImageModel(): "dall-e-3" | "gpt-4o" | "flux" {
   if (model === "flux" || model === "replicate") {
     return "flux";
   }
-  // Default to DALL-E 3 for now (most stable)
-  return "dall-e-3";
+  if (model === "dall-e-3" || model === "dalle-3" || model === "dalle") {
+    return "dall-e-3";
+  }
+  // Default to GPT-4o for balanced cost/quality
+  return "gpt-4o";
 }
 
 // =====================================================
@@ -1898,7 +1916,8 @@ async function generateDalleImageWithAnchor(
   styleConfig?: { name: string; negativePrompt?: string; basePrompt?: string; colorOverride?: string; technicalStyle?: string },
   isCustomStyle: boolean = false,
   visualPreset: string = "dalle",
-  referenceImageUrl?: string  // For FLUX: pass scene 0's URL for character consistency
+  referenceImageUrl?: string,  // For FLUX: pass scene 0's URL for character consistency
+  imageModelOverride?: "dall-e-3" | "gpt-4o" | "flux"  // Optional: override from job settings
 ): Promise<string | null> {
   try {
     // Build the complete prompt using the deterministic template function
@@ -1927,8 +1946,8 @@ async function generateDalleImageWithAnchor(
     console.log(`Scene ${sceneIndex + 1} prompt (mood ${beat.moodLevel}/10):`, beat.visualBeat);
     console.log(`[IMAGE] Full prompt length: ${fullPrompt.length} chars`);
 
-    // Check which model to use
-    const imageModel = getImageModel();
+    // Check which model to use (override takes priority)
+    const imageModel = imageModelOverride || getImageModel();
     console.log(`[IMAGE] Using model: ${imageModel}`);
     
     // Try FLUX first if configured
@@ -2255,7 +2274,8 @@ async function assembleVideo(
   options: VideoOptions,
   visualSource: string = "pexels"
 ): Promise<string> {
-  const isUsingImages = visualSource === "dalle";
+  // Support both legacy "dalle" and new "ai" visual source
+  const isUsingImages = visualSource === "dalle" || visualSource === "ai";
   
   // Build background elements for each scene (video or image)
   const backgroundElements = scenes.map((scene, index) => {
@@ -2760,14 +2780,16 @@ serve(async (req) => {
       voiceSpeed: jobMeta.voice_speed ?? "1.0",
     };
 
-    // Determine visual source and art style
-    const visualSource = jobMeta.visual_source || body.visual_source || "pexels";
+    // Determine visual source, image model, and art style
+    const visualSource = jobMeta.visual_source || body.visual_source || "ai";
+    const imageModel = jobMeta.image_model || body.image_model || null;  // null = use env var default
     const artStyle = jobMeta.art_style || body.art_style || "cinematic-dark";
     const customStyle = jobMeta.custom_style || body.custom_style || null;
+    const resolvedImageModel = getImageModel(imageModel);
 
     console.log(`Starting job ${job_id} (preview: ${previewOnly}, phase: ${phase || 'auto'})`);
     console.log("Options:", effectOptions);
-    console.log("Visual source:", visualSource, "Art style:", artStyle);
+    console.log("Visual source:", visualSource, "Image model:", resolvedImageModel, "Art style:", artStyle);
 
     // =====================================================
     // PREVIEW MODE: Run synchronously (quick)
@@ -2810,7 +2832,7 @@ serve(async (req) => {
       // Phase 2: Generate images
       result = await runImagesPhase(
         supabase, openaiKey, pexelsKey, job, job_id, jobMeta, 
-        visualSource, artStyle, customStyle
+        visualSource, artStyle, customStyle, imageModel
       );
     } else if (currentPhase === "assemble") {
       // Phase 3: Assemble video
@@ -3086,9 +3108,11 @@ async function runImagesPhase(
   jobMeta: any,
   visualSource: string,
   artStyle: string,
-  customStyle: any
+  customStyle: any,
+  imageModel?: string | null  // Optional: specific model selection from job
 ) {
   console.log(`[IMAGES] Starting images phase for job ${job_id}`);
+  const resolvedImageModel = getImageModel(imageModel || undefined);
   
   // Check if images phase is already running (prevent concurrent runs)
   if (jobMeta.images_phase_running) {
@@ -3182,7 +3206,7 @@ async function runImagesPhase(
     .eq("type", "dalle_image");
 
   const imagesGenerated = existingImages?.length || 0;
-  console.log(`[IMAGES] ${imagesGenerated}/${scenes.length} images already generated`);
+  console.log(`[IMAGES] ${imagesGenerated}/${scenes.length} images already generated, using model: ${resolvedImageModel}`);
 
   if (imagesGenerated >= scenes.length) {
     // All images done
@@ -3191,8 +3215,9 @@ async function runImagesPhase(
   }
 
   // Generate images based on source
-  if (visualSource === "dalle") {
-    // DALL-E: Generate ONE image at a time for reliability
+  // Support both legacy "dalle" and new "ai" visual source
+  if (visualSource === "dalle" || visualSource === "ai") {
+    // AI IMAGE GENERATION: Generate ONE image at a time for reliability
     // This way if we timeout, we've at least saved some images
     
     // Get art style config
@@ -3262,7 +3287,7 @@ async function runImagesPhase(
     
     // For FLUX: Get reference image URL from scene 0 (if already generated)
     let referenceImageUrl: string | undefined = undefined;
-    if (getImageModel() === "flux" && imagesGenerated > 0) {
+    if (resolvedImageModel === "flux" && imagesGenerated > 0) {
       // Fetch scene 0's image URL from database
       const { data: scene0Asset } = await supabase
         .from("job_assets")
@@ -3309,11 +3334,12 @@ async function runImagesPhase(
           styleConfig,
           isCustomStyle,
           visualPreset,
-          referenceImageUrl  // Pass reference for FLUX character consistency
+          referenceImageUrl,  // Pass reference for FLUX character consistency
+          resolvedImageModel  // Pass the selected image model
         );
         
         // Store first scene as reference if FLUX
-        if (i === 0 && imageUrl && getImageModel() === "flux") {
+        if (i === 0 && imageUrl && resolvedImageModel === "flux") {
           referenceImageUrl = imageUrl;
           console.log(`[FLUX] Scene 1 stored as reference for character consistency`);
         }
@@ -3716,8 +3742,9 @@ async function runFullGeneration(
     // =====================================================
     let scenesWithVisuals: StoryScene[];
     
-    if (visualSource === "dalle") {
-      console.log("[BG] Generating DALL-E images...");
+    // Support both legacy "dalle" and new "ai" visual source
+    if (visualSource === "dalle" || visualSource === "ai") {
+      console.log(`[BG] Generating AI images (source: ${visualSource})...`);
       try {
         scenesWithVisuals = await generateImagesForScenes(
           openaiKey, 
