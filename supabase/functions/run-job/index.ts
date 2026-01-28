@@ -727,6 +727,10 @@ interface SceneVisualContract {
   cameraDistance: "extreme-close-up" | "close-up" | "medium" | "wide";
   lightingSource: string;        // where light comes from
   actionFrozen: string;          // the exact moment captured
+  // NEW: Anti-drift fields
+  forbiddenElements: string[];   // "stairs", "hallway", "extra people" - things that MUST NOT appear
+  continuityFromPrev: string;    // "same bedroom as scene 1", "same outfit" - link to previous
+  evidenceRule: string;          // "shadows must be visible on bedroom wall" - proof the scene is correct
 }
 
 /**
@@ -815,14 +819,13 @@ const MOOD_DESCRIPTORS: Record<number, string> = {
   10: "overwhelming cosmic dread, nightmare beyond comprehension",
 };
 
-// ORIENTATION + COMPOSITION LOCK (combined for prompt efficiency)
-const ORIENTATION_COMPOSITION_LOCK = `ORIENTATION + COMPOSITION LOCK:
-Upright portrait 9:16, not rotated. Top=ceiling/sky, bottom=floor/ground.
-Centered symmetry, one-point perspective, eye-level camera.
-Full-body framing unless scene specifies close-up.
+// ORIENTATION LOCK (simplified - no forced symmetry to avoid hallway/stair bias)
+const ORIENTATION_LOCK = `ORIENTATION LOCK:
+Upright portrait 9:16, not rotated.
+Top=ceiling/sky, bottom=floor/ground.
 No dutch angle. No tilted horizon.`;
 
-// Terms that contaminate custom styles
+// Terms that contaminate custom styles (RENDERING keywords only, not horror tone words)
 const FORBIDDEN_STYLE_TERMS = [
   "cinematic", "film grain", "depth of field", "dof", "bokeh",
   "photoreal", "photo-real", "photorealistic", "dslr", "macro", "ultra detailed",
@@ -832,7 +835,7 @@ const FORBIDDEN_STYLE_TERMS = [
   "concept art", "matte painting", "digital painting",
   "volumetric", "ray tracing", "subsurface scattering",
   "unreal engine", "octane render", "artstation",
-  "cosmic dread", "visceral terror", "overwhelming horror"
+  // NOTE: Removed "cosmic dread", "visceral terror" - these are valid horror tone words
 ];
 
 /**
@@ -1082,36 +1085,53 @@ function buildFinalDallePrompt(
   // ========== BUILD CHARACTER LOCK ==========
   const characterBlock = buildCharacterLockBlock(storyAnchor);
   
-  // ========== BUILD SCENE VISUAL CONTRACT (NEW - LITERAL REQUIREMENTS) ==========
+  // ========== BUILD SCENE CONTRACT (MUST/MUST NOT FORMAT) ==========
   let sceneBlock: string;
   
   if (contract) {
-    // USE VISUAL CONTRACT - literal frame description
-    const objectsList = contract.visibleObjects?.length > 0 
-      ? contract.visibleObjects.map(o => `- ${o}`).join("\n")
-      : "- room interior\n- shadows";
+    // USE VISUAL CONTRACT with MUST/MUST NOT format (high impact for DALL-E)
+    const mustShowItems = [
+      `- Location: ${contract.location}`,
+      `- Person: ${contract.characterPose}, ${contract.facialExpression}`,
+      ...(contract.visibleObjects?.map(o => `- ${o}`) || []),
+      contract.supernaturalElement ? `- Supernatural: ${contract.supernaturalElement}` : "",
+    ].filter(Boolean);
+    
+    const mustNotItems = contract.forbiddenElements?.length > 0
+      ? contract.forbiddenElements
+      : ["stairs", "hallway", "extra people", "mirror"];
+    
+    const compositionHint = beat.compositionHint || "";
     
     sceneBlock = [
-      `SCENE ${sceneIndex + 1}/${totalScenes} - VISUAL REQUIREMENTS (DO NOT DEVIATE):`,
+      `SCENE ${sceneIndex + 1}/${totalScenes} CONTRACT (MUST FOLLOW):`,
       ``,
-      `Location: ${contract.location}`,
+      `MUST SHOW:`,
+      mustShowItems.join("\n"),
       ``,
-      `Character:`,
-      `  Pose: ${contract.characterPose}`,
-      `  Expression: ${contract.facialExpression}`,
+      `MUST NOT SHOW:`,
+      `- ${mustNotItems.join(", ")}`,
       ``,
-      `Visible objects (MUST be present):`,
-      objectsList,
-      ``,
-      contract.supernaturalElement ? `Supernatural element: ${contract.supernaturalElement}` : "",
+      `EVIDENCE:`,
+      `- ${contract.evidenceRule || `Scene must clearly show ${contract.location}`}`,
       ``,
       `Lighting: ${contract.lightingSource || "dim ambient light"}`,
-      `Camera: ${contract.cameraDistance || "medium"} shot, portrait framing`,
-      `Moment captured: ${contract.actionFrozen || beat.visualBeat}`,
-      `Mood intensity: ${moodLevel}/10`,
+      `Camera: ${contract.cameraDistance || "medium"} shot`,
+      compositionHint ? `Composition: ${compositionHint}` : "",
+      contract.continuityFromPrev ? `Continuity: ${contract.continuityFromPrev}` : "",
+      `Mood: ${moodLevel}/10`,
     ].filter(Boolean).join("\n");
     
-    console.log(`[PROMPT] Using visual contract for scene ${sceneIndex + 1}: ${contract.location}`);
+    // ALIGNMENT SCORE LOGGING
+    const alignmentScore = {
+      scene: sceneIndex + 1,
+      location: contract.location ? "Y" : "N",
+      objects: contract.visibleObjects?.length || 0,
+      forbidden: mustNotItems.length,
+      evidence: contract.evidenceRule ? "Y" : "N",
+      continuity: contract.continuityFromPrev ? "Y" : "N",
+    };
+    console.log(`[CONTRACT] scene=${alignmentScore.scene} location=${alignmentScore.location} objects=${alignmentScore.objects} forbidden=${alignmentScore.forbidden} evidence=${alignmentScore.evidence} continuity=${alignmentScore.continuity}`);
   } else {
     // FALLBACK: Use old method if no contract
     const environment = isCustomStyle 
@@ -1148,8 +1168,8 @@ function buildFinalDallePrompt(
   // ========== ASSEMBLE FINAL PROMPT ==========
   // Order matters! DALL-E prioritizes the beginning
   const promptParts = [
-    // 1. ORIENTATION + COMPOSITION (most critical)
-    ORIENTATION_COMPOSITION_LOCK,
+    // 1. ORIENTATION LOCK (most critical - simplified to avoid hallway/stair bias)
+    ORIENTATION_LOCK,
     
     // 2. STYLE (second most important)
     `\nSTYLE LOCK:\n${styleBlock}`,
@@ -1157,7 +1177,7 @@ function buildFinalDallePrompt(
     // 3. CHARACTER (must be consistent)
     characterBlock ? `\n${characterBlock}` : "",
     
-    // 4. SCENE VISUAL CONTRACT (literal requirements)
+    // 4. SCENE CONTRACT with MUST/MUST NOT
     `\n${sceneBlock}`,
     
     // 5. AVOID (last)
@@ -1178,7 +1198,8 @@ function buildFinalDallePrompt(
     }
   }
   
-  console.log(`[PROMPT] Built ${isCustomStyle ? "custom" : "built-in"} style prompt (${finalPrompt.length} chars)`);
+  // Final log with prompt length for debugging
+  console.log(`[PROMPT] Scene ${sceneIndex + 1} prompt built: ${isCustomStyle ? "custom" : "built-in"} style, ${finalPrompt.length} chars`);
   return finalPrompt;
 }
 
@@ -1505,15 +1526,24 @@ RULES:
 For each scene, return:
 {
   "sceneIndex": number,
-  "location": "exact physical place",
+  "location": "exact physical place - BE SPECIFIC (bedroom, bathroom, kitchen, hallway)",
   "characterPose": "specific body position and action",
   "facialExpression": "visible emotion on face",
   "visibleObjects": ["object1", "object2", "object3"],
   "supernaturalElement": "the horror visual, or null if none",
   "cameraDistance": "close-up" | "medium" | "wide",
   "lightingSource": "where light comes from",
-  "actionFrozen": "the exact moment in time being captured"
+  "actionFrozen": "the exact moment in time being captured",
+  "forbiddenElements": ["things that must NOT appear - stairs, hallway, forest, extra people, mirrors, candles - unless story mentions them"],
+  "continuityFromPrev": "what must match previous scene (same room, same outfit, same lighting)",
+  "evidenceRule": "VISUAL PROOF this is the right scene - a specific detail that MUST be visible"
 }
+
+CRITICAL RULES FOR forbiddenElements:
+- If story is in a BEDROOM, forbid: stairs, hallway, forest, outdoors, kitchen
+- If story has ONE character, forbid: extra people, crowd, multiple figures
+- If story has NO mirrors mentioned, forbid: mirrors, reflections
+- Default forbid list: stairs, hallway, extra people (unless story needs them)
 
 Return JSON array: {"contracts": [...]}`,
           },
@@ -1548,9 +1578,10 @@ Return JSON array: {"contracts": [...]}`,
   } catch (error) {
     console.error("Failed to create visual contracts:", error);
     // Fallback: create basic contracts from scene text
+    const baseLocation = storyAnchor.environment.split(",")[0] || "dark room";
     return scenes.map((scene, i) => ({
       sceneIndex: i,
-      location: storyAnchor.environment.split(",")[0] || "dark room",
+      location: baseLocation,
       characterPose: "standing, tense posture",
       facialExpression: "fear, wide eyes",
       visibleObjects: ["walls", "shadows"],
@@ -1558,6 +1589,9 @@ Return JSON array: {"contracts": [...]}`,
       cameraDistance: i === 0 ? "wide" : "medium",
       lightingSource: "dim ambient light",
       actionFrozen: scene.text.substring(0, 50),
+      forbiddenElements: ["stairs", "hallway", "extra people", "forest", "outdoors"],
+      continuityFromPrev: i === 0 ? "establishing shot" : `same ${baseLocation} as scene 1`,
+      evidenceRule: `scene must clearly show ${baseLocation}`,
     }));
   }
 }
@@ -2216,38 +2250,56 @@ async function renderWithFFmpeg(
   console.log(`[FFMPEG] Starting render with ${imageUrls.length} images`);
   console.log(`[FFMPEG] Durations: ${durations.join(", ")} seconds`);
   
-  const response = await fetch(`${FFMPEG_RENDERER_URL}/render`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      images: imageUrls,
-      audio_url: audioUrl,
-      durations: durations,
-      effects: {
-        kenBurns: options.kenburns,
-        fadeTransitions: options.transitions,
-        vignette: options.vignette,
-        horrorGrade: options.filter,
-      },
-    }),
-  });
-  
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`FFmpeg renderer error: ${response.status} - ${errorText}`);
+  // Retry logic for cold start handling (Render.com free tier takes 30-60s to wake)
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      console.log(`[FFMPEG] Render attempt ${attempt}/3...`);
+      
+      const response = await fetch(`${FFMPEG_RENDERER_URL}/render`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          images: imageUrls,
+          audio_url: audioUrl,
+          durations: durations,
+          effects: {
+            kenBurns: options.kenburns,
+            fadeTransitions: options.transitions,
+            vignette: options.vignette,
+            horrorGrade: options.filter,
+          },
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`FFmpeg renderer error: ${response.status} - ${errorText}`);
+      }
+      
+      const data = await response.json();
+      console.log(`[FFMPEG] Render job started: ${data.job_id}`);
+      
+      return {
+        renderId: data.job_id,
+        status: "processing",
+      };
+    } catch (err) {
+      lastError = err as Error;
+      console.log(`[FFMPEG] Attempt ${attempt} failed: ${lastError.message}`);
+      if (attempt < 3) {
+        // Wait before retry (cold start can take 30-60s)
+        console.log(`[FFMPEG] Waiting 20s before retry...`);
+        await new Promise(r => setTimeout(r, 20000));
+      }
+    }
   }
   
-  const data = await response.json();
-  console.log(`[FFMPEG] Render job started: ${data.job_id}`);
-  
-  return {
-    renderId: data.job_id,
-    status: "processing",
-  };
+  throw new Error(`FFmpeg render failed after 3 attempts: ${lastError?.message}`);
 }
 
 /**
- * Check FFmpeg render status
+ * Check FFmpeg render status (with retry for cold start)
  */
 async function checkFFmpegRender(
   renderId: string
@@ -2258,21 +2310,37 @@ async function checkFFmpegRender(
     throw new Error("FFMPEG_RENDERER_URL not configured");
   }
   
-  const response = await fetch(`${FFMPEG_RENDERER_URL}/status/${renderId}`);
-  
-  if (!response.ok) {
-    throw new Error(`Failed to check FFmpeg render: ${response.status}`);
+  // Retry logic for cold start handling
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const response = await fetch(`${FFMPEG_RENDERER_URL}/status/${renderId}`);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to check FFmpeg render: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      // Map FFmpeg status to Creatomate-compatible format
+      return {
+        status: data.status === "complete" ? "succeeded" : data.status === "failed" ? "failed" : "processing",
+        url: data.url ? `${FFMPEG_RENDERER_URL}${data.url}` : undefined,
+        progress: data.progress,
+        error: data.error,
+      };
+    } catch (err) {
+      lastError = err as Error;
+      console.log(`[FFMPEG] Status check attempt ${attempt} failed: ${lastError.message}`);
+      if (attempt < 2) {
+        await new Promise(r => setTimeout(r, 10000));
+      }
+    }
   }
   
-  const data = await response.json();
-  
-  // Map FFmpeg status to Creatomate-compatible format
-  return {
-    status: data.status === "complete" ? "succeeded" : data.status === "failed" ? "failed" : "processing",
-    url: data.url ? `${FFMPEG_RENDERER_URL}${data.url}` : undefined,
-    progress: data.progress,
-    error: data.error,
-  };
+  // Return "processing" status on error so polling continues
+  console.log(`[FFMPEG] Status check failed, returning processing state`);
+  return { status: "processing", progress: 0 };
 }
 
 /**

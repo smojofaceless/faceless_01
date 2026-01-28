@@ -602,6 +602,10 @@ interface SceneVisualContract {
   cameraDistance: "extreme-close-up" | "close-up" | "medium" | "wide";
   lightingSource: string;        // where light comes from
   actionFrozen: string;          // exact moment captured
+  // Anti-drift fields (NEW)
+  forbiddenElements: string[];   // "stairs", "hallway", "extra people" - MUST NOT appear
+  continuityFromPrev: string;    // "same bedroom as scene 1" - link to previous
+  evidenceRule: string;          // "shadows must be visible on wall" - proof scene is correct
 }
 ```
 
@@ -647,35 +651,48 @@ RULES:
 
 ### How Contracts Appear in Prompts
 
-**Old prompt structure (abstract):**
+**New MUST/MUST NOT format (high impact for DALL-E):**
+
 ```
-Scene content:
-Setting: {environment}
-Action: {visualBeat}
-```
+SCENE 1/3 CONTRACT (MUST FOLLOW):
 
-**New prompt structure (literal):**
-```
-SCENE 1/3 - VISUAL REQUIREMENTS (DO NOT DEVIATE):
-
-Location: dark bedroom at night
-
-Character:
-  Pose: man sitting upright on bed, shoulders hunched, breathing heavily
-  Expression: wide eyes, mouth slightly open, fear
-
-Visible objects (MUST be present):
+MUST SHOW:
+- Location: dark bedroom at night
+- Person: man sitting upright on bed, wide eyes, fear
 - bed
 - bedside lamp
 - wall behind bed
+- Supernatural: shadows writhing on wall
 
-Supernatural element: elongated shadows writhing on the walls
+MUST NOT SHOW:
+- stairs, hallway, extra people, mirror, forest, outdoors
+
+EVIDENCE:
+- shadows must be clearly visible on the bedroom wall behind the bed
 
 Lighting: faint moonlight through window
-Camera: medium shot, portrait framing
-Moment captured: the moment of waking from nightmare
-Mood intensity: 3/10
+Camera: medium shot
+Continuity: establishing shot
+Mood: 3/10
 ```
+
+**Alignment Score Logging:**
+
+For debugging, each scene logs a contract alignment score:
+
+```
+[CONTRACT] scene=1 location=Y objects=4 forbidden=6 evidence=Y continuity=Y
+```
+
+| Field | Meaning |
+|-------|---------|
+| `location` | Y/N - does contract have specific location? |
+| `objects` | count of MUST SHOW items |
+| `forbidden` | count of MUST NOT items |
+| `evidence` | Y/N - does contract have evidence rule? |
+| `continuity` | Y/N - does contract link to previous scene? |
+
+If you see `forbidden=0` or `evidence=N`, drift is more likely.
 
 ### Why This Works
 
@@ -835,33 +852,40 @@ Visual beats now include horror-specific "wrongness" fields:
 | `realityRule` | What's subtly wrong with reality | "normal", "shadows wrong direction", "too many fingers", "eyes follow camera", "background subtly wrong", "time seems frozen" |
 | `compositionHint` | Framing suggestion | "centered subject", "rule of thirds", "negative space left/right", "claustrophobic tight", "vast empty" |
 
-### ORIENTATION + COMPOSITION LOCK
+### ORIENTATION LOCK (Simplified)
 
-Every prompt now starts with a combined lock:
-
+**Previous version** (removed - caused hallway/stair bias):
 ```
 ORIENTATION + COMPOSITION LOCK:
-Upright portrait 9:16, not rotated.
-Centered symmetry, one-point perspective, eye-level camera.
-Single dominant subject centered in frame, never cropped at edges.
+Centered symmetry, one-point perspective, eye-level camera.  ← This forces hallway/stair shots!
 ```
 
-This prevents:
-- ❌ Rotated/sideways images
-- ❌ Dutch angles
-- ❌ Characters cropped at frame edges
-- ❌ Odd perspective distortions
+**Current version** (simplified - no forced perspective):
+```
+ORIENTATION LOCK:
+Upright portrait 9:16, not rotated.
+Top=ceiling/sky, bottom=floor/ground.
+No dutch angle. No tilted horizon.
+```
+
+**Why the change?** "One-point perspective" and "centered symmetry" prime DALL-E to generate:
+- Hallways
+- Staircases
+- Corridors
+
+These are the classic one-point perspective subjects. By removing this constraint, we stop the model from defaulting to these when not in the story.
+
+**Composition is now optional** via `compositionHint` in the visual beat.
 
 ### Prompt Length Limit
 
 DALL-E 3 works best with prompts **under 2500 characters**. The unified template prioritizes:
 
-1. **ORIENTATION + COMPOSITION LOCK** (always included)
+1. **ORIENTATION LOCK** (always included - simplified)
 2. **STYLE LOCK** (always included)
 3. **CHARACTER LOCK** (included if character exists)
-4. **ENVIRONMENT LOCK** (may be truncated if too long)
-5. **SCENE details** (may be truncated if too long)
-6. **AVOID** (always included)
+4. **SCENE CONTRACT** (MUST/MUST NOT format)
+5. **AVOID** (always included)
 
 ---
 
@@ -1267,10 +1291,15 @@ curl -X POST https://api.openai.com/v1/images/generations \
 
 | Date | Change |
 |------|--------|
+| Jan 27, 2026 | **MAJOR:** Added anti-drift fields to SceneVisualContract: `forbiddenElements`, `continuityFromPrev`, `evidenceRule` |
+| Jan 27, 2026 | **MAJOR:** Switched prompt format to MUST SHOW / MUST NOT SHOW blocks |
+| Jan 27, 2026 | Simplified ORIENTATION LOCK - removed forced one-point perspective that caused hallway/stair drift |
+| Jan 27, 2026 | Added alignment score logging: `[CONTRACT] scene=X location=Y objects=N forbidden=N evidence=Y` |
+| Jan 27, 2026 | Removed "cosmic dread", "visceral terror" from FORBIDDEN_STYLE_TERMS (valid horror tone words) |
+| Jan 27, 2026 | Composition is now optional via `compositionHint` instead of forced |
 | Jan 27, 2026 | **MAJOR:** Added Scene Visual Contract system — converts prose to literal frames |
 | Jan 27, 2026 | Added `SceneVisualContract` interface (location, pose, objects, supernatural element) |
 | Jan 27, 2026 | Added `createSceneVisualContracts()` GPT function |
-| Jan 27, 2026 | Prompt now uses VISUAL REQUIREMENTS block instead of abstract scene content |
 | Jan 27, 2026 | Visual contracts cached in `jobs.meta.visual_contracts` |
 | Jan 27, 2026 | **MAJOR:** Added Character Consistency System with CharacterLock |
 | Jan 27, 2026 | Added `CharacterLock` interface (id, face, outfit, silhouette, doNotChange) |
@@ -1281,7 +1310,6 @@ curl -X POST https://api.openai.com/v1/images/generations \
 | Jan 27, 2026 | Added `buildCharacterLockBlock()` for CHARACTER LOCK prompt section |
 | Jan 27, 2026 | Extended VisualBeat with mirrorBehavior, realityRule, compositionHint fields |
 | Jan 27, 2026 | Updated `createVisualBeats()` to generate horror-specific mirror/reality rules |
-| Jan 27, 2026 | Replaced ORIENTATION LOCK with combined ORIENTATION + COMPOSITION LOCK |
 | Jan 27, 2026 | Rewrote `buildFinalDallePrompt()` with unified priority-ordered template |
 | Jan 27, 2026 | Split into two prompt paths (custom vs built-in style) |
 | Jan 27, 2026 | Added `stripForbiddenStyleTerms()` sanitizer for custom styles |
