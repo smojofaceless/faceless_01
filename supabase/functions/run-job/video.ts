@@ -461,6 +461,146 @@ export async function checkFFmpegRender(
   return { status: "processing", progress: 0 };
 }
 
+// =====================================================
+// PARALLEL IMAGE GENERATION (via FFmpeg server)
+// =====================================================
+
+export interface ParallelImageScene {
+  index: number;
+  prompt: string;
+  text: string;
+  start_time: number;
+  end_time: number;
+}
+
+export interface ParallelImageResult {
+  success: boolean;
+  index: number;
+  url?: string;
+  error?: string;
+  meta?: {
+    scene_index: number;
+    scene_text: string;
+    start_time: number;
+    end_time: number;
+    image_model: string;
+    art_style: string;
+    dalle_prompt: string;
+    generated_at: string;
+  };
+}
+
+export interface ParallelImageJobStatus {
+  status: 'processing' | 'complete' | 'partial' | 'failed';
+  total: number;
+  completed: number;
+  failed: number;
+  progress?: number;
+  images: ParallelImageResult[];
+  errors: Array<{ index: number; error: string }>;
+  model: string;
+  started_at: string;
+  completed_at?: string;
+  total_time_seconds?: number;
+  error?: string;
+}
+
+/**
+ * Check if parallel image generation is available
+ * Requires FFmpeg server to be configured
+ */
+export function canUseParallelImageGeneration(): boolean {
+  const ffmpegUrl = Deno.env.get("FFMPEG_RENDERER_URL");
+  const useParallel = Deno.env.get("USE_PARALLEL_IMAGES");
+  
+  // Must have FFmpeg URL and parallel images enabled (or not explicitly disabled)
+  return !!ffmpegUrl && useParallel !== "false" && useParallel !== "0";
+}
+
+/**
+ * Start parallel image generation on FFmpeg server
+ * Returns job ID for polling
+ */
+export async function startParallelImageGeneration(
+  jobId: string,
+  scenes: ParallelImageScene[],
+  imageModel: "gpt-4o" | "dall-e-3" | "flux",
+  artStyle: string,
+  storyAnchor?: any
+): Promise<{ imageJobId: string; statusUrl: string }> {
+  const FFMPEG_RENDERER_URL = Deno.env.get("FFMPEG_RENDERER_URL");
+  
+  if (!FFMPEG_RENDERER_URL) {
+    throw new Error("FFMPEG_RENDERER_URL not configured");
+  }
+  
+  console.log(`[PARALLEL-IMG] Starting parallel generation of ${scenes.length} images with ${imageModel}`);
+  
+  // Retry for cold start handling
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await fetch(`${FFMPEG_RENDERER_URL}/generate-images`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job_id: jobId,
+          scenes: scenes,
+          model: imageModel,
+          art_style: artStyle,
+          story_anchor: storyAnchor,
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`FFmpeg image generation error: ${response.status} - ${errorText}`);
+      }
+      
+      const data = await response.json();
+      console.log(`[PARALLEL-IMG] Job started: ${data.image_job_id}`);
+      
+      return {
+        imageJobId: data.image_job_id,
+        statusUrl: data.status_url,
+      };
+    } catch (err) {
+      lastError = err as Error;
+      console.log(`[PARALLEL-IMG] Attempt ${attempt} failed: ${lastError.message}`);
+      if (attempt < 3) {
+        console.log(`[PARALLEL-IMG] Waiting 20s before retry (cold start)...`);
+        await new Promise(r => setTimeout(r, 20000));
+      }
+    }
+  }
+  
+  throw new Error(`Failed to start parallel image generation: ${lastError?.message}`);
+}
+
+/**
+ * Check parallel image generation job status
+ */
+export async function checkParallelImageStatus(
+  imageJobId: string
+): Promise<ParallelImageJobStatus> {
+  const FFMPEG_RENDERER_URL = Deno.env.get("FFMPEG_RENDERER_URL");
+  
+  if (!FFMPEG_RENDERER_URL) {
+    throw new Error("FFMPEG_RENDERER_URL not configured");
+  }
+  
+  const response = await fetch(`${FFMPEG_RENDERER_URL}/images-status/${imageJobId}`);
+  
+  if (!response.ok) {
+    if (response.status === 404) {
+      throw new Error(`Image job not found: ${imageJobId}`);
+    }
+    throw new Error(`Failed to check image status: ${response.status}`);
+  }
+  
+  return await response.json();
+}
+
 /**
  * Determine which renderer to use (Creatomate or FFmpeg)
  */

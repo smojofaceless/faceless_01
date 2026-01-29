@@ -971,6 +971,406 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
   }
 }
 
+// =====================================================
+// PARALLEL IMAGE GENERATION
+// =====================================================
+
+// Store image generation jobs separately from render jobs
+const imageJobs = new Map();
+
+// API keys from environment
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN;
+
+// Concurrency limits for parallel image generation
+const MAX_PARALLEL_IMAGES = parseInt(process.env.MAX_PARALLEL_IMAGES || '4');
+
+/**
+ * Generate a single image using OpenAI GPT-4o
+ */
+async function generateGPT4oImage(prompt, sceneIndex) {
+  console.log(`  [GPT-4o] Scene ${sceneIndex + 1}: Generating...`);
+  
+  const response = await axios.post('https://api.openai.com/v1/images/generations', {
+    model: 'gpt-image-1',
+    prompt: prompt,
+    n: 1,
+    size: '1024x1536',
+    quality: 'high',
+    output_format: 'webp',
+  }, {
+    headers: {
+      'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    timeout: 90000, // 90 second timeout per image
+  });
+  
+  const imageData = response.data?.data?.[0];
+  if (imageData?.b64_json) {
+    console.log(`  [GPT-4o] Scene ${sceneIndex + 1}: ✓ Generated (base64)`);
+    return `data:image/webp;base64,${imageData.b64_json}`;
+  }
+  if (imageData?.url) {
+    console.log(`  [GPT-4o] Scene ${sceneIndex + 1}: ✓ Generated (URL)`);
+    return imageData.url;
+  }
+  throw new Error('No image data in response');
+}
+
+/**
+ * Generate a single image using DALL-E 3
+ */
+async function generateDallE3Image(prompt, sceneIndex) {
+  console.log(`  [DALL-E 3] Scene ${sceneIndex + 1}: Generating...`);
+  
+  const response = await axios.post('https://api.openai.com/v1/images/generations', {
+    model: 'dall-e-3',
+    prompt: prompt,
+    n: 1,
+    size: '1024x1792',
+    quality: 'hd',
+  }, {
+    headers: {
+      'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    timeout: 90000,
+  });
+  
+  const imageData = response.data?.data?.[0];
+  if (imageData?.url) {
+    console.log(`  [DALL-E 3] Scene ${sceneIndex + 1}: ✓ Generated`);
+    return imageData.url;
+  }
+  if (imageData?.b64_json) {
+    return `data:image/png;base64,${imageData.b64_json}`;
+  }
+  throw new Error('No image data in response');
+}
+
+/**
+ * Generate a single image using FLUX Pro/Redux
+ */
+async function generateFluxImage(prompt, sceneIndex, referenceImageUrl = null) {
+  const isFirstScene = sceneIndex === 0 || !referenceImageUrl;
+  const modelName = isFirstScene ? 'flux-1.1-pro' : 'flux-redux-dev';
+  console.log(`  [FLUX] Scene ${sceneIndex + 1}: Generating with ${modelName}...`);
+  
+  const endpoint = isFirstScene
+    ? 'https://api.replicate.com/v1/models/black-forest-labs/flux-1.1-pro/predictions'
+    : 'https://api.replicate.com/v1/models/black-forest-labs/flux-redux-dev/predictions';
+  
+  const input = isFirstScene ? {
+    prompt: prompt,
+    width: 768,
+    height: 1344,
+    aspect_ratio: '9:16',
+    output_format: 'webp',
+    output_quality: 90,
+    safety_tolerance: 5,
+  } : {
+    prompt: prompt,
+    redux_image: referenceImageUrl,
+    width: 768,
+    height: 1344,
+    aspect_ratio: '9:16',
+    num_outputs: 1,
+    output_format: 'webp',
+    output_quality: 90,
+    guidance: 3.5,
+    num_inference_steps: 28,
+  };
+  
+  const response = await axios.post(endpoint, { input }, {
+    headers: {
+      'Authorization': `Bearer ${REPLICATE_API_TOKEN}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'wait',
+    },
+    timeout: 120000, // 2 minute timeout for FLUX
+  });
+  
+  const result = response.data;
+  if (result.output) {
+    const imageUrl = Array.isArray(result.output) ? result.output[0] : result.output;
+    console.log(`  [FLUX] Scene ${sceneIndex + 1}: ✓ Generated`);
+    return imageUrl;
+  }
+  
+  // If not immediately ready, poll for result
+  if (result.id) {
+    return await pollReplicatePrediction(result.id, sceneIndex);
+  }
+  
+  throw new Error('Unexpected FLUX response format');
+}
+
+/**
+ * Poll Replicate prediction until complete
+ */
+async function pollReplicatePrediction(predictionId, sceneIndex) {
+  const maxWait = 120000;
+  const pollInterval = 2000;
+  let elapsed = 0;
+  
+  while (elapsed < maxWait) {
+    await new Promise(r => setTimeout(r, pollInterval));
+    elapsed += pollInterval;
+    
+    const response = await axios.get(
+      `https://api.replicate.com/v1/predictions/${predictionId}`,
+      { headers: { 'Authorization': `Bearer ${REPLICATE_API_TOKEN}` } }
+    );
+    
+    if (response.data.status === 'succeeded') {
+      const imageUrl = Array.isArray(response.data.output) 
+        ? response.data.output[0] 
+        : response.data.output;
+      console.log(`  [FLUX] Scene ${sceneIndex + 1}: ✓ Completed after ${elapsed/1000}s`);
+      return imageUrl;
+    }
+    
+    if (response.data.status === 'failed' || response.data.status === 'canceled') {
+      throw new Error(`FLUX prediction ${response.data.status}: ${response.data.error}`);
+    }
+  }
+  
+  throw new Error('FLUX prediction timed out');
+}
+
+/**
+ * Upload image to Supabase Storage
+ */
+async function uploadImageToSupabase(imageSource, bucket, storagePath) {
+  if (!supabase) return imageSource; // Return original if no Supabase
+  
+  let buffer;
+  let contentType;
+  
+  if (imageSource.startsWith('data:')) {
+    // Handle base64
+    const matches = imageSource.match(/^data:([^;]+);base64,(.+)$/);
+    if (!matches) throw new Error('Invalid base64 format');
+    contentType = matches[1];
+    buffer = Buffer.from(matches[2], 'base64');
+  } else {
+    // Handle URL
+    const response = await axios.get(imageSource, { responseType: 'arraybuffer', timeout: 30000 });
+    buffer = Buffer.from(response.data);
+    contentType = response.headers['content-type'] || 'image/webp';
+  }
+  
+  const { error } = await supabase.storage
+    .from(bucket)
+    .upload(storagePath, buffer, { contentType, upsert: true });
+  
+  if (error) {
+    console.error(`  Failed to upload to Supabase:`, error.message);
+    return imageSource; // Return original URL on failure
+  }
+  
+  const { data } = supabase.storage.from(bucket).getPublicUrl(storagePath);
+  return data.publicUrl;
+}
+
+/**
+ * POST /generate-images - Generate all images in parallel
+ * 
+ * Body: {
+ *   job_id: string,          // Supabase job ID for storage path
+ *   scenes: Array<{
+ *     index: number,
+ *     prompt: string,
+ *     text: string,          // Scene text for metadata
+ *     start_time: number,
+ *     end_time: number,
+ *   }>,
+ *   model: 'gpt-4o' | 'dall-e-3' | 'flux',
+ *   art_style: string,       // For metadata
+ *   story_anchor: object,    // For metadata (continuity rules, character)
+ * }
+ */
+app.post('/generate-images', async (req, res) => {
+  const { job_id, scenes, model = 'gpt-4o', art_style, story_anchor } = req.body;
+  
+  if (!job_id || !scenes || !Array.isArray(scenes) || scenes.length === 0) {
+    return res.status(400).json({ error: 'Missing job_id or scenes array' });
+  }
+  
+  // Validate API keys
+  if ((model === 'gpt-4o' || model === 'dall-e-3') && !OPENAI_API_KEY) {
+    return res.status(400).json({ error: 'OPENAI_API_KEY not configured on server' });
+  }
+  if (model === 'flux' && !REPLICATE_API_TOKEN) {
+    return res.status(400).json({ error: 'REPLICATE_API_TOKEN not configured on server' });
+  }
+  
+  const imageJobId = `img_${uuidv4().slice(0, 8)}`;
+  
+  console.log(`\n[IMG-${imageJobId}] Starting parallel image generation`);
+  console.log(`[IMG-${imageJobId}]   Job: ${job_id}`);
+  console.log(`[IMG-${imageJobId}]   Scenes: ${scenes.length}`);
+  console.log(`[IMG-${imageJobId}]   Model: ${model}`);
+  console.log(`[IMG-${imageJobId}]   Parallelism: ${MAX_PARALLEL_IMAGES}`);
+  
+  // Initialize job tracking
+  imageJobs.set(imageJobId, {
+    status: 'processing',
+    total: scenes.length,
+    completed: 0,
+    failed: 0,
+    images: [],
+    errors: [],
+    started_at: new Date().toISOString(),
+    model: model,
+  });
+  
+  // Return immediately with job ID
+  res.json({
+    success: true,
+    image_job_id: imageJobId,
+    status_url: `/images-status/${imageJobId}`,
+    total_scenes: scenes.length,
+  });
+  
+  // Process images asynchronously
+  processImageGeneration(imageJobId, job_id, scenes, model, art_style, story_anchor);
+});
+
+/**
+ * Async image generation with controlled parallelism
+ */
+async function processImageGeneration(imageJobId, supabaseJobId, scenes, model, artStyle, storyAnchor) {
+  const job = imageJobs.get(imageJobId);
+  const startTime = Date.now();
+  let referenceImageUrl = null; // For FLUX character consistency
+  
+  try {
+    // Process in batches for controlled parallelism
+    const batchSize = MAX_PARALLEL_IMAGES;
+    const results = new Array(scenes.length).fill(null);
+    
+    for (let batchStart = 0; batchStart < scenes.length; batchStart += batchSize) {
+      const batchEnd = Math.min(batchStart + batchSize, scenes.length);
+      const batch = scenes.slice(batchStart, batchEnd);
+      
+      console.log(`[IMG-${imageJobId}] Processing batch ${Math.floor(batchStart/batchSize) + 1}: scenes ${batchStart + 1}-${batchEnd}`);
+      
+      // Generate batch in parallel
+      const batchPromises = batch.map(async (scene, batchIndex) => {
+        const sceneIndex = batchStart + batchIndex;
+        
+        try {
+          let imageUrl;
+          
+          // Generate image based on model
+          if (model === 'gpt-4o') {
+            imageUrl = await generateGPT4oImage(scene.prompt, sceneIndex);
+          } else if (model === 'dall-e-3') {
+            imageUrl = await generateDallE3Image(scene.prompt, sceneIndex);
+          } else if (model === 'flux') {
+            // FLUX: first scene uses Pro, others use Redux with reference
+            imageUrl = await generateFluxImage(scene.prompt, sceneIndex, referenceImageUrl);
+            // Store first scene as reference for character consistency
+            if (sceneIndex === 0 && imageUrl) {
+              referenceImageUrl = imageUrl;
+            }
+          } else {
+            throw new Error(`Unknown model: ${model}`);
+          }
+          
+          // Upload to Supabase Storage for permanent URL
+          if (imageUrl && supabase) {
+            const storagePath = `${supabaseJobId}/images/scene_${sceneIndex}.webp`;
+            imageUrl = await uploadImageToSupabase(imageUrl, 'story-videos', storagePath);
+          }
+          
+          return {
+            success: true,
+            index: sceneIndex,
+            url: imageUrl,
+            meta: {
+              scene_index: sceneIndex,
+              scene_text: scene.text,
+              start_time: scene.start_time,
+              end_time: scene.end_time,
+              image_model: model,
+              art_style: artStyle,
+              dalle_prompt: scene.prompt,
+              generated_at: new Date().toISOString(),
+            },
+          };
+        } catch (err) {
+          console.error(`  [IMG-${imageJobId}] Scene ${sceneIndex + 1} FAILED:`, err.message);
+          return {
+            success: false,
+            index: sceneIndex,
+            error: err.message,
+          };
+        }
+      });
+      
+      // Wait for batch to complete
+      const batchResults = await Promise.all(batchPromises);
+      
+      // Store results
+      for (const result of batchResults) {
+        results[result.index] = result;
+        if (result.success) {
+          job.completed++;
+          job.images.push(result);
+        } else {
+          job.failed++;
+          job.errors.push({ index: result.index, error: result.error });
+        }
+      }
+      
+      // Update progress
+      job.progress = Math.round((job.completed + job.failed) / scenes.length * 100);
+      console.log(`[IMG-${imageJobId}] Progress: ${job.completed}/${scenes.length} complete, ${job.failed} failed`);
+      
+      // Small delay between batches to avoid rate limits
+      if (batchEnd < scenes.length) {
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+    
+    // Finalize job
+    const totalTime = Math.round((Date.now() - startTime) / 1000);
+    job.status = job.failed === 0 ? 'complete' : (job.completed > 0 ? 'partial' : 'failed');
+    job.completed_at = new Date().toISOString();
+    job.total_time_seconds = totalTime;
+    
+    console.log(`[IMG-${imageJobId}] ✅ Complete: ${job.completed}/${scenes.length} images in ${totalTime}s`);
+    if (job.failed > 0) {
+      console.log(`[IMG-${imageJobId}] ⚠️ ${job.failed} failures:`, job.errors);
+    }
+    
+  } catch (error) {
+    console.error(`[IMG-${imageJobId}] ❌ Fatal error:`, error.message);
+    job.status = 'failed';
+    job.error = error.message;
+  }
+  
+  // Schedule cleanup after 30 minutes
+  setTimeout(() => {
+    imageJobs.delete(imageJobId);
+    console.log(`[IMG-${imageJobId}] Cleaned up`);
+  }, 30 * 60 * 1000);
+}
+
+/**
+ * GET /images-status/:id - Check image generation job status
+ */
+app.get('/images-status/:id', (req, res) => {
+  const job = imageJobs.get(req.params.id);
+  if (!job) {
+    return res.status(404).json({ error: 'Image job not found' });
+  }
+  res.json(job);
+});
+
 /**
  * GET /status/:id - Check job status
  */
@@ -1027,12 +1427,20 @@ app.get('/health', async (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     name: 'Horror Video Renderer',
-    version: '2.0.0',
+    version: '2.1.0',
     endpoints: {
-      'POST /render': 'Start a new render job',
-      'GET /status/:id': 'Check job status',
+      'POST /render': 'Start a new video render job',
+      'GET /status/:id': 'Check render job status',
       'GET /video/:id': 'Download finished video',
+      'POST /generate-images': 'Generate images in parallel (4-6 at once)',
+      'GET /images-status/:id': 'Check parallel image generation status',
       'GET /health': 'Health check',
+    },
+    config: {
+      max_parallel_images: MAX_PARALLEL_IMAGES,
+      openai_configured: !!OPENAI_API_KEY,
+      replicate_configured: !!REPLICATE_API_TOKEN,
+      supabase_configured: !!supabase,
     },
   });
 });
@@ -1041,16 +1449,20 @@ app.get('/', (req, res) => {
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log('');
-  console.log('🎬 Horror Video Renderer v2.0');
+  console.log('🎬 Horror Video Renderer v2.1');
   console.log('================================');
   console.log(`   Port: ${PORT}`);
   console.log(`   Supabase: ${supabase ? '✅ Connected' : '❌ Not configured'}`);
+  console.log(`   OpenAI: ${OPENAI_API_KEY ? '✅ Configured' : '❌ Not configured'}`);
+  console.log(`   Replicate: ${REPLICATE_API_TOKEN ? '✅ Configured' : '❌ Not configured'}`);
   console.log(`   Max concurrent renders: ${MAX_CONCURRENT_RENDERS}`);
+  console.log(`   Max parallel images: ${MAX_PARALLEL_IMAGES}`);
   console.log('');
   console.log('Endpoints:');
-  console.log('   POST /render   - Start render job');
-  console.log('   GET  /status/:id - Check job status');
-  console.log('   GET  /video/:id  - Download video');
-  console.log('   GET  /health     - Health check');
+  console.log('   POST /render          - Start video render');
+  console.log('   GET  /status/:id      - Check render status');
+  console.log('   POST /generate-images - Start parallel image gen');
+  console.log('   GET  /images-status/:id - Check image gen status');
+  console.log('   GET  /health          - Health check');
   console.log('');
 });

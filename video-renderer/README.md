@@ -1,6 +1,7 @@
-# Horror Video Renderer v2.0
+# Horror Video Renderer v2.1
 
 FFmpeg-based video renderer that replaces Creatomate. Generates horror-style videos from images + audio.
+**NEW in v2.1:** Parallel image generation (4-6 images at once instead of 1-at-a-time).
 
 ## 🎯 Features
 
@@ -14,6 +15,28 @@ FFmpeg-based video renderer that replaces Creatomate. Generates horror-style vid
 - ✅ Direct upload to Supabase Storage
 - ✅ Webhook callbacks
 - ✅ Low-memory mode for free tier hosting
+- ✅ **Parallel image generation** (GPT-4o, DALL-E 3, FLUX)
+
+## ⚡ Parallel Image Generation (NEW)
+
+Generates all scene images in parallel (4-6 at once) instead of one-at-a-time via edge functions.
+
+**Speed improvement for 24-scene video:**
+| Method | Time | Cost |
+|--------|------|------|
+| Sequential (edge function) | 24-30 min | Same |
+| **Parallel (this server)** | **4-8 min** | Same |
+
+### Endpoints
+- `POST /generate-images` - Start parallel image generation
+- `GET /images-status/:id` - Check progress
+
+### Environment Variables (for image gen)
+```
+OPENAI_API_KEY=sk-...          # For GPT-4o / DALL-E 3
+REPLICATE_API_TOKEN=r8_...     # For FLUX models
+MAX_PARALLEL_IMAGES=4          # Concurrent images (default: 4)
+```
 
 ## 💰 Cost Comparison
 
@@ -42,6 +65,11 @@ FFmpeg-based video renderer that replaces Creatomate. Generates horror-style vid
    SUPABASE_URL=https://your-project.supabase.co
    SUPABASE_SERVICE_KEY=eyJ... (service role key)
    MAX_CONCURRENT_RENDERS=1
+   
+   # For parallel image generation (optional but recommended)
+   OPENAI_API_KEY=sk-...
+   REPLICATE_API_TOKEN=r8_...
+   MAX_PARALLEL_IMAGES=4
    ```
 
 6. Deploy!

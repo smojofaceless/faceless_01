@@ -21,7 +21,17 @@ import { generateStory, extractSceneKeywordsForPreview, extractSceneKeywords, cr
 import { generateAudio } from "./audio.ts";
 import { searchPexelsForKeywords, searchVideosForScenes } from "./pexels.ts";
 import { generateImage, getLastReplicateInputs, uploadRemoteImageToStorage } from "./images.ts";
-import { assembleVideoWithCreatomate, checkCreatomateRender, renderWithFFmpeg, checkFFmpegRender, shouldUseFFmpegRenderer } from "./video.ts";
+import { 
+  assembleVideoWithCreatomate, 
+  checkCreatomateRender, 
+  renderWithFFmpeg, 
+  checkFFmpegRender, 
+  shouldUseFFmpegRenderer,
+  canUseParallelImageGeneration,
+  startParallelImageGeneration,
+  checkParallelImageStatus,
+  type ParallelImageScene,
+} from "./video.ts";
 
 // =====================================================
 // PREVIEW MODE (Synchronous - returns story quickly)
@@ -35,7 +45,10 @@ export async function runPreviewMode(
 ): Promise<Response> {
   await updateJob(supabase, job_id, { status: "generating", progress: 5 });
 
-  console.log("Generating story...");
+  // Scene count is for visual pacing, story length is based on length_preset
+  const sceneCount = jobMeta.scene_count || 6;
+  
+  console.log(`Generating story (${job.length_preset}s preset, ${sceneCount} scenes)...`);
   const storyData = await generateStory(
     openaiKey,
     job.vibe_preset,
@@ -61,13 +74,14 @@ export async function runPreviewMode(
       contentType: "application/json",
     });
 
-  // Extract scene keywords for preview
-  console.log("Extracting scene keywords...");
+  // Extract scene keywords for preview - use the user's requested scene count
+  console.log(`Extracting scene keywords for ${sceneCount} scenes...`);
   const estimatedScenes = await extractSceneKeywordsForPreview(
     openaiKey,
     storyData.story,
     estimatedDuration,
-    job.visual_preset || "forest"
+    job.visual_preset || "forest",
+    sceneCount  // Pass user's requested scene count
   );
 
   // Save scene data (using scene_data type for consistency with audio phase)
@@ -89,6 +103,13 @@ export async function runPreviewMode(
 
   await updateJob(supabase, job_id, { status: "preview", progress: 30 });
 
+  // Count sentences for debug (use same logic as openai.ts)
+  const storyNormalized = storyData.story.replace(/\.{2,}/g, '…');
+  const sentences = storyNormalized.match(/[^.!?…]+[.!?…]+/g) || [];
+  
+  // FORCE version marker directly in response (bypass any module caching)
+  const BUILD_VERSION = "2026-01-29T21:15:00Z";
+  
   return new Response(
     JSON.stringify({
       success: true,
@@ -98,6 +119,18 @@ export async function runPreviewMode(
       story_text: storyData.story,
       word_count: wordCount,
       duration_sec: estimatedDuration,
+      // DEBUG INFO - will appear in browser console
+      _debug: {
+        version: "v3.1",
+        build: BUILD_VERSION,
+        requested_scenes: sceneCount,
+        actual_scenes_returned: estimatedScenes.length,
+        sentence_count: sentences.length,
+        algorithm: sentences.length >= sceneCount ? "proportional" : "word-split",
+        first_scene_text: estimatedScenes[0]?.text?.substring(0, 80),
+        last_scene_text: estimatedScenes[estimatedScenes.length - 1]?.text?.substring(0, 80),
+        empty_scene_count: estimatedScenes.filter(s => !s.text || s.text.trim() === '').length,
+      },
       scenes: estimatedScenes.map((s, i) => ({
         index: i,
         text: s.text,
@@ -131,7 +164,7 @@ export async function runAudioPhase(
   if (job.story_text && job.title) {
     storyData = { title: job.title, story: job.story_text };
   } else {
-    console.log("[AUDIO] Generating new story...");
+    console.log(`[AUDIO] Generating new story (${job.length_preset}s preset)...`);
     storyData = await generateStory(openaiKey, job.vibe_preset, job.length_preset);
     await updateJob(supabase, job_id, {
       progress: 25,
@@ -223,13 +256,19 @@ export async function runAudioPhase(
     }
   }
 
-  // Keep the original scene_count from user settings, just mark audio as ready
+  // Keep the original scene_count from user settings, mark audio as ready
+  // NOTE: Visual prep (story anchor, beats, contracts) is done incrementally in images phase
+  // to avoid timeout - each step is one function call
   await updateJob(supabase, job_id, { 
     progress: 50,
-    meta: { ...jobMeta, audio_ready: true, scenes_created: scenes.length }
+    meta: { 
+      ...jobMeta, 
+      audio_ready: true, 
+      scenes_created: scenes.length,
+    }
   });
 
-  console.log(`[AUDIO] Audio phase complete, ${scenes.length} scenes ready for images (user requested: ${sceneCount})`);
+  console.log(`[AUDIO] Audio phase complete, ${scenes.length} scenes ready (user requested: ${sceneCount})`);
   
   // Verify we created the right number of scenes
   if (scenes.length !== sceneCount) {
@@ -271,7 +310,11 @@ export async function runImagesPhase(
   }
   
   const freshMeta = freshJob?.meta || {};
-  const leaseMs = 15 * 60 * 1000; // 15 minutes - extended for rate-limited API calls
+  // CRITICAL: Lease must be SHORTER than edge function wall clock limit (~60s)
+  // If function gets hard-killed, lease expires and next poll can retry
+  // Prep work (story anchor, visual beats, contracts) is now done in audio phase,
+  // so images phase only does image generation
+  const leaseMs = 75 * 1000; // 75 seconds - just over edge function timeout
   const now = Date.now();
   const existingLease = new Date(freshMeta.images_phase_lease_until || 0).getTime();
   
@@ -447,36 +490,52 @@ export async function runImagesPhase(
       styleConfig = ART_STYLE_CONFIG[artStyle] || ART_STYLE_CONFIG["cinematic-dark"];
     }
     
-    // Check if we have a story anchor already
+    // ========== INCREMENTAL PREP WORK ==========
+    // Do ONE prep step per function call to avoid timeout
+    // Each step is cached, so next call continues where we left off
+    
+    // STEP 1: Story Anchor
     let storyAnchor = jobMeta.story_anchor;
     if (!storyAnchor) {
-      console.log("[IMAGES] Creating Story Anchor...");
+      console.log("[IMAGES] PREP STEP 1/3: Creating Story Anchor...");
       const storyText = job.story_text || scenes.map(s => s.text).join(" ");
       storyAnchor = await createStoryAnchor(openaiKey, storyText, job.visual_preset || "forest", artStyle, customStyle);
       
-      // Save anchor to meta for future phases
+      // Save anchor to meta and RELEASE LOCK - let next call do the next step
       await updateJob(supabase, job_id, { 
-        meta: { ...jobMeta, story_anchor: storyAnchor }
+        meta: { 
+          ...jobMeta, 
+          story_anchor: storyAnchor,
+          images_phase_lease_until: null // Release lock
+        }
       });
-      console.log("[IMAGES] Story Anchor created and saved");
+      console.log("[IMAGES] Story Anchor created. Releasing lock for next prep step.");
+      return { status: "generating", nextPhase: "images", message: "Story anchor ready, continuing prep..." };
     }
     
-    // Get visual beats if not cached
+    // STEP 2: Visual Beats
     let visualBeats = jobMeta.visual_beats;
     if (!visualBeats) {
-      console.log("[IMAGES] Creating visual beats...");
+      console.log("[IMAGES] PREP STEP 2/3: Creating visual beats...");
       visualBeats = await createVisualBeats(openaiKey, scenes, storyAnchor);
       
+      // Save beats and RELEASE LOCK - let next call do the next step
       await updateJob(supabase, job_id, { 
-        meta: { ...jobMeta, story_anchor: storyAnchor, visual_beats: visualBeats }
+        meta: { 
+          ...jobMeta, 
+          story_anchor: storyAnchor, 
+          visual_beats: visualBeats,
+          images_phase_lease_until: null // Release lock
+        }
       });
-      console.log("[IMAGES] Visual beats created");
+      console.log("[IMAGES] Visual beats created. Releasing lock for next prep step.");
+      return { status: "generating", nextPhase: "images", message: "Visual beats ready, continuing prep..." };
     }
     
-    // Get visual contracts if not cached (CRITICAL for story accuracy)
+    // STEP 3: Visual Contracts
     let visualContracts = jobMeta.visual_contracts;
     if (!visualContracts) {
-      console.log("[IMAGES] Creating visual contracts (prose → literal frames)...");
+      console.log("[IMAGES] PREP STEP 3/3: Creating visual contracts (prose → literal frames)...");
       visualContracts = await createSceneVisualContracts(openaiKey, scenes, storyAnchor, visualBeats);
       
       // Attach contracts to beats
@@ -486,20 +545,234 @@ export async function runImagesPhase(
         }
       }
       
+      // Save contracts and RELEASE LOCK - let next call generate images
       await updateJob(supabase, job_id, { 
-        meta: { ...jobMeta, story_anchor: storyAnchor, visual_beats: visualBeats, visual_contracts: visualContracts }
+        meta: { 
+          ...jobMeta, 
+          story_anchor: storyAnchor, 
+          visual_beats: visualBeats, 
+          visual_contracts: visualContracts,
+          images_phase_lease_until: null // Release lock
+        }
       });
-      console.log(`[IMAGES] Visual contracts created: ${visualContracts.length}`);
-    } else {
-      // Re-attach contracts to beats from cache
-      for (let i = 0; i < visualBeats.length; i++) {
-        if (visualContracts[i]) {
-          visualBeats[i].visualContract = visualContracts[i];
+      console.log(`[IMAGES] Visual contracts created: ${visualContracts.length}. Releasing lock for image generation.`);
+      return { status: "generating", nextPhase: "images", message: "All prep done, ready to generate images..." };
+    }
+    
+    // All prep done - re-attach contracts to beats from cache
+    for (let i = 0; i < visualBeats.length; i++) {
+      if (visualContracts[i]) {
+        visualBeats[i].visualContract = visualContracts[i];
+      }
+    }
+    console.log("[IMAGES] All prep work cached, proceeding to image generation...");
+    
+    await updateJob(supabase, job_id, { progress: 62 });
+    
+    // =====================================================
+    // PARALLEL IMAGE GENERATION (via FFmpeg server)
+    // Much faster: 4-6 images at once instead of 1-at-a-time
+    // =====================================================
+    const useParallelGeneration = canUseParallelImageGeneration() && imagesGenerated === 0;
+    
+    if (useParallelGeneration) {
+      console.log("[IMAGES] 🚀 Using PARALLEL image generation via FFmpeg server");
+      
+      // Check if we already started a parallel job
+      const existingImageJobId = jobMeta.parallel_image_job_id;
+      
+      if (existingImageJobId) {
+        // Poll existing parallel job
+        console.log(`[IMAGES] Checking existing parallel job: ${existingImageJobId}`);
+        
+        try {
+          const status = await checkParallelImageStatus(existingImageJobId);
+          
+          if (status.status === 'processing') {
+            // Still processing - release lock and return
+            console.log(`[IMAGES] Parallel job in progress: ${status.completed}/${status.total} complete`);
+            await updateJobMeta(supabase, job_id, (meta) => ({
+              ...meta,
+              images_phase_running: false,
+              images_phase_lease_until: new Date(0).toISOString(),
+              generation_logs: [
+                ...(meta.generation_logs || []),
+                `[${new Date().toISOString()}] Parallel generation: ${status.completed}/${status.total} images complete`
+              ]
+            }));
+            return { 
+              status: "generating", 
+              nextPhase: "images", 
+              message: `Parallel: ${status.completed}/${status.total} images` 
+            };
+          }
+          
+          if (status.status === 'complete' || status.status === 'partial') {
+            // Job done - save images to database
+            console.log(`[IMAGES] Parallel job complete: ${status.completed}/${status.total} images`);
+            
+            for (const img of status.images) {
+              if (img.success && img.url) {
+                // Check if already saved (idempotency)
+                const { data: existing } = await supabase
+                  .from("job_assets")
+                  .select("id")
+                  .eq("job_id", job_id)
+                  .eq("type", "dalle_image")
+                  .eq("meta->>scene_index", String(img.index))
+                  .maybeSingle();
+                
+                if (!existing) {
+                  await supabase.from("job_assets").insert({
+                    job_id: job_id,
+                    type: "dalle_image",
+                    storage_path: img.url,
+                    public_url: img.url,
+                    meta: {
+                      ...img.meta,
+                      source: "parallel",
+                      continuity_rules: storyAnchor.continuityRules || null,
+                      character_description: storyAnchor.characterDescription || null,
+                    },
+                  });
+                  console.log(`[IMAGES] ✓ Saved parallel image for scene ${img.index + 1}`);
+                }
+              }
+            }
+            
+            // Mark parallel complete
+            await updateJobMeta(supabase, job_id, (meta) => ({
+              ...meta,
+              images_phase_running: false,
+              images_complete: true,
+              parallel_image_job_id: null,
+              parallel_images_completed: status.completed,
+              parallel_images_failed: status.failed,
+              generation_logs: [
+                ...(meta.generation_logs || []),
+                `[${new Date().toISOString()}] ✅ Parallel generation complete: ${status.completed}/${status.total} images in ${status.total_time_seconds}s`
+              ]
+            }));
+            
+            await updateJob(supabase, job_id, { progress: 70 });
+            
+            if (status.failed > 0) {
+              console.log(`[IMAGES] ⚠️ ${status.failed} images failed, will need fallback`);
+              // Continue to one-at-a-time fallback for failed images
+            } else {
+              return { status: "generating", nextPhase: "assemble", message: `All ${status.completed} images ready (parallel)` };
+            }
+          }
+          
+          if (status.status === 'failed') {
+            console.error(`[IMAGES] ❌ Parallel job failed: ${status.error}`);
+            // Clear the failed job ID so we can retry
+            await updateJobMeta(supabase, job_id, (meta) => ({
+              ...meta,
+              parallel_image_job_id: null,
+              generation_logs: [
+                ...(meta.generation_logs || []),
+                `[${new Date().toISOString()}] [ERROR] Parallel generation failed: ${status.error}`
+              ]
+            }));
+            // Fall through to one-at-a-time generation
+          }
+        } catch (pollError) {
+          console.error(`[IMAGES] Error polling parallel job:`, pollError);
+          // Fall through to one-at-a-time generation
+        }
+      } else {
+        // Start new parallel job
+        console.log(`[IMAGES] Starting new parallel image generation job...`);
+        
+        // Build scene prompts for parallel generation
+        const parallelScenes: ParallelImageScene[] = scenes.map((scene, i) => {
+          const beat = visualBeats[i] || {
+            sceneIndex: i,
+            visualBeat: scene.text.substring(0, 100),
+            cameraAngle: "medium shot",
+            focus: "the atmosphere",
+            moodLevel: 5,
+          };
+          
+          // Build prompt based on model
+          let prompt: string;
+          if (resolvedImageModel === "flux") {
+            prompt = buildFluxPrompt(
+              storyAnchor,
+              beat,
+              i,
+              scenes.length,
+              styleConfig,
+              artStyle.startsWith('custom-')
+            );
+          } else {
+            prompt = buildFinalDallePrompt(
+              storyAnchor,
+              beat,
+              i,
+              scenes.length,
+              styleConfig,
+              artStyle.startsWith('custom-'),
+              job.visual_preset || "forest"
+            );
+          }
+          
+          return {
+            index: i,
+            prompt: prompt,
+            text: scene.text,
+            start_time: scene.startTime,
+            end_time: scene.endTime,
+          };
+        });
+        
+        try {
+          const { imageJobId } = await startParallelImageGeneration(
+            job_id,
+            parallelScenes,
+            resolvedImageModel as "gpt-4o" | "dall-e-3" | "flux",
+            styleConfig.name,
+            storyAnchor
+          );
+          
+          // Save job ID and release lock
+          await updateJobMeta(supabase, job_id, (meta) => ({
+            ...meta,
+            parallel_image_job_id: imageJobId,
+            images_phase_running: false,
+            images_phase_lease_until: new Date(0).toISOString(),
+            generation_logs: [
+              ...(meta.generation_logs || []),
+              `[${new Date().toISOString()}] 🚀 Started parallel image generation: ${imageJobId} (${scenes.length} images, ${resolvedImageModel})`
+            ]
+          }));
+          
+          console.log(`[IMAGES] Parallel job started: ${imageJobId}. Releasing lock.`);
+          return { 
+            status: "generating", 
+            nextPhase: "images", 
+            message: `Parallel generation started (${scenes.length} images)` 
+          };
+        } catch (startError) {
+          console.error(`[IMAGES] Failed to start parallel job:`, startError);
+          // Fall through to one-at-a-time generation
+          await updateJobMeta(supabase, job_id, (meta) => ({
+            ...meta,
+            generation_logs: [
+              ...(meta.generation_logs || []),
+              `[${new Date().toISOString()}] [ERROR] Parallel start failed, falling back to sequential: ${(startError as Error).message}`
+            ]
+          }));
         }
       }
     }
     
-    await updateJob(supabase, job_id, { progress: 62 });
+    // =====================================================
+    // SEQUENTIAL IMAGE GENERATION (fallback / legacy)
+    // One image at a time to avoid edge function timeout
+    // =====================================================
+    console.log("[IMAGES] Using SEQUENTIAL image generation (one at a time)");
     
     // For FLUX: Get reference image URL from scene 0 (if already generated)
     let referenceImageUrl: string | undefined = undefined;
@@ -609,9 +882,14 @@ export async function runImagesPhase(
       // Set to false in job meta if you want automatic fallback to DALL-E 3
       const strictImageModel = jobMeta.strict_image_model ?? true;
       
+      // TIMEOUT WRAPPER: Edge functions can timeout at ~60s
+      // GPT-4o images can take 50-60+ seconds, so we need max possible timeout
+      // Set to 55s to leave 5s buffer for DB saves and cleanup
+      const IMAGE_TIMEOUT_MS = 55 * 1000; // 55 seconds - max safe for edge functions
+      
       let imageUrl: string | null = null;
       try {
-        const rawImageUrl = await generateImage(
+        const imagePromise = generateImage(
           openaiKey,
           imagePrompt,
           i,
@@ -619,6 +897,13 @@ export async function runImagesPhase(
           referenceImageUrl,  // Pass reference for FLUX character consistency
           strictImageModel    // Pass strict mode flag
         );
+        
+        // Race between image generation and timeout
+        const timeoutPromise = new Promise<string | null>((_, reject) => {
+          setTimeout(() => reject(new Error(`Image generation timed out after ${IMAGE_TIMEOUT_MS/1000}s - will retry on next poll`)), IMAGE_TIMEOUT_MS);
+        });
+        
+        const rawImageUrl = await Promise.race([imagePromise, timeoutPromise]);
         
         // Upload to Supabase Storage to prevent URL expiry issues
         if (rawImageUrl) {
@@ -651,26 +936,38 @@ export async function runImagesPhase(
         const errorMessage = imgError?.message || String(imgError);
         console.error(`[IMAGES] Scene ${i + 1} generation error:`, errorMessage);
         
+        // Check if this is a timeout error - if so, release lock and return
+        // The job will be retried on the next poll cycle
+        const isTimeoutError = errorMessage.includes('timed out') || errorMessage.includes('timeout');
+        
         // Log the error to job meta for UI visibility
         await updateJobMeta(supabase, job_id, (meta) => ({
           ...meta,
           generation_logs: [
             ...(meta.generation_logs || []),
             `[${new Date().toISOString()}] [ERROR] Scene ${i + 1}: ${errorMessage.substring(0, 200)}`
-          ]
+          ],
+          // Release lock if timeout - allow next poll to retry
+          ...(isTimeoutError ? {
+            images_phase_running: false,
+            images_phase_lease_until: new Date(0).toISOString(),
+          } : {})
         }));
         
-        // Fallback to Pexels PHOTO (not video) for image assets
-        try {
-          const fallbackQuery = scene.keywords.join(" ") || "dark forest";
-          const { searchPexelsPhoto } = await import("./pexels.ts");
-          const fallbackPhotoUrl = await searchPexelsPhoto(pexelsKey, fallbackQuery);
-          imageUrl = fallbackPhotoUrl || "https://images.pexels.com/photos/1591382/pexels-photo-1591382.jpeg?auto=compress&cs=tinysrgb&w=1260";
-          console.log(`[IMAGES] Scene ${i + 1} using Pexels PHOTO fallback: ${fallbackQuery}`);
-        } catch (pexError) {
-          console.error(`[IMAGES] Pexels photo fallback failed:`, pexError);
-          imageUrl = "https://images.pexels.com/photos/1591382/pexels-photo-1591382.jpeg?auto=compress&cs=tinysrgb&w=1260";
+        // If timeout, return immediately - let next poll cycle retry
+        if (isTimeoutError) {
+          console.log(`[IMAGES] Timeout detected, releasing lock for retry on next poll`);
+          return { 
+            status: "generating", 
+            nextPhase: "images", 
+            message: `Scene ${i + 1} timed out, will retry on next poll` 
+          };
         }
+        
+        // For non-timeout errors, use a static fallback image
+        // (Can't use Pexels without the key being passed to this function)
+        console.log(`[IMAGES] Scene ${i + 1} using static fallback image`);
+        imageUrl = "https://images.pexels.com/photos/1591382/pexels-photo-1591382.jpeg?auto=compress&cs=tinysrgb&w=1260";
       }
       
       // Save to database IMMEDIATELY
