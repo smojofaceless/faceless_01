@@ -48,22 +48,34 @@ let activeRenders = 0;
 const MAX_CONCURRENT_RENDERS = parseInt(process.env.MAX_CONCURRENT_RENDERS || '1');
 
 // Detect cloud environment memory limits
-// Render.com sets RENDER=true, container has 512MB on free tier
-// os.totalmem() returns HOST memory, not container limit!
+// Render.com sets RENDER=true, but memory depends on tier (512MB free, 2GB+ paid)
+// os.totalmem() returns HOST memory, not container limit - but we can use env vars
 const os = require('os');
 const TOTAL_MEMORY_MB = Math.floor(os.totalmem() / 1024 / 1024);
 const IS_RENDER = process.env.RENDER === 'true' || !!process.env.RENDER_INSTANCE_ID;
 const IS_RAILWAY = !!process.env.RAILWAY_ENVIRONMENT;
-const FORCE_LOW_MEMORY = process.env.FORCE_LOW_MEMORY === 'true';
-const DISABLE_KEN_BURNS = process.env.DISABLE_KEN_BURNS === 'true'; // Optional: completely disable if memory issues persist
 
-// Auto-enable low memory for cloud free tiers
-// Render.com free tier = 512MB, Railway free tier = 512MB
-const AUTO_LOW_MEMORY = IS_RENDER || IS_RAILWAY || FORCE_LOW_MEMORY;
+// Memory mode control via environment variables:
+// - FORCE_LOW_MEMORY=true  -> Forces low memory mode (simplified Ken Burns)
+// - HIGH_MEMORY=true       -> Forces full quality mode (disables auto low-memory detection)
+// Default: Auto-detect based on RENDER_MEMORY_MB or assume paid tier has enough memory
+const FORCE_LOW_MEMORY = process.env.FORCE_LOW_MEMORY === 'true';
+const HIGH_MEMORY = process.env.HIGH_MEMORY === 'true';
+const RENDER_MEMORY_MB = parseInt(process.env.RENDER_MEMORY_MB || '0', 10);
+const DISABLE_KEN_BURNS = process.env.DISABLE_KEN_BURNS === 'true';
+
+// Determine low memory mode:
+// 1. If FORCE_LOW_MEMORY=true, always use low memory
+// 2. If HIGH_MEMORY=true, never use low memory  
+// 3. If RENDER_MEMORY_MB is set and >= 1024, don't use low memory
+// 4. Default: DON'T assume low memory - user upgraded to paid tier
+const AUTO_LOW_MEMORY = FORCE_LOW_MEMORY || 
+  (!HIGH_MEMORY && !FORCE_LOW_MEMORY && RENDER_MEMORY_MB > 0 && RENDER_MEMORY_MB < 1024);
 
 console.log(`📊 System memory: ${TOTAL_MEMORY_MB}MB (host), Cloud: ${IS_RENDER ? 'Render.com' : IS_RAILWAY ? 'Railway' : 'none'}`);
-console.log(`📊 Low memory mode: ${AUTO_LOW_MEMORY ? 'ENABLED (cloud free tier detected)' : 'disabled'}`);
-console.log(`📊 Ken Burns effect: ${DISABLE_KEN_BURNS ? 'DISABLED by env' : AUTO_LOW_MEMORY ? 'SIMPLE mode (low memory)' : 'FULL mode'}`);
+console.log(`📊 Memory config: FORCE_LOW=${FORCE_LOW_MEMORY}, HIGH_MEMORY=${HIGH_MEMORY}, RENDER_MEMORY_MB=${RENDER_MEMORY_MB || 'not set'}`);
+console.log(`📊 Low memory mode: ${AUTO_LOW_MEMORY ? 'ENABLED' : 'DISABLED (full quality)'}`);
+console.log(`📊 Ken Burns effect: ${DISABLE_KEN_BURNS ? 'DISABLED by env' : AUTO_LOW_MEMORY ? 'SIMPLE mode' : 'FULL mode'}`);
 
 // Ensure directories exist
 async function ensureDirs() {
