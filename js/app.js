@@ -605,7 +605,13 @@ function displayStoryPreview(data) {
     
     // Display generation details if available
     if (data.generation_details) {
+        console.log('Generation details from backend:', data.generation_details);
         displayGenerationDetails(data.generation_details);
+    } else {
+        // Fallback: build generation details from Step 1 selections
+        console.log('No generation_details from backend, using Step 1 selections');
+        const fallbackDetails = buildGenerationDetailsFromUI(data);
+        displayGenerationDetails(fallbackDetails);
     }
     
     // Render scene breakdown
@@ -653,6 +659,12 @@ const VIBE_NAMES = {
     'atmospheric': 'Atmospheric'
 };
 
+const VIBE_DESCRIPTIONS = {
+    'slow_creepy': 'slow building dread, atmospheric, unsettling ending',
+    'punchy_shock': 'fast-paced, shocking twist, punchy ending',
+    'atmospheric': 'moody, descriptive, lingering unease'
+};
+
 const VISUAL_NAMES = {
     'forest': 'Dark Forest',
     'urban': 'Urban Decay',
@@ -661,6 +673,64 @@ const VISUAL_NAMES = {
     'ocean': 'Deep Ocean',
     'space': 'Space/Cosmic'
 };
+
+const ART_STYLE_NAMES = {
+    'cinematic-dark': 'Cinematic Dark Photography',
+    'analog-horror': 'Analog Horror / VHS Glitch',
+    'editorial-cartoon': 'Editorial Cartoon / Satirical Comic',
+    'horror-anime': 'Dark Anime / Manga Style',
+    'oil-painting': 'Classic Oil Painting',
+    'found-footage': 'Found Footage / Grainy',
+    'surreal-nightmare': 'Surreal Nightmare'
+};
+
+const LENGTH_CONFIG = {
+    '30': { minWords: 65, maxWords: 80, targetSeconds: 30 },
+    '45': { minWords: 95, maxWords: 115, targetSeconds: 45 },
+    '60': { minWords: 130, maxWords: 155, targetSeconds: 60 },
+    '90': { minWords: 200, maxWords: 230, targetSeconds: 90 }
+};
+
+// Build generation details from UI selections (fallback if backend doesn't return them)
+function buildGenerationDetailsFromUI(data) {
+    const vibePreset = document.getElementById('vibe-preset')?.value || 'slow_creepy';
+    const lengthPreset = document.getElementById('length-preset')?.value || '60';
+    const visualPreset = document.getElementById('visual-preset')?.value || 'forest';
+    const artStyle = document.getElementById('art-style')?.value || 'cinematic-dark';
+    const imageModel = document.getElementById('ai-model')?.value || 'gpt-4o';
+    const sceneCount = parseInt(document.getElementById('scene-count')?.value) || 6;
+    
+    const lengthConfig = LENGTH_CONFIG[lengthPreset] || LENGTH_CONFIG['60'];
+    
+    // Build the prompt that would have been used
+    const storyPrompt = `You are a viral horror short story writer for TikTok/Reels/Shorts.
+
+Write a scary story with these requirements:
+- Length: ${lengthConfig.minWords}-${lengthConfig.maxWords} words (CRITICAL: stay within this range)
+- Style: ${VIBE_DESCRIPTIONS[vibePreset] || vibePreset}
+- Must have a HOOK in the first sentence that grabs attention
+- MUST have a COMPLETE ending - either a twist, cliffhanger, or scary reveal
+- The final sentence should feel like an ending
+- No real person names
+- Present tense preferred
+- Simple, punchy sentences`;
+    
+    return {
+        vibe_preset: vibePreset,
+        vibe_description: VIBE_DESCRIPTIONS[vibePreset] || vibePreset,
+        length_preset: lengthPreset,
+        target_duration_sec: lengthConfig.targetSeconds,
+        word_range: `${lengthConfig.minWords}-${lengthConfig.maxWords} words`,
+        visual_preset: visualPreset,
+        art_style: artStyle,
+        art_style_name: ART_STYLE_NAMES[artStyle] || artStyle,
+        scene_count: sceneCount,
+        image_model: imageModel,
+        story_prompt: storyPrompt,
+        story_model: 'gpt-4o-mini',
+        story_temperature: 0.9
+    };
+}
 
 function displayGenerationDetails(details) {
     currentGenerationDetails = details;
