@@ -136,11 +136,11 @@ function updateArtStylePreview() {
 // COST ESTIMATION
 // =====================================================
 
-// AI model pricing per image
+// AI model pricing per image (updated 2026-01-29 for low/standard quality)
 const AI_MODEL_COSTS = {
-    'dall-e-3': 0.12,
-    'gpt-4o': 0.03,
-    'flux': 0.04  // Average: Scene 1 = $0.04, Scenes 2+ = ~$0.025
+    'dall-e-3': 0.08,   // 1024x1792 standard quality
+    'gpt-4o': 0.044,    // 1024x1536 low quality (was $0.167 with high!)
+    'flux': 0.04        // Average: Scene 1 = $0.04, Scenes 2+ = ~$0.025
 };
 
 const AI_MODEL_NAMES = {
