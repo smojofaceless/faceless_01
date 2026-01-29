@@ -640,27 +640,33 @@ export async function runImagesPhase(
               }
             }
             
-            // Mark parallel complete
+            // Mark parallel complete - only set images_complete if ALL succeeded
+            const allParallelSucceeded = status.failed === 0;
             await updateJobMeta(supabase, job_id, (meta) => ({
               ...meta,
               images_phase_running: false,
-              images_complete: true,
+              images_complete: allParallelSucceeded, // Only complete if no failures!
               parallel_image_job_id: null,
               parallel_images_completed: status.completed,
               parallel_images_failed: status.failed,
               generation_logs: [
                 ...(meta.generation_logs || []),
-                `[${new Date().toISOString()}] ✅ Parallel generation complete: ${status.completed}/${status.total} images in ${status.total_time_seconds}s`
+                `[${new Date().toISOString()}] ${allParallelSucceeded ? '✅' : '⚠️'} Parallel generation ${allParallelSucceeded ? 'complete' : 'partial'}: ${status.completed}/${status.total} images in ${status.total_time_seconds}s`
               ]
             }));
             
-            await updateJob(supabase, job_id, { progress: 70 });
-            
-            if (status.failed > 0) {
-              console.log(`[IMAGES] ⚠️ ${status.failed} images failed, will need fallback`);
-              // Continue to one-at-a-time fallback for failed images
-            } else {
+            if (allParallelSucceeded) {
+              await updateJob(supabase, job_id, { progress: 70 });
               return { status: "generating", nextPhase: "assemble", message: `All ${status.completed} images ready (parallel)` };
+            } else {
+              // Some images failed - RETURN and let next poll cycle handle sequential fallback
+              // This ensures we re-check existingImages count fresh
+              console.log(`[IMAGES] ⚠️ ${status.failed} images failed in parallel, releasing lock for sequential fallback`);
+              return { 
+                status: "generating", 
+                nextPhase: "images", 
+                message: `Parallel: ${status.completed}/${status.total} done, ${status.failed} need sequential fallback` 
+              };
             }
           }
           

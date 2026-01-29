@@ -1,5 +1,6 @@
 // =====================================================
 // OPENAI MODULE - Story Generation, Scene Analysis, Anchors
+// VERSION: 3.0.1 - 2026-01-29T21:10 - Fixed sentence splitting for ellipses
 // =====================================================
 
 import {
@@ -31,6 +32,10 @@ export async function generateStory(
 ): Promise<{ title: string; story: string; hook: string }> {
   const config = LENGTH_CONFIG[lengthPreset as keyof typeof LENGTH_CONFIG];
   const vibe = VIBE_CONFIG[vibePreset as keyof typeof VIBE_CONFIG];
+
+  // Story length is based purely on length_preset (video duration)
+  // Scene count is independent - controls visual pacing, not story length
+  console.log(`[STORY] Length preset: ${lengthPreset} (${config.minWords}-${config.maxWords} words)`);
 
   const prompt = `You are a viral horror short story writer for TikTok/Reels/Shorts.
 
@@ -87,34 +92,94 @@ Return JSON format:
 /**
  * Extract scene keywords for preview (without audio timestamps)
  * Uses estimated timing based on word count
+ * 
+ * @param sceneCount - Target number of scenes (from user's slider)
  */
 export async function extractSceneKeywordsForPreview(
   openaiKey: string,
   story: string,
   estimatedDuration: number,
-  visualPreset: string
+  visualPreset: string,
+  sceneCount: number = 6  // Target scene count from user
 ): Promise<StoryScene[]> {
   try {
-    // Split story into sentences
-    const sentences = story.match(/[^.!?]+[.!?]+/g) || [story];
+    // Split story into sentences - handle ellipses (...) by replacing with placeholder first
+    // This prevents "..." from being treated as 3 separate sentence endings
+    const storyNormalized = story.replace(/\.{2,}/g, '…'); // Replace ... with single ellipsis char
+    const sentences = storyNormalized.match(/[^.!?…]+[.!?…]+/g) || [story];
+    const totalSentences = sentences.length;
     
-    // Group sentences into 2-3 sentence scenes
+    console.log(`[SCENES] ========== SCENE DISTRIBUTION v3.0 ==========`);
+    console.log(`[SCENES] Story length: ${story.length} chars`);
+    console.log(`[SCENES] Total sentences: ${totalSentences}`);
+    console.log(`[SCENES] Requested scenes: ${sceneCount}`);
+    console.log(`[SCENES] First 5 sentences:`, sentences.slice(0, 5).map(s => s.trim().substring(0, 40)));
+    console.log(`[SCENES] Last 5 sentences:`, sentences.slice(-5).map(s => s.trim().substring(0, 40)));
+    
+    // CRITICAL: If more scenes than sentences, use WORD-SPLIT mode
+    // This ensures every scene gets some content
     const sceneTexts: string[] = [];
-    let currentScene = "";
-    let sentenceCount = 0;
     
-    for (const sentence of sentences) {
-      currentScene += sentence;
-      sentenceCount++;
+    if (totalSentences >= sceneCount) {
+      // More sentences than scenes - use proportional distribution
+      console.log(`[SCENES] Mode: PROPORTIONAL (${totalSentences} sentences → ${sceneCount} scenes)`);
       
-      if (sentenceCount >= 2 || sentence === sentences[sentences.length - 1]) {
-        sceneTexts.push(currentScene.trim());
-        currentScene = "";
-        sentenceCount = 0;
+      for (let i = 0; i < sceneCount; i++) {
+        // Calculate proportional start/end indices
+        const start = Math.floor(i * totalSentences / sceneCount);
+        const end = Math.floor((i + 1) * totalSentences / sceneCount);
+        
+        // Ensure at least 1 sentence per scene
+        const actualEnd = Math.max(end, start + 1);
+        const sceneText = sentences.slice(start, actualEnd).join(' ').trim();
+        
+        console.log(`[SCENES] Scene ${i}: [${start}:${actualEnd}] "${sceneText.substring(0, 50)}..."`);
+        
+        // Always add, even if empty (use fallback)
+        if (sceneText && sceneText.length > 0) {
+          sceneTexts.push(sceneText);
+        } else {
+          // Use the last sentence as fallback
+          const fallbackText = sentences[Math.min(start, totalSentences - 1)]?.trim() || sentences[totalSentences - 1].trim();
+          console.warn(`[SCENES] Scene ${i} empty! Using fallback: "${fallbackText.substring(0, 30)}..."`);
+          sceneTexts.push(fallbackText);
+        }
+      }
+    } else {
+      // FEWER sentences than scenes - split by WORDS for finer granularity
+      // This is the key case for 24 scenes with 15-16 sentences!
+      console.log(`[SCENES] Mode: WORD-SPLIT (${totalSentences} sentences < ${sceneCount} scenes)`);
+      
+      const words = story.split(/\s+/);
+      const totalWords = words.length;
+      console.log(`[SCENES] Total words: ${totalWords}`);
+      
+      for (let i = 0; i < sceneCount; i++) {
+        // Calculate proportional word indices
+        const start = Math.floor(i * totalWords / sceneCount);
+        const end = Math.floor((i + 1) * totalWords / sceneCount);
+        const sceneText = words.slice(start, end).join(' ').trim();
+        
+        console.log(`[SCENES] Scene ${i}: words[${start}:${end}] = "${sceneText}"`);
+        
+        if (sceneText) {
+          sceneTexts.push(sceneText);
+        } else {
+          // If empty (shouldn't happen), repeat previous
+          const fallback = sceneTexts[sceneTexts.length - 1] || story;
+          console.warn(`[SCENES] Scene ${i} was empty! Using fallback.`);
+          sceneTexts.push(fallback);
+        }
       }
     }
     
-    console.log(`Split story into ${sceneTexts.length} scenes for preview`);
+    console.log(`[SCENES] Final scene count: ${sceneTexts.length} (target: ${sceneCount})`);
+    console.log(`[SCENES] ================================================`);
+    
+    // Verify we got the right count
+    if (sceneTexts.length !== sceneCount) {
+      console.error(`[SCENES] ❌ MISMATCH: Created ${sceneTexts.length} but needed ${sceneCount}!`);
+    }
     
     // Get keywords for all scenes in one API call
     const response = await fetch("https://api.openai.com/v1/chat/completions", {

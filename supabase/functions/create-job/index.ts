@@ -197,23 +197,53 @@ Return JSON: {"title": "Catchy 3-5 word title", "story": "The full story text"}`
           story_text: storyData.story,
         }).eq("id", job.id);
 
-        // Split story into scenes
-        const sentences = storyData.story.match(/[^.!?]+[.!?]+/g) || [storyData.story];
-        const sentencesPerScene = Math.ceil(sentences.length / sceneCount);
+        // Split story into scenes - handle case where sceneCount > sentences
+        // Replace ... with single ellipsis to avoid counting as 3 sentence endings
+        const storyNormalized = storyData.story.replace(/\.{2,}/g, '…');
+        const sentences = storyNormalized.match(/[^.!?…]+[.!?…]+/g) || [storyData.story];
+        const totalSentences = sentences.length;
         const scenes = [];
         
-        for (let i = 0; i < sceneCount; i++) {
-          const start = i * sentencesPerScene;
-          const end = Math.min(start + sentencesPerScene, sentences.length);
-          const sceneText = sentences.slice(start, end).join(' ').trim();
-          scenes.push({
-            index: i,
-            text: sceneText,
-            keywords: [],
-            startTime: 0,
-            endTime: 0,
-          });
+        console.log(`[SCENES] Story has ${totalSentences} sentences, requested ${sceneCount} scenes`);
+        
+        if (totalSentences >= sceneCount) {
+          // More sentences than scenes - use proportional distribution
+          for (let i = 0; i < sceneCount; i++) {
+            const start = Math.floor(i * totalSentences / sceneCount);
+            const end = Math.floor((i + 1) * totalSentences / sceneCount);
+            const actualEnd = Math.max(end, start + 1); // At least 1 sentence
+            const sceneText = sentences.slice(start, actualEnd).join(' ').trim();
+            scenes.push({
+              index: i,
+              text: sceneText || sentences[Math.min(start, totalSentences - 1)]?.trim() || "...",
+              keywords: [],
+              startTime: 0,
+              endTime: 0,
+            });
+          }
+        } else {
+          // Fewer sentences than scenes - split by WORDS
+          const words = storyData.story.split(/\s+/);
+          const totalWords = words.length;
+          console.log(`[SCENES] Word-split mode: ${totalWords} words → ${sceneCount} scenes`);
+          
+          for (let i = 0; i < sceneCount; i++) {
+            const start = Math.floor(i * totalWords / sceneCount);
+            const end = Math.floor((i + 1) * totalWords / sceneCount);
+            const sceneText = words.slice(start, end).join(' ').trim();
+            scenes.push({
+              index: i,
+              text: sceneText || words.slice(start, Math.min(start + 3, totalWords)).join(' ') || "...",
+              keywords: [],
+              startTime: 0,
+              endTime: 0,
+            });
+          }
         }
+        
+        // Debug info
+        const emptyScenes = scenes.filter(s => !s.text || s.text.trim() === '' || s.text === '...').length;
+        console.log(`[SCENES] Created ${scenes.length} scenes, ${emptyScenes} empty`);
 
         return new Response(
           JSON.stringify({
@@ -222,6 +252,16 @@ Return JSON: {"title": "Catchy 3-5 word title", "story": "The full story text"}`
             job_id: job.id,
             title: storyData.title,
             story_text: storyData.story,
+            // DEBUG INFO
+            _debug: {
+              version: "v3.2-create-job",
+              build: new Date().toISOString(),
+              requested_scenes: sceneCount,
+              actual_scenes: scenes.length,
+              sentence_count: totalSentences,
+              algorithm: totalSentences >= sceneCount ? "proportional" : "word-split",
+              empty_scenes: emptyScenes,
+            },
             scenes: scenes,
           }),
           {

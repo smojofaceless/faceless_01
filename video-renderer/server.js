@@ -1051,11 +1051,15 @@ async function generateDallE3Image(prompt, sceneIndex) {
 
 /**
  * Generate a single image using FLUX Pro/Redux
+ * Includes retry logic with exponential backoff for rate limits (429)
  */
-async function generateFluxImage(prompt, sceneIndex, referenceImageUrl = null) {
+async function generateFluxImage(prompt, sceneIndex, referenceImageUrl = null, retryCount = 0) {
+  const MAX_RETRIES = 3;
+  const BASE_DELAY_MS = 5000; // 5 seconds base delay for 429 errors
+  
   const isFirstScene = sceneIndex === 0 || !referenceImageUrl;
   const modelName = isFirstScene ? 'flux-1.1-pro' : 'flux-redux-dev';
-  console.log(`  [FLUX] Scene ${sceneIndex + 1}: Generating with ${modelName}...`);
+  console.log(`  [FLUX] Scene ${sceneIndex + 1}: Generating with ${modelName}...${retryCount > 0 ? ` (retry ${retryCount})` : ''}`);
   
   const endpoint = isFirstScene
     ? 'https://api.replicate.com/v1/models/black-forest-labs/flux-1.1-pro/predictions'
@@ -1082,28 +1086,39 @@ async function generateFluxImage(prompt, sceneIndex, referenceImageUrl = null) {
     num_inference_steps: 28,
   };
   
-  const response = await axios.post(endpoint, { input }, {
-    headers: {
-      'Authorization': `Bearer ${REPLICATE_API_TOKEN}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'wait',
-    },
-    timeout: 120000, // 2 minute timeout for FLUX
-  });
-  
-  const result = response.data;
-  if (result.output) {
-    const imageUrl = Array.isArray(result.output) ? result.output[0] : result.output;
-    console.log(`  [FLUX] Scene ${sceneIndex + 1}: ✓ Generated`);
-    return imageUrl;
+  try {
+    const response = await axios.post(endpoint, { input }, {
+      headers: {
+        'Authorization': `Bearer ${REPLICATE_API_TOKEN}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'wait',
+      },
+      timeout: 120000, // 2 minute timeout for FLUX
+    });
+    
+    const result = response.data;
+    if (result.output) {
+      const imageUrl = Array.isArray(result.output) ? result.output[0] : result.output;
+      console.log(`  [FLUX] Scene ${sceneIndex + 1}: ✓ Generated`);
+      return imageUrl;
+    }
+    
+    // If not immediately ready, poll for result
+    if (result.id) {
+      return await pollReplicatePrediction(result.id, sceneIndex);
+    }
+    
+    throw new Error('Unexpected FLUX response format');
+  } catch (error) {
+    // Handle rate limit (429) with exponential backoff
+    if (error.response?.status === 429 && retryCount < MAX_RETRIES) {
+      const delay = BASE_DELAY_MS * Math.pow(2, retryCount); // Exponential: 5s, 10s, 20s
+      console.log(`  [FLUX] Scene ${sceneIndex + 1}: Rate limited (429), waiting ${delay/1000}s before retry...`);
+      await new Promise(r => setTimeout(r, delay));
+      return generateFluxImage(prompt, sceneIndex, referenceImageUrl, retryCount + 1);
+    }
+    throw error;
   }
-  
-  // If not immediately ready, poll for result
-  if (result.id) {
-    return await pollReplicatePrediction(result.id, sceneIndex);
-  }
-  
-  throw new Error('Unexpected FLUX response format');
 }
 
 /**
@@ -1247,8 +1262,13 @@ async function processImageGeneration(imageJobId, supabaseJobId, scenes, model, 
   let referenceImageUrl = null; // For FLUX character consistency
   
   try {
-    // Process in batches for controlled parallelism
-    const batchSize = MAX_PARALLEL_IMAGES;
+    // FLUX is heavily rate-limited on Replicate - use sequential generation
+    // GPT-4o and DALL-E 3 can handle more parallelism
+    const batchSize = model === 'flux' ? 1 : MAX_PARALLEL_IMAGES;
+    const batchDelayMs = model === 'flux' ? 3000 : 1000; // 3s delay for FLUX, 1s for others
+    
+    console.log(`[IMG-${imageJobId}] Using batch size ${batchSize}, delay ${batchDelayMs}ms (model: ${model})`);
+    
     const results = new Array(scenes.length).fill(null);
     
     for (let batchStart = 0; batchStart < scenes.length; batchStart += batchSize) {
@@ -1330,9 +1350,9 @@ async function processImageGeneration(imageJobId, supabaseJobId, scenes, model, 
       job.progress = Math.round((job.completed + job.failed) / scenes.length * 100);
       console.log(`[IMG-${imageJobId}] Progress: ${job.completed}/${scenes.length} complete, ${job.failed} failed`);
       
-      // Small delay between batches to avoid rate limits
+      // Delay between batches to avoid rate limits (longer for FLUX)
       if (batchEnd < scenes.length) {
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, batchDelayMs));
       }
     }
     

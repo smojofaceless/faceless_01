@@ -490,7 +490,10 @@
                                 <p id="debug-visual-source" class="text-white bg-gray-800 rounded px-2 py-1">-</p>
                             </div>
                             <div class="md:col-span-2">
-                                <p class="text-gray-400 mb-1">Backend Logs:</p>
+                                <div class="flex items-center justify-between mb-1">
+                                    <p class="text-gray-400">Backend Logs:</p>
+                                    <button onclick="copyDebugLogs()" class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-white">📋 Copy Logs</button>
+                                </div>
                                 <div id="debug-backend-logs" class="text-green-400 bg-gray-900 rounded px-2 py-1 max-h-40 overflow-y-auto">
                                     <p class="text-gray-500">No logs yet...</p>
                                 </div>
@@ -541,8 +544,12 @@
                             </div>
                             
                             <div class="bg-gray-800/50 rounded-xl p-4">
-                                <h4 class="font-semibold text-sm mb-3">🎬 Scenes</h4>
+                                <div class="flex items-center justify-between mb-3">
+                                    <h4 class="font-semibold text-sm">🎬 Scenes</h4>
+                                    <button onclick="toggleScenesView()" id="scenes-view-toggle" class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-white">📋 Show Details</button>
+                                </div>
                                 <div id="result-scenes-gallery" class="grid grid-cols-4 gap-2"></div>
+                                <div id="result-scenes-detailed" class="hidden space-y-3 mt-4 max-h-96 overflow-y-auto"></div>
                             </div>
                             
                             <div class="bg-gray-800/50 rounded-xl p-4 border border-green-900/50">

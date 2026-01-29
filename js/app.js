@@ -736,6 +736,34 @@ function copyReplicateInputs() {
     }
 }
 
+// Copy debug logs to clipboard
+function copyDebugLogs() {
+    const logsEl = document.getElementById('debug-backend-logs');
+    if (logsEl) {
+        const text = logsEl.innerText;
+        navigator.clipboard.writeText(text).then(() => {
+            alert('Debug logs copied to clipboard!');
+        }).catch(err => {
+            console.error('Failed to copy:', err);
+            prompt('Copy this:', text);
+        });
+    }
+}
+
+// Toggle between gallery and detailed scene view
+function toggleScenesView() {
+    const gallery = document.getElementById('result-scenes-gallery');
+    const detailed = document.getElementById('result-scenes-detailed');
+    const btn = document.getElementById('scenes-view-toggle');
+    
+    if (gallery && detailed && btn) {
+        const showingGallery = !gallery.classList.contains('hidden');
+        gallery.classList.toggle('hidden', showingGallery);
+        detailed.classList.toggle('hidden', !showingGallery);
+        btn.textContent = showingGallery ? '🖼️ Show Gallery' : '📋 Show Details';
+    }
+}
+
 async function generateImages() {
     const btn = document.getElementById('btn-generate-images');
     btn.disabled = true;
@@ -980,6 +1008,8 @@ function displayFinalResult(data) {
     
     // Scene gallery - improved detection (consistent with updateSceneImages)
     const gallery = document.getElementById('result-scenes-gallery');
+    const detailed = document.getElementById('result-scenes-detailed');
+    
     if (data.scenes && gallery) {
         gallery.innerHTML = data.scenes.map((scene, i) => {
             const url = scene.videoUrl || scene.storage_path || '';
@@ -1003,6 +1033,45 @@ function displayFinalResult(data) {
                         ? `<img src="${escapeHtml(url)}" class="w-full h-full object-cover" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'flex items-center justify-center h-full text-gray-500 text-xs\\'>Failed</div>'">`
                         : `<video src="${escapeHtml(url)}" class="w-full h-full object-cover" muted></video>`
                     }
+                </div>
+            `;
+        }).join('');
+    }
+    
+    // Detailed scene view with text and prompt info
+    if (data.scenes && detailed) {
+        detailed.innerHTML = data.scenes.map((scene, i) => {
+            const url = scene.videoUrl || scene.storage_path || '';
+            const text = scene.text || scene.scene_text || 'No text';
+            const prompt = scene.dalle_prompt || scene.prompt || '';
+            const model = scene.image_model || scene.source || 'Unknown';
+            const startTime = scene.startTime !== undefined ? formatTime(scene.startTime) : '?';
+            const endTime = scene.endTime !== undefined ? formatTime(scene.endTime) : '?';
+            
+            return `
+                <div class="bg-gray-900/50 rounded-lg p-3 border border-gray-700">
+                    <div class="flex gap-3">
+                        <div class="w-16 h-24 flex-shrink-0 bg-gray-800 rounded overflow-hidden">
+                            ${url 
+                                ? `<img src="${escapeHtml(url)}" class="w-full h-full object-cover" loading="lazy" onerror="this.src=''">`
+                                : `<div class="flex items-center justify-center h-full text-gray-600 text-xs">No img</div>`
+                            }
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="bg-primary/20 text-primary px-2 py-0.5 rounded text-xs font-bold">Scene ${i + 1}</span>
+                                <span class="text-xs text-gray-500">${startTime} - ${endTime}</span>
+                                <span class="text-xs text-purple-400">${escapeHtml(model)}</span>
+                            </div>
+                            <p class="text-xs text-gray-300 mb-2 line-clamp-2">${escapeHtml(text)}</p>
+                            ${prompt ? `
+                                <details class="text-xs">
+                                    <summary class="text-purple-400 cursor-pointer hover:text-purple-300">View Prompt</summary>
+                                    <p class="mt-1 text-gray-500 text-xs bg-gray-800 p-2 rounded max-h-24 overflow-y-auto">${escapeHtml(prompt.substring(0, 500))}${prompt.length > 500 ? '...' : ''}</p>
+                                </details>
+                            ` : ''}
+                        </div>
+                    </div>
                 </div>
             `;
         }).join('');

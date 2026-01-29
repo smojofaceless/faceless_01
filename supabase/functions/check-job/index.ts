@@ -359,6 +359,31 @@ serve(async (req) => {
       const imagesLease = new Date(jobMeta.images_phase_lease_until || 0).getTime();
       const leaseActive = imagesLease > Date.now();
       
+      // STUCK JOB DETECTION: If phase started >90s ago but no progress, force release
+      const phaseStartedAt = new Date(jobMeta.images_phase_started_at || 0).getTime();
+      const timeSincePhaseStart = Date.now() - phaseStartedAt;
+      const lastImageGenerated = jobMeta.last_image_generated || 0;
+      const isStuckJob = jobMeta.images_phase_running && 
+                         timeSincePhaseStart > 90 * 1000 && // Started >90s ago
+                         imagesReady === lastImageGenerated; // No new images since start
+      
+      if (isStuckJob) {
+        console.log(`[CHECK] ⚠️ STUCK JOB DETECTED - Phase started ${Math.round(timeSincePhaseStart/1000)}s ago with no new images. Force releasing lock.`);
+        // Force release the lock so next poll can retry
+        await supabase
+          .from("jobs")
+          .update({ 
+            meta: { 
+              ...jobMeta, 
+              images_phase_running: false, 
+              images_phase_lease_until: new Date(0).toISOString(),
+              stuck_recovery_count: (jobMeta.stuck_recovery_count || 0) + 1
+            },
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", job_id);
+      }
+      
       // Rate limiting: don't trigger images more than once per 15 seconds
       const lastImageTime = new Date(jobMeta.last_image_time || 0).getTime();
       const timeSinceLastImage = Date.now() - lastImageTime;
@@ -366,8 +391,8 @@ serve(async (req) => {
       
       if (progress >= 50 && progress < 70 && !jobMeta.images_complete) {
         if (imagesReady < totalScenes) {
-          // Only trigger if not running OR lease expired (stale lock)
-          if (!jobMeta.images_phase_running || !leaseActive) {
+          // Only trigger if not running OR lease expired OR stuck job was just released
+          if (!jobMeta.images_phase_running || !leaseActive || isStuckJob) {
             // Check rate limit cooldown
             if (timeSinceLastImage < rateLimitCooldown && imagesReady > 0) {
               console.log(`[CHECK] Rate limit cooldown - ${Math.ceil((rateLimitCooldown - timeSinceLastImage) / 1000)}s remaining`);
