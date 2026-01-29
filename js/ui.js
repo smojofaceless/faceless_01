@@ -415,22 +415,36 @@ async function showHistoryDetails(jobId) {
                 </div>
             </div>
             
-            ${sceneAssets.length > 0 ? `
+            ${sceneAssets.length > 0 ? (() => {
+                // Check if images are stored in Supabase Storage (permanent) vs temporary OpenAI URLs
+                const hasValidImages = sceneAssets.some(a => 
+                    a.storage_path?.includes('supabase.co') || 
+                    a.public_url?.includes('supabase.co')
+                );
+                const hasExpiredImages = sceneAssets.some(a => 
+                    a.storage_path?.includes('oaidalleapiprodscus.blob.core.windows.net') ||
+                    a.storage_path?.includes('replicate.delivery')
+                );
+                
+                return `
                 <div class="mb-6">
-                    <h3 class="font-semibold mb-2">🎬 Scenes</h3>
+                    <h3 class="font-semibold mb-2">🎬 Scenes ${hasExpiredImages && !hasValidImages ? '<span class="text-yellow-500 text-sm">(⚠️ Images expired)</span>' : ''}</h3>
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
                         ${sceneAssets.map((asset, i) => {
                             const isImage = asset.type === 'dalle_image';
                             const prompt = asset.meta?.visual_beat || asset.meta?.dalle_prompt || '';
+                            // Prefer public_url (permanent), fallback to storage_path
+                            const imageUrl = asset.public_url || asset.storage_path;
+                            const isExpired = imageUrl?.includes('oaidalleapiprodscus.blob.core.windows.net') || imageUrl?.includes('replicate.delivery');
                             return `
-                                <div class="bg-gray-700/50 rounded-lg overflow-hidden">
+                                <div class="bg-gray-700/50 rounded-lg overflow-hidden ${isExpired ? 'opacity-60' : ''}">
                                     ${isImage ? `
-                                        <img src="${escapeHtml(asset.storage_path)}" class="w-full aspect-[9/16] object-cover cursor-pointer" onclick="showImageModal('${escapeHtml(asset.storage_path)}')" loading="lazy" onerror="this.src='https://via.placeholder.com/200x350?text=Expired'">
+                                        <img src="${escapeHtml(imageUrl)}" class="w-full aspect-[9/16] object-cover ${isExpired ? '' : 'cursor-pointer'}" ${isExpired ? '' : `onclick="showImageModal('${escapeHtml(imageUrl)}')"`} loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'w-full aspect-[9/16] bg-gray-800 flex items-center justify-center text-gray-500 text-xs text-center p-2\\'>Image expired<br>Generate new video</div>'">
                                     ` : `
-                                        <video src="${escapeHtml(asset.storage_path)}" class="w-full aspect-[9/16] object-cover" muted></video>
+                                        <video src="${escapeHtml(imageUrl)}" class="w-full aspect-[9/16] object-cover" muted></video>
                                     `}
                                     <div class="p-2">
-                                        <p class="text-xs text-gray-400">Scene ${i + 1}</p>
+                                        <p class="text-xs text-gray-400">Scene ${i + 1} ${isExpired ? '(expired)' : ''}</p>
                                         ${prompt ? `<p class="text-xs text-purple-400 truncate mt-1" title="${escapeHtml(prompt)}">${escapeHtml(prompt.substring(0, 25))}...</p>` : ''}
                                     </div>
                                 </div>
@@ -438,7 +452,7 @@ async function showHistoryDetails(jobId) {
                         }).join('')}
                     </div>
                 </div>
-            ` : ''}
+            `})() : ''}
             
             <div class="flex gap-3 flex-wrap">
                 ${videoAsset ? `
@@ -449,11 +463,26 @@ async function showHistoryDetails(jobId) {
                         ⬇️ Download
                     </a>
                 ` : ''}
-                ${sceneAssets.length > 0 ? `
-                    <button onclick="startReRender('${job.id}', '${escapeHtml((job.title || 'Video').replace(/'/g, "\\'"))}')" class="flex-1 bg-orange-600/80 hover:bg-orange-600 text-white font-bold py-3 rounded-xl" title="Re-render video using existing images & audio (free!)">
-                        🔄 Re-render Video
-                    </button>
-                ` : ''}
+                ${(() => {
+                    // Only allow re-render if images are in Supabase Storage
+                    const hasValidImages = sceneAssets.some(a => 
+                        (a.storage_path?.includes('supabase.co') || a.public_url?.includes('supabase.co'))
+                    );
+                    if (sceneAssets.length > 0 && hasValidImages) {
+                        return `
+                            <button onclick="startReRender('${job.id}', '${escapeHtml((job.title || 'Video').replace(/'/g, "\\'"))}')" class="flex-1 bg-orange-600/80 hover:bg-orange-600 text-white font-bold py-3 rounded-xl" title="Re-render video using existing images & audio (free!)">
+                                🔄 Re-render Video
+                            </button>
+                        `;
+                    } else if (sceneAssets.length > 0) {
+                        return `
+                            <button disabled class="flex-1 bg-gray-600 text-gray-400 font-bold py-3 rounded-xl cursor-not-allowed" title="Cannot re-render: Images have expired. Generate a new video instead.">
+                                🔄 Images Expired
+                            </button>
+                        `;
+                    }
+                    return '';
+                })()}
                 <button onclick="document.getElementById('details-modal').remove()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-xl">
                     Close
                 </button>

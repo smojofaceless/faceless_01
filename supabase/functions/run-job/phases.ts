@@ -651,10 +651,14 @@ export async function runImagesPhase(
       const assetSource = resolvedImageModel === "flux" ? "ai" : 
                           resolvedImageModel === "gpt-4o" ? "ai" : "dalle";
       
+      // Check if URL is from Supabase Storage (permanent) vs temporary
+      const isSupabaseUrl = imageUrl?.includes('supabase.co');
+      
       const { error: insertError } = await supabase.from("job_assets").insert({
         job_id: job_id,
         type: "dalle_image",  // Keep type for backward compatibility with queries
         storage_path: imageUrl,
+        public_url: isSupabaseUrl ? imageUrl : null,  // Only set if permanent URL
         meta: { 
           scene_index: i, 
           scene_text: scene.text,
@@ -671,6 +675,7 @@ export async function runImagesPhase(
           continuity_rules: storyAnchor.continuityRules || null,
           character_description: storyAnchor.characterDescription || null,
           generated_at: new Date().toISOString(),
+          is_permanent: isSupabaseUrl,  // Flag for UI to know if URL will expire
         },
       });
       
