@@ -24,6 +24,8 @@ interface CreateJobRequest {
   scene_count?: number;
   // Preview mode
   preview_only?: boolean;
+  // Debug mode - skip video assembly
+  skip_video_assembly?: boolean;
   // Effects
   effect_filter?: boolean;
   effect_kenburns?: boolean;
@@ -74,6 +76,7 @@ serve(async (req) => {
       image_model: body.image_model || "gpt-4o",  // Default to GPT-4o for balanced cost/quality
       art_style: body.art_style || "cinematic-dark",
       scene_count: body.scene_count || 4,
+      skip_video_assembly: body.skip_video_assembly === true,
       effect_filter: body.effect_filter !== false,
       effect_kenburns: body.effect_kenburns !== false,
       effect_transitions: body.effect_transitions !== false,

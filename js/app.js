@@ -485,6 +485,9 @@ function resetGenerator() {
     currentScenes = [];
     if (pollInterval) clearInterval(pollInterval);
     
+    // Clear the rendered scene cache to allow fresh renders
+    Object.keys(renderedSceneUrls).forEach(key => delete renderedSceneUrls[key]);
+    
     document.getElementById('story-title').value = '';
     document.getElementById('story-text').value = '';
     document.getElementById('scene-breakdown').innerHTML = '';
@@ -645,8 +648,10 @@ function updateDebugInfo(data) {
     const jobIdEl = document.getElementById('debug-job-id');
     const selectedModelEl = document.getElementById('debug-selected-model');
     const backendModelEl = document.getElementById('debug-backend-model');
+    const resolvedModelEl = document.getElementById('debug-resolved-model');
     const visualSourceEl = document.getElementById('debug-visual-source');
     const backendLogsEl = document.getElementById('debug-backend-logs');
+    const replicateInputsEl = document.getElementById('debug-replicate-inputs');
     
     if (jobIdEl && currentJobId) {
         jobIdEl.textContent = currentJobId;
@@ -672,6 +677,14 @@ function updateDebugInfo(data) {
                 : 'text-red-400 bg-gray-800 rounded px-2 py-1';   // Mismatch!
         }
         
+        // Show resolved model (what's actually used)
+        if (resolvedModelEl && data.resolved_image_model) {
+            resolvedModelEl.textContent = data.resolved_image_model;
+            resolvedModelEl.className = data.resolved_image_model === aiModel 
+                ? 'text-green-400 bg-gray-800 rounded px-2 py-1'
+                : 'text-orange-400 bg-gray-800 rounded px-2 py-1';
+        }
+        
         // Backend logs
         if (backendLogsEl && data.logs && data.logs.length > 0) {
             backendLogsEl.innerHTML = data.logs.map(log => 
@@ -679,10 +692,44 @@ function updateDebugInfo(data) {
             ).join('');
         }
         
+        // Replicate inputs (FLUX debugging)
+        if (replicateInputsEl && data.replicate_inputs && data.replicate_inputs.length > 0) {
+            window.lastReplicateInputs = data.replicate_inputs; // Store for copy function
+            replicateInputsEl.innerHTML = data.replicate_inputs.map((input, i) => `
+                <div class="mb-3 pb-3 border-b border-gray-700 last:border-0">
+                    <p class="text-purple-400 font-bold">[${i + 1}] ${input.model}</p>
+                    <p class="text-gray-500 text-xs">${input.timestamp}</p>
+                    <p class="text-gray-400 text-xs truncate">Endpoint: ${input.endpoint}</p>
+                    <pre class="text-green-300 text-xs mt-1 whitespace-pre-wrap">${JSON.stringify(input.input, null, 2)}</pre>
+                </div>
+            `).join('');
+        } else if (replicateInputsEl && aiModel === 'flux') {
+            replicateInputsEl.innerHTML = '<p class="text-yellow-500">Waiting for FLUX API calls...</p>';
+        }
+        
         // Also log meta info
         if (data.meta?.image_model) {
             addLog(`📊 Job image_model in meta: ${data.meta.image_model}`);
         }
+        if (data.meta?.resolved_image_model) {
+            addLog(`📊 Resolved image_model: ${data.meta.resolved_image_model}`);
+        }
+    }
+}
+
+// Copy Replicate inputs to clipboard
+function copyReplicateInputs() {
+    if (window.lastReplicateInputs && window.lastReplicateInputs.length > 0) {
+        const text = JSON.stringify(window.lastReplicateInputs, null, 2);
+        navigator.clipboard.writeText(text).then(() => {
+            alert('Replicate inputs copied to clipboard!');
+        }).catch(err => {
+            console.error('Failed to copy:', err);
+            // Fallback: show in alert
+            prompt('Copy this:', text.substring(0, 1000) + '...');
+        });
+    } else {
+        alert('No Replicate inputs available yet.');
     }
 }
 
@@ -810,31 +857,103 @@ function updateProgress(percent, label) {
     document.getElementById('generation-status').textContent = label;
 }
 
+// Track which scenes have been rendered to avoid flickering
+const renderedSceneUrls = {};
+
 function updateSceneImages(scenes) {
     scenes.forEach((scene, i) => {
         const card = document.getElementById(`scene-image-${i}`);
         if (!card) return;
         
         const imageUrl = scene.videoUrl;
-        // Check if it's an AI-generated image (DALL-E, GPT-4o, FLUX, or Replicate)
-        const isImage = scene.source === 'ai' || scene.source === 'dalle' || 
-            (imageUrl && (imageUrl.includes('oaidalleapi') || imageUrl.includes('replicate.delivery')));
+        if (!imageUrl) return;
         
-        if (imageUrl) {
-            card.innerHTML = `
-                <div class="aspect-[9/16] bg-gray-900">
-                    ${isImage 
-                        ? `<img src="${escapeHtml(imageUrl)}" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/200x350?text=Error'" loading="lazy">`
-                        : `<video src="${escapeHtml(imageUrl)}" class="w-full h-full object-cover" muted loop onmouseenter="this.play()" onmouseleave="this.pause()"></video>`
-                    }
-                </div>
-                <div class="p-2">
-                    <p class="text-xs text-green-400">✓ Scene ${i + 1}</p>
-                    ${scene.visualBeat ? `<p class="text-xs text-purple-400 truncate" title="${escapeHtml(scene.visualBeat)}">${escapeHtml(scene.visualBeat.substring(0, 30))}...</p>` : ''}
+        // OPTIMIZATION: Skip re-render if this scene's image hasn't changed
+        if (renderedSceneUrls[i] === imageUrl) {
+            return; // Already rendered this exact image
+        }
+        
+        // Mark this scene as rendered with this URL
+        renderedSceneUrls[i] = imageUrl;
+        console.log(`[UI] Updating scene ${i + 1} with new image`);
+        
+        // Better image/video detection:
+        // 1. Check source field (most reliable - set by backend)
+        // 2. Check file extension
+        // 3. Check URL patterns as fallback
+        const isImageBySource = scene.source === 'ai' || scene.source === 'dalle' || scene.source === 'flux';
+        const isImageByExtension = /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(imageUrl);
+        const isVideoByExtension = /\.(mp4|webm|mov)(\?|$)/i.test(imageUrl);
+        const isImageByUrl = imageUrl.includes('oaidalleapi') || 
+                            imageUrl.includes('replicate.delivery') ||
+                            imageUrl.includes('/images/');
+        
+        // Decide: image if any image indicator, video only if explicit video extension
+        const isImage = isImageBySource || isImageByExtension || (isImageByUrl && !isVideoByExtension);
+        
+        // Build the prompt HTML - show full prompt with expand/collapse
+        let promptHtml = '';
+        if (scene.dallePrompt) {
+            const promptId = `prompt-${i}`;
+            const shortPrompt = scene.dallePrompt.substring(0, 50);
+            promptHtml = `
+                <div class="mt-2 border-t border-gray-700 pt-2">
+                    <p class="text-xs text-gray-500 mb-1">Prompt used:</p>
+                    <div id="${promptId}-short" class="cursor-pointer" onclick="togglePrompt(${i})">
+                        <p class="text-xs text-blue-400">${escapeHtml(shortPrompt)}... <span class="text-gray-500">[click to expand]</span></p>
+                    </div>
+                    <div id="${promptId}-full" class="hidden">
+                        <pre class="text-xs text-blue-300 whitespace-pre-wrap max-h-48 overflow-y-auto bg-gray-900 p-2 rounded">${escapeHtml(scene.dallePrompt)}</pre>
+                        <button onclick="togglePrompt(${i})" class="text-xs text-gray-500 mt-1">[collapse]</button>
+                        <button onclick="copyPrompt(${i})" class="text-xs text-purple-400 mt-1 ml-2">[copy]</button>
+                    </div>
                 </div>
             `;
+            // Store prompt for copy function
+            window.scenePrompts = window.scenePrompts || {};
+            window.scenePrompts[i] = scene.dallePrompt;
         }
+        
+        // Build visual beat HTML
+        let visualBeatHtml = '';
+        if (scene.visualBeat) {
+            visualBeatHtml = '<p class="text-xs text-purple-400" title="' + escapeHtml(scene.visualBeat) + '">' + escapeHtml(scene.visualBeat) + '</p>';
+        }
+        
+        card.innerHTML = `
+            <div class="aspect-[9/16] bg-gray-900">
+                ${isImage 
+                    ? `<img src="${escapeHtml(imageUrl)}" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/200x350?text=Error'" loading="lazy">`
+                    : `<video src="${escapeHtml(imageUrl)}" class="w-full h-full object-cover" muted loop onmouseenter="this.play()" onmouseleave="this.pause()"></video>`
+                }
+            </div>
+            <div class="p-2">
+                <p class="text-xs text-green-400">✓ Scene ${i + 1} (${scene.source || 'unknown'})</p>
+                ${visualBeatHtml}
+                ${promptHtml}
+            </div>
+        `;
     });
+}
+
+// Toggle prompt visibility
+function togglePrompt(sceneIndex) {
+    const shortEl = document.getElementById(`prompt-${sceneIndex}-short`);
+    const fullEl = document.getElementById(`prompt-${sceneIndex}-full`);
+    if (shortEl && fullEl) {
+        shortEl.classList.toggle('hidden');
+        fullEl.classList.toggle('hidden');
+    }
+}
+
+// Copy prompt to clipboard
+function copyPrompt(sceneIndex) {
+    const prompt = window.scenePrompts?.[sceneIndex];
+    if (prompt) {
+        navigator.clipboard.writeText(prompt).then(() => {
+            alert('Prompt copied to clipboard!');
+        });
+    }
 }
 
 function addLog(message) {
@@ -856,20 +975,24 @@ function displayFinalResult(data) {
     document.getElementById('result-scenes').textContent = data.scenes?.length || 0;
     document.getElementById('result-story').textContent = data.story_text || '';
     
-    // Scene gallery - improved detection
+    // Scene gallery - improved detection (consistent with updateSceneImages)
     const gallery = document.getElementById('result-scenes-gallery');
     if (data.scenes && gallery) {
         gallery.innerHTML = data.scenes.map((scene, i) => {
             const url = scene.videoUrl || scene.storage_path || '';
-            // Better detection: check source field, or URL patterns
-            const isImage = scene.source === 'dalle' || 
-                           url.includes('oaidalleapi') || 
-                           url.includes('openai') ||
-                           url.match(/\.(jpg|jpeg|png|webp|gif)(\?|$)/i);
-            
             if (!url) {
                 return `<div class="aspect-[9/16] bg-gray-800 rounded-lg flex items-center justify-center text-gray-500 text-xs">No image</div>`;
             }
+            
+            // Better image/video detection (same logic as updateSceneImages)
+            const isImageBySource = scene.source === 'ai' || scene.source === 'dalle' || scene.source === 'flux';
+            const isImageByExtension = /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(url);
+            const isVideoByExtension = /\.(mp4|webm|mov)(\?|$)/i.test(url);
+            const isImageByUrl = url.includes('oaidalleapi') || 
+                                url.includes('replicate.delivery') ||
+                                url.includes('openai') ||
+                                url.includes('/images/');
+            const isImage = isImageBySource || isImageByExtension || (isImageByUrl && !isVideoByExtension);
             
             return `
                 <div class="aspect-[9/16] bg-gray-900 rounded-lg overflow-hidden cursor-pointer hover:ring-2 hover:ring-primary transition-all" onclick="showImageModal('${escapeHtml(url)}')">
@@ -938,6 +1061,7 @@ function getSettings() {
         duration: document.getElementById('duration')?.value || 'medium',
         caption_style: document.getElementById('caption-style')?.value || 'bold',
         scene_count: parseInt(document.getElementById('scene-count')?.value || 4),
+        skip_video_assembly: document.getElementById('skip-video-assembly')?.checked || false,
         effects: {
             filter: document.getElementById('effect-filter')?.checked ?? true,
             kenburns: document.getElementById('effect-kenburns')?.checked ?? true,

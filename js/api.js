@@ -20,6 +20,8 @@ async function createJob(options) {
         scene_count: options.scene_count || 4,
         // Preview mode
         preview_only: options.preview_only || false,
+        // Debug mode - skip video assembly
+        skip_video_assembly: options.skip_video_assembly || false,
         // Video effects
         effect_filter: options.effects?.filter ?? true,
         effect_kenburns: options.effects?.kenburns ?? true,
@@ -81,6 +83,62 @@ async function checkJob(jobId) {
     });
 
     if (error) throw new Error(error.message);
+
+    return data;
+}
+
+/**
+ * Re-render video for an existing job (uses existing images + audio)
+ * This skips the expensive audio/image generation phases
+ */
+async function reRenderVideo(jobId) {
+    const client = getSupabaseClient();
+    
+    // First fetch the current job to get its meta
+    const { data: job, error: fetchError } = await client
+        .from('jobs')
+        .select('meta')
+        .eq('id', jobId)
+        .single();
+    
+    if (fetchError) throw new Error(`Failed to fetch job: ${fetchError.message}`);
+    
+    // Clear render-related fields from meta
+    const updatedMeta = { ...(job.meta || {}) };
+    delete updatedMeta.video_render_id;
+    delete updatedMeta.render_status;
+    delete updatedMeta.ffmpeg_render_id;
+    
+    // Reset the job status so it can be re-processed
+    const { error: updateError } = await client
+        .from('jobs')
+        .update({ 
+            status: 'generating',
+            progress: 70,  // Set to assemble phase
+            error: null,
+            meta: updatedMeta
+        })
+        .eq('id', jobId);
+    
+    if (updateError) throw new Error(`Failed to reset job: ${updateError.message}`);
+    
+    // Delete existing final_mp4 asset so a new one can be created
+    await client
+        .from('job_assets')
+        .delete()
+        .eq('job_id', jobId)
+        .eq('type', 'final_mp4');
+    
+    // Trigger the assemble phase directly
+    const { data, error } = await client.functions.invoke('run-job', {
+        body: { 
+            job_id: jobId,
+            phase: 'assemble',  // Skip audio and images phases
+        },
+    });
+
+    if (error) throw new Error(error.message);
+    if (!data.success) throw new Error(data.error);
 
     return data;
 }

@@ -190,6 +190,100 @@ function renderHistoryGrid(jobs) {
 }
 
 // =====================================================
+// RE-RENDER VIDEO
+// =====================================================
+
+async function startReRender(jobId, title) {
+    // Close details modal if open
+    document.getElementById('details-modal')?.remove();
+    
+    // Create progress modal
+    const modal = document.createElement('div');
+    modal.id = 'rerender-modal';
+    modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4';
+    
+    modal.innerHTML = `
+        <div class="bg-gray-800 rounded-2xl p-6 max-w-md w-full text-center">
+            <div class="text-4xl mb-4 spin">🔄</div>
+            <h3 class="text-xl font-bold mb-2">Re-rendering Video</h3>
+            <p class="text-gray-400 mb-4">${escapeHtml(title)}</p>
+            <div class="bg-gray-700 rounded-full h-3 mb-4 overflow-hidden">
+                <div id="rerender-progress" class="bg-gradient-to-r from-orange-500 to-red-500 h-full transition-all duration-500" style="width: 0%"></div>
+            </div>
+            <p id="rerender-status" class="text-sm text-gray-400">Starting FFmpeg renderer...</p>
+            <p class="text-xs text-gray-500 mt-2">Using existing images & audio (no API cost!)</p>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    const progressBar = document.getElementById('rerender-progress');
+    const statusText = document.getElementById('rerender-status');
+    
+    try {
+        // Start the re-render
+        await reRenderVideo(jobId);
+        
+        progressBar.style.width = '10%';
+        statusText.textContent = 'Assembling video with FFmpeg...';
+        
+        // Poll for completion
+        let attempts = 0;
+        const maxAttempts = 120; // 10 minutes max
+        
+        while (attempts < maxAttempts) {
+            await new Promise(r => setTimeout(r, 5000)); // Wait 5 seconds
+            
+            const status = await checkJob(jobId);
+            attempts++;
+            
+            // Update progress
+            const progress = Math.min(10 + (attempts / maxAttempts) * 80, 90);
+            progressBar.style.width = `${progress}%`;
+            
+            if (status.status === 'complete') {
+                progressBar.style.width = '100%';
+                statusText.textContent = 'Video ready!';
+                
+                // Success - show the video
+                setTimeout(() => {
+                    modal.remove();
+                    if (status.video_url) {
+                        playHistoryVideo(status.video_url, title);
+                    }
+                    // Refresh history grid
+                    loadHistory();
+                }, 1500);
+                return;
+            }
+            
+            if (status.status === 'failed' || status.status === 'error') {
+                throw new Error(status.error || 'Render failed');
+            }
+            
+            // Update status text based on phase
+            if (status.phase === 'assemble') {
+                statusText.textContent = 'FFmpeg rendering in progress...';
+            } else {
+                statusText.textContent = `Status: ${status.status} (${status.progress || 0}%)`;
+            }
+        }
+        
+        throw new Error('Render timed out after 10 minutes');
+        
+    } catch (error) {
+        console.error('Re-render failed:', error);
+        modal.querySelector('.bg-gray-800').innerHTML = `
+            <div class="text-4xl mb-4">❌</div>
+            <h3 class="text-xl font-bold mb-2 text-red-400">Re-render Failed</h3>
+            <p class="text-gray-400 mb-4">${escapeHtml(error.message)}</p>
+            <button onclick="document.getElementById('rerender-modal').remove()" class="bg-gray-700 hover:bg-gray-600 px-8 py-3 rounded-xl">
+                Close
+            </button>
+        `;
+    }
+}
+
+// =====================================================
 // VIDEO MODAL
 // =====================================================
 
@@ -346,7 +440,7 @@ async function showHistoryDetails(jobId) {
                 </div>
             ` : ''}
             
-            <div class="flex gap-3">
+            <div class="flex gap-3 flex-wrap">
                 ${videoAsset ? `
                     <button onclick="playHistoryVideo('${escapeHtml(videoAsset.public_url)}', '${escapeHtml((job.title || 'Video').replace(/'/g, "\\'"))}')" class="flex-1 bg-primary/20 hover:bg-primary/30 text-primary font-bold py-3 rounded-xl">
                         ▶ Play
@@ -354,6 +448,11 @@ async function showHistoryDetails(jobId) {
                     <a href="${escapeHtml(videoAsset.public_url)}" download class="flex-1 bg-gradient-to-r from-primary to-secondary text-white font-bold py-3 rounded-xl text-center">
                         ⬇️ Download
                     </a>
+                ` : ''}
+                ${sceneAssets.length > 0 ? `
+                    <button onclick="startReRender('${job.id}', '${escapeHtml((job.title || 'Video').replace(/'/g, "\\'"))}')" class="flex-1 bg-orange-600/80 hover:bg-orange-600 text-white font-bold py-3 rounded-xl" title="Re-render video using existing images & audio (free!)">
+                        🔄 Re-render Video
+                    </button>
                 ` : ''}
                 <button onclick="document.getElementById('details-modal').remove()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-xl">
                     Close

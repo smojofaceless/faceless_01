@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 // Helper to trigger next phase (fire-and-forget, don't wait)
-async function triggerNextPhase(supabaseUrl: string, job_id: string, phase: string) {
+async function triggerNextPhase(supabaseUrl: string, supabaseServiceKey: string, job_id: string, phase: string) {
   try {
     console.log(`[CHECK] Triggering phase: ${phase} for job ${job_id}`);
     // Fire and forget - don't await the full response
@@ -15,7 +15,8 @@ async function triggerNextPhase(supabaseUrl: string, job_id: string, phase: stri
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+        "Authorization": `Bearer ${supabaseServiceKey}`,
+        "apikey": supabaseServiceKey,
       },
       body: JSON.stringify({ job_id, phase }),
     }).catch(err => console.error(`[CHECK] Phase trigger error:`, err));
@@ -28,22 +29,75 @@ async function triggerNextPhase(supabaseUrl: string, job_id: string, phase: stri
   }
 }
 
+// Helper to convert asset to scene object with proper URL and source inference
+function toScene(asset: any) {
+  // Always pick the best available URL (public_url first, then storage_path)
+  const url = asset.public_url || asset.storage_path || "";
+  const index = asset.meta?.scene_index ?? 0;
+
+  // Infer source from meta or asset type for correct image/video rendering
+  const inferredSource =
+    asset.meta?.source ||
+    (asset.type === "dalle_image" ? "dalle" :
+     asset.type?.includes("flux") || asset.type?.includes("replicate") ? "ai" :
+     asset.type === "bg_video" ? "pexels" : "pexels");
+
+  return {
+    index,
+    text: asset.meta?.scene_text || "",
+    keywords: asset.meta?.keywords || [],
+    startTime: asset.meta?.start_time ?? 0,
+    endTime: asset.meta?.end_time ?? 0,
+    videoUrl: url,
+    source: inferredSource,
+    dallePrompt: asset.meta?.dalle_prompt || null,
+    visualBeat: asset.meta?.visual_beat || null,
+    moodLevel: asset.meta?.mood_level || null,
+    cameraAngle: asset.meta?.camera_angle || null,
+    artStyle: asset.meta?.art_style || null,
+  };
+}
+
 serve(async (req) => {
-  // Handle CORS preflight
+  // Handle CORS preflight - MUST return CORS headers
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  // Wrap EVERYTHING in try-catch to ensure CORS headers are always returned
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const creatomateKey = Deno.env.get("CREATOMATE_API_KEY")!;
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const creatomateKey = Deno.env.get("CREATOMATE_API_KEY");
+    
+    // Validate required env vars
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error("[CHECK] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+      return new Response(
+        JSON.stringify({ success: false, error: "Server configuration error" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
+      );
+    }
+    
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { job_id } = await req.json();
+    // Safely parse JSON body
+    let job_id: string | undefined;
+    try {
+      const body = await req.json();
+      job_id = body?.job_id;
+    } catch (parseError) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Invalid JSON body" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+      );
+    }
 
     if (!job_id) {
-      throw new Error("job_id is required");
+      return new Response(
+        JSON.stringify({ success: false, error: "job_id is required" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+      );
     }
 
     // Get job from database
@@ -59,6 +113,9 @@ serve(async (req) => {
 
     // If job is already complete or failed, return status
     if (job.status === "complete" || job.status === "failed") {
+      // Get job meta for debug info
+      const jobMeta = job.meta || {};
+      
       // Get final video URL
       const { data: assets } = await supabase
         .from("job_assets")
@@ -67,29 +124,15 @@ serve(async (req) => {
         .eq("type", "final_mp4")
         .single();
 
-      // Get scene background videos/images
+      // Get scene background videos/images (include all AI image types)
       const { data: sceneAssets } = await supabase
         .from("job_assets")
         .select("*")
         .eq("job_id", job_id)
-        .in("type", ["bg_video", "dalle_image"])
-        .order("created_at", { ascending: true });
+        .in("type", ["bg_video", "dalle_image", "flux_image", "replicate_image", "ai_image"]);
 
-      // Format scenes for timeline with full metadata
-      const scenes = sceneAssets?.map((asset: any) => ({
-        index: asset.meta?.scene_index ?? 0,
-        text: asset.meta?.scene_text || '',
-        keywords: asset.meta?.keywords || [],
-        startTime: asset.meta?.start_time ?? 0,
-        endTime: asset.meta?.end_time ?? 0,
-        videoUrl: asset.storage_path,
-        source: asset.meta?.source || 'pexels',
-        // DALL-E specific data
-        dallePrompt: asset.meta?.dalle_prompt || null,
-        visualBeat: asset.meta?.visual_beat || null,
-        moodLevel: asset.meta?.mood_level || null,
-        cameraAngle: asset.meta?.camera_angle || null,
-      })) || [];
+      // Format scenes using helper and sort by scene_index (not created_at)
+      const scenes = (sceneAssets || []).map(toScene).sort((a, b) => a.index - b.index);
 
       return new Response(
         JSON.stringify({
@@ -100,9 +143,22 @@ serve(async (req) => {
           title: job.title,
           story_text: job.story_text,
           duration_sec: job.duration_sec,
-          video_url: assets?.storage_path || assets?.public_url || null,
+          video_url: assets?.public_url || assets?.storage_path || null,
           scenes: scenes,
           error: job.error,
+          // Include debug info even for complete/failed jobs
+          image_model: jobMeta.image_model || null,
+          resolved_image_model: jobMeta.resolved_image_model || null,
+          visual_source: jobMeta.visual_source || null,
+          logs: jobMeta.generation_logs || [],
+          replicate_inputs: jobMeta.replicate_inputs || [],
+          meta: {
+            image_model: jobMeta.image_model,
+            resolved_image_model: jobMeta.resolved_image_model,
+            visual_source: jobMeta.visual_source,
+            art_style: jobMeta.art_style,
+            scene_count: jobMeta.scene_count,
+          },
         }),
         {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -116,14 +172,51 @@ serve(async (req) => {
     if ((job.status === "rendering" || job.status === "assembling") && job.meta?.render_id) {
       const renderId = job.meta.render_id;
       
-      const response = await fetch(
-        `https://api.creatomate.com/v2/renders/${renderId}`,
-        {
-          headers: {
-            "Authorization": `Bearer ${creatomateKey}`,
-          },
-        }
-      );
+      // Guard: skip Creatomate check if API key is missing
+      if (!creatomateKey) {
+        console.warn("[CHECK] CREATOMATE_API_KEY not set, cannot check render status");
+        return new Response(
+          JSON.stringify({
+            success: true,
+            job_id: job_id,
+            status: job.status,
+            progress: job.progress || 85,
+            title: job.title,
+            story_text: job.story_text,
+            error: null,
+            message: "Render in progress, cannot check status (API key missing)"
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+        );
+      }
+      
+      let response;
+      try {
+        response = await fetch(
+          `https://api.creatomate.com/v2/renders/${renderId}`,
+          {
+            headers: {
+              "Authorization": `Bearer ${creatomateKey}`,
+            },
+          }
+        );
+      } catch (fetchErr) {
+        console.error("[CHECK] Failed to fetch Creatomate status:", fetchErr);
+        // Return current status instead of crashing
+        return new Response(
+          JSON.stringify({
+            success: true,
+            job_id: job_id,
+            status: job.status,
+            progress: job.progress || 85,
+            title: job.title,
+            story_text: job.story_text,
+            error: null,
+            message: "Render in progress, status check failed temporarily"
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+        );
+      }
 
       if (response.ok) {
         const renderData = await response.json();
@@ -216,8 +309,8 @@ serve(async (req) => {
       .from("job_assets")
       .select("*")
       .eq("job_id", job_id)
-      .in("type", ["bg_video", "dalle_image"])
-      .order("created_at", { ascending: true });
+      .in("type", ["bg_video", "dalle_image", "flux_image", "replicate_image", "ai_image"])
+      .order("created_at", { ascending: false });  // Get newest first
 
     // Get scene data count
     const { data: sceneDataAssets, count: sceneCount } = await supabase
@@ -226,19 +319,20 @@ serve(async (req) => {
       .eq("job_id", job_id)
       .eq("type", "scene_data");
 
-    const partialScenes = partialAssets?.map((asset: any) => ({
-      index: asset.meta?.scene_index ?? 0,
-      text: asset.meta?.scene_text || '',
-      keywords: asset.meta?.keywords || [],
-      startTime: asset.meta?.start_time ?? 0,
-      endTime: asset.meta?.end_time ?? 0,
-      videoUrl: asset.storage_path,
-      source: asset.meta?.source || 'pexels',
-      dallePrompt: asset.meta?.dalle_prompt || null,
-      visualBeat: asset.meta?.visual_beat || null,
-      moodLevel: asset.meta?.mood_level || null,
-      artStyle: asset.meta?.art_style || null,
-    })) || [];
+    // CRITICAL: Deduplicate scenes by index - keep only the LATEST image for each scene
+    // This handles cases where duplicate API calls created multiple images per scene
+    const sceneMap = new Map<number, any>();
+    for (const asset of (partialAssets || [])) {
+      const idx = asset.meta?.scene_index ?? -1;
+      if (idx >= 0 && !sceneMap.has(idx)) {
+        sceneMap.set(idx, asset);  // First one wins (newest due to order)
+      }
+    }
+    
+    // Convert to array and sort by index
+    const partialScenes = Array.from(sceneMap.values())
+      .map(toScene)
+      .sort((a, b) => a.index - b.index);
 
     // =====================================================
     // AUTO-CONTINUE: Trigger next phase if job is stuck
@@ -260,29 +354,104 @@ serve(async (req) => {
     
     if (status === "generating") {
       // Phase 1 complete: Audio ready (progress = 50), trigger images
-      // Only trigger if not already running
-      if (progress >= 50 && progress < 70 && !jobMeta.images_phase_running && !jobMeta.images_complete) {
+      // Only trigger if not already running and not already complete
+      // CRITICAL: Also check lease to prevent duplicate triggers
+      const imagesLease = new Date(jobMeta.images_phase_lease_until || 0).getTime();
+      const leaseActive = imagesLease > Date.now();
+      
+      // Rate limiting: don't trigger images more than once per 15 seconds
+      const lastImageTime = new Date(jobMeta.last_image_time || 0).getTime();
+      const timeSinceLastImage = Date.now() - lastImageTime;
+      const rateLimitCooldown = 15000; // 15 seconds between image generations
+      
+      if (progress >= 50 && progress < 70 && !jobMeta.images_complete) {
         if (imagesReady < totalScenes) {
-          // Trigger images phase
-          nextPhase = "images";
-          console.log(`[CHECK] Triggering images phase (scenes: ${totalScenes}, images: ${imagesReady})`);
-          const result = await triggerNextPhase(supabaseUrl, job_id, "images");
-          phaseTriggered = result?.success === true;
-          console.log(`[CHECK] Images phase triggered: ${phaseTriggered}`);
+          // Only trigger if not running OR lease expired (stale lock)
+          if (!jobMeta.images_phase_running || !leaseActive) {
+            // Check rate limit cooldown
+            if (timeSinceLastImage < rateLimitCooldown && imagesReady > 0) {
+              console.log(`[CHECK] Rate limit cooldown - ${Math.ceil((rateLimitCooldown - timeSinceLastImage) / 1000)}s remaining`);
+            } else {
+              nextPhase = "images";
+              console.log(`[CHECK] Triggering images phase (scenes: ${totalScenes}, images: ${imagesReady}, running: ${jobMeta.images_phase_running}, leaseActive: ${leaseActive})`);
+              
+              // Update last_image_time BEFORE triggering to prevent rapid-fire
+              await supabase
+                .from("jobs")
+                .update({ 
+                  meta: { ...jobMeta, last_image_time: new Date().toISOString() },
+                  updated_at: new Date().toISOString()
+                })
+                .eq("id", job_id);
+              
+              const result = await triggerNextPhase(supabaseUrl, supabaseServiceKey, job_id, "images");
+              phaseTriggered = result?.success === true;
+              console.log(`[CHECK] Images phase triggered: ${phaseTriggered}`);
+            }
+          } else {
+            console.log(`[CHECK] Skipping images trigger - lease still active (expires: ${jobMeta.images_phase_lease_until})`);
+          }
         }
       }
       
       // Phase 2 complete: Images ready, trigger assemble
       // Trigger if progress >= 70 OR all images are ready
-      const allImagesReady = imagesReady >= totalScenes;
-      console.log(`[CHECK] allImagesReady=${allImagesReady}, assemble_phase_running=${jobMeta.assemble_phase_running}`);
+      const allImagesReady = imagesReady >= totalScenes || jobMeta.images_complete === true;
+      console.log(`[CHECK] allImagesReady=${allImagesReady}, imagesReady=${imagesReady}, images_complete=${jobMeta.images_complete}, assemble_phase_running=${jobMeta.assemble_phase_running}`);
       
-      if ((progress >= 70 && progress < 75) || (allImagesReady && progress >= 55 && progress < 75)) {
+      // Check if user wants to skip video assembly (for debugging)
+      const skipVideoAssembly = jobMeta.skip_video_assembly === true;
+      console.log(`[CHECK] skipVideoAssembly=${skipVideoAssembly}`);
+      
+      // Also trigger if images_complete is true but progress wasn't updated (edge case)
+      if ((progress >= 70 && progress < 75) || (allImagesReady && progress >= 50 && progress < 75)) {
         if (!jobMeta.assemble_phase_running) {
-          nextPhase = "assemble";
-          console.log(`[CHECK] Triggering assemble phase (images: ${imagesReady}/${totalScenes}, progress: ${progress})`);
-          const result = await triggerNextPhase(supabaseUrl, job_id, "assemble");
-          phaseTriggered = result?.success === true;
+          if (skipVideoAssembly) {
+            // Skip assembly - mark job as complete with images only
+            console.log(`[CHECK] skip_video_assembly=true, marking job complete without video`);
+            nextPhase = null;
+            
+            // Update job to completed state and await it
+            const { error: updateError } = await supabase
+              .from("jobs")
+              .update({ 
+                status: "completed", 
+                progress: 100,
+                updated_at: new Date().toISOString()
+              })
+              .eq("id", job_id);
+            
+            if (updateError) {
+              console.error(`[CHECK] Failed to mark job complete:`, updateError);
+            } else {
+              // Return immediately with completed status
+              return new Response(
+                JSON.stringify({
+                  success: true,
+                  job_id: job_id,
+                  status: "completed",
+                  progress: 100,
+                  title: job.title,
+                  story_text: job.story_text,
+                  duration_sec: job.duration_sec,
+                  audio_url: audioUrl || null,
+                  scenes: deduplicatedScenes,
+                  video_url: null, // No video when skipping assembly
+                  meta: jobMeta,
+                  message: "Job completed (video assembly skipped)",
+                }),
+                { 
+                  status: 200, 
+                  headers: { ...corsHeaders, "Content-Type": "application/json" }
+                }
+              );
+            }
+          } else {
+            nextPhase = "assemble";
+            console.log(`[CHECK] Triggering assemble phase (images: ${imagesReady}/${totalScenes}, progress: ${progress})`);
+            const result = await triggerNextPhase(supabaseUrl, supabaseServiceKey, job_id, "assemble");
+            phaseTriggered = result?.success === true;
+          }
         }
       }
     }
@@ -307,15 +476,20 @@ serve(async (req) => {
         // Debug info - image model being used
         image_model: jobMeta.image_model || null,
         visual_source: jobMeta.visual_source || null,
+        resolved_image_model: jobMeta.resolved_image_model || null,
         meta: {
           image_model: jobMeta.image_model,
           visual_source: jobMeta.visual_source,
           art_style: jobMeta.art_style,
           scene_count: jobMeta.scene_count,
           images_phase_running: jobMeta.images_phase_running,
+          resolved_image_model: jobMeta.resolved_image_model,
+          skip_video_assembly: jobMeta.skip_video_assembly,
         },
         // Backend logs (if any)
         logs: jobMeta.generation_logs || [],
+        // Replicate inputs for debugging (FLUX model)
+        replicate_inputs: jobMeta.replicate_inputs || [],
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -324,10 +498,16 @@ serve(async (req) => {
     );
 
   } catch (error) {
+    // Log the full error for debugging
+    console.error("[CHECK] Unhandled error:", error);
+    
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    
     return new Response(
       JSON.stringify({
         success: false,
-        error: error.message,
+        error: errorMessage,
+        stack: error instanceof Error ? error.stack : undefined,
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
