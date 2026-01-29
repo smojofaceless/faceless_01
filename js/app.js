@@ -572,6 +572,9 @@ async function generateStoryPreview() {
     }
 }
 
+// Store generation details globally for copy function
+let currentGenerationDetails = null;
+
 function displayStoryPreview(data) {
     document.getElementById('story-title').value = data.title || 'Untitled Story';
     document.getElementById('story-text').value = data.story_text || '';
@@ -598,6 +601,11 @@ function displayStoryPreview(data) {
                 endTime: 0
             });
         }
+    }
+    
+    // Display generation details if available
+    if (data.generation_details) {
+        displayGenerationDetails(data.generation_details);
     }
     
     // Render scene breakdown
@@ -632,6 +640,85 @@ function renderSceneBreakdown(scenes) {
             </div>
         </div>
     `).join('');
+}
+
+// =====================================================
+// GENERATION DETAILS DISPLAY
+// =====================================================
+
+// Friendly names for presets
+const VIBE_NAMES = {
+    'slow_creepy': 'Slow Creepy',
+    'punchy_shock': 'Punchy Shock',
+    'atmospheric': 'Atmospheric'
+};
+
+const VISUAL_NAMES = {
+    'forest': 'Dark Forest',
+    'urban': 'Urban Decay',
+    'house': 'Haunted House',
+    'hospital': 'Abandoned Hospital',
+    'ocean': 'Deep Ocean',
+    'space': 'Space/Cosmic'
+};
+
+function displayGenerationDetails(details) {
+    currentGenerationDetails = details;
+    
+    // Update all the detail fields
+    const vibeEl = document.getElementById('detail-vibe');
+    const durationEl = document.getElementById('detail-duration');
+    const wordsEl = document.getElementById('detail-words');
+    const visualEl = document.getElementById('detail-visual');
+    const artStyleEl = document.getElementById('detail-art-style');
+    const modelEl = document.getElementById('detail-model');
+    const vibeDescEl = document.getElementById('detail-vibe-desc');
+    const promptEl = document.getElementById('detail-prompt');
+    const storyModelEl = document.getElementById('detail-story-model');
+    const tempEl = document.getElementById('detail-temp');
+    const scenesEl = document.getElementById('detail-scenes');
+    
+    if (vibeEl) vibeEl.textContent = VIBE_NAMES[details.vibe_preset] || details.vibe_preset;
+    if (durationEl) durationEl.textContent = `${details.target_duration_sec}s`;
+    if (wordsEl) wordsEl.textContent = details.word_range;
+    if (visualEl) visualEl.textContent = VISUAL_NAMES[details.visual_preset] || details.visual_preset;
+    if (artStyleEl) artStyleEl.textContent = details.art_style_name || details.art_style;
+    if (modelEl) modelEl.textContent = AI_MODEL_NAMES[details.image_model] || details.image_model;
+    if (vibeDescEl) vibeDescEl.textContent = `"${details.vibe_description}"`;
+    if (promptEl) promptEl.textContent = details.story_prompt;
+    if (storyModelEl) storyModelEl.textContent = details.story_model;
+    if (tempEl) tempEl.textContent = details.story_temperature;
+    if (scenesEl) scenesEl.textContent = details.scene_count;
+}
+
+function toggleGenerationDetails() {
+    const panel = document.getElementById('generation-details');
+    const arrow = document.getElementById('gen-details-arrow');
+    if (panel && arrow) {
+        panel.classList.toggle('hidden');
+        arrow.style.transform = panel.classList.contains('hidden') ? '' : 'rotate(180deg)';
+    }
+}
+
+function copyStoryPrompt() {
+    if (currentGenerationDetails?.story_prompt) {
+        navigator.clipboard.writeText(currentGenerationDetails.story_prompt).then(() => {
+            showToast('Prompt copied to clipboard!');
+        }).catch(err => {
+            console.error('Failed to copy:', err);
+        });
+    }
+}
+
+// Simple toast notification
+function showToast(message) {
+    const toast = document.createElement('div');
+    toast.className = 'fixed bottom-4 right-4 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg z-50 animate-fade-in';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => {
+        toast.remove();
+    }, 2000);
 }
 
 // =====================================================

@@ -9,6 +9,8 @@ import {
   corsHeaders,
   ELEVENLABS_VOICE_ID,
   ART_STYLE_CONFIG,
+  LENGTH_CONFIG,
+  VIBE_CONFIG,
   updateJob,
   getImageModel,
   getFreshJob,
@@ -108,7 +110,25 @@ export async function runPreviewMode(
   const sentences = storyNormalized.match(/[^.!?…]+[.!?…]+/g) || [];
   
   // FORCE version marker directly in response (bypass any module caching)
-  const BUILD_VERSION = "2026-01-29T21:15:00Z";
+  const BUILD_VERSION = "2026-01-29T21:30:00Z";
+  
+  // Get configuration details for transparency
+  const lengthConfig = LENGTH_CONFIG[job.length_preset as keyof typeof LENGTH_CONFIG] || LENGTH_CONFIG["60"];
+  const vibeConfig = VIBE_CONFIG[job.vibe_preset as keyof typeof VIBE_CONFIG] || VIBE_CONFIG["slow_creepy"];
+  const artStyleConfig = ART_STYLE_CONFIG[jobMeta.art_style as keyof typeof ART_STYLE_CONFIG] || ART_STYLE_CONFIG["cinematic-dark"];
+  
+  // Build the actual prompt that was used (same as in generateStory)
+  const storyPrompt = `You are a viral horror short story writer for TikTok/Reels/Shorts.
+
+Write a scary story with these requirements:
+- Length: ${lengthConfig.minWords}-${lengthConfig.maxWords} words (CRITICAL: stay within this range)
+- Style: ${vibeConfig}
+- Must have a HOOK in the first sentence that grabs attention
+- MUST have a COMPLETE ending - either a twist, cliffhanger, or scary reveal
+- The final sentence should feel like an ending
+- No real person names
+- Present tense preferred
+- Simple, punchy sentences`;
   
   return new Response(
     JSON.stringify({
@@ -119,9 +139,28 @@ export async function runPreviewMode(
       story_text: storyData.story,
       word_count: wordCount,
       duration_sec: estimatedDuration,
+      // GENERATION DETAILS - What went into creating this story
+      generation_details: {
+        // User's selections
+        vibe_preset: job.vibe_preset,
+        vibe_description: vibeConfig,
+        length_preset: job.length_preset,
+        target_duration_sec: lengthConfig.targetSeconds,
+        word_range: `${lengthConfig.minWords}-${lengthConfig.maxWords} words`,
+        visual_preset: job.visual_preset || "forest",
+        art_style: jobMeta.art_style || "cinematic-dark",
+        art_style_name: artStyleConfig.name,
+        scene_count: sceneCount,
+        image_model: jobMeta.image_model || "gpt-4o",
+        // The actual prompt used
+        story_prompt: storyPrompt,
+        // Model info
+        story_model: "gpt-4o-mini",
+        story_temperature: 0.9,
+      },
       // DEBUG INFO - will appear in browser console
       _debug: {
-        version: "v3.1",
+        version: "v3.2",
         build: BUILD_VERSION,
         requested_scenes: sceneCount,
         actual_scenes_returned: estimatedScenes.length,
