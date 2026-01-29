@@ -217,28 +217,68 @@ export interface VideoOptions {
   highlightScary: boolean;
 }
 
-// Caption styles for video assembly
+// Caption styles for video assembly (10 styles)
 export const CAPTION_STYLES: Record<string, any> = {
   bold: {
-    font_family: "Montserrat",
-    font_weight: "800",
+    font_family: "Impact",
+    font_weight: "900",
     font_size: "8 vmin",
-  },
-  typewriter: {
-    font_family: "Courier New",
-    font_weight: "400",
-    font_size: "7 vmin",
+    color: "#FFFFFF",
   },
   horror: {
     font_family: "Times New Roman",
     font_weight: "700",
     font_size: "8 vmin",
     font_style: "italic",
+    color: "#DC2626",
   },
   glitch: {
     font_family: "Impact",
     font_weight: "400",
     font_size: "8 vmin",
+    color: "#00FFFF",
+  },
+  minimal: {
+    font_family: "Arial",
+    font_weight: "400",
+    font_size: "7 vmin",
+    color: "#E5E7EB",
+  },
+  neon: {
+    font_family: "Arial",
+    font_weight: "900",
+    font_size: "8 vmin",
+    color: "#F0ABFC",
+  },
+  vintage: {
+    font_family: "Georgia",
+    font_weight: "400",
+    font_size: "7 vmin",
+    color: "#FEF3C7",
+  },
+  blood: {
+    font_family: "Impact",
+    font_weight: "900",
+    font_size: "8 vmin",
+    color: "#7F1D1D",
+  },
+  typewriter: {
+    font_family: "Courier New",
+    font_weight: "400",
+    font_size: "7 vmin",
+    color: "#D1D5DB",
+  },
+  shadow: {
+    font_family: "Arial",
+    font_weight: "900",
+    font_size: "8 vmin",
+    color: "#FFFFFF",
+  },
+  comic: {
+    font_family: "Comic Sans MS",
+    font_weight: "700",
+    font_size: "8 vmin",
+    color: "#FBBF24",
   },
 };
 

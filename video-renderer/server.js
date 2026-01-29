@@ -459,26 +459,82 @@ const CAPTION_STYLES = {
     fontName: 'Impact',
     fontSize: 85,
     fontWeight: 'bold',
-  },
-  elegant: {
-    fontName: 'Times New Roman',
-    fontSize: 75,
-    fontWeight: 'normal',
-  },
-  modern: {
-    fontName: 'Arial',
-    fontSize: 80,
-    fontWeight: 'bold',
+    primaryColor: '&H00FFFFFF', // White
+    outlineColor: '&H00000000', // Black
+    outline: 4,
   },
   horror: {
-    fontName: 'Impact',
+    fontName: 'Times New Roman',
     fontSize: 90,
     fontWeight: 'bold',
+    italic: true,
+    primaryColor: '&H002626DC', // Dark red (BGR)
+    outlineColor: '&H00000000',
+    outline: 3,
+  },
+  glitch: {
+    fontName: 'Impact',
+    fontSize: 80,
+    fontWeight: 'normal',
+    primaryColor: '&H00FFFF00', // Cyan (BGR)
+    outlineColor: '&H00FF00FF', // Magenta
+    outline: 2,
   },
   minimal: {
     fontName: 'Arial',
     fontSize: 65,
     fontWeight: 'normal',
+    primaryColor: '&H00E7E5EB', // Light gray
+    outlineColor: '&H00000000',
+    outline: 1,
+  },
+  neon: {
+    fontName: 'Arial',
+    fontSize: 80,
+    fontWeight: 'bold',
+    primaryColor: '&H00FCABF0', // Pink/purple (BGR)
+    outlineColor: '&H00D346EF', // Magenta glow
+    outline: 4,
+  },
+  vintage: {
+    fontName: 'Georgia',
+    fontSize: 75,
+    fontWeight: 'normal',
+    primaryColor: '&H00C7F3FE', // Cream/sepia (BGR)
+    outlineColor: '&H000F3578', // Brown
+    outline: 2,
+  },
+  blood: {
+    fontName: 'Impact',
+    fontSize: 90,
+    fontWeight: 'bold',
+    primaryColor: '&H001D1D7F', // Dark red (BGR)
+    outlineColor: '&H000A0A45', // Darker red
+    outline: 4,
+  },
+  typewriter: {
+    fontName: 'Courier New',
+    fontSize: 65,
+    fontWeight: 'normal',
+    primaryColor: '&H00D1D5DB', // Light gray
+    outlineColor: '&H00000000',
+    outline: 2,
+  },
+  shadow: {
+    fontName: 'Arial',
+    fontSize: 85,
+    fontWeight: 'bold',
+    primaryColor: '&H00FFFFFF', // White
+    outlineColor: '&H00000000', // Black
+    outline: 5,
+  },
+  comic: {
+    fontName: 'Comic Sans MS',
+    fontSize: 80,
+    fontWeight: 'bold',
+    primaryColor: '&H0024BFFB', // Yellow (BGR)
+    outlineColor: '&H00000000', // Black
+    outline: 4,
   },
 };
 
@@ -505,6 +561,12 @@ async function createASSSubtitles(captions, outputPath, options = {}) {
   
   const style = CAPTION_STYLES[captionStyle] || CAPTION_STYLES.bold;
   
+  // Get style colors (with defaults for backward compatibility)
+  const primaryColor = style.primaryColor || '&H00FFFFFF';
+  const outlineColor = style.outlineColor || '&H00000000';
+  const outlineWidth = style.outline || 4;
+  const isItalic = style.italic ? 1 : 0;
+  
   // ASS header with style definitions
   // PlayResY/PlayResX set the virtual resolution for positioning
   const header = `[Script Info]
@@ -516,8 +578,8 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${style.fontName},${style.fontSize},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,${style.fontWeight === 'bold' ? 1 : 0},0,0,0,100,100,0,0,1,4,2,2,30,30,400,1
-Style: Scary,${style.fontName},${Math.round(style.fontSize * 1.1)},&H000000FF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,4,2,2,30,30,400,1
+Style: Default,${style.fontName},${style.fontSize},${primaryColor},&H000000FF,${outlineColor},&H80000000,${style.fontWeight === 'bold' ? 1 : 0},${isItalic},0,0,100,100,0,0,1,${outlineWidth},2,2,30,30,400,1
+Style: Scary,${style.fontName},${Math.round(style.fontSize * 1.1)},&H000000FF,&H000000FF,${outlineColor},&H80000000,1,0,0,0,100,100,0,0,1,${outlineWidth},2,2,30,30,400,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

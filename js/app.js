@@ -57,6 +57,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load custom art styles into dropdown
     updateCustomStyleDropdown();
     
+    // Initialize caption style selector
+    initCaptionStyleSelector();
+    
     // Initialize cost
     updateCostEstimate();
 });
@@ -1070,6 +1073,32 @@ function getSettings() {
             transitions: document.getElementById('effect-transitions')?.checked ?? true
         }
     };
+}
+
+// =====================================================
+// CAPTION STYLE SELECTOR
+// =====================================================
+function initCaptionStyleSelector() {
+    const grid = document.getElementById('caption-style-grid');
+    const hiddenInput = document.getElementById('caption-style');
+    
+    if (!grid || !hiddenInput) return;
+    
+    grid.addEventListener('click', (e) => {
+        const btn = e.target.closest('.caption-style-btn');
+        if (!btn) return;
+        
+        // Remove active from all buttons
+        grid.querySelectorAll('.caption-style-btn').forEach(b => b.classList.remove('active'));
+        
+        // Add active to clicked button
+        btn.classList.add('active');
+        
+        // Update hidden input value
+        hiddenInput.value = btn.dataset.style;
+        
+        console.log('[UI] Caption style selected:', btn.dataset.style);
+    });
 }
 
 function sleep(ms) {

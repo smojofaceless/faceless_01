@@ -115,3 +115,154 @@ input[type="radio"] {
 .bg-primary\/20 {
     background-color: rgba(239, 68, 68, 0.2);
 }
+
+/* =====================================================
+   CAPTION STYLE SELECTOR
+   ===================================================== */
+.caption-style-btn {
+    background-color: #1f2937;
+    border: 2px solid #374151;
+    border-radius: 0.75rem;
+    padding: 0.75rem 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 60px;
+}
+
+.caption-style-btn:hover {
+    background-color: #374151;
+    border-color: #4b5563;
+}
+
+.caption-style-btn.active {
+    border-color: #ef4444;
+    background-color: rgba(239, 68, 68, 0.15);
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+}
+
+.caption-preview {
+    display: block;
+    text-align: center;
+    line-height: 1.2;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+/* Bold Impact */
+.caption-bold {
+    font-family: 'Impact', 'Arial Black', sans-serif;
+    font-size: 1.1rem;
+    font-weight: 900;
+    color: #ffffff;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* Horror Drip */
+.caption-horror {
+    font-family: 'Times New Roman', serif;
+    font-size: 1.1rem;
+    font-weight: 700;
+    font-style: italic;
+    color: #dc2626;
+    text-shadow: 0 0 10px #991b1b, 2px 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+/* Glitch Effect */
+.caption-glitch {
+    font-family: 'Impact', sans-serif;
+    font-size: 1rem;
+    font-weight: 400;
+    color: #00ffff;
+    text-shadow: 
+        -2px 0 #ff00ff,
+        2px 0 #00ff00,
+        0 0 10px rgba(0, 255, 255, 0.5);
+    letter-spacing: 2px;
+}
+
+/* Minimal Clean */
+.caption-minimal {
+    font-family: 'Inter', 'Arial', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 400;
+    color: #e5e7eb;
+    text-transform: lowercase;
+    letter-spacing: 0.5px;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* Neon Glow */
+.caption-neon {
+    font-family: 'Arial Black', sans-serif;
+    font-size: 1rem;
+    font-weight: 900;
+    color: #f0abfc;
+    text-shadow: 
+        0 0 5px #f0abfc,
+        0 0 10px #e879f9,
+        0 0 20px #d946ef,
+        0 0 30px #c026d3;
+}
+
+/* Vintage Film */
+.caption-vintage {
+    font-family: 'Georgia', serif;
+    font-size: 1rem;
+    font-weight: 400;
+    color: #fef3c7;
+    text-shadow: 1px 1px 0 #78350f, 2px 2px 4px rgba(0, 0, 0, 0.5);
+    letter-spacing: 1px;
+}
+
+/* Blood Drip */
+.caption-blood {
+    font-family: 'Impact', sans-serif;
+    font-size: 1.1rem;
+    font-weight: 900;
+    color: #7f1d1d;
+    text-shadow: 
+        0 2px 0 #450a0a,
+        0 4px 8px rgba(127, 29, 29, 0.8);
+    text-transform: uppercase;
+}
+
+/* Typewriter */
+.caption-typewriter {
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    font-weight: 400;
+    color: #d1d5db;
+    letter-spacing: 1px;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* Shadow Outline */
+.caption-shadow {
+    font-family: 'Arial Black', sans-serif;
+    font-size: 1rem;
+    font-weight: 900;
+    color: #ffffff;
+    text-shadow: 
+        -2px -2px 0 #000,
+        2px -2px 0 #000,
+        -2px 2px 0 #000,
+        2px 2px 0 #000,
+        0 4px 8px rgba(0, 0, 0, 0.8);
+}
+
+/* Comic Book */
+.caption-comic {
+    font-family: 'Comic Sans MS', 'Chalkboard SE', cursive;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #fbbf24;
+    text-shadow: 
+        -2px -2px 0 #000,
+        2px -2px 0 #000,
+        -2px 2px 0 #000,
+        2px 2px 0 #000;
+    text-transform: uppercase;
+}

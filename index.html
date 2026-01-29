@@ -241,12 +241,44 @@
                             <!-- Caption Style -->
                             <div>
                                 <label class="block text-sm font-semibold mb-2">💬 Caption Style</label>
-                                <select id="caption-style" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 focus:border-primary focus:outline-none">
-                                    <option value="bold">Bold Impact</option>
-                                    <option value="horror">Horror Drip</option>
-                                    <option value="glitch">Glitch Effect</option>
-                                    <option value="minimal">Minimal Clean</option>
-                                </select>
+                                <input type="hidden" id="caption-style" value="bold">
+                                <div class="grid grid-cols-2 gap-2" id="caption-style-grid">
+                                    <!-- Row 1 -->
+                                    <button type="button" class="caption-style-btn active" data-style="bold">
+                                        <span class="caption-preview caption-bold">BOLD</span>
+                                    </button>
+                                    <button type="button" class="caption-style-btn" data-style="horror">
+                                        <span class="caption-preview caption-horror">HORROR</span>
+                                    </button>
+                                    <!-- Row 2 -->
+                                    <button type="button" class="caption-style-btn" data-style="glitch">
+                                        <span class="caption-preview caption-glitch">GLITCH</span>
+                                    </button>
+                                    <button type="button" class="caption-style-btn" data-style="minimal">
+                                        <span class="caption-preview caption-minimal">minimal</span>
+                                    </button>
+                                    <!-- Row 3 -->
+                                    <button type="button" class="caption-style-btn" data-style="neon">
+                                        <span class="caption-preview caption-neon">NEON</span>
+                                    </button>
+                                    <button type="button" class="caption-style-btn" data-style="vintage">
+                                        <span class="caption-preview caption-vintage">Vintage</span>
+                                    </button>
+                                    <!-- Row 4 -->
+                                    <button type="button" class="caption-style-btn" data-style="blood">
+                                        <span class="caption-preview caption-blood">BLOOD</span>
+                                    </button>
+                                    <button type="button" class="caption-style-btn" data-style="typewriter">
+                                        <span class="caption-preview caption-typewriter">typewriter</span>
+                                    </button>
+                                    <!-- Row 5 -->
+                                    <button type="button" class="caption-style-btn" data-style="shadow">
+                                        <span class="caption-preview caption-shadow">SHADOW</span>
+                                    </button>
+                                    <button type="button" class="caption-style-btn" data-style="comic">
+                                        <span class="caption-preview caption-comic">COMIC!</span>
+                                    </button>
+                                </div>
                             </div>
                             
                             <!-- Effects -->
