@@ -47,6 +47,14 @@ if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
 let activeRenders = 0;
 const MAX_CONCURRENT_RENDERS = parseInt(process.env.MAX_CONCURRENT_RENDERS || '1');
 
+// Auto-detect low memory environment (Render.com free tier = 512MB)
+const os = require('os');
+const TOTAL_MEMORY_MB = Math.floor(os.totalmem() / 1024 / 1024);
+const LOW_MEMORY_THRESHOLD = 1024; // 1GB
+const AUTO_LOW_MEMORY = TOTAL_MEMORY_MB < LOW_MEMORY_THRESHOLD;
+const FORCE_LOW_MEMORY = process.env.FORCE_LOW_MEMORY === 'true';
+console.log(`📊 System memory: ${TOTAL_MEMORY_MB}MB (low_memory: ${AUTO_LOW_MEMORY || FORCE_LOW_MEMORY})`);
+
 // Ensure directories exist
 async function ensureDirs() {
   await fs.mkdir(TEMP_DIR, { recursive: true });
@@ -165,34 +173,33 @@ async function updateJobInSupabase(jobId, supabaseJobId, status, videoUrl = null
 
 /**
  * Ken Burns effect - scale + position animation
- * Uses zoompan filter for smooth animation
+ * Memory-optimized version - uses smaller scale factor
  */
 function getKenBurnsFilter(index, duration, width = 1080, height = 1920) {
   const frames = Math.floor(duration * 30); // 30fps
+  // Use 2x scale instead of 8x to reduce memory usage significantly
+  const scaledW = width * 2;
+  const scaledH = height * 2;
   const effects = [
     // Zoom in slowly
-    `scale=8000:-1,zoompan=z='min(zoom+0.0015,1.5)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='min(zoom+0.001,1.3)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
     // Zoom out slowly  
-    `scale=8000:-1,zoompan=z='if(lte(zoom,1.0),1.5,max(1.001,zoom-0.0015))':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='if(lte(zoom,1.0),1.3,max(1.001,zoom-0.001))':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
     // Pan left to right with slight zoom
-    `scale=8000:-1,zoompan=z='1.2':d=${frames}:x='(iw-iw/zoom)/2+((iw/zoom-ow)/2)*sin(on/${frames}*PI)':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.15':d=${frames}:x='(iw-iw/zoom)/2+((iw/zoom-ow)/3)*sin(on/${frames}*PI)':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
     // Pan right to left with slight zoom
-    `scale=8000:-1,zoompan=z='1.2':d=${frames}:x='(iw-iw/zoom)/2-((iw/zoom-ow)/2)*sin(on/${frames}*PI)':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.15':d=${frames}:x='(iw-iw/zoom)/2-((iw/zoom-ow)/3)*sin(on/${frames}*PI)':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
   ];
   return effects[index % effects.length];
 }
 
 /**
- * Simpler Ken Burns for low memory environments
+ * Ultra-simple Ken Burns for very low memory (512MB) environments
+ * No zoompan filter - just simple scale and fade
  */
 function getSimpleKenBurnsFilter(index, duration, width = 1080, height = 1920) {
-  const effects = [
-    `scale=1200:2133,crop=${width}:${height}:60:107`,
-    `scale=1200:2133,crop=${width}:${height}:0:0`,
-    `scale=1200:2133,crop=${width}:${height}:120:213`,
-    `scale=1200:2133,crop=${width}:${height}:60:0`,
-  ];
-  return effects[index % effects.length];
+  // Simple scale-to-fill with no animation (minimal memory)
+  return `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`;
 }
 
 /**
@@ -448,6 +455,12 @@ async function processRender(jobId, imageUrls, audioUrl, durations, effects, web
   const jobDir = path.join(TEMP_DIR, jobId);
   await fs.mkdir(jobDir, { recursive: true });
   
+  // Auto-enable low memory mode if system has limited RAM
+  const useLowMemory = lowMemory || AUTO_LOW_MEMORY || FORCE_LOW_MEMORY;
+  if (useLowMemory && !lowMemory) {
+    console.log(`[${jobId}] ⚠️ Auto-enabled low memory mode (${TOTAL_MEMORY_MB}MB RAM)`);
+  }
+  
   try {
     const job = jobs.get(jobId);
     
@@ -476,11 +489,11 @@ async function processRender(jobId, imageUrls, audioUrl, durations, effects, web
     job.progress = 25;
     
     // Step 3: Create video from images
-    console.log(`[${jobId}] Creating video from images...`);
+    console.log(`[${jobId}] Creating video from images (lowMemory: ${useLowMemory})...`);
     const rawVideoPath = path.join(jobDir, 'raw.mp4');
     await createVideoFromImages(jobId, imagePaths, durations, rawVideoPath, {
       kenBurns: effects.kenBurns !== false,
-      lowMemory: lowMemory,
+      lowMemory: useLowMemory,
     });
     job.progress = 50;
     console.log(`[${jobId}] ✓ Base video created`);
@@ -501,7 +514,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, effects, web
     if (effects.vignette) {
       console.log(`[${jobId}] Adding vignette...`);
       const vignettePath = path.join(jobDir, 'vignette.mp4');
-      await addVignette(currentVideo, vignettePath, lowMemory);
+      await addVignette(currentVideo, vignettePath, useLowMemory);
       await fs.unlink(currentVideo).catch(() => {});
       currentVideo = vignettePath;
       console.log(`[${jobId}] ✓ Vignette added`);
@@ -512,7 +525,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, effects, web
     if (effects.horrorGrade) {
       console.log(`[${jobId}] Adding horror color grade...`);
       const gradedPath = path.join(jobDir, 'graded.mp4');
-      await addHorrorGrade(currentVideo, gradedPath, lowMemory);
+      await addHorrorGrade(currentVideo, gradedPath, useLowMemory);
       await fs.unlink(currentVideo).catch(() => {});
       currentVideo = gradedPath;
       console.log(`[${jobId}] ✓ Horror grade added`);
