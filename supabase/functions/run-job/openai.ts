@@ -19,43 +19,127 @@ import {
 } from "./config.ts";
 
 // =====================================================
-// STORY GENERATION
+// STORY GENERATION (Enhanced Viral System v2.0)
 // =====================================================
 
+// Visual environment descriptions for story context
+const VISUAL_ENVIRONMENT_DESCRIPTIONS: Record<string, string> = {
+  forest: "dark forest at night - fog, ancient trees, depth, shadows between branches",
+  urban: "abandoned urban decay - empty streets, flickering lights, graffiti, broken windows",
+  house: "haunted house interior - creaking floors, dusty furniture, long hallways, doors ajar",
+  hospital: "abandoned hospital - sterile corridors, rusted equipment, flickering fluorescents",
+  ocean: "deep dark ocean - endless water, unknown depths, isolation, creatures below",
+  space: "cosmic void - stars, isolation, alien geometry, incomprehensible scale",
+  hallway: "endless dark hallway - doors on both sides, something at the end, no escape",
+  attic: "dusty attic space - old belongings, cobwebs, single light source, memories",
+  foggy: "thick impenetrable fog - shapes in the mist, disorientation, sounds without source",
+  rain: "dark rainy night - downpour, limited visibility, cold, wet, alone",
+};
+
+// Vibe-specific structure guidance
+const VIBE_STRUCTURE_HINTS: Record<string, string> = {
+  slow_creepy: "Build atmosphere gradually. Let wrongness creep in slowly. The horror should feel inevitable.",
+  punchy_shock: "Quick setup, rapid escalation. Hit hard and fast. The twist should land like a punch.",
+  atmospheric: "Prioritize mood over action. Let the environment be a character. Dread through description.",
+};
+
+// Ending types for variety
+const ENDING_TYPES = [
+  "The narrator realizes they were never alone",
+  "The 'safe' place was actually the threat",
+  "What they thought was escape was a trap",
+  "The familiar becomes horrifyingly unfamiliar",
+  "They understand too late what the signs meant",
+  "The horror was inside them all along",
+  "The cycle is revealed to repeat",
+  "The watcher becomes the watched",
+];
+
 /**
- * Generate a horror story using OpenAI
+ * Generate a viral horror story using the enhanced prompt system
  */
 export async function generateStory(
   openaiKey: string,
   vibePreset: string,
-  lengthPreset: string
+  lengthPreset: string,
+  visualPreset?: string,
+  artStyle?: string
 ): Promise<{ title: string; story: string; hook: string }> {
   const config = LENGTH_CONFIG[lengthPreset as keyof typeof LENGTH_CONFIG];
   const vibe = VIBE_CONFIG[vibePreset as keyof typeof VIBE_CONFIG];
+  const vibeHint = VIBE_STRUCTURE_HINTS[vibePreset] || VIBE_STRUCTURE_HINTS["slow_creepy"];
+  const visualEnv = VISUAL_ENVIRONMENT_DESCRIPTIONS[visualPreset || "forest"] || VISUAL_ENVIRONMENT_DESCRIPTIONS["forest"];
+  
+  // Pick a random ending type for variety
+  const endingHint = ENDING_TYPES[Math.floor(Math.random() * ENDING_TYPES.length)];
 
-  // Story length is based purely on length_preset (video duration)
-  // Scene count is independent - controls visual pacing, not story length
-  console.log(`[STORY] Length preset: ${lengthPreset} (${config.minWords}-${config.maxWords} words)`);
+  console.log(`[STORY] Enhanced generation: ${lengthPreset}s, ${vibePreset}, ${visualPreset || 'forest'}`);
+  console.log(`[STORY] Word range: ${config.minWords}-${config.maxWords}, ending hint: "${endingHint}"`);
 
-  const prompt = `You are a viral horror short story writer for TikTok/Reels/Shorts.
+  const prompt = `You are a viral horror short-story writer for TikTok, Instagram Reels, and YouTube Shorts.
 
-Write a scary story with these requirements:
-- Length: ${config.minWords}-${config.maxWords} words (CRITICAL: stay within this range)
-- Style: ${vibe}
-- Must have a HOOK in the first sentence that grabs attention
-- MUST have a COMPLETE ending - either a twist, cliffhanger, or scary reveal
-- The final sentence should feel like an ending (e.g., "And then I realized...", "It was standing right behind me.", "That's when I knew...")
-- No real person names (use "I", "my friend", "the man", etc.)
-- No "based on true story" claims
+Write a scary story with these EXACT requirements:
+
+═══════════════════════════════════════
+STRUCTURE (CRITICAL - follow this pacing):
+═══════════════════════════════════════
+1. HOOK (1-2 sentences): Immediately create fear or curiosity. Make them NEED to keep watching.
+2. SETUP (15-25 words): Establish the setting and a sense of unease. Ground the reader.
+3. ESCALATION (50-70 words): Slow, creepy buildup. Something feels wrong. Build tension through details.
+4. REVEAL/TWIST (20-30 words): A disturbing realization or terrifying event. The horror crystallizes.
+5. FINAL LINE (1 sentence): A definitive, chilling ending that lingers. No ambiguity.
+
+═══════════════════════════════════════
+STYLE REQUIREMENTS:
+═══════════════════════════════════════
+- Tone: ${vibe}
+- Pacing hint: ${vibeHint}
 - Present tense preferred
 - Simple, punchy sentences
-- DO NOT end mid-thought or cut off abruptly
+- First person POV ("I") for intimacy
+- NO humor, NO explanations, NO meta commentary
+- NO "based on true story" claims
 
-Return JSON format:
+═══════════════════════════════════════
+WORD COUNT (CRITICAL):
+═══════════════════════════════════════
+- MINIMUM: ${config.minWords} words
+- MAXIMUM: ${config.maxWords} words
+- Count carefully. Do NOT exceed or fall short.
+
+═══════════════════════════════════════
+SENSORY & VISUAL REQUIREMENTS:
+═══════════════════════════════════════
+- Include at least 2 sensory details (sound, movement, shadows, breathing, texture, temperature)
+- Every paragraph should be VISUALLY DEPICTABLE (this will become AI images)
+- Describe physical actions and environments, not abstract thoughts
+- Avoid concepts that can't be shown in an image
+
+═══════════════════════════════════════
+VISUAL ENVIRONMENT:
+═══════════════════════════════════════
+${visualEnv}
+Write scenes that fit this aesthetic. The environment should enhance the horror.
+
+═══════════════════════════════════════
+CHARACTER RULES:
+═══════════════════════════════════════
+- No real person names (use "I", "my friend", "the figure", etc.)
+- Faceless or obscured antagonists work best
+- Algorithm-safe (no extreme gore, just psychological horror)
+
+═══════════════════════════════════════
+ENDING GUIDANCE:
+═══════════════════════════════════════
+- Must be COMPLETE (no mid-thought cutoffs)
+- Ending type to aim for: "${endingHint}"
+- The final sentence must feel DEFINITIVE - a hard stop that haunts
+
+Return ONLY valid JSON:
 {
-  "title": "Short catchy title (3-5 words)",
+  "title": "Short catchy title (3-5 words, no quotes in title)",
   "hook": "The attention-grabbing first line",
-  "story": "The complete story including the hook - MUST have a proper ending"
+  "story": "The complete story including the hook"
 }`;
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -67,22 +151,78 @@ Return JSON format:
     body: JSON.stringify({
       model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: "You are a horror story writer. Always respond with valid JSON." },
+        { 
+          role: "system", 
+          content: "You are an expert viral horror story writer. You understand pacing, hooks, and what makes content shareable. Always respond with valid JSON. Never include markdown or code blocks." 
+        },
         { role: "user", content: prompt },
       ],
-      temperature: 0.9,
+      temperature: 0.85, // Slightly lower for more consistent structure
       response_format: { type: "json_object" },
     }),
   });
 
   if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`[STORY] OpenAI error: ${response.status}`, errorText);
     throw new Error(`OpenAI API error: ${response.status}`);
   }
 
   const data = await response.json();
   const content = JSON.parse(data.choices[0].message.content);
   
+  // Log word count for debugging
+  const wordCount = content.story?.split(/\s+/).length || 0;
+  console.log(`[STORY] Generated: "${content.title}" (${wordCount} words)`);
+  
   return content;
+}
+
+/**
+ * Build the story prompt for display in generation details
+ * This is a simplified version for the UI
+ */
+export function buildStoryPromptForDisplay(
+  vibePreset: string,
+  lengthPreset: string,
+  visualPreset: string,
+  artStyle: string
+): string {
+  const config = LENGTH_CONFIG[lengthPreset as keyof typeof LENGTH_CONFIG] || LENGTH_CONFIG["60"];
+  const vibe = VIBE_CONFIG[vibePreset as keyof typeof VIBE_CONFIG] || VIBE_CONFIG["slow_creepy"];
+  const vibeHint = VIBE_STRUCTURE_HINTS[vibePreset] || VIBE_STRUCTURE_HINTS["slow_creepy"];
+  const visualEnv = VISUAL_ENVIRONMENT_DESCRIPTIONS[visualPreset] || VISUAL_ENVIRONMENT_DESCRIPTIONS["forest"];
+  
+  return `VIRAL HORROR STORY PROMPT (Enhanced v2.0)
+
+📐 STRUCTURE:
+  1. Hook (1-2 sentences) → instant curiosity
+  2. Setup (15-25 words) → establish setting + unease  
+  3. Escalation (50-70 words) → tension builds
+  4. Reveal/Twist (20-30 words) → horror crystallizes
+  5. Final Line (1 sentence) → chilling ending
+
+🎭 STYLE:
+  - Tone: ${vibe}
+  - Pacing: ${vibeHint}
+  - POV: First person ("I")
+  - Present tense, simple sentences
+
+📏 WORD COUNT: ${config.minWords}-${config.maxWords} words
+
+👁️ SENSORY REQUIREMENTS:
+  - 2+ sensory details (sound, shadow, texture)
+  - Every paragraph must be visually depictable
+  - Physical actions > abstract thoughts
+
+🌲 VISUAL ENVIRONMENT:
+  ${visualEnv}
+
+🚫 RULES:
+  - No real names, no humor, no meta commentary
+  - Faceless/obscured antagonists
+  - Algorithm-safe (psychological horror only)
+  - Complete ending required`;
 }
 
 // =====================================================

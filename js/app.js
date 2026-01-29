@@ -691,6 +691,23 @@ const LENGTH_CONFIG = {
     '90': { minWords: 200, maxWords: 230, targetSeconds: 90 }
 };
 
+// Visual environment descriptions for the prompt display
+const VISUAL_ENV_DESCRIPTIONS = {
+    'forest': 'dark forest at night - fog, ancient trees, depth, shadows between branches',
+    'urban': 'abandoned urban decay - empty streets, flickering lights, graffiti, broken windows',
+    'house': 'haunted house interior - creaking floors, dusty furniture, long hallways, doors ajar',
+    'hospital': 'abandoned hospital - sterile corridors, rusted equipment, flickering fluorescents',
+    'ocean': 'deep dark ocean - endless water, unknown depths, isolation, creatures below',
+    'space': 'cosmic void - stars, isolation, alien geometry, incomprehensible scale'
+};
+
+// Pacing hints per vibe
+const VIBE_PACING_HINTS = {
+    'slow_creepy': 'Build atmosphere gradually. Let wrongness creep in slowly.',
+    'punchy_shock': 'Quick setup, rapid escalation. Hit hard and fast.',
+    'atmospheric': 'Prioritize mood over action. Let environment be a character.'
+};
+
 // Build generation details from UI selections (fallback if backend doesn't return them)
 function buildGenerationDetailsFromUI(data) {
     const vibePreset = document.getElementById('vibe-preset')?.value || 'slow_creepy';
@@ -701,19 +718,40 @@ function buildGenerationDetailsFromUI(data) {
     const sceneCount = parseInt(document.getElementById('scene-count')?.value) || 6;
     
     const lengthConfig = LENGTH_CONFIG[lengthPreset] || LENGTH_CONFIG['60'];
+    const visualEnv = VISUAL_ENV_DESCRIPTIONS[visualPreset] || VISUAL_ENV_DESCRIPTIONS['forest'];
+    const pacingHint = VIBE_PACING_HINTS[vibePreset] || VIBE_PACING_HINTS['slow_creepy'];
     
-    // Build the prompt that would have been used
-    const storyPrompt = `You are a viral horror short story writer for TikTok/Reels/Shorts.
+    // Build the enhanced prompt for display (matching backend format)
+    const storyPrompt = `VIRAL HORROR STORY PROMPT (Enhanced v2.0)
 
-Write a scary story with these requirements:
-- Length: ${lengthConfig.minWords}-${lengthConfig.maxWords} words (CRITICAL: stay within this range)
-- Style: ${VIBE_DESCRIPTIONS[vibePreset] || vibePreset}
-- Must have a HOOK in the first sentence that grabs attention
-- MUST have a COMPLETE ending - either a twist, cliffhanger, or scary reveal
-- The final sentence should feel like an ending
-- No real person names
-- Present tense preferred
-- Simple, punchy sentences`;
+📐 STRUCTURE:
+  1. Hook (1-2 sentences) → instant curiosity
+  2. Setup (15-25 words) → establish setting + unease  
+  3. Escalation (50-70 words) → tension builds
+  4. Reveal/Twist (20-30 words) → horror crystallizes
+  5. Final Line (1 sentence) → chilling ending
+
+🎭 STYLE:
+  - Tone: ${VIBE_DESCRIPTIONS[vibePreset] || vibePreset}
+  - Pacing: ${pacingHint}
+  - POV: First person ("I")
+  - Present tense, simple sentences
+
+📏 WORD COUNT: ${lengthConfig.minWords}-${lengthConfig.maxWords} words
+
+👁️ SENSORY REQUIREMENTS:
+  - 2+ sensory details (sound, shadow, texture)
+  - Every paragraph must be visually depictable
+  - Physical actions > abstract thoughts
+
+🌲 VISUAL ENVIRONMENT:
+  ${visualEnv}
+
+🚫 RULES:
+  - No real names, no humor, no meta commentary
+  - Faceless/obscured antagonists
+  - Algorithm-safe (psychological horror only)
+  - Complete ending required`;
     
     return {
         vibe_preset: vibePreset,

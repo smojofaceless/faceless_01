@@ -19,7 +19,7 @@ import {
   type VideoOptions,
 } from "./config.ts";
 
-import { generateStory, extractSceneKeywordsForPreview, extractSceneKeywords, createStoryAnchor, createVisualBeats, createSceneVisualContracts, buildFinalDallePrompt, buildFluxPrompt } from "./openai.ts";
+import { generateStory, buildStoryPromptForDisplay, extractSceneKeywordsForPreview, extractSceneKeywords, createStoryAnchor, createVisualBeats, createSceneVisualContracts, buildFinalDallePrompt, buildFluxPrompt } from "./openai.ts";
 import { generateAudio } from "./audio.ts";
 import { searchPexelsForKeywords, searchVideosForScenes } from "./pexels.ts";
 import { generateImage, getLastReplicateInputs, uploadRemoteImageToStorage } from "./images.ts";
@@ -49,12 +49,16 @@ export async function runPreviewMode(
 
   // Scene count is for visual pacing, story length is based on length_preset
   const sceneCount = jobMeta.scene_count || 6;
+  const visualPreset = job.visual_preset || "forest";
+  const artStyle = jobMeta.art_style || "cinematic-dark";
   
-  console.log(`Generating story (${job.length_preset}s preset, ${sceneCount} scenes)...`);
+  console.log(`Generating story (${job.length_preset}s preset, ${sceneCount} scenes, ${visualPreset} environment)...`);
   const storyData = await generateStory(
     openaiKey,
     job.vibe_preset,
-    job.length_preset
+    job.length_preset,
+    visualPreset,  // Pass visual environment for story context
+    artStyle       // Pass art style for visual consistency
   );
 
   const wordCount = storyData.story.split(/\s+/).length;
@@ -110,25 +114,20 @@ export async function runPreviewMode(
   const sentences = storyNormalized.match(/[^.!?…]+[.!?…]+/g) || [];
   
   // FORCE version marker directly in response (bypass any module caching)
-  const BUILD_VERSION = "2026-01-29T21:30:00Z";
+  const BUILD_VERSION = "2026-01-29T22:00:00Z";
   
   // Get configuration details for transparency
   const lengthConfig = LENGTH_CONFIG[job.length_preset as keyof typeof LENGTH_CONFIG] || LENGTH_CONFIG["60"];
   const vibeConfig = VIBE_CONFIG[job.vibe_preset as keyof typeof VIBE_CONFIG] || VIBE_CONFIG["slow_creepy"];
-  const artStyleConfig = ART_STYLE_CONFIG[jobMeta.art_style as keyof typeof ART_STYLE_CONFIG] || ART_STYLE_CONFIG["cinematic-dark"];
+  const artStyleConfig = ART_STYLE_CONFIG[artStyle as keyof typeof ART_STYLE_CONFIG] || ART_STYLE_CONFIG["cinematic-dark"];
   
-  // Build the actual prompt that was used (same as in generateStory)
-  const storyPrompt = `You are a viral horror short story writer for TikTok/Reels/Shorts.
-
-Write a scary story with these requirements:
-- Length: ${lengthConfig.minWords}-${lengthConfig.maxWords} words (CRITICAL: stay within this range)
-- Style: ${vibeConfig}
-- Must have a HOOK in the first sentence that grabs attention
-- MUST have a COMPLETE ending - either a twist, cliffhanger, or scary reveal
-- The final sentence should feel like an ending
-- No real person names
-- Present tense preferred
-- Simple, punchy sentences`;
+  // Build the enhanced prompt for display (human-readable version)
+  const storyPrompt = buildStoryPromptForDisplay(
+    job.vibe_preset,
+    job.length_preset,
+    visualPreset,
+    artStyle
+  );
   
   return new Response(
     JSON.stringify({
@@ -204,7 +203,13 @@ export async function runAudioPhase(
     storyData = { title: job.title, story: job.story_text };
   } else {
     console.log(`[AUDIO] Generating new story (${job.length_preset}s preset)...`);
-    storyData = await generateStory(openaiKey, job.vibe_preset, job.length_preset);
+    storyData = await generateStory(
+      openaiKey, 
+      job.vibe_preset, 
+      job.length_preset,
+      job.visual_preset || "forest",
+      jobMeta.art_style || "cinematic-dark"
+    );
     await updateJob(supabase, job_id, {
       progress: 25,
       title: storyData.title,
