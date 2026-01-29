@@ -55,6 +55,7 @@ const TOTAL_MEMORY_MB = Math.floor(os.totalmem() / 1024 / 1024);
 const IS_RENDER = process.env.RENDER === 'true' || !!process.env.RENDER_INSTANCE_ID;
 const IS_RAILWAY = !!process.env.RAILWAY_ENVIRONMENT;
 const FORCE_LOW_MEMORY = process.env.FORCE_LOW_MEMORY === 'true';
+const DISABLE_KEN_BURNS = process.env.DISABLE_KEN_BURNS === 'true'; // Optional: completely disable if memory issues persist
 
 // Auto-enable low memory for cloud free tiers
 // Render.com free tier = 512MB, Railway free tier = 512MB
@@ -62,6 +63,7 @@ const AUTO_LOW_MEMORY = IS_RENDER || IS_RAILWAY || FORCE_LOW_MEMORY;
 
 console.log(`📊 System memory: ${TOTAL_MEMORY_MB}MB (host), Cloud: ${IS_RENDER ? 'Render.com' : IS_RAILWAY ? 'Railway' : 'none'}`);
 console.log(`📊 Low memory mode: ${AUTO_LOW_MEMORY ? 'ENABLED (cloud free tier detected)' : 'disabled'}`);
+console.log(`📊 Ken Burns effect: ${DISABLE_KEN_BURNS ? 'DISABLED by env' : AUTO_LOW_MEMORY ? 'SIMPLE mode (low memory)' : 'FULL mode'}`);
 
 // Ensure directories exist
 async function ensureDirs() {
@@ -203,11 +205,27 @@ function getKenBurnsFilter(index, duration, width = 1080, height = 1920) {
 
 /**
  * Ultra-simple Ken Burns for very low memory (512MB) environments
- * No zoompan filter - just simple scale and fade
+ * Uses zoompan but with minimal scale factor (1.05x instead of 2x)
+ * This provides visible movement while keeping memory usage under control
  */
 function getSimpleKenBurnsFilter(index, duration, width = 1080, height = 1920) {
-  // Simple scale-to-fill with no animation (minimal memory)
-  return `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`;
+  const frames = Math.floor(duration * 15); // 15fps in low memory mode
+  // CRITICAL: Use minimal pre-scale (1.1x) to keep memory low
+  // The zoompan itself will handle the rest of the motion
+  const scaledW = Math.floor(width * 1.1);
+  const scaledH = Math.floor(height * 1.1);
+  
+  const effects = [
+    // Subtle zoom in (1.0 -> 1.05) - very gentle motion
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='min(zoom+0.0003,1.05)':d=${frames}:x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=15`,
+    // Subtle zoom out (1.05 -> 1.0)
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='if(lte(zoom,1.0),1.05,max(1.001,zoom-0.0003))':d=${frames}:x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=15`,
+    // Subtle pan left to right
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.02':d=${frames}:x='(iw/2-ow/2)+((iw-ow)/3)*sin(on/${frames}*PI)':y='(ih-oh)/2':s=${width}x${height}:fps=15`,
+    // Subtle pan right to left
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.02':d=${frames}:x='(iw/2-ow/2)-((iw-ow)/3)*sin(on/${frames}*PI)':y='(ih-oh)/2':s=${width}x${height}:fps=15`,
+  ];
+  return effects[index % effects.length];
 }
 
 /**
@@ -242,13 +260,20 @@ async function createVideoFromImages(jobId, images, durations, outputPath, optio
       let cmd = ffmpeg(imagePath)
         .inputOptions(['-loop', '1']);
       
-      // Apply Ken Burns or simple scale
-      if (kenBurns && !lowMemory) {
-        // Only use Ken Burns animation in non-lowMemory mode
-        const filter = getKenBurnsFilter(i, duration, width, height);
-        cmd = cmd.complexFilter(filter);
+      // Apply Ken Burns effect
+      if (kenBurns) {
+        if (lowMemory) {
+          // Low memory: use simplified Ken Burns with minimal scale
+          const filter = getSimpleKenBurnsFilter(i, duration, width, height);
+          cmd = cmd.complexFilter(filter);
+          console.log(`[${jobId}] Scene ${i + 1}: Using simple Ken Burns (low memory)`);
+        } else {
+          // Full Ken Burns animation
+          const filter = getKenBurnsFilter(i, duration, width, height);
+          cmd = cmd.complexFilter(filter);
+        }
       } else {
-        // Low memory: simple scale, no animation
+        // Ken Burns disabled: simple scale, no animation
         cmd = cmd
           .inputOptions(['-framerate', String(fps)])
           .videoFilter(`scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`);
@@ -810,10 +835,11 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     
     // Step 3: Create video from images
     const videoStart = Date.now();
-    console.log(`[${jobId}] Creating video from images (lowMemory: ${useLowMemory})...`);
+    const useKenBurns = effects.kenBurns !== false && !DISABLE_KEN_BURNS;
+    console.log(`[${jobId}] Creating video from images (lowMemory: ${useLowMemory}, kenBurns: ${useKenBurns})...`);
     const rawVideoPath = path.join(jobDir, 'raw.mp4');
     await createVideoFromImages(jobId, imagePaths, durations, rawVideoPath, {
-      kenBurns: effects.kenBurns !== false,
+      kenBurns: useKenBurns,
       lowMemory: useLowMemory,
     });
     timings.createVideo = Date.now() - videoStart;

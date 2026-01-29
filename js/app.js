@@ -892,21 +892,30 @@ function updateProgress(percent, label) {
 const renderedSceneUrls = {};
 
 function updateSceneImages(scenes) {
-    scenes.forEach((scene, i) => {
-        const card = document.getElementById(`scene-image-${i}`);
-        if (!card) return;
+    scenes.forEach((scene) => {
+        // Use scene.index (from backend) to match the correct placeholder
+        // This handles cases where scenes might arrive out of order or with gaps
+        const sceneIndex = scene.index ?? 0;
+        const card = document.getElementById(`scene-image-${sceneIndex}`);
+        if (!card) {
+            console.log(`[UI] No card found for scene-image-${sceneIndex}`);
+            return;
+        }
         
         const imageUrl = scene.videoUrl;
-        if (!imageUrl) return;
+        if (!imageUrl) {
+            console.log(`[UI] Scene ${sceneIndex} has no videoUrl`);
+            return;
+        }
         
         // OPTIMIZATION: Skip re-render if this scene's image hasn't changed
-        if (renderedSceneUrls[i] === imageUrl) {
+        if (renderedSceneUrls[sceneIndex] === imageUrl) {
             return; // Already rendered this exact image
         }
         
         // Mark this scene as rendered with this URL
-        renderedSceneUrls[i] = imageUrl;
-        console.log(`[UI] Updating scene ${i + 1} with new image`);
+        renderedSceneUrls[sceneIndex] = imageUrl;
+        console.log(`[UI] Updating scene ${sceneIndex + 1} with new image`);
         
         // Better image/video detection:
         // 1. Check source field (most reliable - set by backend)
@@ -925,24 +934,24 @@ function updateSceneImages(scenes) {
         // Build the prompt HTML - show full prompt with expand/collapse
         let promptHtml = '';
         if (scene.dallePrompt) {
-            const promptId = `prompt-${i}`;
+            const promptId = `prompt-${sceneIndex}`;
             const shortPrompt = scene.dallePrompt.substring(0, 50);
             promptHtml = `
                 <div class="mt-2 border-t border-gray-700 pt-2">
                     <p class="text-xs text-gray-500 mb-1">Prompt used:</p>
-                    <div id="${promptId}-short" class="cursor-pointer" onclick="togglePrompt(${i})">
+                    <div id="${promptId}-short" class="cursor-pointer" onclick="togglePrompt(${sceneIndex})">
                         <p class="text-xs text-blue-400">${escapeHtml(shortPrompt)}... <span class="text-gray-500">[click to expand]</span></p>
                     </div>
                     <div id="${promptId}-full" class="hidden">
                         <pre class="text-xs text-blue-300 whitespace-pre-wrap max-h-48 overflow-y-auto bg-gray-900 p-2 rounded">${escapeHtml(scene.dallePrompt)}</pre>
-                        <button onclick="togglePrompt(${i})" class="text-xs text-gray-500 mt-1">[collapse]</button>
-                        <button onclick="copyPrompt(${i})" class="text-xs text-purple-400 mt-1 ml-2">[copy]</button>
+                        <button onclick="togglePrompt(${sceneIndex})" class="text-xs text-gray-500 mt-1">[collapse]</button>
+                        <button onclick="copyPrompt(${sceneIndex})" class="text-xs text-purple-400 mt-1 ml-2">[copy]</button>
                     </div>
                 </div>
             `;
             // Store prompt for copy function
             window.scenePrompts = window.scenePrompts || {};
-            window.scenePrompts[i] = scene.dallePrompt;
+            window.scenePrompts[sceneIndex] = scene.dallePrompt;
         }
         
         // Build visual beat HTML
@@ -959,7 +968,7 @@ function updateSceneImages(scenes) {
                 }
             </div>
             <div class="p-2">
-                <p class="text-xs text-green-400">✓ Scene ${i + 1} (${scene.source || 'unknown'})</p>
+                <p class="text-xs text-green-400">✓ Scene ${sceneIndex + 1} (${scene.source || 'unknown'})</p>
                 ${visualBeatHtml}
                 ${promptHtml}
             </div>
