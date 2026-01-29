@@ -342,7 +342,8 @@ export async function renderWithFFmpeg(
   scenes: StoryScene[],
   durationSec: number,
   options: VideoOptions,
-  jobId?: string // Supabase job ID for direct upload
+  jobId?: string, // Supabase job ID for direct upload
+  captions?: Array<{ word: string; start: number; end: number }> // Word-by-word captions
 ): Promise<{ renderId: string; status: string }> {
   const FFMPEG_RENDERER_URL = Deno.env.get("FFMPEG_RENDERER_URL");
   
@@ -356,6 +357,7 @@ export async function renderWithFFmpeg(
   
   console.log(`[FFMPEG] Starting render with ${imageUrls.length} images`);
   console.log(`[FFMPEG] Durations: ${durations.join(", ")} seconds`);
+  console.log(`[FFMPEG] Captions: ${captions?.length || 0} words`);
   
   // Retry logic for cold start handling (Render.com free tier takes 30-60s to wake)
   let lastError: Error | null = null;
@@ -370,11 +372,14 @@ export async function renderWithFFmpeg(
           images: imageUrls,
           audio_url: audioUrl,
           durations: durations,
+          captions: captions || [], // Word-by-word captions with timestamps
           effects: {
             kenBurns: options.kenburns,
             fadeTransitions: options.transitions,
             vignette: options.vignette,
             horrorGrade: options.filter,
+            captionStyle: options.captionStyle || "bold", // Caption style
+            highlightScary: options.highlightScary !== false, // Highlight scary words
           },
           job_id: jobId, // Pass Supabase job ID for direct upload
           low_memory: Deno.env.get("FFMPEG_LOW_MEMORY") === "true",

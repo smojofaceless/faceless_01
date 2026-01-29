@@ -852,7 +852,8 @@ export async function runAssemblePhase(
       scenes,
       job.duration_sec || 60,
       options,
-      job_id // Pass job_id for direct Supabase upload
+      job_id, // Pass job_id for direct Supabase upload
+      captionsData.captions // Pass captions for text overlay
     );
     renderId = result.renderId;
   } else {

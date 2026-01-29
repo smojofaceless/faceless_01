@@ -391,6 +391,153 @@ async function addHorrorGrade(inputPath, outputPath, lowMemory = false) {
   });
 }
 
+// Scary/horror words to highlight in red (synced with config.ts)
+const SCARY_WORDS = new Set([
+  'death', 'dead', 'die', 'dying', 'died', 'kill', 'killed', 'killing', 'murder', 'murdered',
+  'blood', 'bloody', 'bleeding', 'scream', 'screamed', 'screaming', 'terror', 'terrified',
+  'horror', 'horrified', 'fear', 'feared', 'afraid', 'nightmare', 'evil', 'demon', 'demonic',
+  'ghost', 'haunted', 'haunting', 'monster', 'creature', 'beast', 'dark', 'darkness',
+  'shadow', 'shadows', 'whisper', 'whispered', 'whispers', 'soul', 'souls', 'curse', 'cursed',
+  'grave', 'graves', 'graveyard', 'cemetery', 'tomb', 'corpse', 'body', 'bodies',
+  'creep', 'creeping', 'crawl', 'crawling', 'flesh', 'bone', 'bones', 'skull', 'skulls',
+  'suffer', 'suffered', 'suffering', 'pain', 'agony', 'torment', 'torture', 'hell',
+  'doom', 'doomed', 'damned', 'wicked', 'sinister', 'malevolent', 'malicious',
+  'vanish', 'vanished', 'disappeared', 'gone', 'lost', 'trapped', 'escape',
+  'chase', 'chased', 'chasing', 'hunt', 'hunted', 'hunting', 'prey',
+  'eyes', 'stare', 'stared', 'staring', 'watch', 'watched', 'watching',
+  'cold', 'frozen', 'freeze', 'chill', 'chilling', 'shiver', 'shivering',
+  'alone', 'lonely', 'isolation', 'isolated', 'abandoned', 'forsaken'
+]);
+
+/**
+ * Caption style configurations (synced with config.ts)
+ */
+const CAPTION_STYLES = {
+  bold: {
+    fontName: 'Impact',
+    fontSize: 85,
+    fontWeight: 'bold',
+  },
+  elegant: {
+    fontName: 'Times New Roman',
+    fontSize: 75,
+    fontWeight: 'normal',
+  },
+  modern: {
+    fontName: 'Arial',
+    fontSize: 80,
+    fontWeight: 'bold',
+  },
+  horror: {
+    fontName: 'Impact',
+    fontSize: 90,
+    fontWeight: 'bold',
+  },
+  minimal: {
+    fontName: 'Arial',
+    fontSize: 65,
+    fontWeight: 'normal',
+  },
+};
+
+/**
+ * Convert timestamp to ASS format (H:MM:SS.cc)
+ */
+function toASSTime(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  const cs = Math.floor((seconds % 1) * 100);
+  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
+}
+
+/**
+ * Create ASS subtitle file from captions
+ * Word-by-word display with scary word highlighting
+ */
+async function createASSSubtitles(captions, outputPath, options = {}) {
+  const {
+    captionStyle = 'bold',
+    highlightScary = true,
+  } = options;
+  
+  const style = CAPTION_STYLES[captionStyle] || CAPTION_STYLES.bold;
+  
+  // ASS header with style definitions
+  // PlayResY/PlayResX set the virtual resolution for positioning
+  const header = `[Script Info]
+Title: Horror Story Captions
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 0
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,${style.fontName},${style.fontSize},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,${style.fontWeight === 'bold' ? 1 : 0},0,0,0,100,100,0,0,1,4,2,2,30,30,400,1
+Style: Scary,${style.fontName},${Math.round(style.fontSize * 1.1)},&H000000FF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,4,2,2,30,30,400,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+`;
+  
+  const events = [];
+  
+  for (const caption of captions) {
+    const word = caption.word || '';
+    const cleanWord = word.toLowerCase().replace(/[^a-z]/g, '');
+    const isScary = highlightScary && SCARY_WORDS.has(cleanWord);
+    
+    // Add small buffer to prevent gaps
+    const startTime = toASSTime(caption.start);
+    const endTime = toASSTime(caption.end + 0.05);
+    const styleName = isScary ? 'Scary' : 'Default';
+    
+    // Escape special ASS characters and add pop animation
+    const escapedWord = word.replace(/\\/g, '\\\\').replace(/\{/g, '\\{').replace(/\}/g, '\\}');
+    
+    // Use transform for pop-in effect
+    const animatedText = `{\\fscx80\\fscy80\\t(0,80,\\fscx100\\fscy100)}${escapedWord}`;
+    
+    events.push(`Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,${animatedText}`);
+  }
+  
+  const assContent = header + events.join('\n');
+  await fs.writeFile(outputPath, assContent, 'utf8');
+  console.log(`  ✓ Created ASS subtitle file with ${events.length} words`);
+  
+  return outputPath;
+}
+
+/**
+ * Burn subtitles into video using FFmpeg
+ */
+async function burnSubtitles(inputPath, assPath, outputPath, lowMemory = false) {
+  return new Promise((resolve, reject) => {
+    // Use ass filter to burn subtitles
+    // Need to escape colons and backslashes in Windows paths
+    const escapedAssPath = assPath.replace(/\\/g, '/').replace(/:/g, '\\:');
+    
+    ffmpeg(inputPath)
+      .videoFilter(`ass='${escapedAssPath}'`)
+      .outputOptions([
+        '-c:v', 'libx264',
+        '-preset', lowMemory ? 'ultrafast' : 'medium',
+        '-crf', lowMemory ? '26' : '23',
+        '-c:a', 'copy',
+      ])
+      .output(outputPath)
+      .on('start', (cmd) => console.log(`  → Burning subtitles...`))
+      .on('end', resolve)
+      .on('error', (err, stdout, stderr) => {
+        console.error('Subtitle burn error:', err.message);
+        console.error('stderr:', stderr);
+        reject(err);
+      })
+      .run();
+  });
+}
+
 // =====================================================
 // API ENDPOINTS
 // =====================================================
@@ -414,7 +561,8 @@ app.post('/render', async (req, res) => {
       images,           // Array of image URLs (or base64 data URLs)
       audio_url,        // Audio file URL
       durations,        // Duration for each image in seconds
-      effects = {},     // { kenBurns, vignette, horrorGrade, fadeTransitions }
+      captions = [],    // Word-by-word captions: [{ word, start, end }, ...]
+      effects = {},     // { kenBurns, vignette, horrorGrade, fadeTransitions, captionStyle, highlightScary }
       webhook_url,      // Optional callback URL when done
       job_id: supabaseJobId, // Original Supabase job ID for updating
       low_memory = false, // Enable low memory mode for free tier hosting
@@ -424,7 +572,7 @@ app.post('/render', async (req, res) => {
       return res.status(400).json({ error: 'No images provided' });
     }
     
-    console.log(`[${jobId}] New render job: ${images.length} images, audio: ${audio_url ? 'yes' : 'no'}`);
+    console.log(`[${jobId}] New render job: ${images.length} images, audio: ${audio_url ? 'yes' : 'no'}, captions: ${captions.length} words`);
     console.log(`[${jobId}] Effects:`, effects);
     console.log(`[${jobId}] Supabase job: ${supabaseJobId || 'none'}`);
     
@@ -447,7 +595,7 @@ app.post('/render', async (req, res) => {
     });
     
     // Process asynchronously
-    processRender(jobId, images, audio_url, durations, effects, webhook_url, supabaseJobId, low_memory);
+    processRender(jobId, images, audio_url, durations, captions, effects, webhook_url, supabaseJobId, low_memory);
     
   } catch (error) {
     console.error('[RENDER] Error:', error);
@@ -458,7 +606,7 @@ app.post('/render', async (req, res) => {
 /**
  * Async render processing
  */
-async function processRender(jobId, imageUrls, audioUrl, durations, effects, webhookUrl, supabaseJobId, lowMemory) {
+async function processRender(jobId, imageUrls, audioUrl, durations, captions, effects, webhookUrl, supabaseJobId, lowMemory) {
   activeRenders++;
   const jobDir = path.join(TEMP_DIR, jobId);
   await fs.mkdir(jobDir, { recursive: true });
@@ -516,9 +664,27 @@ async function processRender(jobId, imageUrls, audioUrl, durations, effects, web
       currentVideo = withAudioPath;
       console.log(`[${jobId}] ✓ Audio added`);
     }
-    job.progress = 65;
+    job.progress = 60;
     
-    // Step 5: Apply vignette (if enabled)
+    // Step 5: Add captions (if provided)
+    if (captions && captions.length > 0) {
+      console.log(`[${jobId}] Burning ${captions.length} words as captions...`);
+      const assPath = path.join(jobDir, 'captions.ass');
+      await createASSSubtitles(captions, assPath, {
+        captionStyle: effects.captionStyle || 'bold',
+        highlightScary: effects.highlightScary !== false,
+      });
+      
+      const withCaptionsPath = path.join(jobDir, 'with_captions.mp4');
+      await burnSubtitles(currentVideo, assPath, withCaptionsPath, useLowMemory);
+      await fs.unlink(currentVideo).catch(() => {});
+      await fs.unlink(assPath).catch(() => {});
+      currentVideo = withCaptionsPath;
+      console.log(`[${jobId}] ✓ Captions added`);
+    }
+    job.progress = 75;
+    
+    // Step 6: Apply vignette (if enabled)
     if (effects.vignette) {
       console.log(`[${jobId}] Adding vignette...`);
       const vignettePath = path.join(jobDir, 'vignette.mp4');
@@ -527,9 +693,9 @@ async function processRender(jobId, imageUrls, audioUrl, durations, effects, web
       currentVideo = vignettePath;
       console.log(`[${jobId}] ✓ Vignette added`);
     }
-    job.progress = 80;
+    job.progress = 85;
     
-    // Step 6: Apply horror color grade (if enabled)
+    // Step 7: Apply horror color grade (if enabled)
     if (effects.horrorGrade) {
       console.log(`[${jobId}] Adding horror color grade...`);
       const gradedPath = path.join(jobDir, 'graded.mp4');
