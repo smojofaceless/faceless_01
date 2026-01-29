@@ -47,13 +47,21 @@ if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
 let activeRenders = 0;
 const MAX_CONCURRENT_RENDERS = parseInt(process.env.MAX_CONCURRENT_RENDERS || '1');
 
-// Auto-detect low memory environment (Render.com free tier = 512MB)
+// Detect cloud environment memory limits
+// Render.com sets RENDER=true, container has 512MB on free tier
+// os.totalmem() returns HOST memory, not container limit!
 const os = require('os');
 const TOTAL_MEMORY_MB = Math.floor(os.totalmem() / 1024 / 1024);
-const LOW_MEMORY_THRESHOLD = 1024; // 1GB
-const AUTO_LOW_MEMORY = TOTAL_MEMORY_MB < LOW_MEMORY_THRESHOLD;
+const IS_RENDER = process.env.RENDER === 'true' || !!process.env.RENDER_INSTANCE_ID;
+const IS_RAILWAY = !!process.env.RAILWAY_ENVIRONMENT;
 const FORCE_LOW_MEMORY = process.env.FORCE_LOW_MEMORY === 'true';
-console.log(`📊 System memory: ${TOTAL_MEMORY_MB}MB (low_memory: ${AUTO_LOW_MEMORY || FORCE_LOW_MEMORY})`);
+
+// Auto-enable low memory for cloud free tiers
+// Render.com free tier = 512MB, Railway free tier = 512MB
+const AUTO_LOW_MEMORY = IS_RENDER || IS_RAILWAY || FORCE_LOW_MEMORY;
+
+console.log(`📊 System memory: ${TOTAL_MEMORY_MB}MB (host), Cloud: ${IS_RENDER ? 'Render.com' : IS_RAILWAY ? 'Railway' : 'none'}`);
+console.log(`📊 Low memory mode: ${AUTO_LOW_MEMORY ? 'ENABLED (cloud free tier detected)' : 'disabled'}`);
 
 // Ensure directories exist
 async function ensureDirs() {
@@ -455,10 +463,10 @@ async function processRender(jobId, imageUrls, audioUrl, durations, effects, web
   const jobDir = path.join(TEMP_DIR, jobId);
   await fs.mkdir(jobDir, { recursive: true });
   
-  // Auto-enable low memory mode if system has limited RAM
-  const useLowMemory = lowMemory || AUTO_LOW_MEMORY || FORCE_LOW_MEMORY;
-  if (useLowMemory && !lowMemory) {
-    console.log(`[${jobId}] ⚠️ Auto-enabled low memory mode (${TOTAL_MEMORY_MB}MB RAM)`);
+  // Auto-enable low memory mode if on cloud free tier
+  const useLowMemory = lowMemory || AUTO_LOW_MEMORY;
+  if (useLowMemory) {
+    console.log(`[${jobId}] ⚠️ Low memory mode ENABLED (Cloud: ${IS_RENDER ? 'Render.com' : IS_RAILWAY ? 'Railway' : 'env'})`);
   }
   
   try {
