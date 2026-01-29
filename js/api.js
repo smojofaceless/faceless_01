@@ -27,6 +27,7 @@ async function createJob(options) {
         effect_kenburns: options.effects?.kenburns ?? true,
         effect_transitions: options.effects?.transitions ?? true,
         effect_vignette: options.effects?.vignette ?? true,
+        effect_filmgrain: options.effects?.filmGrain ?? false,
         // Audio (disabled by default now)
         audio_music: false,
         audio_sfx: false,

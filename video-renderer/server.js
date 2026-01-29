@@ -433,6 +433,50 @@ async function addHorrorGrade(inputPath, outputPath, lowMemory = false) {
   });
 }
 
+/**
+ * Add film grain/old film effect
+ * Includes: subtle shake, film grain noise, and occasional dust/scratch overlay
+ */
+async function addFilmGrain(inputPath, outputPath, lowMemory = false) {
+  return new Promise((resolve, reject) => {
+    const outputOptions = lowMemory ? [
+      '-c:v', 'libx264',
+      '-preset', 'superfast',
+      '-crf', '24',
+      '-c:a', 'copy',
+      '-threads', '2',
+    ] : [
+      '-c:v', 'libx264',
+      '-preset', 'medium',
+      '-crf', '23',
+      '-c:a', 'copy',
+    ];
+    
+    // Film grain effect: noise + subtle color variation + slight shake
+    // noise: adds film grain
+    // rgbashift: subtle RGB channel separation (VHS-like)
+    // The shake is simulated via geq with random offset based on frame
+    ffmpeg(inputPath)
+      .videoFilter([
+        // Add film grain noise (strength 10-15 is subtle but visible)
+        'noise=c0s=12:c0f=t+u',
+        // Add very subtle horizontal shake (simulates old projector)
+        'crop=iw-4:ih-4:2+random(1)*2:2+random(2)*2',
+        // Scale back to original size
+        'scale=1080:1920:flags=lanczos',
+        // Add subtle RGB shift for that VHS feel
+        'rgbashift=rh=-2:bh=2',
+        // Occasional brightness flicker
+        'eq=brightness=0.0+0.02*sin(n/3)',
+      ].join(','))
+      .outputOptions(outputOptions)
+      .output(outputPath)
+      .on('end', resolve)
+      .on('error', reject)
+      .run();
+  });
+}
+
 // Scary/horror words to highlight in red (synced with config.ts)
 const SCARY_WORDS = new Set([
   'death', 'dead', 'die', 'dying', 'died', 'kill', 'killed', 'killing', 'murder', 'murdered',
@@ -677,7 +721,7 @@ app.post('/render', async (req, res) => {
       audio_url,        // Audio file URL
       durations,        // Duration for each image in seconds
       captions = [],    // Word-by-word captions: [{ word, start, end }, ...]
-      effects = {},     // { kenBurns, vignette, horrorGrade, fadeTransitions, captionStyle, highlightScary }
+      effects = {},     // { kenBurns, vignette, horrorGrade, filmGrain, fadeTransitions, captionStyle, highlightScary }
       webhook_url,      // Optional callback URL when done
       job_id: supabaseJobId, // Original Supabase job ID for updating
       low_memory = false, // Enable low memory mode for free tier hosting
@@ -831,6 +875,17 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
       console.log(`[${jobId}] ✓ Horror grade added`);
     }
     job.progress = 90;
+    
+    // Step 8: Apply film grain effect (if enabled)
+    if (effects.filmGrain) {
+      console.log(`[${jobId}] Adding film grain/old film effect...`);
+      const grainPath = path.join(jobDir, 'grain.mp4');
+      await addFilmGrain(currentVideo, grainPath, useLowMemory);
+      await fs.unlink(currentVideo).catch(() => {});
+      currentVideo = grainPath;
+      console.log(`[${jobId}] ✓ Film grain added`);
+    }
+    job.progress = 92;
     
     // Step 7: Move to output directory
     const finalPath = path.join(OUTPUT_DIR, `${jobId}.mp4`);

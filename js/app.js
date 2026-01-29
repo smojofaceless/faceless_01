@@ -1069,6 +1069,7 @@ function getSettings() {
             filter: document.getElementById('effect-filter')?.checked ?? true,
             kenburns: document.getElementById('effect-kenburns')?.checked ?? true,
             vignette: document.getElementById('effect-vignette')?.checked ?? true,
+            filmGrain: document.getElementById('effect-filmgrain')?.checked ?? false,
             highlight: document.getElementById('effect-highlight')?.checked ?? true,
             transitions: document.getElementById('effect-transitions')?.checked ?? true
         }

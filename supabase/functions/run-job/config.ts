@@ -211,6 +211,7 @@ export interface VideoOptions {
   kenburns: boolean;
   transitions: boolean;
   vignette: boolean;
+  filmGrain: boolean;
   music: boolean;
   sfx: boolean;
   captionStyle: string;

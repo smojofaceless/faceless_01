@@ -378,6 +378,7 @@ export async function renderWithFFmpeg(
             fadeTransitions: options.transitions,
             vignette: options.vignette,
             horrorGrade: options.filter,
+            filmGrain: options.filmGrain, // Film grain/old film effect
             captionStyle: options.captionStyle || "bold", // Caption style
             highlightScary: options.highlightScary !== false, // Highlight scary words
           },

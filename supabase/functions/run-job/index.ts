@@ -69,6 +69,7 @@ serve(async (req) => {
       kenburns: body.effect_kenburns ?? jobMeta.effect_kenburns ?? true,
       transitions: body.effect_transitions ?? jobMeta.effect_transitions ?? true,
       vignette: body.effect_vignette ?? jobMeta.effect_vignette ?? true,
+      filmGrain: body.effect_filmgrain ?? jobMeta.effect_filmgrain ?? false,
       music: body.audio_music ?? jobMeta.audio_music ?? false,
       sfx: body.audio_sfx ?? jobMeta.audio_sfx ?? false,
       captionStyle: body.caption_style ?? jobMeta.caption_style ?? "bold",
