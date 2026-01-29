@@ -223,30 +223,43 @@ export async function extractSceneKeywords(
     // Split story into sentences
     const sentences = story.match(/[^.!?]+[.!?]+/g) || [story];
     
-    // Calculate sentences per scene based on target count
-    const sentencesPerScene = Math.max(1, Math.ceil(sentences.length / targetSceneCount));
+    // Limit target scenes to available sentences (can't have more scenes than sentences)
+    const effectiveSceneCount = Math.min(targetSceneCount, sentences.length);
     
-    console.log(`[extractSceneKeywords] ${sentences.length} sentences, target ${targetSceneCount} scenes, ${sentencesPerScene} sentences/scene`);
+    // Calculate sentences per scene based on EFFECTIVE count
+    const sentencesPerScene = Math.max(1, Math.ceil(sentences.length / effectiveSceneCount));
     
-    // Group sentences into scenes - ensure we create EXACTLY targetSceneCount scenes
+    console.log(`[extractSceneKeywords] ${sentences.length} sentences, target ${targetSceneCount} scenes, effective ${effectiveSceneCount} scenes, ${sentencesPerScene} sentences/scene`);
+    
+    // Warn if we can't create the requested number
+    if (effectiveSceneCount < targetSceneCount) {
+      console.warn(`[extractSceneKeywords] ⚠️ Story only has ${sentences.length} sentences, can only create ${effectiveSceneCount} scenes (requested ${targetSceneCount})`);
+    }
+    
+    // Group sentences into scenes - distribute sentences as evenly as possible
     const sceneTexts: string[] = [];
     
-    for (let i = 0; i < targetSceneCount; i++) {
-      const startIdx = i * sentencesPerScene;
-      const endIdx = (i === targetSceneCount - 1) 
-        ? sentences.length  // Last scene gets all remaining sentences
-        : Math.min((i + 1) * sentencesPerScene, sentences.length);
+    for (let i = 0; i < effectiveSceneCount; i++) {
+      // Use floor division to spread sentences more evenly
+      const baseSize = Math.floor(sentences.length / effectiveSceneCount);
+      const remainder = sentences.length % effectiveSceneCount;
       
-      if (startIdx < sentences.length) {
-        const sceneSentences = sentences.slice(startIdx, endIdx);
+      // First 'remainder' scenes get one extra sentence
+      const startIdx = i < remainder 
+        ? i * (baseSize + 1) 
+        : remainder * (baseSize + 1) + (i - remainder) * baseSize;
+      const endIdx = startIdx + baseSize + (i < remainder ? 1 : 0);
+      
+      const sceneSentences = sentences.slice(startIdx, endIdx);
+      if (sceneSentences.length > 0) {
         sceneTexts.push(sceneSentences.join('').trim());
       }
     }
     
-    // Filter out any empty scenes
+    // Filter out any empty scenes (shouldn't happen with new logic)
     const finalSceneTexts = sceneTexts.filter(text => text.length > 0);
     
-    console.log(`[extractSceneKeywords] Created ${finalSceneTexts.length} scenes (target was ${targetSceneCount})`);
+    console.log(`[extractSceneKeywords] Created ${finalSceneTexts.length} scenes (target was ${targetSceneCount}, effective ${effectiveSceneCount})`);
     
     // Get keywords for all scenes in one API call
     const response = await fetch("https://api.openai.com/v1/chat/completions", {

@@ -179,7 +179,7 @@ export async function runAudioPhase(
 
   // Extract scene keywords with actual timestamps
   const sceneCount = jobMeta.scene_count || 4;
-  console.log(`[AUDIO] Extracting scene keywords (target: ${sceneCount} scenes)...`);
+  console.log(`[AUDIO] Extracting scene keywords (target: ${sceneCount} scenes from jobMeta.scene_count=${jobMeta.scene_count})...`);
   const scenes = await extractSceneKeywords(
     openaiKey,
     storyData.story,
@@ -187,6 +187,11 @@ export async function runAudioPhase(
     job.visual_preset || "forest",
     sceneCount
   );
+  
+  // Warn if GPT returned wrong number of scenes
+  if (scenes.length !== sceneCount) {
+    console.warn(`[AUDIO] ⚠️ GPT returned ${scenes.length} scenes but we requested ${sceneCount}!`);
+  }
 
   // Save scenes to job_assets
   console.log(`[AUDIO] Saving ${scenes.length} scenes to database...`);
@@ -298,8 +303,20 @@ export async function runImagesPhase(
   
   console.log(`[IMAGES] ✓ Lock acquired, lease until ${leaseUntil}`);
   
-  // Update jobMeta to use our freshly locked state
-  jobMeta = { ...freshMeta, images_phase_running: true, images_phase_lease_until: leaseUntil };
+  // CRITICAL: Preserve scene_count from original jobMeta parameter
+  // The freshMeta from DB might not have it if it wasn't saved properly
+  const originalSceneCount = jobMeta.scene_count;
+  
+  // Update jobMeta to use our freshly locked state, but preserve scene_count
+  jobMeta = { 
+    ...freshMeta, 
+    images_phase_running: true, 
+    images_phase_lease_until: leaseUntil,
+    // Preserve scene_count: use original param > freshMeta > default 4
+    scene_count: originalSceneCount || freshMeta.scene_count || 4
+  };
+  
+  console.log(`[IMAGES] Scene count: ${jobMeta.scene_count} (original: ${originalSceneCount}, db: ${freshMeta.scene_count})`);
   
   const resolvedImageModel = getImageModel(imageModel || undefined);
   
@@ -380,12 +397,22 @@ export async function runImagesPhase(
     console.log(`[IMAGES] Loaded ${scenes.length} scenes from database`);
   }
 
-  // IMPORTANT: Limit scenes to the user's requested count
+  // Get the target scene count - use what was actually created in audio phase
+  // This ensures we generate all scenes even if there's a mismatch with user request
   const requestedSceneCount = jobMeta.scene_count || 4;
-  if (scenes.length > requestedSceneCount) {
-    console.log(`[IMAGES] WARNING: Found ${scenes.length} scenes but user requested ${requestedSceneCount}. Limiting to requested count.`);
+  const actualSceneCount = scenes.length;
+  
+  // Only limit if we have MORE scenes than requested (shouldn't normally happen)
+  // But NEVER reduce below what was created - always generate all existing scenes
+  if (actualSceneCount > requestedSceneCount) {
+    console.log(`[IMAGES] WARNING: Found ${actualSceneCount} scenes but user requested ${requestedSceneCount}. Limiting to requested count.`);
     scenes = scenes.slice(0, requestedSceneCount);
+  } else if (actualSceneCount < requestedSceneCount) {
+    console.log(`[IMAGES] NOTE: Only ${actualSceneCount} scenes exist (user requested ${requestedSceneCount}). Will generate all ${actualSceneCount}.`);
   }
+  
+  const targetSceneCount = scenes.length;
+  console.log(`[IMAGES] Target: ${targetSceneCount} images`);
 
   // Check how many images already generated
   const { data: existingImages } = await supabase
