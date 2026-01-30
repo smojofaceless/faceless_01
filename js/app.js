@@ -21,6 +21,15 @@ document.addEventListener('DOMContentLoaded', () => {
         sceneSlider.addEventListener('input', (e) => {
             document.getElementById('scene-count-display').textContent = e.target.value;
             updateCostEstimate();
+            checkSceneCountWarning(); // NEW: Check if scene count is too high
+        });
+    }
+    
+    // Duration select - also check scene count warning
+    const durationSelect = document.getElementById('duration');
+    if (durationSelect) {
+        durationSelect.addEventListener('change', () => {
+            checkSceneCountWarning(); // NEW: Re-check when duration changes
         });
     }
     
@@ -141,6 +150,45 @@ function updateArtStylePreview() {
     if (iconEl) iconEl.textContent = info.icon;
     if (nameEl) nameEl.textContent = info.name;
     if (descEl) descEl.textContent = info.desc;
+}
+
+// =====================================================
+// SCENE COUNT VALIDATION
+// =====================================================
+
+// Word count estimates per duration
+const DURATION_WORD_ESTIMATES = {
+    'short': { words: 75, seconds: 30 },   // ~30 seconds
+    'medium': { words: 105, seconds: 45 }, // ~45 seconds  
+    'long': { words: 145, seconds: 60 }    // ~60 seconds
+};
+
+// Check if scene count is too high for the selected duration
+function checkSceneCountWarning() {
+    const sceneCount = parseInt(document.getElementById('scene-count')?.value || '6');
+    const duration = document.getElementById('duration')?.value || 'medium';
+    const warningEl = document.getElementById('scene-count-warning');
+    const warningTextEl = document.getElementById('scene-warning-text');
+    
+    if (!warningEl || !warningTextEl) return;
+    
+    const durationConfig = DURATION_WORD_ESTIMATES[duration] || DURATION_WORD_ESTIMATES['medium'];
+    const estimatedWords = durationConfig.words;
+    const wordsPerScene = estimatedWords / sceneCount;
+    
+    // Warn if less than 10 words per scene (will cause fragmentation)
+    // Recommend at least 15 words per scene for good sentence-level scenes
+    const recommendedMaxScenes = Math.floor(estimatedWords / 15);
+    
+    if (wordsPerScene < 10) {
+        warningEl.classList.remove('hidden');
+        warningTextEl.textContent = `${sceneCount} scenes for ~${estimatedWords} words = ~${Math.round(wordsPerScene)} words/scene. This will create word-level fragments! Recommend ≤${recommendedMaxScenes} scenes for this duration.`;
+    } else if (wordsPerScene < 15) {
+        warningEl.classList.remove('hidden');
+        warningTextEl.textContent = `${sceneCount} scenes is high for ~${estimatedWords} words (~${Math.round(wordsPerScene)} words/scene). Recommend ≤${recommendedMaxScenes} scenes for best quality.`;
+    } else {
+        warningEl.classList.add('hidden');
+    }
 }
 
 // =====================================================
@@ -955,6 +1003,146 @@ function toggleDebugPanel() {
     }
 }
 
+// Store scene data for debugging
+let debugSceneData = [];
+
+// Analyze scenes for issues (duplicates, overlaps, fragments)
+function analyzeScenes(scenes) {
+    const warnings = [];
+    
+    if (!scenes || scenes.length === 0) {
+        return { warnings: [], stats: null };
+    }
+    
+    // Calculate stats
+    const wordCounts = scenes.map(s => (s.text || '').split(/\s+/).filter(w => w).length);
+    const avgWords = wordCounts.reduce((a, b) => a + b, 0) / wordCounts.length;
+    const minWords = Math.min(...wordCounts);
+    const maxWords = Math.max(...wordCounts);
+    
+    // Check for word-level fragments (scenes with < 8 words are likely fragments)
+    const fragmentCount = wordCounts.filter(w => w < 8).length;
+    if (fragmentCount > 0) {
+        warnings.push(`⚠️ ${fragmentCount} scenes have < 8 words (likely word-level fragments)`);
+    }
+    
+    // Check for overlapping time ranges
+    let overlapCount = 0;
+    for (let i = 1; i < scenes.length; i++) {
+        const prev = scenes[i - 1];
+        const curr = scenes[i];
+        if (curr.startTime < prev.endTime - 0.5) { // Allow 0.5s tolerance
+            overlapCount++;
+        }
+    }
+    if (overlapCount > 0) {
+        warnings.push(`⚠️ ${overlapCount} scenes have overlapping time ranges`);
+    }
+    
+    // Check for duplicate text
+    const textSet = new Set();
+    let duplicateCount = 0;
+    for (const scene of scenes) {
+        const normalized = (scene.text || '').trim().toLowerCase().substring(0, 50);
+        if (textSet.has(normalized)) {
+            duplicateCount++;
+        }
+        textSet.add(normalized);
+    }
+    if (duplicateCount > 0) {
+        warnings.push(`⚠️ ${duplicateCount} scenes have duplicate text`);
+    }
+    
+    // Check if scene count is too high for story length
+    const totalWords = wordCounts.reduce((a, b) => a + b, 0);
+    if (avgWords < 10 && scenes.length > 6) {
+        warnings.push(`⚠️ Too many scenes (${scenes.length}) for story length (~${totalWords} words). Recommend ≤ ${Math.max(4, Math.floor(totalWords / 15))} scenes.`);
+    }
+    
+    return {
+        warnings,
+        stats: {
+            sceneCount: scenes.length,
+            totalWords,
+            avgWordsPerScene: Math.round(avgWords),
+            minWords,
+            maxWords,
+            fragmentCount,
+            overlapCount,
+            duplicateCount
+        }
+    };
+}
+
+// Update scene debug display
+function updateSceneDebugInfo(scenes) {
+    debugSceneData = scenes || [];
+    
+    const sceneDataEl = document.getElementById('debug-scene-data');
+    const warningsEl = document.getElementById('debug-scene-warnings');
+    const warningsListEl = document.getElementById('debug-scene-warnings-list');
+    
+    if (!sceneDataEl) return;
+    
+    if (!scenes || scenes.length === 0) {
+        sceneDataEl.innerHTML = '<p class="text-gray-500">No scene data yet...</p>';
+        if (warningsEl) warningsEl.classList.add('hidden');
+        return;
+    }
+    
+    // Analyze scenes for issues
+    const { warnings, stats } = analyzeScenes(scenes);
+    
+    // Show warnings if any
+    if (warnings.length > 0 && warningsEl && warningsListEl) {
+        warningsEl.classList.remove('hidden');
+        warningsListEl.innerHTML = warnings.map(w => `<p>${w}</p>`).join('');
+    } else if (warningsEl) {
+        warningsEl.classList.add('hidden');
+    }
+    
+    // Build scene data display
+    let html = `<div class="mb-2 p-2 bg-gray-800 rounded">
+        <p class="text-cyan-400 font-bold">📊 Stats:</p>
+        <p class="text-gray-300">Scenes: ${stats.sceneCount} | Words: ${stats.totalWords} | Avg: ${stats.avgWordsPerScene} words/scene</p>
+        <p class="text-gray-400">Min: ${stats.minWords} | Max: ${stats.maxWords} words</p>
+    </div>`;
+    
+    html += scenes.map((scene, i) => {
+        const wordCount = (scene.text || '').split(/\s+/).filter(w => w).length;
+        const isFragment = wordCount < 8;
+        const textColor = isFragment ? 'text-yellow-400' : 'text-gray-300';
+        const fragmentBadge = isFragment ? '<span class="bg-yellow-700 text-yellow-200 px-1 rounded text-xs ml-1">FRAGMENT</span>' : '';
+        
+        return `<div class="mb-2 p-2 ${isFragment ? 'bg-yellow-900/30 border border-yellow-700' : 'bg-gray-800'} rounded">
+            <p class="text-purple-400 font-bold">Scene ${i + 1}${fragmentBadge}</p>
+            <p class="text-gray-500">${scene.startTime?.toFixed(2) || 0}s - ${scene.endTime?.toFixed(2) || 0}s (${wordCount} words)</p>
+            <p class="${textColor} truncate">"${escapeHtml((scene.text || '').substring(0, 100))}${scene.text?.length > 100 ? '...' : ''}"</p>
+            ${scene.source ? `<p class="text-blue-400 text-xs">Source: ${scene.source}</p>` : ''}
+        </div>`;
+    }).join('');
+    
+    sceneDataEl.innerHTML = html;
+}
+
+// Copy scene data to clipboard
+function copySceneData() {
+    if (debugSceneData && debugSceneData.length > 0) {
+        const { warnings, stats } = analyzeScenes(debugSceneData);
+        const output = {
+            analysis: { warnings, stats },
+            scenes: debugSceneData
+        };
+        navigator.clipboard.writeText(JSON.stringify(output, null, 2)).then(() => {
+            showToast('Scene data copied!');
+        }).catch(err => {
+            prompt('Copy this:', JSON.stringify(output, null, 2).substring(0, 2000));
+        });
+    } else {
+        alert('No scene data available yet.');
+    }
+}
+
 // Update debug info
 function updateDebugInfo(data) {
     const jobIdEl = document.getElementById('debug-job-id');
@@ -1017,6 +1205,11 @@ function updateDebugInfo(data) {
             `).join('');
         } else if (replicateInputsEl && aiModel === 'flux') {
             replicateInputsEl.innerHTML = '<p class="text-yellow-500">Waiting for FLUX API calls...</p>';
+        }
+        
+        // Scene data debugging (NEW)
+        if (data.scenes && data.scenes.length > 0) {
+            updateSceneDebugInfo(data.scenes);
         }
         
         // Also log meta info
@@ -1269,6 +1462,17 @@ function updateSceneImages(scenes) {
             visualBeatHtml = '<p class="text-xs text-purple-400" title="' + escapeHtml(scene.visualBeat) + '">' + escapeHtml(scene.visualBeat) + '</p>';
         }
         
+        // Build timing info for debugging
+        const timingInfo = scene.startTime !== undefined && scene.endTime !== undefined
+            ? `<p class="text-xs text-gray-500">${scene.startTime?.toFixed(1) || 0}s - ${scene.endTime?.toFixed(1) || 0}s</p>`
+            : '';
+        
+        // Check for potential issues
+        const wordCount = (scene.text || '').split(/\s+/).filter(w => w).length;
+        const isFragment = wordCount < 8;
+        const statusColor = isFragment ? 'text-yellow-400' : 'text-green-400';
+        const statusIcon = isFragment ? '⚠️' : '✓';
+        
         card.innerHTML = `
             <div class="aspect-[9/16] bg-gray-900">
                 ${isImage 
@@ -1277,7 +1481,9 @@ function updateSceneImages(scenes) {
                 }
             </div>
             <div class="p-2">
-                <p class="text-xs text-green-400">✓ Scene ${sceneIndex + 1} (${scene.source || 'unknown'})</p>
+                <p class="text-xs ${statusColor}">${statusIcon} Scene ${sceneIndex + 1} <span class="text-gray-500">(${scene.source || 'unknown'})</span></p>
+                ${timingInfo}
+                ${isFragment ? '<p class="text-xs text-yellow-500">' + wordCount + ' words - fragment!</p>' : ''}
                 ${visualBeatHtml}
                 ${promptHtml}
             </div>
@@ -1358,16 +1564,34 @@ function displayFinalResult(data) {
     
     // Detailed scene view with text and prompt info
     if (data.scenes && detailed) {
-        detailed.innerHTML = data.scenes.map((scene, i) => {
+        // Analyze scenes first to show summary
+        const { warnings, stats } = analyzeScenes(data.scenes);
+        
+        let summaryHtml = '';
+        if (warnings.length > 0 || stats) {
+            summaryHtml = `
+                <div class="bg-yellow-900/30 border border-yellow-700 rounded-lg p-3 mb-3">
+                    <p class="text-xs text-yellow-400 font-bold mb-1">📊 Scene Analysis</p>
+                    ${stats ? `<p class="text-xs text-gray-300">Total: ${stats.sceneCount} scenes, ~${stats.totalWords} words (avg ${stats.avgWordsPerScene}/scene)</p>` : ''}
+                    ${warnings.length > 0 ? `<div class="text-xs text-yellow-300 mt-1">${warnings.map(w => `<p>${w}</p>`).join('')}</div>` : ''}
+                </div>
+            `;
+        }
+        
+        detailed.innerHTML = summaryHtml + data.scenes.map((scene, i) => {
             const url = scene.videoUrl || scene.storage_path || '';
             const text = scene.text || scene.scene_text || 'No text';
             const prompt = scene.dalle_prompt || scene.prompt || '';
             const model = scene.image_model || scene.source || 'Unknown';
             const startTime = scene.startTime !== undefined ? formatTime(scene.startTime) : '?';
             const endTime = scene.endTime !== undefined ? formatTime(scene.endTime) : '?';
+            const wordCount = (text || '').split(/\s+/).filter(w => w).length;
+            const isFragment = wordCount < 8;
+            const borderColor = isFragment ? 'border-yellow-700' : 'border-gray-700';
+            const bgColor = isFragment ? 'bg-yellow-900/20' : 'bg-gray-900/50';
             
             return `
-                <div class="bg-gray-900/50 rounded-lg p-3 border border-gray-700">
+                <div class="${bgColor} rounded-lg p-3 border ${borderColor}">
                     <div class="flex gap-3">
                         <div class="w-16 h-24 flex-shrink-0 bg-gray-800 rounded overflow-hidden">
                             ${url 
@@ -1376,12 +1600,13 @@ function displayFinalResult(data) {
                             }
                         </div>
                         <div class="flex-1 min-w-0">
-                            <div class="flex items-center gap-2 mb-1">
+                            <div class="flex items-center gap-2 mb-1 flex-wrap">
                                 <span class="bg-primary/20 text-primary px-2 py-0.5 rounded text-xs font-bold">Scene ${i + 1}</span>
                                 <span class="text-xs text-gray-500">${startTime} - ${endTime}</span>
                                 <span class="text-xs text-purple-400">${escapeHtml(model)}</span>
+                                <span class="text-xs ${isFragment ? 'text-yellow-400 font-bold' : 'text-gray-500'}">${wordCount} words${isFragment ? ' ⚠️' : ''}</span>
                             </div>
-                            <p class="text-xs text-gray-300 mb-2 line-clamp-2">${escapeHtml(text)}</p>
+                            <p class="text-xs ${isFragment ? 'text-yellow-300' : 'text-gray-300'} mb-2 line-clamp-2">${escapeHtml(text)}</p>
                             ${prompt ? `
                                 <details class="text-xs">
                                     <summary class="text-purple-400 cursor-pointer hover:text-purple-300">View Prompt</summary>
