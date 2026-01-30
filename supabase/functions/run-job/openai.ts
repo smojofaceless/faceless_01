@@ -41,6 +41,7 @@ const VIBE_STRUCTURE_HINTS: Record<string, string> = {
   slow_creepy: "Build atmosphere gradually. Let wrongness creep in slowly. The horror should feel inevitable.",
   punchy_shock: "Quick setup, rapid escalation. Hit hard and fast. The twist should land like a punch.",
   atmospheric: "Prioritize mood over action. Let the environment be a character. Dread through description.",
+  urban_legend: "Write as a factual documentary. Calm, serious tone. The horror comes from 'this really happened'.",
 };
 
 // Ending types for variety
@@ -76,7 +77,78 @@ export async function generateStory(
   console.log(`[STORY] Enhanced generation: ${lengthPreset}s, ${vibePreset}, ${visualPreset || 'forest'}`);
   console.log(`[STORY] Word range: ${config.minWords}-${config.maxWords}, ending hint: "${endingHint}"`);
 
-  const prompt = `You are a viral horror short-story writer for TikTok, Instagram Reels, and YouTube Shorts.
+  // Use special prompt for Urban Legend style
+  let prompt: string;
+  let systemPrompt: string;
+  
+  if (vibePreset === "urban_legend") {
+    // URBAN LEGEND / FAUX TRUE-CRIME PROMPT
+    systemPrompt = "You are a viral horror writer specializing in 'true story' style urban legends. You write as if documenting real, suppressed historical events. Always respond with valid JSON.";
+    
+    prompt = `You are writing a faux–true crime horror story designed to feel like a suppressed historical event.
+
+═══════════════════════════════════════
+STRUCTURE (CRITICAL - follow this exactly):
+═══════════════════════════════════════
+1. OPENING CLAIM: State this really happened (use vague time: "In the late 1970s...")
+2. EARLY REPORTS: Authorities initially dismissed the first sightings
+3. REPEATED SIGHTINGS: Same disturbing figure/pattern appears across different locations  
+4. CONSISTENT DETAIL: One unsettling visual detail that every witness remembers
+5. ESCALATION: Sightings → disappearances
+6. UNRESOLVED ENDING: No arrest, no explanation, just a chilling final image
+
+═══════════════════════════════════════
+RULES (CRITICAL):
+═══════════════════════════════════════
+- PRESENTED AS REAL but keep everything ANONYMOUS
+- No real person names (use "a local farmer", "truck drivers", "the sheriff")
+- Use a historical time period (1950s–1980s works best)
+- Reference multiple locations or states for credibility
+- Authorities DENY or IGNORE the events
+- Witnesses describe the SAME disturbing figure or pattern
+- Tone: CALM, FACTUAL, DOCUMENTARY - this makes it feel real
+- NO humor, NO over-explaining
+- The threat is mostly IMPLIED, not explicit
+
+═══════════════════════════════════════
+DETAILS TO INCLUDE:
+═══════════════════════════════════════
+- One REPEATING visual detail (tall figure, glowing eyes, wrong smile, etc.)
+- One object or phrase witnesses remember
+- Mention of files being "lost" or investigations being "quietly closed"
+
+═══════════════════════════════════════
+WORD COUNT (CRITICAL):
+═══════════════════════════════════════
+- MINIMUM: ${config.minWords} words
+- MAXIMUM: ${config.maxWords} words
+- Count carefully. Do NOT exceed or fall short.
+
+═══════════════════════════════════════
+VISUAL ENVIRONMENT:
+═══════════════════════════════════════
+${visualEnv}
+The setting should match this aesthetic.
+
+═══════════════════════════════════════
+ENDING (CRITICAL):
+═══════════════════════════════════════
+- NO resolution, NO explanation
+- End with a CHILLING DESCRIPTION, not an action
+- Final image should LINGER in the reader's mind
+- Example: "To this day, no one can explain what the children drew."
+
+Return ONLY valid JSON:
+{
+  "title": "Short mysterious title (3-5 words, no quotes)",
+  "hook": "The attention-grabbing opening claim",
+  "story": "The complete story including the hook"
+}`;
+  } else {
+    // STANDARD HORROR PROMPT
+    systemPrompt = "You are an expert viral horror story writer. You understand pacing, hooks, and what makes content shareable. Always respond with valid JSON. Never include markdown or code blocks.";
+    
+    prompt = `You are a viral horror short-story writer for TikTok, Instagram Reels, and YouTube Shorts.
 
 Write a scary story with these EXACT requirements:
 
@@ -141,6 +213,7 @@ Return ONLY valid JSON:
   "hook": "The attention-grabbing first line",
   "story": "The complete story including the hook"
 }`;
+  }
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -151,10 +224,7 @@ Return ONLY valid JSON:
     body: JSON.stringify({
       model: "gpt-4o-mini",
       messages: [
-        { 
-          role: "system", 
-          content: "You are an expert viral horror story writer. You understand pacing, hooks, and what makes content shareable. Always respond with valid JSON. Never include markdown or code blocks." 
-        },
+        { role: "system", content: systemPrompt },
         { role: "user", content: prompt },
       ],
       temperature: 0.85, // Slightly lower for more consistent structure
@@ -193,6 +263,44 @@ export function buildStoryPromptForDisplay(
   const vibeHint = VIBE_STRUCTURE_HINTS[vibePreset] || VIBE_STRUCTURE_HINTS["slow_creepy"];
   const visualEnv = VISUAL_ENVIRONMENT_DESCRIPTIONS[visualPreset] || VISUAL_ENVIRONMENT_DESCRIPTIONS["forest"];
   
+  // Special display for Urban Legend style
+  if (vibePreset === "urban_legend") {
+    return `URBAN LEGEND / FAUX TRUE-CRIME PROMPT (v2.1)
+
+📐 STRUCTURE:
+  1. Opening Claim → "In the late 1970s..."
+  2. Early Reports → Authorities dismiss sightings
+  3. Repeated Sightings → Same figure across locations
+  4. Consistent Detail → One visual that repeats
+  5. Escalation → Sightings → Disappearances
+  6. Unresolved Ending → No explanation, chilling image
+
+🎭 STYLE:
+  - Tone: ${vibe}
+  - Pacing: ${vibeHint}
+  - Documentary/Factual voice
+  - Calm, serious narration
+
+📏 WORD COUNT: ${config.minWords}-${config.maxWords} words
+
+📍 REQUIRED ELEMENTS:
+  - Historical time period (1950s-1980s)
+  - Multiple states/locations mentioned
+  - Authorities deny or ignore events
+  - One REPEATING unsettling visual detail
+  - Files "lost" or investigations "closed"
+
+🌲 VISUAL ENVIRONMENT:
+  ${visualEnv}
+
+🚫 RULES:
+  - No real names (use roles: "a farmer", "the sheriff")
+  - Implied threat, not explicit violence
+  - Unresolved ending - no arrests, no explanation
+  - Final line: chilling description, not action`;
+  }
+  
+  // Standard prompt display
   return `VIRAL HORROR STORY PROMPT (Enhanced v2.0)
 
 📐 STRUCTURE:

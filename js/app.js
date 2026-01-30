@@ -656,13 +656,15 @@ function renderSceneBreakdown(scenes) {
 const VIBE_NAMES = {
     'slow_creepy': 'Slow Creepy',
     'punchy_shock': 'Punchy Shock',
-    'atmospheric': 'Atmospheric'
+    'atmospheric': 'Atmospheric',
+    'urban_legend': 'Urban Legend'
 };
 
 const VIBE_DESCRIPTIONS = {
     'slow_creepy': 'slow building dread, atmospheric, unsettling ending',
     'punchy_shock': 'fast-paced, shocking twist, punchy ending',
-    'atmospheric': 'moody, descriptive, lingering unease'
+    'atmospheric': 'moody, descriptive, lingering unease',
+    'urban_legend': 'faux true-crime documentary, presented as a real unsolved event, factual tone'
 };
 
 const VISUAL_NAMES = {
@@ -705,7 +707,8 @@ const VISUAL_ENV_DESCRIPTIONS = {
 const VIBE_PACING_HINTS = {
     'slow_creepy': 'Build atmosphere gradually. Let wrongness creep in slowly.',
     'punchy_shock': 'Quick setup, rapid escalation. Hit hard and fast.',
-    'atmospheric': 'Prioritize mood over action. Let environment be a character.'
+    'atmospheric': 'Prioritize mood over action. Let environment be a character.',
+    'urban_legend': 'Documentary tone. Calm, factual. The horror comes from "this really happened".'
 };
 
 // Build generation details from UI selections (fallback if backend doesn't return them)
@@ -722,7 +725,44 @@ function buildGenerationDetailsFromUI(data) {
     const pacingHint = VIBE_PACING_HINTS[vibePreset] || VIBE_PACING_HINTS['slow_creepy'];
     
     // Build the enhanced prompt for display (matching backend format)
-    const storyPrompt = `VIRAL HORROR STORY PROMPT (Enhanced v2.0)
+    // Use special prompt for Urban Legend style
+    let storyPrompt;
+    if (vibePreset === 'urban_legend') {
+        storyPrompt = `URBAN LEGEND / FAUX TRUE-CRIME PROMPT (v2.1)
+
+📐 STRUCTURE:
+  1. Opening Claim → "In the late 1970s..."
+  2. Early Reports → Authorities dismiss sightings
+  3. Repeated Sightings → Same figure across locations
+  4. Consistent Detail → One visual that repeats
+  5. Escalation → Sightings → Disappearances
+  6. Unresolved Ending → No explanation, chilling image
+
+🎭 STYLE:
+  - Tone: ${VIBE_DESCRIPTIONS[vibePreset] || vibePreset}
+  - Pacing: ${pacingHint}
+  - Documentary/Factual voice
+  - Calm, serious narration
+
+📏 WORD COUNT: ${lengthConfig.minWords}-${lengthConfig.maxWords} words
+
+📍 REQUIRED ELEMENTS:
+  - Historical time period (1950s-1980s)
+  - Multiple states/locations mentioned
+  - Authorities deny or ignore events
+  - One REPEATING unsettling visual detail
+  - Files "lost" or investigations "closed"
+
+🌲 VISUAL ENVIRONMENT:
+  ${visualEnv}
+
+🚫 RULES:
+  - No real names (use roles: "a farmer", "the sheriff")
+  - Implied threat, not explicit violence
+  - Unresolved ending - no arrests, no explanation
+  - Final line: chilling description, not action`;
+    } else {
+        storyPrompt = `VIRAL HORROR STORY PROMPT (Enhanced v2.0)
 
 📐 STRUCTURE:
   1. Hook (1-2 sentences) → instant curiosity
@@ -752,6 +792,7 @@ function buildGenerationDetailsFromUI(data) {
   - Faceless/obscured antagonists
   - Algorithm-safe (psychological horror only)
   - Complete ending required`;
+    }
     
     return {
         vibe_preset: vibePreset,
@@ -1330,6 +1371,7 @@ function closeErrorModal() {
 function getSettings() {
     return {
         theme: document.getElementById('theme')?.value || 'general',
+        vibe_preset: document.getElementById('vibe-preset')?.value || 'slow_creepy',
         visual_source: document.querySelector('input[name="visual-source"]:checked')?.value || 'ai',
         image_model: document.getElementById('ai-model')?.value || 'gpt-4o',
         art_style: document.getElementById('art-style')?.value || 'cinematic-dark',

@@ -12,6 +12,7 @@ async function createJob(options) {
     const requestBody = {
         // Theme and content
         theme: options.theme || 'general',
+        vibe_preset: options.vibe_preset || 'slow_creepy',
         length_preset: options.duration || 'medium',
         visual_preset: options.visual_preset || 'forest',
         visual_source: options.visual_source || 'ai',

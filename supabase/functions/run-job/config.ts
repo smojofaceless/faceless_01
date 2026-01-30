@@ -24,6 +24,7 @@ export const VIBE_CONFIG: Record<string, string> = {
   slow_creepy: "slow building dread, atmospheric, unsettling ending",
   punchy_shock: "fast-paced, shocking twist, punchy ending",
   atmospheric: "moody, descriptive, lingering unease",
+  urban_legend: "faux true-crime documentary, presented as a real unsolved event, factual tone",
 };
 
 // =====================================================

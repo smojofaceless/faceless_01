@@ -105,7 +105,7 @@ serve(async (req) => {
         status: isPreview ? "generating" : "queued",
         progress: isPreview ? 5 : 0,
         length_preset: lengthPreset,
-        vibe_preset: "slow_creepy",
+        vibe_preset: body.vibe_preset || "slow_creepy",
         visual_preset: body.visual_preset || "forest",
         voice_id: "pNInz6obpgDQGcFmaJgB", // Adam voice
         prompt_version: "v1",
