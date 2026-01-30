@@ -311,7 +311,7 @@ function getSimpleKenBurnsFilter(index, duration, width = 1080, height = 1920) {
  * - Encodes scenes in parallel batches of 2 (within memory limits)
  */
 async function createVideoFromImages(jobId, images, durations, outputPath, options = {}) {
-  const { kenBurns = true, lowMemory = false } = options;
+  const { kenBurns = true, lowMemory = false, moodLevels = [] } = options;
   const tempVideos = [];
   const width = 1080;
   const height = 1920;
@@ -1000,6 +1000,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     await createVideoFromImages(jobId, imagePaths, durations, rawVideoPath, {
       kenBurns: useKenBurns,
       lowMemory: useLowMemory,
+      moodLevels: moodLevels, // Pass mood levels for intelligent Ken Burns
     });
     timings.createVideo = Date.now() - videoStart;
     job.progress = 50;
