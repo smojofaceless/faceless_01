@@ -363,11 +363,18 @@ export async function renderWithFFmpeg(
   }
   
   // Extract image URLs and durations from scenes
+  // CRITICAL: Use fractional seconds (not Math.ceil) to avoid timing drift!
+  // With 24 scenes, rounding each to whole seconds can cause 5-10s of cumulative drift
   const imageUrls = scenes.map(s => s.videoUrl);
-  const durations = scenes.map(s => Math.ceil(s.endTime - s.startTime));
+  const durations = scenes.map(s => {
+    const duration = s.endTime - s.startTime;
+    // Round to 2 decimal places for precision, minimum 0.5s
+    return Math.max(0.5, Math.round(duration * 100) / 100);
+  });
   
   console.log(`[FFMPEG] Starting render with ${imageUrls.length} images`);
-  console.log(`[FFMPEG] Durations: ${durations.join(", ")} seconds`);
+  console.log(`[FFMPEG] Durations: ${durations.map(d => d.toFixed(2)).join(", ")} seconds`);
+  console.log(`[FFMPEG] Total duration: ${durations.reduce((a, b) => a + b, 0).toFixed(2)}s`);
   console.log(`[FFMPEG] Captions: ${captions?.length || 0} words`);
   console.log(`[FFMPEG] 🎵 Music settings: enabled=${options.music}, track="${options.musicTrack}", volume=${options.musicVolume}%`);
   

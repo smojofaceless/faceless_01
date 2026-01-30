@@ -259,6 +259,10 @@ async function createVideoFromImages(jobId, images, durations, outputPath, optio
   console.log(`[${jobId}] Processing ${images.length} images (lowMemory: ${lowMemory}, fps: ${fps})`);
   
   // Step 1: Create individual video clips for each image
+  // Calculate total duration for validation
+  const totalDuration = durations.reduce((sum, d) => sum + (d || 5), 0);
+  console.log(`[${jobId}] Total video duration will be: ${totalDuration.toFixed(2)}s from ${images.length} scenes`);
+  
   for (let i = 0; i < images.length; i++) {
     const imagePath = images[i];
     const duration = durations[i] || 5;
