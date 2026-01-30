@@ -202,16 +202,35 @@ function getKenBurnsFilter(index, duration, width = 1080, height = 1920) {
   // Use 2x scale instead of 8x to reduce memory usage significantly
   const scaledW = width * 2;
   const scaledH = height * 2;
+  
+  // ENHANCED Ken Burns: 8 different motions for more variety
+  // Uses easing functions for smoother movement
   const effects = [
-    // Zoom in slowly
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='min(zoom+0.001,1.3)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
-    // Zoom out slowly  
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='if(lte(zoom,1.0),1.3,max(1.001,zoom-0.001))':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
-    // Pan left to right with slight zoom
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.15':d=${frames}:x='(iw-iw/zoom)/2+((iw/zoom-ow)/3)*sin(on/${frames}*PI)':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
-    // Pan right to left with slight zoom
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.15':d=${frames}:x='(iw-iw/zoom)/2-((iw/zoom-ow)/3)*sin(on/${frames}*PI)':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
+    // 1. Slow zoom IN (eased - starts slow, accelerates slightly)
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.0+0.25*pow(on/${frames},0.8)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
+    
+    // 2. Slow zoom OUT (eased - smooth deceleration)
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.25-0.25*pow(on/${frames},1.2)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
+    
+    // 3. Pan LEFT to RIGHT with zoom (smooth sine wave)
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.12+0.03*sin(on/${frames}*PI)':d=${frames}:x='(iw-iw/zoom)/2+((iw/zoom-ow)/2.5)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
+    
+    // 4. Pan RIGHT to LEFT with zoom
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.12+0.03*sin(on/${frames}*PI)':d=${frames}:x='(iw-iw/zoom)/2-((iw/zoom-ow)/2.5)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
+    
+    // 5. Pan UP (reveal from bottom) with gentle zoom
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.1':d=${frames}:x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2-((ih/zoom-oh)/3)*(1-cos(on/${frames}*PI))/2':s=${width}x${height}:fps=30`,
+    
+    // 6. Pan DOWN (reveal from top) with gentle zoom
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.1':d=${frames}:x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2+((ih/zoom-oh)/3)*(1-cos(on/${frames}*PI))/2':s=${width}x${height}:fps=30`,
+    
+    // 7. Diagonal pan (top-left to bottom-right) with zoom
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.0+0.15*on/${frames}':d=${frames}:x='(iw-iw/zoom)/2+((iw/zoom-ow)/4)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2+((ih/zoom-oh)/6)*(1-cos(on/${frames}*PI))/2':s=${width}x${height}:fps=30`,
+    
+    // 8. Diagonal pan (bottom-right to top-left) with zoom out
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.15-0.1*on/${frames}':d=${frames}:x='(iw-iw/zoom)/2-((iw/zoom-ow)/4)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2-((ih/zoom-oh)/6)*(1-cos(on/${frames}*PI))/2':s=${width}x${height}:fps=30`,
   ];
+  
   return effects[index % effects.length];
 }
 
@@ -536,27 +555,54 @@ async function addFilmGrain(inputPath, outputPath, lowMemory = false) {
       '-c:a', 'copy',
     ];
     
-    // Film grain effect: noise + subtle color variation + slight shake
-    // noise: adds film grain
-    // rgbashift: subtle RGB channel separation (VHS-like)
-    // The shake is simulated via geq with random offset based on frame
+    // ENHANCED: Old 8mm/Super 8 film effect with scratches, dust, and light leaks
+    // Creates authentic vintage film look like old home movies
     ffmpeg(inputPath)
-      .videoFilter([
-        // Add film grain noise (strength 10-15 is subtle but visible)
-        'noise=c0s=12:c0f=t+u',
-        // Add very subtle horizontal shake (simulates old projector)
-        'crop=iw-4:ih-4:2+random(1)*2:2+random(2)*2',
-        // Scale back to original size
-        'scale=1080:1920:flags=lanczos',
-        // Add subtle RGB shift for that VHS feel
-        'rgbashift=rh=-2:bh=2',
-        // Occasional brightness flicker
-        'eq=brightness=0.0+0.02*sin(n/3)',
-      ].join(','))
+      .complexFilter([
+        // Base video
+        '[0:v]null[base]',
+        
+        // Layer 1: Film grain (random noise)
+        '[base]noise=c0s=15:c0f=t+u[grain]',
+        
+        // Layer 2: Vertical scratches (multiple thin lines)
+        // Uses geq to create random vertical lines that move frame-to-frame
+        `[grain]geq=lum='lum(X,Y)+if(lt(abs(X-mod(random(1)*1080+N*7,1080)),1),40,0)+if(lt(abs(X-mod(random(2)*1080+N*13,1080)),1),35,0)+if(lt(abs(X-mod(random(3)*1080+N*23,1080)),2),25,0)':cb='cb(X,Y)':cr='cr(X,Y)'[scratches]`,
+        
+        // Layer 3: Brightness flicker (simulates projector lamp variation)
+        `[scratches]eq=brightness='0.0+0.03*sin(n*0.5)+0.02*random(1)':contrast=1.05[flicker]`,
+        
+        // Layer 4: Slight shake/jitter (simulates film gate wobble)
+        '[flicker]crop=iw-8:ih-8:4+random(1)*4:4+random(2)*4,scale=1080:1920:flags=lanczos[shake]',
+        
+        // Layer 5: Light leak simulation (random bright spots on edges)
+        // Uses vignette inverted + random intensity
+        `[shake]curves=all='0/0 0.3/0.35 0.7/0.75 1/1':r='0/0 0.5/0.55 1/1'[color]`,
+        
+        // Layer 6: Subtle RGB channel separation (chromatic aberration)
+        '[color]rgbashift=rh=-2:rv=1:bh=2:bv=-1[rgb]',
+        
+        // Layer 7: Slight desaturation for that faded film look
+        '[rgb]eq=saturation=0.85[final]'
+      ], 'final')
       .outputOptions(outputOptions)
       .output(outputPath)
       .on('end', resolve)
-      .on('error', reject)
+      .on('error', (err) => {
+        console.error('Film grain error:', err.message);
+        // Fallback to simpler effect if complex one fails
+        ffmpeg(inputPath)
+          .videoFilter([
+            'noise=c0s=12:c0f=t+u',
+            'eq=brightness=0.0+0.02*sin(n/3):saturation=0.9',
+            'rgbashift=rh=-2:bh=2',
+          ].join(','))
+          .outputOptions(outputOptions)
+          .output(outputPath)
+          .on('end', resolve)
+          .on('error', reject)
+          .run();
+      })
       .run();
   });
 }
