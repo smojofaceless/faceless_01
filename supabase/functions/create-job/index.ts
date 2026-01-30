@@ -34,6 +34,8 @@ interface CreateJobRequest {
   effect_vignette?: boolean;
   // Audio
   audio_music?: boolean;
+  audio_track?: string;
+  audio_volume?: number;
   audio_sfx?: boolean;
   // Captions
   caption_style?: string;
@@ -83,6 +85,8 @@ serve(async (req) => {
       effect_transitions: body.effect_transitions !== false,
       effect_vignette: body.effect_vignette !== false,
       audio_music: body.audio_music === true,
+      audio_track: body.audio_track || '',
+      audio_volume: body.audio_volume ?? 15,
       audio_sfx: body.audio_sfx === true,
       caption_style: body.caption_style || "bold",
       highlight_scary: body.highlight_scary !== false,

@@ -183,11 +183,11 @@
                                     <label class="block text-xs font-medium text-gray-400 mb-2">AI Image Model</label>
                                     <select id="ai-model" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:border-primary focus:outline-none">
                                         <option value="dall-e-3">DALL-E 3 - Best for cartoons/illustrations (~$0.08/img)</option>
-                                        <option value="gpt-4o" selected>GPT-4o - Great all-rounder (~$0.04/img)</option>
+                                        <option value="gpt-4o" selected>GPT-4o - Great all-rounder (~$0.016/img) ⭐ Best Value</option>
                                         <option value="flux">FLUX Pro - Best for cinematic/realistic (~$0.04/img)</option>
                                     </select>
                                     <p id="ai-model-hint" class="text-xs text-gray-500 mt-1">
-                                        <span class="text-yellow-500">💡 Tip:</span> Use DALL-E 3 or GPT-4o for cartoon/webcomic styles. FLUX excels at cinematic photorealistic horror.
+                                        <span class="text-yellow-500">💡 Tip:</span> GPT-4o is now 5x cheaper! Use DALL-E 3 for cartoon styles, FLUX for photorealistic horror.
                                     </p>
                                 </div>
                             </div>
@@ -322,6 +322,43 @@
                                         <input type="checkbox" id="effect-highlight" checked class="accent-primary w-4 h-4">
                                         <span class="text-sm">🩸 Highlight Scary Words</span>
                                     </label>
+                                </div>
+                            </div>
+                            
+                            <!-- Background Audio -->
+                            <div>
+                                <label class="block text-sm font-semibold mb-2">🎵 Background Audio</label>
+                                <div class="space-y-2">
+                                    <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-3 cursor-pointer hover:bg-gray-800">
+                                        <input type="checkbox" id="audio-music" class="accent-primary w-4 h-4">
+                                        <span class="text-sm">🎶 Enable Background Music</span>
+                                    </label>
+                                    
+                                    <!-- Track Selection (shown when enabled) -->
+                                    <div id="audio-track-container" class="hidden">
+                                        <div class="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
+                                            <div class="flex items-center gap-2 mb-2">
+                                                <select id="audio-track" class="flex-1 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm focus:border-primary focus:outline-none">
+                                                    <option value="">Loading tracks...</option>
+                                                </select>
+                                                <button onclick="previewAudioTrack()" id="btn-preview-audio" class="bg-gray-700 hover:bg-gray-600 p-2 rounded-lg" title="Preview">
+                                                    <span id="preview-icon">▶️</span>
+                                                </button>
+                                            </div>
+                                            <audio id="audio-preview-player" class="hidden"></audio>
+                                            
+                                            <!-- Volume Slider -->
+                                            <div class="flex items-center gap-2 mb-2">
+                                                <span class="text-xs text-gray-400">🔊 Volume:</span>
+                                                <input type="range" id="audio-volume" min="5" max="30" value="15" class="flex-1 accent-primary h-1">
+                                                <span id="audio-volume-display" class="text-xs text-gray-400 w-8">15%</span>
+                                            </div>
+                                            
+                                            <button onclick="openAudioManager()" class="w-full mt-2 bg-gray-700 hover:bg-gray-600 text-sm py-2 rounded-lg flex items-center justify-center gap-2">
+                                                <span>⚙️</span> Manage Audio Library
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             
@@ -740,6 +777,65 @@
             </div>
         </div>
     </main>
+
+    <!-- Audio Manager Modal -->
+    <div id="audio-manager-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+        <div class="bg-gray-900 rounded-2xl p-6 max-w-2xl w-full border border-gray-700 max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-xl font-bold">🎵 Audio Library Manager</h3>
+                <button onclick="closeAudioManager()" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+            </div>
+            
+            <!-- Upload Section -->
+            <div class="mb-6">
+                <h4 class="font-semibold mb-2 text-sm">📤 Upload New Track</h4>
+                <div id="audio-dropzone" class="border-2 border-dashed border-gray-600 hover:border-primary rounded-xl p-6 text-center transition-colors cursor-pointer">
+                    <div class="text-4xl mb-2">🎶</div>
+                    <p class="text-gray-400 text-sm mb-2">Drag & drop audio files here</p>
+                    <p class="text-gray-500 text-xs mb-3">or</p>
+                    <label class="inline-block bg-primary hover:bg-primary/80 text-white px-4 py-2 rounded-lg cursor-pointer text-sm">
+                        Choose Files
+                        <input type="file" id="audio-file-input" accept=".mp3,.wav,.m4a,.ogg" multiple class="hidden">
+                    </label>
+                    <p class="text-gray-500 text-xs mt-3">Supported: MP3, WAV, M4A, OGG (max 50MB each)</p>
+                </div>
+                
+                <!-- Upload Progress -->
+                <div id="audio-upload-progress" class="hidden mt-3">
+                    <div class="flex items-center gap-2">
+                        <div class="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
+                            <div id="audio-upload-bar" class="h-full bg-primary transition-all" style="width: 0%"></div>
+                        </div>
+                        <span id="audio-upload-percent" class="text-xs text-gray-400">0%</span>
+                    </div>
+                    <p id="audio-upload-status" class="text-xs text-gray-400 mt-1">Uploading...</p>
+                </div>
+            </div>
+            
+            <!-- Audio Library -->
+            <div>
+                <div class="flex items-center justify-between mb-3">
+                    <h4 class="font-semibold text-sm">📚 Your Audio Library</h4>
+                    <button onclick="refreshAudioLibrary()" class="text-xs text-gray-400 hover:text-white">🔄 Refresh</button>
+                </div>
+                
+                <div id="audio-library-list" class="space-y-2 max-h-64 overflow-y-auto">
+                    <div class="text-center py-8 text-gray-500">
+                        <div class="text-3xl mb-2">🎵</div>
+                        <p class="text-sm">Loading audio library...</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Info Box -->
+            <div class="mt-4 bg-blue-900/20 border border-blue-800/50 rounded-lg p-3">
+                <p class="text-xs text-blue-300">
+                    <strong>💡 Tip:</strong> Use royalty-free horror ambient music for best results. 
+                    The audio will play at low volume (10-30%) behind the narration.
+                </p>
+            </div>
+        </div>
+    </div>
 
     <!-- Error Modal -->
     <div id="error-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">

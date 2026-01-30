@@ -29,8 +29,10 @@ async function createJob(options) {
         effect_transitions: options.effects?.transitions ?? true,
         effect_vignette: options.effects?.vignette ?? true,
         effect_filmgrain: options.effects?.filmGrain ?? false,
-        // Audio (disabled by default now)
-        audio_music: false,
+        // Audio settings
+        audio_music: options.audio?.music ?? false,
+        audio_track: options.audio?.track || '',
+        audio_volume: options.audio?.volume ?? 15,
         audio_sfx: false,
         // Captions
         caption_style: options.caption_style || 'bold',
@@ -143,4 +145,76 @@ async function reRenderVideo(jobId) {
     if (!data.success) throw new Error(data.error);
 
     return data;
+}
+// =====================================================
+// AUDIO LIBRARY FUNCTIONS
+// =====================================================
+
+const AUDIO_BUCKET = 'story-videos';
+const AUDIO_PATH = 'music';
+
+/**
+ * List all audio tracks in the library
+ */
+async function listAudioTracks() {
+    const client = getSupabaseClient();
+    
+    const { data, error } = await client.storage
+        .from(AUDIO_BUCKET)
+        .list(AUDIO_PATH, {
+            sortBy: { column: 'name', order: 'asc' }
+        });
+    
+    if (error) throw new Error(`Failed to list audio: ${error.message}`);
+    
+    // Filter to only audio files
+    return (data || []).filter(file => 
+        file.name && /\.(mp3|wav|m4a|ogg)$/i.test(file.name)
+    );
+}
+
+/**
+ * Upload an audio track to the library
+ */
+async function uploadAudioTrack(file) {
+    const client = getSupabaseClient();
+    
+    // Sanitize filename
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const path = `${AUDIO_PATH}/${safeName}`;
+    
+    const { data, error } = await client.storage
+        .from(AUDIO_BUCKET)
+        .upload(path, file, {
+            cacheControl: '3600',
+            upsert: true, // Replace if exists
+            contentType: file.type || 'audio/mpeg'
+        });
+    
+    if (error) throw new Error(`Failed to upload audio: ${error.message}`);
+    
+    return data;
+}
+
+/**
+ * Delete an audio track from the library
+ */
+async function removeAudioTrack(filename) {
+    const client = getSupabaseClient();
+    
+    const path = `${AUDIO_PATH}/${filename}`;
+    
+    const { error } = await client.storage
+        .from(AUDIO_BUCKET)
+        .remove([path]);
+    
+    if (error) throw new Error(`Failed to delete audio: ${error.message}`);
+}
+
+/**
+ * Get the public URL for an audio track
+ */
+function getAudioTrackUrl(filename) {
+    const supabaseUrl = CONFIG?.SUPABASE_URL || 'https://ustmetegzisztqqcjigt.supabase.co';
+    return `${supabaseUrl}/storage/v1/object/public/${AUDIO_BUCKET}/${AUDIO_PATH}/${filename}`;
 }

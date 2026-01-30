@@ -411,6 +411,49 @@ async function addAudioToVideo(videoPath, audioPath, outputPath) {
 }
 
 /**
+ * Mix background music with existing video audio
+ * @param {string} videoPath - Input video with existing audio (narration)
+ * @param {string} musicPath - Background music file
+ * @param {string} outputPath - Output video path
+ * @param {number} musicVolume - Music volume as percentage (0-100)
+ */
+async function mixBackgroundMusic(videoPath, musicPath, outputPath, musicVolume = 15) {
+  return new Promise((resolve, reject) => {
+    // Convert percentage to decimal (15% = 0.15)
+    const volumeDecimal = musicVolume / 100;
+    
+    // Use amix filter to blend existing audio with background music
+    // [0:a] is video's audio (narration), [1:a] is music
+    // Music is looped and faded out at the end
+    ffmpeg()
+      .input(videoPath)
+      .input(musicPath)
+      .inputOptions('-stream_loop', '-1') // Loop music infinitely
+      .complexFilter([
+        // Reduce music volume
+        `[1:a]volume=${volumeDecimal}[music]`,
+        // Mix narration (full volume) with quieter music
+        '[0:a][music]amix=inputs=2:duration=first:dropout_transition=2[out]'
+      ])
+      .outputOptions([
+        '-c:v', 'copy',
+        '-c:a', 'aac',
+        '-b:a', '192k',
+        '-map', '0:v:0',
+        '-map', '[out]',
+        '-shortest',
+      ])
+      .output(outputPath)
+      .on('end', resolve)
+      .on('error', (err) => {
+        console.error('Music mix error:', err.message);
+        reject(err);
+      })
+      .run();
+  });
+}
+
+/**
  * Add vignette effect
  */
 async function addVignette(inputPath, outputPath, lowMemory = false) {
@@ -755,7 +798,9 @@ app.post('/render', async (req, res) => {
   try {
     const {
       images,           // Array of image URLs (or base64 data URLs)
-      audio_url,        // Audio file URL
+      audio_url,        // Audio file URL (narration)
+      music_url,        // Background music URL (optional)
+      music_volume = 15, // Music volume (0-100, default 15%)
       durations,        // Duration for each image in seconds
       captions = [],    // Word-by-word captions: [{ word, start, end }, ...]
       effects = {},     // { kenBurns, vignette, horrorGrade, filmGrain, fadeTransitions, captionStyle, highlightScary }
@@ -768,9 +813,12 @@ app.post('/render', async (req, res) => {
       return res.status(400).json({ error: 'No images provided' });
     }
     
-    console.log(`[${jobId}] New render job: ${images.length} images, audio: ${audio_url ? 'yes' : 'no'}, captions: ${captions.length} words`);
+    console.log(`[${jobId}] New render job: ${images.length} images, audio: ${audio_url ? 'yes' : 'no'}, music: ${music_url ? 'yes' : 'no'}, captions: ${captions.length} words`);
     console.log(`[${jobId}] Effects:`, effects);
     console.log(`[${jobId}] Supabase job: ${supabaseJobId || 'none'}`);
+    if (music_url) {
+      console.log(`[${jobId}] Background music at ${music_volume}% volume`);
+    }
     
     // Initialize job
     jobs.set(jobId, {
@@ -791,7 +839,7 @@ app.post('/render', async (req, res) => {
     });
     
     // Process asynchronously
-    processRender(jobId, images, audio_url, durations, captions, effects, webhook_url, supabaseJobId, low_memory);
+    processRender(jobId, images, audio_url, durations, captions, effects, webhook_url, supabaseJobId, low_memory, music_url, music_volume);
     
   } catch (error) {
     console.error('[RENDER] Error:', error);
@@ -802,7 +850,7 @@ app.post('/render', async (req, res) => {
 /**
  * Async render processing
  */
-async function processRender(jobId, imageUrls, audioUrl, durations, captions, effects, webhookUrl, supabaseJobId, lowMemory) {
+async function processRender(jobId, imageUrls, audioUrl, durations, captions, effects, webhookUrl, supabaseJobId, lowMemory, musicUrl = null, musicVolume = 15) {
   activeRenders++;
   const jobDir = path.join(TEMP_DIR, jobId);
   await fs.mkdir(jobDir, { recursive: true });
@@ -858,17 +906,38 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     job.progress = 50;
     console.log(`[${jobId}] ✓ Base video created (${Math.round(timings.createVideo/1000)}s)`);
     
-    // Step 4: Add audio
+    // Step 4: Add audio (narration)
     let currentVideo = rawVideoPath;
     if (audioPath) {
       const audioStart = Date.now();
-      console.log(`[${jobId}] Adding audio...`);
+      console.log(`[${jobId}] Adding narration audio...`);
       const withAudioPath = path.join(jobDir, 'with_audio.mp4');
       await addAudioToVideo(currentVideo, audioPath, withAudioPath);
       await fs.unlink(currentVideo).catch(() => {});
       currentVideo = withAudioPath;
       timings.addAudio = Date.now() - audioStart;
-      console.log(`[${jobId}] ✓ Audio added (${Math.round(timings.addAudio/1000)}s)`);
+      console.log(`[${jobId}] ✓ Narration added (${Math.round(timings.addAudio/1000)}s)`);
+    }
+    job.progress = 55;
+    
+    // Step 4b: Add background music (if provided)
+    if (musicUrl) {
+      const musicStart = Date.now();
+      console.log(`[${jobId}] Downloading background music...`);
+      const musicPath = path.join(jobDir, 'music.mp3');
+      try {
+        await downloadFile(musicUrl, musicPath);
+        console.log(`[${jobId}] Adding background music at ${musicVolume}% volume...`);
+        const withMusicPath = path.join(jobDir, 'with_music.mp4');
+        await mixBackgroundMusic(currentVideo, musicPath, withMusicPath, musicVolume);
+        await fs.unlink(currentVideo).catch(() => {});
+        await fs.unlink(musicPath).catch(() => {});
+        currentVideo = withMusicPath;
+        timings.addMusic = Date.now() - musicStart;
+        console.log(`[${jobId}] ✓ Background music added (${Math.round(timings.addMusic/1000)}s)`);
+      } catch (musicErr) {
+        console.log(`[${jobId}] ⚠️ Failed to add background music: ${musicErr.message}, continuing without it`);
+      }
     }
     job.progress = 60;
     
@@ -1025,6 +1094,7 @@ const MAX_PARALLEL_IMAGES = parseInt(process.env.MAX_PARALLEL_IMAGES || '4');
 
 /**
  * Generate a single image using OpenAI GPT-4o
+ * COST: low=$0.016, medium=$0.063, high=$0.25 (portrait 1024x1536)
  */
 async function generateGPT4oImage(prompt, sceneIndex) {
   console.log(`  [GPT-4o] Scene ${sceneIndex + 1}: Generating...`);
@@ -1034,7 +1104,7 @@ async function generateGPT4oImage(prompt, sceneIndex) {
     prompt: prompt,
     n: 1,
     size: '1024x1536',
-    quality: 'high',
+    quality: 'low',   // COST FIX: was 'high' ($0.25) → now 'low' ($0.016) = 94% savings!
     output_format: 'webp',
   }, {
     headers: {
@@ -1058,6 +1128,7 @@ async function generateGPT4oImage(prompt, sceneIndex) {
 
 /**
  * Generate a single image using DALL-E 3
+ * COST: standard=$0.08, hd=$0.12 (portrait 1024x1792)
  */
 async function generateDallE3Image(prompt, sceneIndex) {
   console.log(`  [DALL-E 3] Scene ${sceneIndex + 1}: Generating...`);
@@ -1067,7 +1138,7 @@ async function generateDallE3Image(prompt, sceneIndex) {
     prompt: prompt,
     n: 1,
     size: '1024x1792',
-    quality: 'hd',
+    quality: 'standard',  // COST FIX: was 'hd' ($0.12) → now 'standard' ($0.08) = 33% savings
   }, {
     headers: {
       'Authorization': `Bearer ${OPENAI_API_KEY}`,

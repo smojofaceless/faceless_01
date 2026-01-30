@@ -68,6 +68,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize caption style selector
     initCaptionStyleSelector();
     
+    // Initialize audio controls
+    initAudioControls();
+    
     // Initialize cost
     updateCostEstimate();
 });
@@ -144,10 +147,11 @@ function updateArtStylePreview() {
 // COST ESTIMATION
 // =====================================================
 
-// AI model pricing per image (updated 2026-01-29 for low/standard quality)
+// AI model pricing per image (updated 2026-01-29 - CORRECT pricing for portrait low/standard quality)
+// See: https://platform.openai.com/docs/pricing - Image generation section
 const AI_MODEL_COSTS = {
-    'dall-e-3': 0.08,   // 1024x1792 standard quality
-    'gpt-4o': 0.044,    // 1024x1536 low quality (was $0.167 with high!)
+    'dall-e-3': 0.08,   // 1024x1792 standard quality (portrait)
+    'gpt-4o': 0.016,    // 1024x1536 low quality (portrait) - was incorrectly $0.044!
     'flux': 0.04        // Average: Scene 1 = $0.04, Scenes 2+ = ~$0.025
 };
 
@@ -1456,6 +1460,11 @@ function getSettings() {
             filmGrain: document.getElementById('effect-filmgrain')?.checked ?? false,
             highlight: document.getElementById('effect-highlight')?.checked ?? true,
             transitions: document.getElementById('effect-transitions')?.checked ?? true
+        },
+        audio: {
+            music: document.getElementById('audio-music')?.checked ?? false,
+            track: document.getElementById('audio-track')?.value || '',
+            volume: parseInt(document.getElementById('audio-volume')?.value || 15)
         }
     };
 }
@@ -1484,6 +1493,311 @@ function initCaptionStyleSelector() {
         
         console.log('[UI] Caption style selected:', btn.dataset.style);
     });
+}
+
+// =====================================================
+// BACKGROUND AUDIO MANAGEMENT
+// =====================================================
+
+let audioLibrary = [];
+let currentPreviewAudio = null;
+
+// Initialize audio controls
+function initAudioControls() {
+    const musicCheckbox = document.getElementById('audio-music');
+    const trackContainer = document.getElementById('audio-track-container');
+    const volumeSlider = document.getElementById('audio-volume');
+    const volumeDisplay = document.getElementById('audio-volume-display');
+    const dropzone = document.getElementById('audio-dropzone');
+    const fileInput = document.getElementById('audio-file-input');
+    
+    if (musicCheckbox && trackContainer) {
+        musicCheckbox.addEventListener('change', (e) => {
+            trackContainer.classList.toggle('hidden', !e.target.checked);
+            if (e.target.checked) {
+                loadAudioLibrary();
+            }
+        });
+    }
+    
+    if (volumeSlider && volumeDisplay) {
+        volumeSlider.addEventListener('input', (e) => {
+            volumeDisplay.textContent = `${e.target.value}%`;
+        });
+    }
+    
+    // Dropzone handlers
+    if (dropzone) {
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('border-primary', 'bg-primary/10');
+        });
+        
+        dropzone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('border-primary', 'bg-primary/10');
+        });
+        
+        dropzone.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('border-primary', 'bg-primary/10');
+            const files = Array.from(e.dataTransfer.files).filter(f => 
+                f.type.startsWith('audio/') || /\.(mp3|wav|m4a|ogg)$/i.test(f.name)
+            );
+            if (files.length > 0) {
+                await uploadAudioFiles(files);
+            }
+        });
+    }
+    
+    if (fileInput) {
+        fileInput.addEventListener('change', async (e) => {
+            const files = Array.from(e.target.files);
+            if (files.length > 0) {
+                await uploadAudioFiles(files);
+                e.target.value = ''; // Reset input
+            }
+        });
+    }
+}
+
+// Load audio library from Supabase
+async function loadAudioLibrary() {
+    const trackSelect = document.getElementById('audio-track');
+    if (!trackSelect) return;
+    
+    trackSelect.innerHTML = '<option value="">Loading...</option>';
+    
+    try {
+        const tracks = await listAudioTracks();
+        audioLibrary = tracks;
+        
+        if (tracks.length === 0) {
+            trackSelect.innerHTML = '<option value="">No tracks uploaded yet</option>';
+        } else {
+            trackSelect.innerHTML = tracks.map(track => 
+                `<option value="${track.name}">${formatTrackName(track.name)} (${formatFileSize(track.metadata?.size || 0)})</option>`
+            ).join('');
+        }
+    } catch (error) {
+        console.error('Failed to load audio library:', error);
+        trackSelect.innerHTML = '<option value="">Error loading tracks</option>';
+    }
+}
+
+// Refresh audio library (for modal)
+async function refreshAudioLibrary() {
+    await loadAudioLibrary();
+    await renderAudioLibraryList();
+}
+
+// Render audio library in modal
+async function renderAudioLibraryList() {
+    const container = document.getElementById('audio-library-list');
+    if (!container) return;
+    
+    try {
+        const tracks = await listAudioTracks();
+        audioLibrary = tracks;
+        
+        if (tracks.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-8 text-gray-500">
+                    <div class="text-3xl mb-2">🎵</div>
+                    <p class="text-sm">No audio tracks yet</p>
+                    <p class="text-xs mt-1">Upload some music to get started!</p>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = tracks.map(track => `
+            <div class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-3 hover:bg-gray-800 group">
+                <button onclick="playAudioInModal('${track.name}')" class="w-8 h-8 bg-primary/20 hover:bg-primary/40 rounded-full flex items-center justify-center text-sm flex-shrink-0">
+                    ▶️
+                </button>
+                <div class="flex-1 min-w-0">
+                    <p class="font-medium text-sm truncate">${formatTrackName(track.name)}</p>
+                    <p class="text-xs text-gray-500">${formatFileSize(track.metadata?.size || 0)}</p>
+                </div>
+                <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onclick="downloadAudioTrack('${track.name}')" class="text-gray-400 hover:text-blue-400 p-1" title="Download">
+                        ⬇️
+                    </button>
+                    <button onclick="deleteAudioTrack('${track.name}')" class="text-gray-400 hover:text-red-400 p-1" title="Delete">
+                        🗑️
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Failed to render audio library:', error);
+        container.innerHTML = `
+            <div class="text-center py-8 text-red-400">
+                <p class="text-sm">Failed to load library</p>
+                <p class="text-xs mt-1">${error.message}</p>
+            </div>
+        `;
+    }
+}
+
+// Upload audio files
+async function uploadAudioFiles(files) {
+    const progressDiv = document.getElementById('audio-upload-progress');
+    const progressBar = document.getElementById('audio-upload-bar');
+    const progressPercent = document.getElementById('audio-upload-percent');
+    const statusText = document.getElementById('audio-upload-status');
+    
+    if (progressDiv) progressDiv.classList.remove('hidden');
+    
+    let uploaded = 0;
+    const total = files.length;
+    
+    for (const file of files) {
+        if (file.size > 50 * 1024 * 1024) {
+            showToast(`${file.name} is too large (max 50MB)`);
+            continue;
+        }
+        
+        try {
+            if (statusText) statusText.textContent = `Uploading ${file.name}...`;
+            await uploadAudioTrack(file);
+            uploaded++;
+            
+            const percent = Math.round((uploaded / total) * 100);
+            if (progressBar) progressBar.style.width = `${percent}%`;
+            if (progressPercent) progressPercent.textContent = `${percent}%`;
+        } catch (error) {
+            console.error(`Failed to upload ${file.name}:`, error);
+            showToast(`Failed to upload ${file.name}`);
+        }
+    }
+    
+    if (progressDiv) {
+        setTimeout(() => {
+            progressDiv.classList.add('hidden');
+            if (progressBar) progressBar.style.width = '0%';
+        }, 1000);
+    }
+    
+    if (uploaded > 0) {
+        showToast(`${uploaded} track(s) uploaded!`);
+        await refreshAudioLibrary();
+    }
+}
+
+// Preview audio track
+function previewAudioTrack() {
+    const trackSelect = document.getElementById('audio-track');
+    const player = document.getElementById('audio-preview-player');
+    const icon = document.getElementById('preview-icon');
+    
+    if (!trackSelect || !player) return;
+    
+    const trackName = trackSelect.value;
+    if (!trackName) {
+        showToast('Select a track first');
+        return;
+    }
+    
+    if (currentPreviewAudio && !player.paused) {
+        // Stop playing
+        player.pause();
+        player.currentTime = 0;
+        if (icon) icon.textContent = '▶️';
+        currentPreviewAudio = null;
+        return;
+    }
+    
+    // Start playing
+    const url = getAudioTrackUrl(trackName);
+    player.src = url;
+    player.volume = 0.5;
+    player.play();
+    currentPreviewAudio = trackName;
+    if (icon) icon.textContent = '⏸️';
+    
+    player.onended = () => {
+        if (icon) icon.textContent = '▶️';
+        currentPreviewAudio = null;
+    };
+}
+
+// Play audio in modal
+function playAudioInModal(trackName) {
+    const player = document.getElementById('audio-preview-player');
+    if (!player) return;
+    
+    if (currentPreviewAudio === trackName && !player.paused) {
+        player.pause();
+        player.currentTime = 0;
+        currentPreviewAudio = null;
+        return;
+    }
+    
+    const url = getAudioTrackUrl(trackName);
+    player.src = url;
+    player.volume = 0.5;
+    player.play();
+    currentPreviewAudio = trackName;
+    
+    player.onended = () => {
+        currentPreviewAudio = null;
+    };
+}
+
+// Download audio track
+function downloadAudioTrack(trackName) {
+    const url = getAudioTrackUrl(trackName);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = trackName;
+    a.click();
+}
+
+// Delete audio track
+async function deleteAudioTrack(trackName) {
+    if (!confirm(`Delete "${formatTrackName(trackName)}"?`)) return;
+    
+    try {
+        await removeAudioTrack(trackName);
+        showToast('Track deleted');
+        await refreshAudioLibrary();
+    } catch (error) {
+        console.error('Failed to delete track:', error);
+        showToast('Failed to delete track');
+    }
+}
+
+// Open/close audio manager modal
+function openAudioManager() {
+    document.getElementById('audio-manager-modal')?.classList.remove('hidden');
+    renderAudioLibraryList();
+}
+
+function closeAudioManager() {
+    document.getElementById('audio-manager-modal')?.classList.add('hidden');
+    // Stop any playing audio
+    const player = document.getElementById('audio-preview-player');
+    if (player) {
+        player.pause();
+        player.currentTime = 0;
+    }
+    currentPreviewAudio = null;
+}
+
+// Helper functions
+function formatTrackName(filename) {
+    return filename
+        .replace(/\.(mp3|wav|m4a|ogg)$/i, '')
+        .replace(/[-_]/g, ' ')
+        .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
 function sleep(ms) {

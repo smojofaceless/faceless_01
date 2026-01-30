@@ -655,32 +655,48 @@ export async function runImagesPhase(
           if (status.status === 'complete' || status.status === 'partial') {
             // Job done - save images to database
             console.log(`[IMAGES] Parallel job complete: ${status.completed}/${status.total} images`);
+            console.log(`[IMAGES] Expected scene count: ${scenes.length}`);
             
             for (const img of status.images) {
               if (img.success && img.url) {
+                // CRITICAL: Only accept images for valid scene indices
+                // Reject any indices outside our expected scene range
+                const sceneIndex = img.index;
+                if (sceneIndex < 0 || sceneIndex >= scenes.length) {
+                  console.warn(`[IMAGES] ⚠️ Rejecting image with invalid scene_index ${sceneIndex} (expected 0-${scenes.length - 1})`);
+                  continue;
+                }
+                
                 // Check if already saved (idempotency)
                 const { data: existing } = await supabase
                   .from("job_assets")
                   .select("id")
                   .eq("job_id", job_id)
                   .eq("type", "dalle_image")
-                  .eq("meta->>scene_index", String(img.index))
+                  .eq("meta->>scene_index", String(sceneIndex))
                   .maybeSingle();
                 
                 if (!existing) {
+                  // Use OUR scene data, not the parallel server's potentially corrupted data
+                  const scene = scenes[sceneIndex];
+                  
                   await supabase.from("job_assets").insert({
                     job_id: job_id,
                     type: "dalle_image",
                     storage_path: img.url,
                     public_url: img.url,
                     meta: {
-                      ...img.meta,
+                      scene_index: sceneIndex,
+                      scene_text: scene.text,
+                      start_time: scene.startTime,
+                      end_time: scene.endTime,
                       source: "parallel",
+                      image_model: img.meta?.image_model || "unknown",
                       continuity_rules: storyAnchor.continuityRules || null,
                       character_description: storyAnchor.characterDescription || null,
                     },
                   });
-                  console.log(`[IMAGES] ✓ Saved parallel image for scene ${img.index + 1}`);
+                  console.log(`[IMAGES] ✓ Saved parallel image for scene ${sceneIndex + 1}/${scenes.length}`);
                 }
               }
             }
@@ -1147,6 +1163,9 @@ export async function runAssemblePhase(
   options: VideoOptions
 ): Promise<{ status: string; nextPhase: string | null; message: string }> {
   console.log(`[ASSEMBLE] Starting assemble phase for job ${job_id}`);
+  
+  // Log music settings for debugging
+  console.log(`[ASSEMBLE] 🎵 Music settings: enabled=${options.music}, track="${options.musicTrack}", volume=${options.musicVolume}%`);
 
   // Determine renderer to use
   const useFFmpeg = shouldUseFFmpegRenderer();

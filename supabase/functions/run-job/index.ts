@@ -71,6 +71,8 @@ serve(async (req) => {
       vignette: body.effect_vignette ?? jobMeta.effect_vignette ?? true,
       filmGrain: body.effect_filmgrain ?? jobMeta.effect_filmgrain ?? false,
       music: body.audio_music ?? jobMeta.audio_music ?? false,
+      musicTrack: body.audio_track ?? jobMeta.audio_track ?? '',
+      musicVolume: body.audio_volume ?? jobMeta.audio_volume ?? 15,
       sfx: body.audio_sfx ?? jobMeta.audio_sfx ?? false,
       captionStyle: body.caption_style ?? jobMeta.caption_style ?? "bold",
       highlightScary: body.highlight_scary ?? jobMeta.highlight_scary ?? true,

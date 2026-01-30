@@ -214,6 +214,8 @@ export interface VideoOptions {
   vignette: boolean;
   filmGrain: boolean;
   music: boolean;
+  musicTrack: string;  // filename in storage, e.g. "dark-ambient.mp3"
+  musicVolume: number; // 0-100 percentage
   sfx: boolean;
   captionStyle: string;
   highlightScary: boolean;

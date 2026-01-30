@@ -336,14 +336,14 @@ export async function generateGPT4oImage(
   
   // GPT image models use different size options: 1024x1024, 1536x1024, 1024x1536
   // Note: GPT image models ALWAYS return base64 (no URL option)
-  // COST OPTIMIZATION: Use "low" quality - 75% cheaper ($0.044 vs $0.167)
+  // COST per image (portrait 1024x1536): low=$0.016, medium=$0.063, high=$0.25
   // For horror/atmospheric images, the quality difference is barely noticeable
   const requestBody = {
     model: "gpt-image-1",
     prompt: prompt,
     n: 1,
     size: "1024x1536",  // Portrait mode for GPT image models (NOT 1024x1792!)
-    quality: "low",     // $0.044/image vs $0.167/image for "high"
+    quality: "low",     // $0.016/image (portrait) - best value!
     output_format: "webp",  // Use webp for smaller file size
   };
   

@@ -21,6 +21,15 @@ export async function assembleVideoWithCreatomate(
   options: VideoOptions,
   visualSource: string = "pexels"
 ): Promise<string> {
+  // Debug: Log received options
+  console.log(`[CREATOMATE] Received options:`, JSON.stringify({
+    music: options.music,
+    musicTrack: options.musicTrack,
+    musicVolume: options.musicVolume,
+    filter: options.filter,
+    kenburns: options.kenburns,
+  }));
+  
   // Support both legacy "dalle" and new "ai" visual source
   const isUsingImages = visualSource === "dalle" || visualSource === "ai";
   
@@ -189,17 +198,18 @@ export async function assembleVideoWithCreatomate(
     volume: "100%",
   });
 
-  // Background music (if enabled)
-  // NOTE: Upload your own royalty-free horror music to Supabase Storage bucket "story-videos" as "music/background.mp3"
-  if (options.music) {
-    // Try to use user-uploaded music from Supabase storage
+  // Background music (if enabled and track selected)
+  if (options.music && options.musicTrack) {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const musicUrl = `${supabaseUrl}/storage/v1/object/public/story-videos/music/background.mp3`;
+    const musicUrl = `${supabaseUrl}/storage/v1/object/public/story-videos/music/${options.musicTrack}`;
+    const musicVolume = options.musicVolume ?? 15; // Default 15%
+    
+    console.log(`[MUSIC] Adding background music: ${options.musicTrack} at ${musicVolume}%`);
     
     elements.push({
       type: "audio",
       source: musicUrl,
-      volume: "10%",
+      volume: `${musicVolume}%`,
       duration: videoDuration,
       audio_fade_out: 2,
     });
@@ -359,6 +369,18 @@ export async function renderWithFFmpeg(
   console.log(`[FFMPEG] Starting render with ${imageUrls.length} images`);
   console.log(`[FFMPEG] Durations: ${durations.join(", ")} seconds`);
   console.log(`[FFMPEG] Captions: ${captions?.length || 0} words`);
+  console.log(`[FFMPEG] 🎵 Music settings: enabled=${options.music}, track="${options.musicTrack}", volume=${options.musicVolume}%`);
+  
+  // Build music URL if enabled
+  const musicUrl = options.music && options.musicTrack 
+    ? `${Deno.env.get("SUPABASE_URL")}/storage/v1/object/public/story-videos/music/${options.musicTrack}`
+    : null;
+  
+  if (musicUrl) {
+    console.log(`[FFMPEG] 🎵 Music URL: ${musicUrl}`);
+  } else if (options.music) {
+    console.log(`[FFMPEG] ⚠️ Music enabled but no track selected`);
+  }
   
   // Retry logic for cold start handling (Render.com free tier takes 30-60s to wake)
   let lastError: Error | null = null;
@@ -383,6 +405,9 @@ export async function renderWithFFmpeg(
             captionStyle: options.captionStyle || "bold", // Caption style
             highlightScary: options.highlightScary !== false, // Highlight scary words
           },
+          // Background music settings (use pre-built URL)
+          music_url: musicUrl,
+          music_volume: options.musicVolume ?? 15,
           job_id: jobId, // Pass Supabase job ID for direct upload
           low_memory: Deno.env.get("FFMPEG_LOW_MEMORY") === "true",
         }),
