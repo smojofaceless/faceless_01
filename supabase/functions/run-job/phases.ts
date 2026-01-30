@@ -1266,6 +1266,16 @@ export async function runAssemblePhase(
 
   const visualSource = imageAssets[0]?.type === "dalle_image" ? "dalle" : "pexels";
   
+  // Extract mood levels from visual_beats for intelligent Ken Burns effect selection
+  // visual_beats[i].moodLevel: 1-10 (1=calm, 10=intense/scary)
+  const visualBeats = jobMeta.visual_beats || [];
+  const moodLevels = scenes.map((_, i) => {
+    const beat = visualBeats[i];
+    // Default to 5 (medium) if no mood data available
+    return beat?.moodLevel ?? 5;
+  });
+  console.log(`[ASSEMBLE] 🎭 Mood levels for Ken Burns: [${moodLevels.join(', ')}]`);
+  
   let renderId: string;
   
   if (useFFmpeg) {
@@ -1277,7 +1287,8 @@ export async function runAssemblePhase(
       job.duration_sec || 60,
       options,
       job_id, // Pass job_id for direct Supabase upload
-      captionsData.captions // Pass captions for text overlay
+      captionsData.captions, // Pass captions for text overlay
+      moodLevels // Pass mood intensities for intelligent Ken Burns
     );
     renderId = result.renderId;
   } else {

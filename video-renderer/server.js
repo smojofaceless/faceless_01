@@ -194,44 +194,87 @@ async function updateJobInSupabase(jobId, supabaseJobId, status, videoUrl = null
 }
 
 /**
- * Ken Burns effect - scale + position animation
+ * Ken Burns effect - INTELLIGENT selection based on scene mood
+ * Subtle effects for calm scenes, dramatic effects for high-tension moments
  * Memory-optimized version - uses smaller scale factor
+ * 
+ * @param index - Scene index
+ * @param duration - Scene duration in seconds
+ * @param width - Output width
+ * @param height - Output height  
+ * @param moodLevel - 1-10 mood intensity (1=calm, 10=intense). If not provided, uses subtle effects.
  */
-function getKenBurnsFilter(index, duration, width = 1080, height = 1920) {
+function getKenBurnsFilter(index, duration, width = 1080, height = 1920, moodLevel = 5) {
   const frames = Math.floor(duration * 30); // 30fps
   // Use 2x scale instead of 8x to reduce memory usage significantly
   const scaledW = width * 2;
   const scaledH = height * 2;
   
-  // ENHANCED Ken Burns: 8 different motions for more variety
-  // Uses easing functions for smoother movement
-  const effects = [
-    // 1. Slow zoom IN (eased - starts slow, accelerates slightly)
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.0+0.25*pow(on/${frames},0.8)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
-    
-    // 2. Slow zoom OUT (eased - smooth deceleration)
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.25-0.25*pow(on/${frames},1.2)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
-    
-    // 3. Pan LEFT to RIGHT with zoom (smooth sine wave)
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.12+0.03*sin(on/${frames}*PI)':d=${frames}:x='(iw-iw/zoom)/2+((iw/zoom-ow)/2.5)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
-    
-    // 4. Pan RIGHT to LEFT with zoom
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.12+0.03*sin(on/${frames}*PI)':d=${frames}:x='(iw-iw/zoom)/2-((iw/zoom-ow)/2.5)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
-    
-    // 5. Pan UP (reveal from bottom) with gentle zoom
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.1':d=${frames}:x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2-((ih/zoom-oh)/3)*(1-cos(on/${frames}*PI))/2':s=${width}x${height}:fps=30`,
-    
-    // 6. Pan DOWN (reveal from top) with gentle zoom
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.1':d=${frames}:x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2+((ih/zoom-oh)/3)*(1-cos(on/${frames}*PI))/2':s=${width}x${height}:fps=30`,
-    
-    // 7. Diagonal pan (top-left to bottom-right) with zoom
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.0+0.15*on/${frames}':d=${frames}:x='(iw-iw/zoom)/2+((iw/zoom-ow)/4)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2+((ih/zoom-oh)/6)*(1-cos(on/${frames}*PI))/2':s=${width}x${height}:fps=30`,
-    
-    // 8. Diagonal pan (bottom-right to top-left) with zoom out
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.15-0.1*on/${frames}':d=${frames}:x='(iw-iw/zoom)/2-((iw/zoom-ow)/4)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2-((ih/zoom-oh)/6)*(1-cos(on/${frames}*PI))/2':s=${width}x${height}:fps=30`,
+  // INTELLIGENT Ken Burns: Effects organized by intensity
+  // AI selects based on scene mood rather than random/sequential
+  
+  // SUBTLE effects (mood 1-4) - calm, atmospheric, slow
+  const subtleEffects = [
+    // Very slow zoom IN (barely noticeable, dreamy)
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.0+0.08*pow(on/${frames},0.7)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
+    // Very slow zoom OUT (gentle reveal)
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.1-0.08*pow(on/${frames},0.7)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
+    // Very gentle pan left (slow drift)
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.05':d=${frames}:x='(iw-iw/zoom)/2+((iw/zoom-ow)/5)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
+    // Very gentle pan right (slow drift)
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.05':d=${frames}:x='(iw-iw/zoom)/2-((iw/zoom-ow)/5)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
   ];
   
-  return effects[index % effects.length];
+  // MEDIUM effects (mood 5-7) - standard cinematic movement
+  const mediumEffects = [
+    // Standard zoom IN (eased)
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.0+0.15*pow(on/${frames},0.8)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
+    // Standard zoom OUT (eased)
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.18-0.15*pow(on/${frames},1.0)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
+    // Pan LEFT with subtle zoom (smooth sine wave)
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.08+0.02*sin(on/${frames}*PI)':d=${frames}:x='(iw-iw/zoom)/2+((iw/zoom-ow)/3.5)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
+    // Pan RIGHT with subtle zoom
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.08+0.02*sin(on/${frames}*PI)':d=${frames}:x='(iw-iw/zoom)/2-((iw/zoom-ow)/3.5)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
+    // Pan UP (reveal)
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.08':d=${frames}:x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2-((ih/zoom-oh)/4)*(1-cos(on/${frames}*PI))/2':s=${width}x${height}:fps=30`,
+    // Pan DOWN (reveal)
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.08':d=${frames}:x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2+((ih/zoom-oh)/4)*(1-cos(on/${frames}*PI))/2':s=${width}x${height}:fps=30`,
+  ];
+  
+  // DRAMATIC effects (mood 8-10) - intense, fast, dynamic for climax/scary moments
+  const dramaticEffects = [
+    // Fast zoom IN (punchy, accelerates)
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.0+0.28*pow(on/${frames},0.6)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
+    // Fast zoom OUT (dramatic reveal)
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.3-0.28*pow(on/${frames},1.4)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
+    // Diagonal pan (top-left to bottom-right) with aggressive zoom
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.0+0.2*on/${frames}':d=${frames}:x='(iw-iw/zoom)/2+((iw/zoom-ow)/3)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2+((ih/zoom-oh)/5)*(1-cos(on/${frames}*PI))/2':s=${width}x${height}:fps=30`,
+    // Diagonal pan (bottom-right to top-left) with zoom out
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.2-0.15*on/${frames}':d=${frames}:x='(iw-iw/zoom)/2-((iw/zoom-ow)/3)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2-((ih/zoom-oh)/5)*(1-cos(on/${frames}*PI))/2':s=${width}x${height}:fps=30`,
+    // Wide sweeping pan with zoom pulse
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.1+0.08*sin(on/${frames}*PI*2)':d=${frames}:x='(iw-iw/zoom)/2+((iw/zoom-ow)/2.2)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
+  ];
+  
+  // Select effect pool based on mood intensity
+  let effectPool;
+  let poolName;
+  
+  if (moodLevel <= 4) {
+    effectPool = subtleEffects;
+    poolName = 'SUBTLE';
+  } else if (moodLevel <= 7) {
+    effectPool = mediumEffects;
+    poolName = 'MEDIUM';
+  } else {
+    effectPool = dramaticEffects;
+    poolName = 'DRAMATIC';
+  }
+  
+  // Use index to cycle through the selected pool (not random, for reproducibility)
+  const effectIndex = index % effectPool.length;
+  console.log(`[KB] Scene ${index + 1}: mood=${moodLevel} → ${poolName} effect #${effectIndex + 1}`);
+  
+  return effectPool[effectIndex];
 }
 
 /**
@@ -297,14 +340,17 @@ async function createVideoFromImages(jobId, images, durations, outputPath, optio
       
       // Apply Ken Burns effect
       if (kenBurns) {
+        // Get mood level for this scene (default 5 = medium if not provided)
+        const sceneMood = moodLevels && moodLevels[i] !== undefined ? moodLevels[i] : 5;
+        
         if (lowMemory) {
           // Low memory: use simplified Ken Burns with minimal scale
           const filter = getSimpleKenBurnsFilter(i, duration, width, height);
           cmd = cmd.complexFilter(filter);
-          console.log(`[${jobId}] Scene ${i + 1}: Using simple Ken Burns (low memory)`);
+          console.log(`[${jobId}] Scene ${i + 1}: Using simple Ken Burns (low memory, mood=${sceneMood})`);
         } else {
-          // Full Ken Burns animation
-          const filter = getKenBurnsFilter(i, duration, width, height);
+          // Full Ken Burns animation - INTELLIGENT selection based on scene mood
+          const filter = getKenBurnsFilter(i, duration, width, height, sceneMood);
           cmd = cmd.complexFilter(filter);
         }
       } else {
@@ -854,6 +900,7 @@ app.post('/render', async (req, res) => {
       durations,        // Duration for each image in seconds
       captions = [],    // Word-by-word captions: [{ word, start, end }, ...]
       effects = {},     // { kenBurns, vignette, horrorGrade, filmGrain, fadeTransitions, captionStyle, highlightScary }
+      mood_levels = [], // Per-scene mood intensity (1-10) for intelligent Ken Burns selection
       webhook_url,      // Optional callback URL when done
       job_id: supabaseJobId, // Original Supabase job ID for updating
       low_memory = false, // Enable low memory mode for free tier hosting
@@ -865,6 +912,7 @@ app.post('/render', async (req, res) => {
     
     console.log(`[${jobId}] New render job: ${images.length} images, audio: ${audio_url ? 'yes' : 'no'}, music: ${music_url ? 'yes' : 'no'}, captions: ${captions.length} words`);
     console.log(`[${jobId}] Effects:`, effects);
+    console.log(`[${jobId}] Mood levels: ${mood_levels.length > 0 ? mood_levels.join(', ') : 'not provided (using defaults)'}`);
     console.log(`[${jobId}] Supabase job: ${supabaseJobId || 'none'}`);
     if (music_url) {
       console.log(`[${jobId}] Background music at ${music_volume}% volume`);
@@ -889,7 +937,7 @@ app.post('/render', async (req, res) => {
     });
     
     // Process asynchronously
-    processRender(jobId, images, audio_url, durations, captions, effects, webhook_url, supabaseJobId, low_memory, music_url, music_volume);
+    processRender(jobId, images, audio_url, durations, captions, effects, webhook_url, supabaseJobId, low_memory, music_url, music_volume, mood_levels);
     
   } catch (error) {
     console.error('[RENDER] Error:', error);
@@ -899,8 +947,9 @@ app.post('/render', async (req, res) => {
 
 /**
  * Async render processing
+ * @param moodLevels - Array of mood intensities (1-10) for each scene, for intelligent Ken Burns selection
  */
-async function processRender(jobId, imageUrls, audioUrl, durations, captions, effects, webhookUrl, supabaseJobId, lowMemory, musicUrl = null, musicVolume = 15) {
+async function processRender(jobId, imageUrls, audioUrl, durations, captions, effects, webhookUrl, supabaseJobId, lowMemory, musicUrl = null, musicVolume = 15, moodLevels = []) {
   activeRenders++;
   const jobDir = path.join(TEMP_DIR, jobId);
   await fs.mkdir(jobDir, { recursive: true });

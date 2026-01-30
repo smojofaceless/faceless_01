@@ -354,7 +354,8 @@ export async function renderWithFFmpeg(
   durationSec: number,
   options: VideoOptions,
   jobId?: string, // Supabase job ID for direct upload
-  captions?: Array<{ word: string; start: number; end: number }> // Word-by-word captions
+  captions?: Array<{ word: string; start: number; end: number }>, // Word-by-word captions
+  moodLevels?: number[] // Per-scene mood intensity (1-10) for intelligent Ken Burns
 ): Promise<{ renderId: string; status: string }> {
   const FFMPEG_RENDERER_URL = Deno.env.get("FFMPEG_RENDERER_URL");
   
@@ -412,6 +413,9 @@ export async function renderWithFFmpeg(
             captionStyle: options.captionStyle || "bold", // Caption style
             highlightScary: options.highlightScary !== false, // Highlight scary words
           },
+          // Per-scene mood intensity for intelligent Ken Burns effect selection
+          // 1-4 = subtle effects, 5-7 = medium, 8-10 = dramatic
+          mood_levels: moodLevels || [],
           // Background music settings (use pre-built URL)
           music_url: musicUrl,
           music_volume: options.musicVolume ?? 15,
