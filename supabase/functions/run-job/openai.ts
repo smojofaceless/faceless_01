@@ -526,6 +526,8 @@ Return a JSON object with "scenes" array:
 
 /**
  * Split story into scenes and extract visual keywords for each
+ * UPDATED: Now supports word-level splitting for high scene counts (24+ scenes)
+ * This allows 24-30 scene videos even with short stories
  */
 export async function extractSceneKeywords(
   openaiKey: string,
@@ -535,46 +537,74 @@ export async function extractSceneKeywords(
   targetSceneCount: number = 4
 ): Promise<StoryScene[]> {
   try {
-    // Split story into sentences
-    const sentences = story.match(/[^.!?]+[.!?]+/g) || [story];
+    // Split story into sentences first
+    const storyNormalized = story.replace(/\.{2,}/g, '…'); // Handle ellipses
+    const sentences = storyNormalized.match(/[^.!?…]+[.!?…]+/g) || [story];
+    const words = story.split(/\s+/).filter(w => w.length > 0);
+    const totalWords = words.length;
+    const totalSentences = sentences.length;
     
-    // Limit target scenes to available sentences (can't have more scenes than sentences)
-    const effectiveSceneCount = Math.min(targetSceneCount, sentences.length);
+    console.log(`[extractSceneKeywords] ========== SCENE EXTRACTION ==========`);
+    console.log(`[extractSceneKeywords] Story: ${totalWords} words, ${totalSentences} sentences`);
+    console.log(`[extractSceneKeywords] Target scenes: ${targetSceneCount}`);
     
-    // Calculate sentences per scene based on EFFECTIVE count
-    const sentencesPerScene = Math.max(1, Math.ceil(sentences.length / effectiveSceneCount));
-    
-    console.log(`[extractSceneKeywords] ${sentences.length} sentences, target ${targetSceneCount} scenes, effective ${effectiveSceneCount} scenes, ${sentencesPerScene} sentences/scene`);
-    
-    // Warn if we can't create the requested number
-    if (effectiveSceneCount < targetSceneCount) {
-      console.warn(`[extractSceneKeywords] ⚠️ Story only has ${sentences.length} sentences, can only create ${effectiveSceneCount} scenes (requested ${targetSceneCount})`);
-    }
-    
-    // Group sentences into scenes - distribute sentences as evenly as possible
+    // BUILD SCENES - Always use word-level timing for accuracy with captions
+    // But choose content grouping based on scene count vs sentence count
     const sceneTexts: string[] = [];
     
-    for (let i = 0; i < effectiveSceneCount; i++) {
-      // Use floor division to spread sentences more evenly
-      const baseSize = Math.floor(sentences.length / effectiveSceneCount);
-      const remainder = sentences.length % effectiveSceneCount;
+    if (totalSentences >= targetSceneCount) {
+      // MORE sentences than scenes - group sentences proportionally
+      console.log(`[extractSceneKeywords] Mode: SENTENCE-GROUP (${totalSentences} sentences → ${targetSceneCount} scenes)`);
       
-      // First 'remainder' scenes get one extra sentence
-      const startIdx = i < remainder 
-        ? i * (baseSize + 1) 
-        : remainder * (baseSize + 1) + (i - remainder) * baseSize;
-      const endIdx = startIdx + baseSize + (i < remainder ? 1 : 0);
+      for (let i = 0; i < targetSceneCount; i++) {
+        // Distribute sentences as evenly as possible
+        const baseSize = Math.floor(totalSentences / targetSceneCount);
+        const remainder = totalSentences % targetSceneCount;
+        
+        // First 'remainder' scenes get one extra sentence
+        const startIdx = i < remainder 
+          ? i * (baseSize + 1) 
+          : remainder * (baseSize + 1) + (i - remainder) * baseSize;
+        const endIdx = startIdx + baseSize + (i < remainder ? 1 : 0);
+        
+        const sceneSentences = sentences.slice(startIdx, endIdx);
+        if (sceneSentences.length > 0) {
+          sceneTexts.push(sceneSentences.join(' ').trim());
+        }
+      }
+    } else {
+      // FEWER sentences than scenes - USE WORD-LEVEL SPLITTING
+      // This is the key fix: allow 24 scenes for a 6-sentence story!
+      console.log(`[extractSceneKeywords] Mode: WORD-SPLIT (${totalSentences} sentences < ${targetSceneCount} scenes)`);
+      console.log(`[extractSceneKeywords] Each scene will have ~${Math.floor(totalWords / targetSceneCount)} words`);
       
-      const sceneSentences = sentences.slice(startIdx, endIdx);
-      if (sceneSentences.length > 0) {
-        sceneTexts.push(sceneSentences.join('').trim());
+      for (let i = 0; i < targetSceneCount; i++) {
+        // Calculate proportional word indices
+        const startWordIdx = Math.floor(i * totalWords / targetSceneCount);
+        const endWordIdx = Math.floor((i + 1) * totalWords / targetSceneCount);
+        const sceneText = words.slice(startWordIdx, endWordIdx).join(' ').trim();
+        
+        if (sceneText) {
+          sceneTexts.push(sceneText);
+          console.log(`[extractSceneKeywords] Scene ${i + 1}: words[${startWordIdx}:${endWordIdx}] = "${sceneText.substring(0, 50)}${sceneText.length > 50 ? '...' : ''}"`);
+        } else {
+          // Fallback: repeat previous text (shouldn't happen)
+          const fallback = sceneTexts[sceneTexts.length - 1] || sentences[0] || story;
+          sceneTexts.push(fallback);
+          console.warn(`[extractSceneKeywords] Scene ${i + 1} was empty, using fallback`);
+        }
       }
     }
     
-    // Filter out any empty scenes (shouldn't happen with new logic)
-    const finalSceneTexts = sceneTexts.filter(text => text.length > 0);
+    // Ensure we have the target count
+    while (sceneTexts.length < targetSceneCount) {
+      const lastText = sceneTexts[sceneTexts.length - 1] || story.substring(0, 50);
+      sceneTexts.push(lastText);
+      console.warn(`[extractSceneKeywords] Padding to reach target count`);
+    }
     
-    console.log(`[extractSceneKeywords] Created ${finalSceneTexts.length} scenes (target was ${targetSceneCount}, effective ${effectiveSceneCount})`);
+    console.log(`[extractSceneKeywords] Created ${sceneTexts.length} scenes (target: ${targetSceneCount})`);
+    console.log(`[extractSceneKeywords] ===========================================`);
     
     // Get keywords for all scenes in one API call
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -602,7 +632,7 @@ Return JSON:
           },
           {
             role: "user",
-            content: `Scenes:\n${finalSceneTexts.map((s, i) => `Scene ${i + 1}: "${s}"`).join("\n")}`,
+            content: `Scenes:\n${sceneTexts.map((s, i) => `Scene ${i + 1}: "${s}"`).join("\n")}`,
           },
         ],
         temperature: 0.3,
@@ -610,72 +640,68 @@ Return JSON:
       }),
     });
 
-    if (!response.ok) {
-      console.error("Failed to extract scene keywords, status:", response.status);
-      // Return fallback instead of throwing
-      return finalSceneTexts.map((text, i) => {
-        const totalDuration = captions[captions.length - 1]?.end || 45;
-        const sceneDuration = totalDuration / finalSceneTexts.length;
-        return {
-          text,
-          startTime: i * sceneDuration,
-          endTime: (i + 1) * sceneDuration,
-          keywords: VISUAL_KEYWORDS[visualPreset] || ["dark atmospheric"],
-        };
-      });
-    }
-
-    const data = await response.json();
     let sceneKeywords: Array<{ scene: number; keywords: string[] }>;
     
-    try {
-      const content = data.choices[0].message.content;
-      console.log("OpenAI scene keywords response:", content);
-      const parsed = JSON.parse(content);
-      sceneKeywords = parsed.scenes;
-      
-      // Validate the structure
-      if (!Array.isArray(sceneKeywords) || sceneKeywords.length === 0) {
-        throw new Error("Invalid scene keywords format: expected {scenes: [...]}");
-      }
-    } catch (parseError) {
-      console.error("Failed to parse scene keywords:", parseError);
-      sceneKeywords = finalSceneTexts.map((_, i) => ({
+    if (!response.ok) {
+      console.error("Failed to extract scene keywords, status:", response.status);
+      sceneKeywords = sceneTexts.map((_, i) => ({
         scene: i + 1,
         keywords: VISUAL_KEYWORDS[visualPreset] || ["dark atmospheric"],
       }));
+    } else {
+      const data = await response.json();
+      try {
+        const content = data.choices[0].message.content;
+        console.log("[extractSceneKeywords] GPT keywords response received");
+        const parsed = JSON.parse(content);
+        sceneKeywords = parsed.scenes;
+        
+        // Validate the structure
+        if (!Array.isArray(sceneKeywords) || sceneKeywords.length === 0) {
+          throw new Error("Invalid scene keywords format: expected {scenes: [...]}");
+        }
+      } catch (parseError) {
+        console.error("Failed to parse scene keywords:", parseError);
+        sceneKeywords = sceneTexts.map((_, i) => ({
+          scene: i + 1,
+          keywords: VISUAL_KEYWORDS[visualPreset] || ["dark atmospheric"],
+        }));
+      }
     }
     
-    console.log("Scene keywords:", sceneKeywords);
+    console.log(`[extractSceneKeywords] Got keywords for ${sceneKeywords.length} scenes`);
     
-    // Calculate timing for each scene based on word timestamps
+    // CRITICAL: Calculate timing for each scene using WORD-LEVEL captions
+    // This ensures proper synchronization even with word-split scenes
     const scenes: StoryScene[] = [];
-    let wordIndex = 0;
     const totalDuration = captions[captions.length - 1]?.end || 45;
     
-    for (let i = 0; i < finalSceneTexts.length; i++) {
-      const sceneText = finalSceneTexts[i];
-      const sceneWordCount = sceneText.split(/\s+/).length;
+    // Map each scene to its word range for timing
+    for (let i = 0; i < sceneTexts.length; i++) {
+      const sceneText = sceneTexts[i];
+      const sceneWordCount = sceneText.split(/\s+/).filter(w => w.length > 0).length;
       
-      // Find start time (first word of this scene)
-      const startTime = wordIndex < captions.length ? captions[wordIndex].start : (i * totalDuration / finalSceneTexts.length);
+      // Calculate word position in the full story
+      const wordsBeforeThisScene = sceneTexts.slice(0, i).reduce((sum, t) => 
+        sum + t.split(/\s+/).filter(w => w.length > 0).length, 0
+      );
       
-      // Move word index forward
-      wordIndex += sceneWordCount;
+      // Find timing from captions - with bounds checking
+      const startWordIdx = Math.min(wordsBeforeThisScene, captions.length - 1);
+      const endWordIdx = Math.min(wordsBeforeThisScene + sceneWordCount - 1, captions.length - 1);
       
-      // Find end time (last word of this scene)
-      const endTime = wordIndex < captions.length 
-        ? captions[Math.min(wordIndex - 1, captions.length - 1)].end 
-        : ((i + 1) * totalDuration / finalSceneTexts.length);
+      const startTime = captions[startWordIdx]?.start ?? (i * totalDuration / sceneTexts.length);
+      const endTime = captions[endWordIdx]?.end ?? ((i + 1) * totalDuration / sceneTexts.length);
       
       scenes.push({
         text: sceneText,
         startTime: startTime,
-        endTime: endTime,
+        endTime: Math.max(endTime, startTime + 0.5), // Ensure at least 0.5s duration
         keywords: sceneKeywords[i]?.keywords || VISUAL_KEYWORDS[visualPreset] || ["dark atmospheric"],
       });
     }
     
+    console.log(`[extractSceneKeywords] Final: ${scenes.length} scenes with timing`);
     return scenes;
   } catch (error) {
     console.error("Scene extraction error:", error);

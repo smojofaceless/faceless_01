@@ -176,18 +176,24 @@ function checkSceneCountWarning() {
     const estimatedWords = durationConfig.words;
     const wordsPerScene = estimatedWords / sceneCount;
     
-    // Warn if less than 10 words per scene (will cause fragmentation)
-    // Recommend at least 15 words per scene for good sentence-level scenes
-    const recommendedMaxScenes = Math.floor(estimatedWords / 15);
+    // Info: We NOW support word-level splitting for high scene counts
+    // Just inform user about what will happen, don't warn against it
+    const estimatedSentences = Math.ceil(estimatedWords / 17); // Avg ~17 words/sentence
     
-    if (wordsPerScene < 10) {
+    if (wordsPerScene < 5) {
+        // Very extreme case - might not work well
         warningEl.classList.remove('hidden');
-        warningTextEl.textContent = `${sceneCount} scenes for ~${estimatedWords} words = ~${Math.round(wordsPerScene)} words/scene. This will create word-level fragments! Recommend ≤${recommendedMaxScenes} scenes for this duration.`;
-    } else if (wordsPerScene < 15) {
+        warningTextEl.textContent = `${sceneCount} scenes for ~${estimatedWords} words = ~${Math.round(wordsPerScene)} words/scene. This is very fast-paced! Consider reducing to ~${Math.floor(estimatedWords / 5)} scenes.`;
+    } else if (sceneCount > estimatedSentences) {
+        // Using word-split mode - inform user but it's OK now!
         warningEl.classList.remove('hidden');
-        warningTextEl.textContent = `${sceneCount} scenes is high for ~${estimatedWords} words (~${Math.round(wordsPerScene)} words/scene). Recommend ≤${recommendedMaxScenes} scenes for best quality.`;
+        warningTextEl.innerHTML = `<strong>Social media style:</strong> ${sceneCount} scenes with word-level splitting (~${Math.round(wordsPerScene)} words/scene). Perfect for TikTok/Reels! ✨`;
+        warningEl.style.borderColor = '#22c55e'; // Green
+        warningEl.style.background = '#0a2a0a';
     } else {
         warningEl.classList.add('hidden');
+        warningEl.style.borderColor = ''; // Reset
+        warningEl.style.background = '';
     }
 }
 
