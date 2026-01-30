@@ -122,158 +122,48 @@ serve(async (req) => {
     
     console.log(`Job created: ${job.id}`);
 
-    // If preview mode, generate story immediately
+    // If preview mode, call run-job to generate story (which has all the vibe-specific prompts)
     if (isPreview) {
-      // Generate story with GPT
-      const theme = body.theme || "general";
-      const durationSec = parseInt(lengthPreset);
-      const sceneCount = body.scene_count || 4;
+      console.log(`[PREVIEW] Calling run-job for story generation (vibe: ${body.vibe_preset || 'slow_creepy'})...`);
       
-      const themePrompts: Record<string, string> = {
-        general: "a creepy first-person horror story",
-        paranormal: "a first-person ghost/paranormal encounter story",
-        creature: "a first-person monster/creature horror story",
-        psychological: "a first-person psychological horror story with an unreliable narrator",
-        folklore: "a first-person urban legend or folklore horror story",
-        cosmic: "a first-person cosmic/lovecraftian horror story",
-      };
-      
-      const storyPrompt = themePrompts[theme] || themePrompts.general;
-      
-      console.log(`Generating story for theme: ${theme}, duration: ${durationSec}s`);
+      // Get the run-job URL (same project, different function)
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const runJobUrl = `${supabaseUrl}/functions/v1/run-job`;
       
       try {
-        const gptResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+        const runJobResponse = await fetch(runJobUrl, {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${openaiKey}`,
+            "Authorization": `Bearer ${supabaseServiceKey}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: "gpt-4o-mini",
-            messages: [
-              {
-                role: "system",
-                content: `You are a viral horror story writer. Write ${storyPrompt} for a ${durationSec}-second video narration.
-
-Requirements:
-- First person perspective ("I")
-- Present tense for immediacy
-- ${sceneCount} distinct visual scenes/moments
-- Hook in first sentence
-- Building dread
-- Shocking twist ending
-- About ${Math.round(durationSec * 2.5)} words
-- NO dialogue tags, NO "I said"
-- Punchy, short sentences
-
-Return JSON: {"title": "Catchy 3-5 word title", "story": "The full story text"}`,
-              },
-              {
-                role: "user",
-                content: "Write the horror story now.",
-              },
-            ],
-            temperature: 0.9,
-            response_format: { type: "json_object" },
+            job_id: job.id,
+            preview_only: true,
           }),
         });
-
-        if (!gptResponse.ok) {
-          const errorText = await gptResponse.text();
-          console.error(`GPT error: ${gptResponse.status} - ${errorText}`);
-          throw new Error(`Failed to generate story: ${gptResponse.status}`);
-        }
-
-        const gptData = await gptResponse.json();
-        console.log(`GPT response received, parsing...`);
-        const storyData = JSON.parse(gptData.choices[0].message.content);
-        console.log(`Story generated: ${storyData.title}`);
-
-        // Update job with story
-        await supabase.from("jobs").update({
-          status: "preview",
-          progress: 25,
-          title: storyData.title,
-          story_text: storyData.story,
-        }).eq("id", job.id);
-
-        // Split story into scenes - handle case where sceneCount > sentences
-        // Replace ... with single ellipsis to avoid counting as 3 sentence endings
-        const storyNormalized = storyData.story.replace(/\.{2,}/g, '…');
-        const sentences = storyNormalized.match(/[^.!?…]+[.!?…]+/g) || [storyData.story];
-        const totalSentences = sentences.length;
-        const scenes = [];
         
-        console.log(`[SCENES] Story has ${totalSentences} sentences, requested ${sceneCount} scenes`);
-        
-        if (totalSentences >= sceneCount) {
-          // More sentences than scenes - use proportional distribution
-          for (let i = 0; i < sceneCount; i++) {
-            const start = Math.floor(i * totalSentences / sceneCount);
-            const end = Math.floor((i + 1) * totalSentences / sceneCount);
-            const actualEnd = Math.max(end, start + 1); // At least 1 sentence
-            const sceneText = sentences.slice(start, actualEnd).join(' ').trim();
-            scenes.push({
-              index: i,
-              text: sceneText || sentences[Math.min(start, totalSentences - 1)]?.trim() || "...",
-              keywords: [],
-              startTime: 0,
-              endTime: 0,
-            });
-          }
-        } else {
-          // Fewer sentences than scenes - split by WORDS
-          const words = storyData.story.split(/\s+/);
-          const totalWords = words.length;
-          console.log(`[SCENES] Word-split mode: ${totalWords} words → ${sceneCount} scenes`);
-          
-          for (let i = 0; i < sceneCount; i++) {
-            const start = Math.floor(i * totalWords / sceneCount);
-            const end = Math.floor((i + 1) * totalWords / sceneCount);
-            const sceneText = words.slice(start, end).join(' ').trim();
-            scenes.push({
-              index: i,
-              text: sceneText || words.slice(start, Math.min(start + 3, totalWords)).join(' ') || "...",
-              keywords: [],
-              startTime: 0,
-              endTime: 0,
-            });
-          }
+        if (!runJobResponse.ok) {
+          const errorText = await runJobResponse.text();
+          console.error(`run-job error: ${runJobResponse.status} - ${errorText}`);
+          throw new Error(`Failed to generate story: ${runJobResponse.status}`);
         }
         
-        // Debug info
-        const emptyScenes = scenes.filter(s => !s.text || s.text.trim() === '' || s.text === '...').length;
-        console.log(`[SCENES] Created ${scenes.length} scenes, ${emptyScenes} empty`);
-
+        // Return the run-job response directly (it has all the story data)
+        const runJobData = await runJobResponse.json();
+        console.log(`[PREVIEW] Story generated via run-job: ${runJobData.title || 'untitled'}`);
+        
         return new Response(
-          JSON.stringify({
-            success: true,
-            status: "preview",
-            job_id: job.id,
-            title: storyData.title,
-            story_text: storyData.story,
-            // DEBUG INFO
-            _debug: {
-              version: "v3.2-create-job",
-              build: new Date().toISOString(),
-              requested_scenes: sceneCount,
-              actual_scenes: scenes.length,
-              sentence_count: totalSentences,
-              algorithm: totalSentences >= sceneCount ? "proportional" : "word-split",
-              empty_scenes: emptyScenes,
-            },
-            scenes: scenes,
-          }),
+          JSON.stringify(runJobData),
           {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
             status: 200,
           }
         );
         
-      } catch (storyError) {
+      } catch (storyError: any) {
         console.error(`Story generation failed:`, storyError);
-        // Update job to failed state (not 'error' - must be valid status)
+        // Update job to failed state
         await supabase.from("jobs").update({
           status: "failed",
           error: storyError.message,
