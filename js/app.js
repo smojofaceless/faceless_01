@@ -24,6 +24,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
+    // Story text auto-update scene breakdown
+    const storyTextArea = document.getElementById('story-text');
+    if (storyTextArea) {
+        storyTextArea.addEventListener('input', debounce(() => {
+            updateSceneBreakdownFromStory();
+        }, 500));
+    }
+    
     // Visual source change
     document.querySelectorAll('input[name="visual-source"]').forEach(radio => {
         radio.addEventListener('change', (e) => {
@@ -452,6 +460,67 @@ function updateCustomStyleDropdown() {
         option.textContent = `${style.icon} ${style.name} (Custom)`;
         select.appendChild(option);
     });
+}
+
+// =====================================================
+// UTILITY FUNCTIONS
+// =====================================================
+
+// Debounce helper - delays execution until user stops typing
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// Update scene breakdown when story is edited
+function updateSceneBreakdownFromStory() {
+    const storyText = document.getElementById('story-text')?.value;
+    if (!storyText || storyText.trim() === '') {
+        return;
+    }
+    
+    const sceneCount = parseInt(document.getElementById('scene-count')?.value || 6);
+    
+    // Normalize ellipses and extract sentences
+    const storyNormalized = storyText.replace(/\.{2,}/g, '…');
+    const sentences = storyNormalized.match(/[^.!?…]+[.!?…]+/g) || [storyText];
+    
+    // Calculate how many sentences per scene
+    const sentencesPerScene = Math.ceil(sentences.length / sceneCount);
+    
+    // Build new scenes array
+    const newScenes = [];
+    for (let i = 0; i < sceneCount; i++) {
+        const start = i * sentencesPerScene;
+        const end = Math.min(start + sentencesPerScene, sentences.length);
+        const sceneText = sentences.slice(start, end).join(' ').trim();
+        
+        // Skip empty scenes at the end
+        if (sceneText === '' && i >= Math.ceil(sentences.length / sentencesPerScene)) {
+            continue;
+        }
+        
+        newScenes.push({
+            index: i,
+            text: sceneText || `(Scene ${i + 1} - add more story content)`,
+            keywords: currentScenes[i]?.keywords || [],
+            startTime: currentScenes[i]?.startTime || 0,
+            endTime: currentScenes[i]?.endTime || 0
+        });
+    }
+    
+    // Update global state and re-render
+    currentScenes = newScenes;
+    renderSceneBreakdown(currentScenes);
+    
+    console.log(`[AUTO-UPDATE] Scene breakdown updated: ${newScenes.length} scenes from ${sentences.length} sentences`);
 }
 
 // =====================================================
