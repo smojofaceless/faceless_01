@@ -194,15 +194,16 @@ async function updateJobInSupabase(jobId, supabaseJobId, status, videoUrl = null
 }
 
 /**
- * Ken Burns effect - INTELLIGENT selection based on scene mood
- * Subtle effects for calm scenes, dramatic effects for high-tension moments
- * Memory-optimized version - uses smaller scale factor
+ * Ken Burns effect - TWO MODES: Classic and Cinematic
+ * 
+ * CLASSIC (mood 1-6): Simple, elegant zoom in/out only - original Ken Burns style
+ * CINEMATIC (mood 7-10): Dynamic pans, diagonals, faster movements for intense moments
  * 
  * @param index - Scene index
  * @param duration - Scene duration in seconds
  * @param width - Output width
  * @param height - Output height  
- * @param moodLevel - 1-10 mood intensity (1=calm, 10=intense). If not provided, uses subtle effects.
+ * @param moodLevel - 1-10 mood intensity. 1-6 = Classic, 7-10 = Cinematic
  */
 function getKenBurnsFilter(index, duration, width = 1080, height = 1920, moodLevel = 5) {
   const frames = Math.floor(duration * 30); // 30fps
@@ -210,69 +211,67 @@ function getKenBurnsFilter(index, duration, width = 1080, height = 1920, moodLev
   const scaledW = width * 2;
   const scaledH = height * 2;
   
-  // INTELLIGENT Ken Burns: Effects organized by intensity
-  // AI selects based on scene mood rather than random/sequential
-  
-  // SUBTLE effects (mood 1-4) - calm, atmospheric, slow
-  const subtleEffects = [
-    // Very slow zoom IN (barely noticeable, dreamy)
+  // =====================================================
+  // CLASSIC KEN BURNS (mood 1-6)
+  // Simple, elegant zoom in/out only - the original Ken Burns style
+  // No pans, no diagonals - just smooth, subtle zoom
+  // =====================================================
+  const classicEffects = [
+    // Very slow zoom IN (barely noticeable, dreamy) - ease in
     `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.0+0.08*pow(on/${frames},0.7)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
-    // Very slow zoom OUT (gentle reveal)
+    // Very slow zoom OUT (gentle reveal) - ease out
     `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.1-0.08*pow(on/${frames},0.7)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
-    // Very gentle pan left (slow drift)
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.05':d=${frames}:x='(iw-iw/zoom)/2+((iw/zoom-ow)/5)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
-    // Very gentle pan right (slow drift)
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.05':d=${frames}:x='(iw-iw/zoom)/2-((iw/zoom-ow)/5)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
+    // Standard zoom IN (smooth linear)
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.0+0.12*on/${frames}':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
+    // Standard zoom OUT (smooth linear)
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.12-0.1*on/${frames}':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
+    // Zoom IN with eased acceleration
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.0+0.1*pow(on/${frames},0.8)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
+    // Zoom OUT with eased deceleration
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.12-0.1*pow(on/${frames},1.2)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
   ];
   
-  // MEDIUM effects (mood 5-7) - standard cinematic movement
-  const mediumEffects = [
-    // Standard zoom IN (eased)
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.0+0.15*pow(on/${frames},0.8)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
-    // Standard zoom OUT (eased)
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.18-0.15*pow(on/${frames},1.0)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
-    // Pan LEFT with subtle zoom (smooth sine wave)
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.08+0.02*sin(on/${frames}*PI)':d=${frames}:x='(iw-iw/zoom)/2+((iw/zoom-ow)/3.5)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
-    // Pan RIGHT with subtle zoom
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.08+0.02*sin(on/${frames}*PI)':d=${frames}:x='(iw-iw/zoom)/2-((iw/zoom-ow)/3.5)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
-    // Pan UP (reveal)
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.08':d=${frames}:x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2-((ih/zoom-oh)/4)*(1-cos(on/${frames}*PI))/2':s=${width}x${height}:fps=30`,
-    // Pan DOWN (reveal)
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.08':d=${frames}:x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2+((ih/zoom-oh)/4)*(1-cos(on/${frames}*PI))/2':s=${width}x${height}:fps=30`,
-  ];
-  
-  // DRAMATIC effects (mood 8-10) - intense, fast, dynamic for climax/scary moments
-  const dramaticEffects = [
-    // Fast zoom IN (punchy, accelerates)
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.0+0.28*pow(on/${frames},0.6)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
+  // =====================================================
+  // CINEMATIC KEN BURNS (mood 7-10)  
+  // Dynamic movement for intense/scary moments
+  // Includes pans, diagonals, faster zoom, sweep motions
+  // =====================================================
+  const cinematicEffects = [
+    // Fast zoom IN (punchy, accelerates) - for jump scares, reveals
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.0+0.25*pow(on/${frames},0.6)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
     // Fast zoom OUT (dramatic reveal)
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.3-0.28*pow(on/${frames},1.4)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
-    // Diagonal pan (top-left to bottom-right) with aggressive zoom
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.0+0.2*on/${frames}':d=${frames}:x='(iw-iw/zoom)/2+((iw/zoom-ow)/3)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2+((ih/zoom-oh)/5)*(1-cos(on/${frames}*PI))/2':s=${width}x${height}:fps=30`,
-    // Diagonal pan (bottom-right to top-left) with zoom out
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.2-0.15*on/${frames}':d=${frames}:x='(iw-iw/zoom)/2-((iw/zoom-ow)/3)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2-((ih/zoom-oh)/5)*(1-cos(on/${frames}*PI))/2':s=${width}x${height}:fps=30`,
-    // Wide sweeping pan with zoom pulse
-    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.1+0.08*sin(on/${frames}*PI*2)':d=${frames}:x='(iw-iw/zoom)/2+((iw/zoom-ow)/2.2)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.28-0.25*pow(on/${frames},1.3)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=30`,
+    // Pan LEFT with zoom (tracking shot feel)
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.08+0.04*sin(on/${frames}*PI)':d=${frames}:x='(iw-iw/zoom)/2+((iw/zoom-ow)/3)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
+    // Pan RIGHT with zoom
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.08+0.04*sin(on/${frames}*PI)':d=${frames}:x='(iw-iw/zoom)/2-((iw/zoom-ow)/3)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
+    // Pan UP (reveal from below) - great for looking up at threat
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.1':d=${frames}:x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2-((ih/zoom-oh)/3)*(1-cos(on/${frames}*PI))/2':s=${width}x${height}:fps=30`,
+    // Pan DOWN (descending feel) - for dread, sinking feeling
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.1':d=${frames}:x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2+((ih/zoom-oh)/3)*(1-cos(on/${frames}*PI))/2':s=${width}x${height}:fps=30`,
+    // Diagonal drift (top-left to bottom-right) with zoom
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.0+0.18*on/${frames}':d=${frames}:x='(iw-iw/zoom)/2+((iw/zoom-ow)/4)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2+((ih/zoom-oh)/6)*(1-cos(on/${frames}*PI))/2':s=${width}x${height}:fps=30`,
+    // Diagonal drift (bottom-right to top-left) with zoom out
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.18-0.12*on/${frames}':d=${frames}:x='(iw-iw/zoom)/2-((iw/zoom-ow)/4)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2-((ih/zoom-oh)/6)*(1-cos(on/${frames}*PI))/2':s=${width}x${height}:fps=30`,
+    // Sweep pan with pulse zoom (unsettling)
+    `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='1.1+0.06*sin(on/${frames}*PI*2)':d=${frames}:x='(iw-iw/zoom)/2+((iw/zoom-ow)/2.5)*(1-cos(on/${frames}*PI))/2':y='(ih-ih/zoom)/2':s=${width}x${height}:fps=30`,
   ];
   
-  // Select effect pool based on mood intensity
+  // Select effect pool: Classic (1-6) or Cinematic (7-10)
   let effectPool;
   let poolName;
   
-  if (moodLevel <= 4) {
-    effectPool = subtleEffects;
-    poolName = 'SUBTLE';
-  } else if (moodLevel <= 7) {
-    effectPool = mediumEffects;
-    poolName = 'MEDIUM';
+  if (moodLevel <= 6) {
+    effectPool = classicEffects;
+    poolName = 'CLASSIC';
   } else {
-    effectPool = dramaticEffects;
-    poolName = 'DRAMATIC';
+    effectPool = cinematicEffects;
+    poolName = 'CINEMATIC';
   }
   
   // Use index to cycle through the selected pool (not random, for reproducibility)
   const effectIndex = index % effectPool.length;
-  console.log(`[KB] Scene ${index + 1}: mood=${moodLevel} → ${poolName} effect #${effectIndex + 1}`);
+  console.log(`[KB] Scene ${index + 1}: mood=${moodLevel} → ${poolName} effect #${effectIndex + 1}/${effectPool.length}`);
   
   return effectPool[effectIndex];
 }
