@@ -9,6 +9,7 @@ const corsHeaders = {
 interface CreateJobRequest {
   // Content settings
   theme?: string;
+  vibe_preset?: "slow_creepy" | "punchy_shock" | "atmospheric" | "urban_legend";
   length_preset?: "short" | "medium" | "long" | "30" | "45" | "60" | "90";
   visual_preset?: "forest" | "hallway" | "attic" | "foggy" | "rain";
   visual_source?: "pexels" | "ai";
