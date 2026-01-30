@@ -1191,29 +1191,59 @@ export async function runAssemblePhase(
     .from("job_assets")
     .select("*")
     .eq("job_id", job_id)
-    .in("type", ["dalle_image", "bg_video"])
-    .order("meta->scene_index", { ascending: true });
+    .in("type", ["dalle_image", "bg_video"]);
 
   // Get scene data
   const { data: sceneAssets } = await supabase
     .from("job_assets")
     .select("*")
     .eq("job_id", job_id)
-    .eq("type", "scene_data")
-    .order("meta->scene_index", { ascending: true });
+    .eq("type", "scene_data");
 
   if (!imageAssets?.length || !sceneAssets?.length) {
     throw new Error("Missing images or scene data");
   }
 
-  // Build scenes with visuals
-  const scenes: StoryScene[] = sceneAssets.map((s: any, i: number) => ({
-    text: s.meta.scene_text,
-    keywords: s.meta.keywords || [],
-    startTime: s.meta.start_time,
-    endTime: s.meta.end_time,
-    videoUrl: imageAssets[i]?.storage_path || "",
-  }));
+  // Sort by scene_index numerically (JSON path ordering can be unreliable)
+  const sortedScenes = [...sceneAssets].sort((a, b) => 
+    (a.meta?.scene_index ?? 0) - (b.meta?.scene_index ?? 0)
+  );
+  const sortedImages = [...imageAssets].sort((a, b) => 
+    (a.meta?.scene_index ?? 0) - (b.meta?.scene_index ?? 0)
+  );
+  
+  // Build a map of scene_index -> image for reliable matching
+  const imageBySceneIndex = new Map<number, any>();
+  for (const img of sortedImages) {
+    const idx = img.meta?.scene_index ?? -1;
+    if (idx >= 0) {
+      imageBySceneIndex.set(idx, img);
+    }
+  }
+  
+  console.log(`[ASSEMBLE] Matching ${sortedScenes.length} scenes to ${sortedImages.length} images`);
+  console.log(`[ASSEMBLE] Scene indices: ${sortedScenes.map(s => s.meta?.scene_index).join(', ')}`);
+  console.log(`[ASSEMBLE] Image indices: ${sortedImages.map(i => i.meta?.scene_index).join(', ')}`);
+
+  // Build scenes with visuals - match by scene_index, not array position
+  const scenes: StoryScene[] = sortedScenes.map((s: any) => {
+    const sceneIndex = s.meta?.scene_index ?? 0;
+    const matchingImage = imageBySceneIndex.get(sceneIndex);
+    
+    if (!matchingImage) {
+      console.warn(`[ASSEMBLE] ⚠️ No image found for scene ${sceneIndex}: "${s.meta?.scene_text?.substring(0, 50)}..."`);
+    } else {
+      console.log(`[ASSEMBLE] Scene ${sceneIndex} → Image: ${matchingImage.storage_path?.substring(0, 60)}...`);
+    }
+    
+    return {
+      text: s.meta.scene_text,
+      keywords: s.meta.keywords || [],
+      startTime: s.meta.start_time,
+      endTime: s.meta.end_time,
+      videoUrl: matchingImage?.storage_path || "",
+    };
+  });
 
   const visualSource = imageAssets[0]?.type === "dalle_image" ? "dalle" : "pexels";
   

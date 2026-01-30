@@ -140,43 +140,44 @@ export async function assembleVideoWithCreatomate(
     ...backgroundElements,
   ];
 
-  // Horror filter (color grading + grain)
+  // Horror filter (color grading - REDUCED to avoid over-darkening)
   if (options.filter) {
+    // Very subtle darkening (was 0.3, now 0.1)
     elements.push({
       type: "shape",
       shape: "rectangle",
-      fill_color: "rgba(0,0,0,0.3)",
+      fill_color: "rgba(0,0,0,0.1)",
       width: "100%",
       height: "100%",
       blend_mode: "multiply",
     });
-    // Slight desaturation/color tint
+    // Slight color tint - keep subtle
     elements.push({
       type: "shape", 
       shape: "rectangle",
-      fill_color: "rgba(20,0,30,0.15)",
+      fill_color: "rgba(20,0,30,0.08)",
       width: "100%",
       height: "100%",
       blend_mode: "overlay",
     });
   }
 
-  // Vignette effect
+  // Vignette effect - REDUCED opacity (was 0.7, now 0.4)
   if (options.vignette) {
     elements.push({
       type: "shape",
       shape: "ellipse",
-      fill: "radial-gradient(circle, transparent 30%, rgba(0,0,0,0.7) 100%)",
+      fill: "radial-gradient(circle, transparent 40%, rgba(0,0,0,0.4) 100%)",
       width: "100%",
       height: "100%",
     });
   }
 
-  // Dark overlay for text visibility (always on but lighter if filter is enabled)
+  // Dark overlay for text visibility - REDUCED (was 0.2/0.4, now 0.1/0.2)
   elements.push({
     type: "shape",
     shape: "rectangle",
-    fill_color: options.filter ? "rgba(0,0,0,0.2)" : "rgba(0,0,0,0.4)",
+    fill_color: options.filter ? "rgba(0,0,0,0.1)" : "rgba(0,0,0,0.2)",
     width: "100%",
     height: "100%",
   });
