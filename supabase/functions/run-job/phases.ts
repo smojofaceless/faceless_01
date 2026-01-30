@@ -52,7 +52,8 @@ export async function runPreviewMode(
   const visualPreset = job.visual_preset || "forest";
   const artStyle = jobMeta.art_style || "cinematic-dark";
   
-  console.log(`Generating story (${job.length_preset}s preset, ${sceneCount} scenes, ${visualPreset} environment)...`);
+  console.log(`[PREVIEW] Job vibe_preset: "${job.vibe_preset}"`);
+  console.log(`Generating story (${job.length_preset}s preset, ${sceneCount} scenes, ${visualPreset} environment, vibe: ${job.vibe_preset})...`);
   const storyData = await generateStory(
     openaiKey,
     job.vibe_preset,

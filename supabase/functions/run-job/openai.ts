@@ -76,12 +76,14 @@ export async function generateStory(
 
   console.log(`[STORY] Enhanced generation: ${lengthPreset}s, ${vibePreset}, ${visualPreset || 'forest'}`);
   console.log(`[STORY] Word range: ${config.minWords}-${config.maxWords}, ending hint: "${endingHint}"`);
+  console.log(`[STORY] Using ${vibePreset === "urban_legend" ? "URBAN LEGEND" : "STANDARD"} prompt`);
 
   // Use special prompt for Urban Legend style
   let prompt: string;
   let systemPrompt: string;
   
   if (vibePreset === "urban_legend") {
+    console.log(`[STORY] ✓ Urban Legend mode ACTIVE - using faux true-crime prompt`);
     // URBAN LEGEND / FAUX TRUE-CRIME PROMPT
     systemPrompt = "You are a viral horror writer specializing in 'true story' style urban legends. You write as if documenting real, suppressed historical events. Always respond with valid JSON.";
     
