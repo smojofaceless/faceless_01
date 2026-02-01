@@ -563,7 +563,7 @@ async function addVignette(inputPath, outputPath, lowMemory = false) {
     
     ffmpeg(inputPath)
       .videoFilter('vignette=PI/4')
-      .outputOptions(['-map', '0:v', '-map', '0:a?', ...outputOptions])
+      .outputOptions(outputOptions)
       .output(outputPath)
       .on('end', resolve)
       .on('error', reject)
@@ -595,7 +595,7 @@ async function addHorrorGrade(inputPath, outputPath, lowMemory = false) {
         'eq=saturation=0.7:contrast=1.15:brightness=-0.03',
         'colorbalance=rs=-0.05:gs=-0.05:bs=0.1',
       ].join(','))
-      .outputOptions(['-map', '0:v', '-map', '0:a?', ...outputOptions])
+      .outputOptions(outputOptions)
       .output(outputPath)
       .on('end', resolve)
       .on('error', reject)
@@ -653,7 +653,7 @@ async function addFilmGrain(inputPath, outputPath, lowMemory = false) {
           console.log('  → Trying ultra-simple grain fallback...');
           ffmpeg(inputPath)
             .videoFilter('noise=c0s=10:c0f=t')
-            .outputOptions(['-map', '0:v', '-map', '0:a?', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26', '-c:a', 'copy'])
+            .outputOptions(['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26', '-c:a', 'copy'])
             .output(outputPath)
             .on('end', resolve)
             .on('error', reject)
@@ -663,7 +663,7 @@ async function addFilmGrain(inputPath, outputPath, lowMemory = false) {
           // Fallback to simplest possible effect
           ffmpeg(inputPath)
             .videoFilter('noise=c0s=10:c0f=t')
-            .outputOptions(['-map', '0:v', '-map', '0:a?', ...outputOptions])
+            .outputOptions(outputOptions)
             .output(outputPath)
             .on('end', resolve)
             .on('error', reject)
@@ -716,7 +716,7 @@ async function addFadeEffect(inputPath, outputPath, options = {}, lowMemory = fa
     
     ffmpeg(inputPath)
       .videoFilter(filters.join(','))
-      .outputOptions(['-map', '0:v', '-map', '0:a?', ...outputOptions])
+      .outputOptions(outputOptions)
       .output(outputPath)
       .on('end', resolve)
       .on('error', reject)
@@ -773,7 +773,7 @@ async function addGlitchFlicker(inputPath, outputPath, lowMemory = false) {
         // Simpler fallback
         ffmpeg(inputPath)
           .videoFilter('eq=brightness=0.0+0.05*sin(n*0.3)*lt(random(1),0.03)')
-          .outputOptions(['-map', '0:v', '-map', '0:a?', ...outputOptions])
+          .outputOptions(outputOptions)
           .output(outputPath)
           .on('end', resolve)
           .on('error', reject)
@@ -811,7 +811,7 @@ async function addVHSTracking(inputPath, outputPath, lowMemory = false) {
         'colorbalance=rs=0.03:gs=-0.02:bs=-0.03',
         'eq=saturation=0.88'
       ].join(','))
-      .outputOptions(['-map', '0:v', '-map', '0:a?', ...outputOptions])
+      .outputOptions(outputOptions)
       .output(outputPath)
       .on('end', () => {
         clearTimeout(timeoutHandle);
@@ -822,7 +822,7 @@ async function addVHSTracking(inputPath, outputPath, lowMemory = false) {
         console.error('VHS tracking error, using fallback:', err.message);
         ffmpeg(inputPath)
           .videoFilter('noise=c0s=8:c0f=t')
-          .outputOptions(['-map', '0:v', '-map', '0:a?', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26', '-c:a', 'copy'])
+          .outputOptions(['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26', '-c:a', 'copy'])
           .output(outputPath)
           .on('end', resolve)
           .on('error', reject)
@@ -856,7 +856,7 @@ async function addLightFlicker(inputPath, outputPath, lowMemory = false) {
     // Simple brightness variation (removed random() which can be slow)
     const ffmpegCommand = ffmpeg(inputPath)
       .videoFilter('eq=brightness=0.02*sin(n*0.25)')
-      .outputOptions(['-map', '0:v', '-map', '0:a?', ...outputOptions])
+      .outputOptions(outputOptions)
       .output(outputPath)
       .on('end', () => {
         clearTimeout(timeoutHandle);
@@ -932,7 +932,7 @@ async function addNegativeFlash(inputPath, outputPath, lowMemory = false) {
     // This creates bright flashes that simulate the negative flash feel
     ffmpeg(inputPath)
       .videoFilter('eq=brightness=0.08*sin(n*0.05)*sin(n*0.37)')
-      .outputOptions(['-map', '0:v', '-map', '0:a?', ...outputOptions])
+      .outputOptions(outputOptions)
       .output(outputPath)
       .on('end', resolve)
       .on('error', (err) => {
@@ -973,7 +973,7 @@ async function addColdColorCreep(inputPath, outputPath, lowMemory = false) {
         `colorbalance=rs='-0.1*n/${totalFrames}':gs='-0.05*n/${totalFrames}':bs='0.15*n/${totalFrames}'`,
         `eq=saturation='1.0-0.15*n/${totalFrames}'`,
       ].join(','))
-      .outputOptions(['-map', '0:v', '-map', '0:a?', ...outputOptions])
+      .outputOptions(outputOptions)
       .output(outputPath)
       .on('end', resolve)
       .on('error', (err) => {
@@ -981,7 +981,7 @@ async function addColdColorCreep(inputPath, outputPath, lowMemory = false) {
         // Fallback: static cold grade
         ffmpeg(inputPath)
           .videoFilter('colorbalance=bs=0.1,eq=saturation=0.9')
-          .outputOptions(['-map', '0:v', '-map', '0:a?', ...outputOptions])
+          .outputOptions(outputOptions)
           .output(outputPath)
           .on('end', resolve)
           .on('error', reject)
@@ -1014,14 +1014,14 @@ async function addEdgeDarkeningCreep(inputPath, outputPath, lowMemory = false) {
         // PI/3 ≈ 1.05, PI/6 ≈ 0.52
         `vignette='PI/(3-1.5*n/${totalFrames})'`
       ].join(','))
-      .outputOptions(['-map', '0:v', '-map', '0:a?', ...outputOptions])
+      .outputOptions(outputOptions)
       .output(outputPath)
       .on('end', resolve)
       .on('error', (err) => {
         console.error('Edge darkening error, using fallback:', err.message);
         ffmpeg(inputPath)
           .videoFilter('vignette=PI/4')
-          .outputOptions(['-map', '0:v', '-map', '0:a?', ...outputOptions])
+          .outputOptions(outputOptions)
           .output(outputPath)
           .on('end', resolve)
           .on('error', reject)
@@ -1059,7 +1059,7 @@ async function addScanlines(inputPath, outputPath, lowMemory = false) {
         'noise=c0s=3:c0f=t',  // Light noise
         'eq=contrast=1.05:brightness=-0.02'  // Slight contrast boost + darken
       ].join(','))
-      .outputOptions(['-map', '0:v', '-map', '0:a?', ...outputOptions])
+      .outputOptions(outputOptions)
       .output(outputPath)
       .on('end', () => {
         clearTimeout(timeoutHandle);
@@ -1296,7 +1296,7 @@ async function burnSubtitles(inputPath, assPath, outputPath, lowMemory = false) 
     
     ffmpeg(inputPath)
       .videoFilter(`ass='${escapedAssPath}'`)
-      .outputOptions(['-map', '0:v', '-map', '0:a?', ...outputOptions])
+      .outputOptions(outputOptions)
       .output(outputPath)
       .on('start', (cmd) => console.log(`  → Burning subtitles (lowMemory: ${lowMemory})...`))
       .on('end', resolve)
