@@ -671,37 +671,44 @@ Return JSON:
     
     console.log(`[extractSceneKeywords] Got keywords for ${sceneKeywords.length} scenes`);
     
-    // CRITICAL: Calculate timing for each scene using WORD-LEVEL captions
-    // This ensures proper synchronization even with word-split scenes
+    // ========== VERSION 5.0: TIME-FIRST SCENE ASSIGNMENT ==========
+    // Key insight: Instead of mapping TEXT -> TIME, we map TIME -> TEXT
+    // This guarantees each scene's image matches what's being narrated during that time window
     const scenes: StoryScene[] = [];
     const totalDuration = captions[captions.length - 1]?.end || 45;
+    const sceneDuration = totalDuration / sceneTexts.length;
     
-    // Map each scene to its word range for timing
+    console.log(`[extractSceneKeywords] Time-based assignment: ${sceneDuration.toFixed(2)}s per scene`);
+    
     for (let i = 0; i < sceneTexts.length; i++) {
-      const sceneText = sceneTexts[i];
-      const sceneWordCount = sceneText.split(/\s+/).filter(w => w.length > 0).length;
+      const startTime = i * sceneDuration;
+      const endTime = (i + 1) * sceneDuration;
       
-      // Calculate word position in the full story
-      const wordsBeforeThisScene = sceneTexts.slice(0, i).reduce((sum, t) => 
-        sum + t.split(/\s+/).filter(w => w.length > 0).length, 0
-      );
+      // Find which words are actually spoken during this time window
+      // This ensures the scene text represents what's being narrated
+      const wordsInTimeWindow = captions.filter(cap => 
+        cap.start < endTime && cap.end > startTime
+      ).map(cap => cap.word);
       
-      // Find timing from captions - with bounds checking
-      const startWordIdx = Math.min(wordsBeforeThisScene, captions.length - 1);
-      const endWordIdx = Math.min(wordsBeforeThisScene + sceneWordCount - 1, captions.length - 1);
-      
-      const startTime = captions[startWordIdx]?.start ?? (i * totalDuration / sceneTexts.length);
-      const endTime = captions[endWordIdx]?.end ?? ((i + 1) * totalDuration / sceneTexts.length);
+      // Use the time-window words as scene text (for better image matching)
+      // Fall back to original scene text if no words found
+      const timeBasedText = wordsInTimeWindow.length > 0 
+        ? wordsInTimeWindow.join(' ').trim()
+        : sceneTexts[i];
       
       scenes.push({
-        text: sceneText,
+        text: timeBasedText,
         startTime: startTime,
-        endTime: Math.max(endTime, startTime + 0.5), // Ensure at least 0.5s duration
+        endTime: endTime,
         keywords: sceneKeywords[i]?.keywords || VISUAL_KEYWORDS[visualPreset] || ["dark atmospheric"],
       });
+      
+      if (i < 3 || i >= sceneTexts.length - 2) {
+        console.log(`[extractSceneKeywords] Scene ${i + 1}: ${startTime.toFixed(1)}s-${endTime.toFixed(1)}s = "${timeBasedText.substring(0, 40)}..."`);
+      }
     }
     
-    console.log(`[extractSceneKeywords] Final: ${scenes.length} scenes with timing`);
+    console.log(`[extractSceneKeywords] Final: ${scenes.length} scenes with TIME-SYNCED assignment`);
     return scenes;
   } catch (error) {
     console.error("Scene extraction error:", error);
@@ -1129,6 +1136,9 @@ Return JSON:
 /**
  * Create Scene Visual Contracts - converts prose → literal frame descriptions
  * This is the critical layer that makes images follow the story
+ * 
+ * BATCHED to avoid output token truncation - GPT-4o-mini has limited output tokens
+ * Processing 8 scenes at a time ensures we get complete contracts for all scenes
  */
 export async function createSceneVisualContracts(
   openaiKey: string,
@@ -1136,26 +1146,110 @@ export async function createSceneVisualContracts(
   storyAnchor: StoryAnchor,
   visualBeats: VisualBeat[]
 ): Promise<SceneVisualContract[]> {
-  try {
-    const sceneData = scenes.map((s, i) => ({
-      index: i,
-      text: s.text,
-      beat: visualBeats[i]?.visualBeat || "atmospheric moment",
-      mood: visualBeats[i]?.moodLevel || 5
-    }));
+  const allContracts: SceneVisualContract[] = new Array(scenes.length);
+  
+  // Process in batches of 8 to avoid output token truncation
+  const BATCH_SIZE = 8;
+  const totalBatches = Math.ceil(scenes.length / BATCH_SIZE);
+  
+  console.log(`[VISUAL CONTRACTS] Processing ${scenes.length} scenes in ${totalBatches} batches of ${BATCH_SIZE}`);
+  
+  for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+    const startIdx = batchIndex * BATCH_SIZE;
+    const endIdx = Math.min(startIdx + BATCH_SIZE, scenes.length);
+    const batchScenes = scenes.slice(startIdx, endIdx);
     
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${openaiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `You are a storyboard artist converting story scenes into LITERAL visual frames.
+    console.log(`[VISUAL CONTRACTS] Batch ${batchIndex + 1}/${totalBatches}: scenes ${startIdx + 1}-${endIdx}`);
+    
+    try {
+      const batchContracts = await createVisualContractsBatch(
+        openaiKey,
+        batchScenes,
+        storyAnchor,
+        visualBeats.slice(startIdx, endIdx),
+        startIdx,
+        scenes.length
+      );
+      
+      // Store contracts in correct positions
+      for (let i = 0; i < batchContracts.length; i++) {
+        allContracts[startIdx + i] = batchContracts[i];
+      }
+      
+      console.log(`[VISUAL CONTRACTS] Batch ${batchIndex + 1} complete: got ${batchContracts.length} contracts`);
+      
+    } catch (batchError) {
+      console.error(`[VISUAL CONTRACTS] Batch ${batchIndex + 1} failed:`, batchError);
+      // Create fallback contracts for this batch
+      const baseLocation = storyAnchor.environment.split(",")[0] || "dark room";
+      for (let i = 0; i < batchScenes.length; i++) {
+        const sceneIdx = startIdx + i;
+        allContracts[sceneIdx] = {
+          sceneIndex: sceneIdx,
+          location: baseLocation,
+          characterPose: "standing, tense posture",
+          facialExpression: "fear, wide eyes",
+          visibleObjects: ["walls", "shadows"],
+          supernaturalElement: sceneIdx > 1 ? "unnatural shadows" : null,
+          cameraDistance: sceneIdx === 0 ? "wide" : "medium" as const,
+          lightingSource: "dim ambient light",
+          actionFrozen: batchScenes[i].text.substring(0, 50),
+          forbiddenElements: ["stairs", "hallway", "extra people", "forest", "outdoors"],
+          continuityFromPrev: sceneIdx === 0 ? "establishing shot" : `same ${baseLocation} as scene 1`,
+          evidenceRule: `scene must clearly show ${baseLocation}`,
+        };
+      }
+    }
+    
+    // Small delay between batches to avoid rate limits
+    if (batchIndex < totalBatches - 1) {
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
+  
+  // Log all contracts for debugging
+  console.log(`[VISUAL CONTRACTS] Created ${allContracts.filter(c => c).length}/${scenes.length} contracts total`);
+  allContracts.forEach((c, i) => {
+    if (c) {
+      console.log(`[VISUAL CONTRACTS] Scene ${i + 1}: location="${c.location}", pose="${c.characterPose}", action="${c.actionFrozen?.substring(0, 50)}"`);
+    } else {
+      console.log(`[VISUAL CONTRACTS] Scene ${i + 1}: MISSING CONTRACT!`);
+    }
+  });
+  
+  return allContracts;
+}
+
+/**
+ * Create visual contracts for a batch of scenes
+ */
+async function createVisualContractsBatch(
+  openaiKey: string,
+  scenes: StoryScene[],
+  storyAnchor: StoryAnchor,
+  visualBeats: VisualBeat[],
+  startIndex: number,
+  totalScenes: number
+): Promise<SceneVisualContract[]> {
+  const sceneData = scenes.map((s, i) => ({
+    index: startIndex + i,
+    text: s.text,
+    beat: visualBeats[i]?.visualBeat || "atmospheric moment",
+    mood: visualBeats[i]?.moodLevel || 5
+  }));
+  
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${openaiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `You are a storyboard artist converting story scenes into LITERAL visual frames.
 
 ENVIRONMENT CONTEXT:
 ${storyAnchor.environment}
@@ -1195,54 +1289,35 @@ CRITICAL RULES FOR forbiddenElements:
 - Default forbid list: stairs, hallway, extra people (unless story needs them)
 
 Return JSON array: {"contracts": [...]}`,
-          },
-          {
-            role: "user",
-            content: `Convert these scenes to visual contracts:\n\n${sceneData.map(s => 
-              `Scene ${s.index + 1} (mood ${s.mood}/10):\nText: "${s.text}"\nBeat: ${s.beat}`
-            ).join("\n\n")}`,
-          },
-        ],
-        temperature: 0.4, // Lower temperature for more literal/consistent output
-        response_format: { type: "json_object" },
-      }),
-    });
+        },
+        {
+          role: "user",
+          content: `Convert these ${scenes.length} scenes (${startIndex + 1}-${startIndex + scenes.length} of ${totalScenes}) to visual contracts:\n\n${sceneData.map(s => 
+            `Scene ${s.index + 1} (mood ${s.mood}/10):\nText: "${s.text}"\nBeat: ${s.beat}`
+          ).join("\n\n")}`,
+        },
+      ],
+      temperature: 0.4, // Lower temperature for more literal/consistent output
+      response_format: { type: "json_object" },
+      max_tokens: 4000, // Ensure we get complete response
+    }),
+  });
 
-    if (!response.ok) {
-      throw new Error("Failed to create visual contracts");
-    }
-
-    const data = await response.json();
-    const parsed = JSON.parse(data.choices[0].message.content);
-    const contracts = parsed.contracts || parsed.scenes || (Array.isArray(parsed) ? parsed : []);
-    
-    console.log(`[VISUAL CONTRACTS] Created ${contracts.length} contracts`);
-    
-    // Log ALL contracts for debugging to see if they're unique
-    contracts.forEach((c: any, i: number) => {
-      console.log(`[VISUAL CONTRACTS] Scene ${i + 1}: location="${c.location}", pose="${c.characterPose}", action="${c.actionFrozen?.substring(0, 50)}"`);
-    });
-    
-    return contracts;
-  } catch (error) {
-    console.error("Failed to create visual contracts:", error);
-    // Fallback: create basic contracts from scene text
-    const baseLocation = storyAnchor.environment.split(",")[0] || "dark room";
-    return scenes.map((scene, i) => ({
-      sceneIndex: i,
-      location: baseLocation,
-      characterPose: "standing, tense posture",
-      facialExpression: "fear, wide eyes",
-      visibleObjects: ["walls", "shadows"],
-      supernaturalElement: i > 1 ? "unnatural shadows" : null,
-      cameraDistance: i === 0 ? "wide" : "medium" as const,
-      lightingSource: "dim ambient light",
-      actionFrozen: scene.text.substring(0, 50),
-      forbiddenElements: ["stairs", "hallway", "extra people", "forest", "outdoors"],
-      continuityFromPrev: i === 0 ? "establishing shot" : `same ${baseLocation} as scene 1`,
-      evidenceRule: `scene must clearly show ${baseLocation}`,
-    }));
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to create visual contracts: ${response.status} ${errorText}`);
   }
+
+  const data = await response.json();
+  const parsed = JSON.parse(data.choices[0].message.content);
+  const contracts = parsed.contracts || parsed.scenes || (Array.isArray(parsed) ? parsed : []);
+  
+  // Ensure we got contracts for all scenes in the batch
+  if (contracts.length < scenes.length) {
+    console.warn(`[VISUAL CONTRACTS] Batch only returned ${contracts.length}/${scenes.length} contracts`);
+  }
+  
+  return contracts;
 }
 
 // =====================================================

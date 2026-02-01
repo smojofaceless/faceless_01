@@ -342,21 +342,48 @@ export const FORBIDDEN_STYLE_TERMS = [
 // =====================================================
 
 // Safer than stale merges: always fetch fresh job before writing
+// Includes retry logic for transient database failures
 export async function getFreshJob(supabase: any, jobId: string): Promise<any> {
-  const { data, error } = await supabase.from("jobs").select("*").eq("id", jobId).single();
-  if (error || !data) throw new Error(`getFreshJob failed: ${error?.message || "not found"}`);
-  return data;
+  let lastError: any = null;
+  
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const { data, error } = await supabase.from("jobs").select("*").eq("id", jobId).single();
+    
+    if (data) {
+      return data;
+    }
+    
+    lastError = error;
+    if (attempt < 3) {
+      console.log(`[getFreshJob] Attempt ${attempt} failed, retrying in 300ms...`);
+      await new Promise(r => setTimeout(r, 300));
+    }
+  }
+  
+  throw new Error(`getFreshJob failed: ${lastError?.message || "not found"}`);
 }
 
 export async function updateJob(supabase: any, jobId: string, updates: any): Promise<void> {
-  const { error } = await supabase
-    .from("jobs")
-    .update(updates)
-    .eq("id", jobId);
-  
-  if (error) {
-    console.error("[updateJob] Failed:", error);
-    throw new Error(`updateJob failed: ${error.message || JSON.stringify(error)}`);
+  try {
+    const { error } = await supabase
+      .from("jobs")
+      .update(updates)
+      .eq("id", jobId);
+    
+    if (error) {
+      console.error("[updateJob] Failed:", error);
+      throw new Error(`updateJob failed: ${error.message || JSON.stringify(error)}`);
+    }
+  } catch (networkError: any) {
+    // Handle network errors (e.g., edge function being killed, timeout)
+    // These often return HTML error pages from Cloudflare
+    const errorStr = String(networkError);
+    if (errorStr.includes('<html>') || errorStr.includes('500') || errorStr.includes('timeout')) {
+      console.error("[updateJob] Network/timeout error (edge function may be terminating):", errorStr.substring(0, 200));
+      // Re-throw with cleaner message
+      throw new Error(`updateJob network error - edge function may have timed out`);
+    }
+    throw networkError;
   }
 }
 

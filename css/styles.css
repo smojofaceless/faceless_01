@@ -266,3 +266,10 @@ input[type="radio"] {
         2px 2px 0 #000;
     text-transform: uppercase;
 }
+
+/* =====================================================
+   TOAST NOTIFICATIONS
+   ===================================================== */
+.copy-toast {
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}

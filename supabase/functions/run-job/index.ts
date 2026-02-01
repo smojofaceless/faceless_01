@@ -51,12 +51,28 @@ serve(async (req) => {
       throw new Error("job_id is required");
     }
 
-    // Fetch job
-    const { data: job, error: fetchError } = await supabase
-      .from("jobs")
-      .select("*")
-      .eq("id", job_id)
-      .single();
+    // Fetch job with retry (database can have transient failures)
+    let job: any = null;
+    let fetchError: any = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const result = await supabase
+        .from("jobs")
+        .select("*")
+        .eq("id", job_id)
+        .single();
+      
+      if (result.data) {
+        job = result.data;
+        fetchError = null;
+        break;
+      }
+      
+      fetchError = result.error;
+      if (attempt < 3) {
+        console.log(`[RUN-JOB] Job fetch attempt ${attempt} failed, retrying in 500ms...`);
+        await new Promise(r => setTimeout(r, 500));
+      }
+    }
 
     if (fetchError || !job) {
       throw new Error(`Job not found: ${job_id}`);

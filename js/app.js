@@ -1263,12 +1263,18 @@ function toggleScenesView() {
     const gallery = document.getElementById('result-scenes-gallery');
     const detailed = document.getElementById('result-scenes-detailed');
     const btn = document.getElementById('scenes-view-toggle');
+    const copyAllBtn = document.getElementById('copy-all-scenes-btn');
     
     if (gallery && detailed && btn) {
         const showingGallery = !gallery.classList.contains('hidden');
         gallery.classList.toggle('hidden', showingGallery);
         detailed.classList.toggle('hidden', !showingGallery);
         btn.textContent = showingGallery ? '🖼️ Show Gallery' : '📋 Show Details';
+        
+        // Show/hide "Copy All" button when in detailed view
+        if (copyAllBtn) {
+            copyAllBtn.classList.toggle('hidden', !showingGallery);
+        }
     }
 }
 
@@ -1587,19 +1593,53 @@ function displayFinalResult(data) {
         detailed.innerHTML = summaryHtml + data.scenes.map((scene, i) => {
             const url = scene.videoUrl || scene.storage_path || '';
             const text = scene.text || scene.scene_text || 'No text';
-            const prompt = scene.dalle_prompt || scene.prompt || '';
-            const model = scene.image_model || scene.source || 'Unknown';
+            const prompt = scene.dallePrompt || scene.dalle_prompt || scene.image_details?.prompt || scene.prompt || '';
+            const model = scene.image_details?.model || scene.image_model || scene.source || 'Unknown';
+            const artStyle = scene.image_details?.art_style || scene.artStyle || 'Unknown';
+            const visualBeat = scene.image_details?.visual_beat || scene.visualBeat || '';
+            const moodLevel = scene.image_details?.mood_level || scene.moodLevel || '';
+            const cameraAngle = scene.image_details?.camera_angle || scene.cameraAngle || '';
+            const characterDesc = scene.image_details?.character_description || '';
+            const continuityRules = scene.image_details?.continuity_rules || '';
+            const generatedAt = scene.image_details?.generated_at || '';
+            const keywords = scene.keywords || [];
             const startTime = scene.startTime !== undefined ? formatTime(scene.startTime) : '?';
             const endTime = scene.endTime !== undefined ? formatTime(scene.endTime) : '?';
+            const startTimeSec = scene.startTime !== undefined ? scene.startTime.toFixed(2) : '?';
+            const endTimeSec = scene.endTime !== undefined ? scene.endTime.toFixed(2) : '?';
+            const duration = (scene.endTime !== undefined && scene.startTime !== undefined) 
+                ? (scene.endTime - scene.startTime).toFixed(2) 
+                : '?';
             const wordCount = (text || '').split(/\s+/).filter(w => w).length;
             const isFragment = wordCount < 8;
             const borderColor = isFragment ? 'border-yellow-700' : 'border-gray-700';
             const bgColor = isFragment ? 'bg-yellow-900/20' : 'bg-gray-900/50';
             
+            // Build debug info for copy button
+            const debugInfo = {
+                scene_number: i + 1,
+                timestamp: `${startTimeSec}s - ${endTimeSec}s`,
+                duration_sec: duration,
+                word_count: wordCount,
+                narration: text,
+                keywords: keywords,
+                image_url: url,
+                prompt: prompt,
+                model: model,
+                art_style: artStyle,
+                visual_beat: visualBeat,
+                mood_level: moodLevel,
+                camera_angle: cameraAngle,
+                character_description: characterDesc,
+                continuity_rules: continuityRules,
+                generated_at: generatedAt
+            };
+            const debugJson = JSON.stringify(debugInfo, null, 2);
+            
             return `
                 <div class="${bgColor} rounded-lg p-3 border ${borderColor}">
                     <div class="flex gap-3">
-                        <div class="w-16 h-24 flex-shrink-0 bg-gray-800 rounded overflow-hidden">
+                        <div class="w-20 h-28 flex-shrink-0 bg-gray-800 rounded overflow-hidden cursor-pointer" onclick="showImageModal('${escapeHtml(url)}')">
                             ${url 
                                 ? `<img src="${escapeHtml(url)}" class="w-full h-full object-cover" loading="lazy" onerror="this.src=''">`
                                 : `<div class="flex items-center justify-center h-full text-gray-600 text-xs">No img</div>`
@@ -1611,16 +1651,48 @@ function displayFinalResult(data) {
                                 <span class="text-xs text-gray-500">${startTime} - ${endTime}</span>
                                 <span class="text-xs text-purple-400">${escapeHtml(model)}</span>
                                 <span class="text-xs ${isFragment ? 'text-yellow-400 font-bold' : 'text-gray-500'}">${wordCount} words${isFragment ? ' ⚠️' : ''}</span>
+                                <button onclick="copySceneDebugInfo(${i})" class="ml-auto text-xs bg-gray-700 hover:bg-gray-600 px-2 py-0.5 rounded text-gray-300 hover:text-white transition-colors" title="Copy debug info">
+                                    📋 Copy
+                                </button>
                             </div>
                             <p class="text-xs ${isFragment ? 'text-yellow-300' : 'text-gray-300'} mb-2 line-clamp-2">${escapeHtml(text)}</p>
-                            ${prompt ? `
-                                <details class="text-xs">
-                                    <summary class="text-purple-400 cursor-pointer hover:text-purple-300">View Prompt</summary>
-                                    <p class="mt-1 text-gray-500 text-xs bg-gray-800 p-2 rounded max-h-24 overflow-y-auto">${escapeHtml(prompt.substring(0, 500))}${prompt.length > 500 ? '...' : ''}</p>
-                                </details>
-                            ` : ''}
+                            
+                            <!-- Expandable Details Section -->
+                            <details class="text-xs">
+                                <summary class="text-purple-400 cursor-pointer hover:text-purple-300 select-none">📝 View Generation Details</summary>
+                                <div class="mt-2 space-y-2 bg-gray-800/70 rounded p-2">
+                                    ${artStyle ? `<div><span class="text-gray-500">Art Style:</span> <span class="text-gray-300">${escapeHtml(artStyle)}</span></div>` : ''}
+                                    ${cameraAngle ? `<div><span class="text-gray-500">Camera:</span> <span class="text-gray-300">${escapeHtml(cameraAngle)}</span></div>` : ''}
+                                    ${moodLevel ? `<div><span class="text-gray-500">Mood Level:</span> <span class="text-gray-300">${moodLevel}/10</span></div>` : ''}
+                                    ${keywords.length > 0 ? `<div><span class="text-gray-500">Keywords:</span> <span class="text-blue-300">${keywords.map(k => escapeHtml(k)).join(', ')}</span></div>` : ''}
+                                    ${visualBeat ? `
+                                        <div>
+                                            <span class="text-gray-500">Visual Beat:</span>
+                                            <p class="text-gray-400 mt-1 text-xs italic">"${escapeHtml(visualBeat.substring(0, 200))}${visualBeat.length > 200 ? '...' : ''}"</p>
+                                        </div>
+                                    ` : ''}
+                                    ${characterDesc ? `
+                                        <div>
+                                            <span class="text-gray-500">Character:</span>
+                                            <p class="text-gray-400 mt-1 text-xs">${escapeHtml(characterDesc.substring(0, 150))}${characterDesc.length > 150 ? '...' : ''}</p>
+                                        </div>
+                                    ` : ''}
+                                    ${prompt ? `
+                                        <div class="border-t border-gray-700 pt-2 mt-2">
+                                            <div class="flex items-center justify-between mb-1">
+                                                <span class="text-gray-500 font-semibold">🎨 Image Prompt:</span>
+                                                <button onclick="copyToClipboard(\`${escapeHtml(prompt.replace(/`/g, '\\`').replace(/\\/g, '\\\\'))}\`)" class="text-xs bg-gray-700 hover:bg-gray-600 px-1.5 py-0.5 rounded text-gray-400 hover:text-white">Copy</button>
+                                            </div>
+                                            <p class="text-green-300/80 text-xs bg-gray-900 p-2 rounded max-h-32 overflow-y-auto whitespace-pre-wrap font-mono">${escapeHtml(prompt)}</p>
+                                        </div>
+                                    ` : '<p class="text-gray-600 italic">No prompt available</p>'}
+                                    ${generatedAt ? `<div class="text-xs text-gray-600 mt-1">Generated: ${new Date(generatedAt).toLocaleString()}</div>` : ''}
+                                </div>
+                            </details>
                         </div>
                     </div>
+                    <!-- Hidden data for copy function -->
+                    <script type="application/json" class="scene-debug-data" data-scene="${i}">${debugJson}</script>
                 </div>
             `;
         }).join('');

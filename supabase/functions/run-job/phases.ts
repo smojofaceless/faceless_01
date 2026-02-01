@@ -21,6 +21,12 @@ import {
 
 import { generateStory, buildStoryPromptForDisplay, extractSceneKeywordsForPreview, extractSceneKeywords, createStoryAnchor, createVisualBeats, createSceneVisualContracts, buildFinalDallePrompt, buildFluxPrompt } from "./openai.ts";
 import { generateAudio } from "./audio.ts";
+import {
+  getThemeGuidance,
+  storeAndAnalyzeStory,
+  getUniquenessConfig,
+  type ThemeGuidance,
+} from "./stories.ts";
 import { searchPexelsForKeywords, searchVideosForScenes } from "./pexels.ts";
 import { generateImage, getLastReplicateInputs, uploadRemoteImageToStorage } from "./images.ts";
 import { 
@@ -54,13 +60,48 @@ export async function runPreviewMode(
   
   console.log(`[PREVIEW] Job vibe_preset: "${job.vibe_preset}"`);
   console.log(`Generating story (${job.length_preset}s preset, ${sceneCount} scenes, ${visualPreset} environment, vibe: ${job.vibe_preset})...`);
+  
+  // Get theme guidance for diversity (NO retries, NO extra API cost)
+  const uniquenessConfig = await getUniquenessConfig(supabase);
+  let themeGuidance: ThemeGuidance | undefined;
+  
+  if (uniquenessConfig.uniqueness_enabled) {
+    console.log(`[PREVIEW] Theme guidance enabled - fetching recent themes...`);
+    themeGuidance = await getThemeGuidance(supabase, visualPreset);
+    console.log(`[PREVIEW] Theme direction: ${themeGuidance.bucket} / ${themeGuidance.suggestedTheme}`);
+  }
+  
+  // Generate story with theme guidance (SINGLE API call)
   const storyData = await generateStory(
     openaiKey,
     job.vibe_preset,
     job.length_preset,
-    visualPreset,  // Pass visual environment for story context
-    artStyle       // Pass art style for visual consistency
+    visualPreset,
+    artStyle,
+    themeGuidance // Pass theme guidance to influence the prompt
   );
+  
+  // Store and analyze the story (for tracking, not rejection)
+  let storyId: string | null = null;
+  let similarityInfo: { similarityScore: number; mostSimilarTitle: string | null; isLikelyUnique: boolean } | null = null;
+  
+  if (uniquenessConfig.store_all_stories) {
+    const result = await storeAndAnalyzeStory(supabase, storyData, {
+      vibe_preset: job.vibe_preset,
+      length_preset: job.length_preset,
+      visual_preset: visualPreset,
+      art_style: artStyle,
+      job_id: job_id,
+    }, themeGuidance);
+    
+    storyId = result.storyId;
+    similarityInfo = {
+      similarityScore: result.similarityScore,
+      mostSimilarTitle: result.mostSimilarTitle,
+      isLikelyUnique: result.isLikelyUnique,
+    };
+    console.log(`[PREVIEW] Story stored: ${storyId}, similarity: ${(result.similarityScore * 100).toFixed(1)}%`);
+  }
 
   const wordCount = storyData.story.split(/\s+/).length;
   const estimatedDuration = Math.round((wordCount / 150) * 60);
@@ -157,15 +198,46 @@ export async function runPreviewMode(
         // Model info
         story_model: "gpt-4o-mini",
         story_temperature: 0.9,
+        // Story tracking info (NO retries - cost-effective!)
+        story_id: storyId,
+        // Theme guidance for diversity
+        theme_guidance: themeGuidance ? {
+          bucket: themeGuidance.bucket,
+          suggested_theme: themeGuidance.suggestedTheme,
+          suggested_setting: themeGuidance.suggestedSetting,
+          recent_themes_avoided: themeGuidance.recentThemesAvoided,
+        } : null,
+        // Similarity tracking (for analytics, not rejection)
+        similarity: similarityInfo ? {
+          score: similarityInfo.similarityScore,
+          most_similar_title: similarityInfo.mostSimilarTitle,
+          is_likely_unique: similarityInfo.isLikelyUnique,
+        } : null,
+      },
+      // SCENE ANALYSIS - helps user understand scene distribution
+      scene_analysis: {
+        total_scenes: estimatedScenes.length,
+        total_words: wordCount,
+        avg_words_per_scene: Math.round(wordCount / estimatedScenes.length),
+        recommended_max_scenes: Math.floor(wordCount / 15),
+        sentence_count: sentences.length,
+        distribution_mode: sentences.length >= estimatedScenes.length ? "sentence-group" : "sentence-stretch",
+        warnings: (() => {
+          const warnings: string[] = [];
+          const avgWords = wordCount / estimatedScenes.length;
+          if (avgWords < 8) warnings.push(`⚠️ ${estimatedScenes.length} scenes have < 8 words avg (word-level fragments)`);
+          if (estimatedScenes.length > Math.floor(wordCount / 15)) warnings.push(`⚠️ Too many scenes (${estimatedScenes.length}) for story length (~${wordCount} words). Recommend ≤ ${Math.floor(wordCount / 15)} scenes.`);
+          return warnings;
+        })(),
       },
       // DEBUG INFO - will appear in browser console
       _debug: {
-        version: "v3.2",
+        version: "v4.0",
         build: BUILD_VERSION,
         requested_scenes: sceneCount,
         actual_scenes_returned: estimatedScenes.length,
         sentence_count: sentences.length,
-        algorithm: sentences.length >= sceneCount ? "proportional" : "word-split",
+        algorithm: sentences.length >= estimatedScenes.length ? "sentence-group" : "sentence-stretch",
         first_scene_text: estimatedScenes[0]?.text?.substring(0, 80),
         last_scene_text: estimatedScenes[estimatedScenes.length - 1]?.text?.substring(0, 80),
         empty_scene_count: estimatedScenes.filter(s => !s.text || s.text.trim() === '').length,
@@ -176,6 +248,9 @@ export async function runPreviewMode(
         keywords: s.keywords,
         startTime: s.startTime,
         endTime: s.endTime,
+        word_count: s.text.split(/\s+/).length,
+        // Image prompt will be populated after image generation
+        image_prompt: null, // Placeholder - actual prompt shown after generation
       })),
     }),
     {
@@ -204,13 +279,45 @@ export async function runAudioPhase(
     storyData = { title: job.title, story: job.story_text };
   } else {
     console.log(`[AUDIO] Generating new story (${job.length_preset}s preset)...`);
-    storyData = await generateStory(
-      openaiKey, 
-      job.vibe_preset, 
+    
+    const uniquenessConfig = await getUniquenessConfig(supabase);
+    const visualPreset = job.visual_preset || "forest";
+    const artStyle = jobMeta.art_style || "cinematic-dark";
+    
+    // Get theme guidance for diversity (NO retries)
+    let themeGuidance: ThemeGuidance | undefined;
+    if (uniquenessConfig.uniqueness_enabled) {
+      console.log(`[AUDIO] Getting theme guidance for diversity...`);
+      themeGuidance = await getThemeGuidance(supabase, visualPreset);
+    }
+    
+    // Generate story with theme guidance (SINGLE API call)
+    const generatedStory = await generateStory(
+      openaiKey,
+      job.vibe_preset,
       job.length_preset,
-      job.visual_preset || "forest",
-      jobMeta.art_style || "cinematic-dark"
+      visualPreset,
+      artStyle,
+      themeGuidance
     );
+    
+    storyData = {
+      title: generatedStory.title,
+      story: generatedStory.story,
+    };
+    
+    // Store and analyze (for tracking, not rejection)
+    if (uniquenessConfig.store_all_stories) {
+      const result = await storeAndAnalyzeStory(supabase, generatedStory, {
+        vibe_preset: job.vibe_preset,
+        length_preset: job.length_preset,
+        visual_preset: visualPreset,
+        art_style: artStyle,
+        job_id: job_id,
+      }, themeGuidance);
+      console.log(`[AUDIO] Story stored, similarity: ${(result.similarityScore * 100).toFixed(1)}%`);
+    }
+    
     await updateJob(supabase, job_id, {
       progress: 25,
       title: storyData.title,
@@ -677,8 +784,18 @@ export async function runImagesPhase(
                   .maybeSingle();
                 
                 if (!existing) {
-                  // Use OUR scene data, not the parallel server's potentially corrupted data
+                  // Use OUR scene data for core fields, but prefer parallel server meta for generated fields
                   const scene = scenes[sceneIndex];
+                  const beat = visualBeats[sceneIndex] || {
+                    sceneIndex: sceneIndex,
+                    visualBeat: scene.text.substring(0, 100),
+                    cameraAngle: "medium shot",
+                    focus: "the atmosphere",
+                    moodLevel: 5,
+                  };
+                  
+                  // Parallel server returns the prompt as dalle_prompt in meta
+                  const savedPrompt = img.meta?.dalle_prompt || '';
                   
                   await supabase.from("job_assets").insert({
                     job_id: job_id,
@@ -688,12 +805,20 @@ export async function runImagesPhase(
                     meta: {
                       scene_index: sceneIndex,
                       scene_text: scene.text,
+                      keywords: img.meta?.keywords || scene.keywords || [],
                       start_time: scene.startTime,
                       end_time: scene.endTime,
                       source: "parallel",
-                      image_model: img.meta?.image_model || "unknown",
+                      image_model: img.meta?.image_model || resolvedImageModel || "unknown",
+                      art_style: img.meta?.art_style || styleConfig.name || "Unknown",
+                      dalle_prompt: savedPrompt,
+                      visual_beat: img.meta?.visual_beat || beat.visualBeat || null,
+                      mood_level: img.meta?.mood_level || beat.moodLevel || null,
+                      camera_angle: img.meta?.camera_angle || beat.cameraAngle || null,
                       continuity_rules: storyAnchor.continuityRules || null,
                       character_description: storyAnchor.characterDescription || null,
+                      generated_at: img.meta?.generated_at || new Date().toISOString(),
+                      is_permanent: true, // Parallel images are already uploaded to storage
                     },
                   });
                   console.log(`[IMAGES] ✓ Saved parallel image for scene ${sceneIndex + 1}/${scenes.length}`);
@@ -789,8 +914,12 @@ export async function runImagesPhase(
             index: i,
             prompt: prompt,
             text: scene.text,
+            keywords: scene.keywords || [],
             start_time: scene.startTime,
             end_time: scene.endTime,
+            visual_beat: beat.visualBeat || null,
+            mood_level: beat.moodLevel || null,
+            camera_angle: beat.cameraAngle || null,
           };
         });
         
@@ -949,10 +1078,11 @@ export async function runImagesPhase(
       // Set to false in job meta if you want automatic fallback to DALL-E 3
       const strictImageModel = jobMeta.strict_image_model ?? true;
       
-      // TIMEOUT WRAPPER: Edge functions can timeout at ~60s
-      // GPT-4o images can take 50-60+ seconds, so we need max possible timeout
-      // Set to 55s to leave 5s buffer for DB saves and cleanup
-      const IMAGE_TIMEOUT_MS = 55 * 1000; // 55 seconds - max safe for edge functions
+      // TIMEOUT WRAPPER: Edge functions can timeout at ~60s (free) or ~150s (Pro)
+      // GPT-4o images can take 30-50+ seconds
+      // Set to 45s to leave 15s buffer for DB saves, error handling, and cleanup
+      // This prevents the edge function from being killed while saving results
+      const IMAGE_TIMEOUT_MS = 45 * 1000; // 45 seconds - safe buffer for edge functions
       
       let imageUrl: string | null = null;
       try {
@@ -1007,19 +1137,26 @@ export async function runImagesPhase(
         // The job will be retried on the next poll cycle
         const isTimeoutError = errorMessage.includes('timed out') || errorMessage.includes('timeout');
         
-        // Log the error to job meta for UI visibility
-        await updateJobMeta(supabase, job_id, (meta) => ({
-          ...meta,
-          generation_logs: [
-            ...(meta.generation_logs || []),
-            `[${new Date().toISOString()}] [ERROR] Scene ${i + 1}: ${errorMessage.substring(0, 200)}`
-          ],
-          // Release lock if timeout - allow next poll to retry
-          ...(isTimeoutError ? {
-            images_phase_running: false,
-            images_phase_lease_until: new Date(0).toISOString(),
-          } : {})
-        }));
+        // Try to log the error and release lock - use try/catch to prevent cascade failures
+        // If this fails (e.g., edge function being killed), the lease will naturally expire
+        try {
+          await updateJobMeta(supabase, job_id, (meta) => ({
+            ...meta,
+            generation_logs: [
+              ...(meta.generation_logs || []),
+              `[${new Date().toISOString()}] [ERROR] Scene ${i + 1}: ${errorMessage.substring(0, 200)}`
+            ],
+            // Release lock if timeout - allow next poll to retry
+            ...(isTimeoutError ? {
+              images_phase_running: false,
+              images_phase_lease_until: new Date(0).toISOString(),
+            } : {})
+          }));
+        } catch (metaError) {
+          // Failed to update meta - log but don't throw
+          // The 75-second lease will naturally expire and allow retry
+          console.warn(`[IMAGES] Failed to update meta after error (lease will expire):`, metaError);
+        }
         
         // If timeout, return immediately - let next poll cycle retry
         if (isTimeoutError) {

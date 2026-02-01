@@ -34,6 +34,8 @@ function toScene(asset: any) {
   // Always pick the best available URL (public_url first, then storage_path)
   const url = asset.public_url || asset.storage_path || "";
   const index = asset.meta?.scene_index ?? 0;
+  const sceneText = asset.meta?.scene_text || "";
+  const wordCount = sceneText.split(/\s+/).filter((w: string) => w.length > 0).length;
 
   // Infer source from meta or asset type for correct image/video rendering
   const inferredSource =
@@ -44,12 +46,26 @@ function toScene(asset: any) {
 
   return {
     index,
-    text: asset.meta?.scene_text || "",
+    text: sceneText,
+    word_count: wordCount,
     keywords: asset.meta?.keywords || [],
     startTime: asset.meta?.start_time ?? 0,
     endTime: asset.meta?.end_time ?? 0,
     videoUrl: url,
     source: inferredSource,
+    // Image generation details (for "show details" view)
+    image_details: {
+      prompt: asset.meta?.dalle_prompt || null,
+      model: asset.meta?.image_model || null,
+      art_style: asset.meta?.art_style || null,
+      visual_beat: asset.meta?.visual_beat || null,
+      mood_level: asset.meta?.mood_level || null,
+      camera_angle: asset.meta?.camera_angle || null,
+      character_description: asset.meta?.character_description || null,
+      continuity_rules: asset.meta?.continuity_rules || null,
+      generated_at: asset.meta?.generated_at || null,
+    },
+    // Legacy fields for backward compatibility
     dallePrompt: asset.meta?.dalle_prompt || null,
     visualBeat: asset.meta?.visual_beat || null,
     moodLevel: asset.meta?.mood_level || null,
@@ -133,6 +149,18 @@ serve(async (req) => {
 
       // Format scenes using helper and sort by scene_index (not created_at)
       const scenes = (sceneAssets || []).map(toScene).sort((a, b) => a.index - b.index);
+      
+      // Calculate scene analysis
+      const totalWords = job.story_word_count || (job.story_text?.split(/\s+/).length || 0);
+      const avgWordsPerScene = scenes.length > 0 ? Math.round(totalWords / scenes.length) : 0;
+      const recommendedMaxScenes = Math.floor(totalWords / 15);
+      const warnings: string[] = [];
+      if (avgWordsPerScene < 8 && scenes.length > 0) {
+        warnings.push(`⚠️ ${scenes.length} scenes have < 8 words avg (likely word-level fragments)`);
+      }
+      if (scenes.length > recommendedMaxScenes) {
+        warnings.push(`⚠️ Too many scenes (${scenes.length}) for story length (~${totalWords} words). Recommend ≤ ${recommendedMaxScenes} scenes.`);
+      }
 
       return new Response(
         JSON.stringify({
@@ -145,6 +173,13 @@ serve(async (req) => {
           duration_sec: job.duration_sec,
           video_url: assets?.public_url || assets?.storage_path || null,
           scenes: scenes,
+          scene_analysis: {
+            total_scenes: scenes.length,
+            total_words: totalWords,
+            avg_words_per_scene: avgWordsPerScene,
+            recommended_max_scenes: recommendedMaxScenes,
+            warnings: warnings,
+          },
           error: job.error,
           // Include debug info even for complete/failed jobs
           image_model: jobMeta.image_model || null,

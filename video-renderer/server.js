@@ -1194,67 +1194,103 @@ const MAX_PARALLEL_IMAGES = parseInt(process.env.MAX_PARALLEL_IMAGES || '4');
 /**
  * Generate a single image using OpenAI GPT-4o
  * COST: low=$0.016, medium=$0.063, high=$0.25 (portrait 1024x1536)
+ * Includes retry logic for transient errors (502, 503, timeouts)
  */
-async function generateGPT4oImage(prompt, sceneIndex) {
-  console.log(`  [GPT-4o] Scene ${sceneIndex + 1}: Generating...`);
+async function generateGPT4oImage(prompt, sceneIndex, retryCount = 0) {
+  const MAX_RETRIES = 3;
+  const BASE_DELAY_MS = 3000; // 3 seconds base delay for retries
   
-  const response = await axios.post('https://api.openai.com/v1/images/generations', {
-    model: 'gpt-image-1',
-    prompt: prompt,
-    n: 1,
-    size: '1024x1536',
-    quality: 'low',   // COST FIX: was 'high' ($0.25) → now 'low' ($0.016) = 94% savings!
-    output_format: 'webp',
-  }, {
-    headers: {
-      'Authorization': `Bearer ${OPENAI_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    timeout: 90000, // 90 second timeout per image
-  });
+  console.log(`  [GPT-4o] Scene ${sceneIndex + 1}: Generating...${retryCount > 0 ? ` (retry ${retryCount})` : ''}`);
   
-  const imageData = response.data?.data?.[0];
-  if (imageData?.b64_json) {
-    console.log(`  [GPT-4o] Scene ${sceneIndex + 1}: ✓ Generated (base64)`);
-    return `data:image/webp;base64,${imageData.b64_json}`;
+  try {
+    const response = await axios.post('https://api.openai.com/v1/images/generations', {
+      model: 'gpt-image-1',
+      prompt: prompt,
+      n: 1,
+      size: '1024x1536',
+      quality: 'low',   // COST FIX: was 'high' ($0.25) → now 'low' ($0.016) = 94% savings!
+      output_format: 'webp',
+    }, {
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 90000, // 90 second timeout per image
+    });
+    
+    const imageData = response.data?.data?.[0];
+    if (imageData?.b64_json) {
+      console.log(`  [GPT-4o] Scene ${sceneIndex + 1}: ✓ Generated (base64)`);
+      return `data:image/webp;base64,${imageData.b64_json}`;
+    }
+    if (imageData?.url) {
+      console.log(`  [GPT-4o] Scene ${sceneIndex + 1}: ✓ Generated (URL)`);
+      return imageData.url;
+    }
+    throw new Error('No image data in response');
+  } catch (error) {
+    const statusCode = error.response?.status;
+    const isRetryable = statusCode === 502 || statusCode === 503 || statusCode === 429 || 
+                        error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT';
+    
+    if (isRetryable && retryCount < MAX_RETRIES) {
+      const delayMs = BASE_DELAY_MS * Math.pow(2, retryCount); // Exponential backoff
+      console.log(`  [GPT-4o] Scene ${sceneIndex + 1}: ${statusCode || error.code} error, retrying in ${delayMs/1000}s...`);
+      await new Promise(r => setTimeout(r, delayMs));
+      return generateGPT4oImage(prompt, sceneIndex, retryCount + 1);
+    }
+    throw error;
   }
-  if (imageData?.url) {
-    console.log(`  [GPT-4o] Scene ${sceneIndex + 1}: ✓ Generated (URL)`);
-    return imageData.url;
-  }
-  throw new Error('No image data in response');
 }
 
 /**
  * Generate a single image using DALL-E 3
  * COST: standard=$0.08, hd=$0.12 (portrait 1024x1792)
+ * Includes retry logic for transient errors (502, 503, timeouts)
  */
-async function generateDallE3Image(prompt, sceneIndex) {
-  console.log(`  [DALL-E 3] Scene ${sceneIndex + 1}: Generating...`);
+async function generateDallE3Image(prompt, sceneIndex, retryCount = 0) {
+  const MAX_RETRIES = 3;
+  const BASE_DELAY_MS = 3000;
   
-  const response = await axios.post('https://api.openai.com/v1/images/generations', {
-    model: 'dall-e-3',
-    prompt: prompt,
-    n: 1,
-    size: '1024x1792',
-    quality: 'standard',  // COST FIX: was 'hd' ($0.12) → now 'standard' ($0.08) = 33% savings
-  }, {
-    headers: {
-      'Authorization': `Bearer ${OPENAI_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    timeout: 90000,
-  });
+  console.log(`  [DALL-E 3] Scene ${sceneIndex + 1}: Generating...${retryCount > 0 ? ` (retry ${retryCount})` : ''}`);
   
-  const imageData = response.data?.data?.[0];
-  if (imageData?.url) {
-    console.log(`  [DALL-E 3] Scene ${sceneIndex + 1}: ✓ Generated`);
-    return imageData.url;
+  try {
+    const response = await axios.post('https://api.openai.com/v1/images/generations', {
+      model: 'dall-e-3',
+      prompt: prompt,
+      n: 1,
+      size: '1024x1792',
+      quality: 'standard',  // COST FIX: was 'hd' ($0.12) → now 'standard' ($0.08) = 33% savings
+    }, {
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 90000,
+    });
+    
+    const imageData = response.data?.data?.[0];
+    if (imageData?.url) {
+      console.log(`  [DALL-E 3] Scene ${sceneIndex + 1}: ✓ Generated`);
+      return imageData.url;
+    }
+    if (imageData?.b64_json) {
+      return `data:image/png;base64,${imageData.b64_json}`;
+    }
+    throw new Error('No image data in response');
+  } catch (error) {
+    const statusCode = error.response?.status;
+    const isRetryable = statusCode === 502 || statusCode === 503 || statusCode === 429 || 
+                        error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT';
+    
+    if (isRetryable && retryCount < MAX_RETRIES) {
+      const delayMs = BASE_DELAY_MS * Math.pow(2, retryCount);
+      console.log(`  [DALL-E 3] Scene ${sceneIndex + 1}: ${statusCode || error.code} error, retrying in ${delayMs/1000}s...`);
+      await new Promise(r => setTimeout(r, delayMs));
+      return generateDallE3Image(prompt, sceneIndex, retryCount + 1);
+    }
+    throw error;
   }
-  if (imageData?.b64_json) {
-    return `data:image/png;base64,${imageData.b64_json}`;
-  }
-  throw new Error('No image data in response');
 }
 
 /**
@@ -1521,11 +1557,15 @@ async function processImageGeneration(imageJobId, supabaseJobId, scenes, model, 
             meta: {
               scene_index: sceneIndex,
               scene_text: scene.text,
+              keywords: scene.keywords || [],
               start_time: scene.start_time,
               end_time: scene.end_time,
               image_model: model,
               art_style: artStyle,
               dalle_prompt: scene.prompt,
+              visual_beat: scene.visual_beat || null,
+              mood_level: scene.mood_level || null,
+              camera_angle: scene.camera_angle || null,
               generated_at: new Date().toISOString(),
             },
           };

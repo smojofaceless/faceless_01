@@ -363,19 +363,35 @@ export async function renderWithFFmpeg(
     throw new Error("FFMPEG_RENDERER_URL not configured. Deploy video-renderer service and set env var.");
   }
   
-  // Extract image URLs and durations from scenes
-  // CRITICAL: Use fractional seconds (not Math.ceil) to avoid timing drift!
-  // With 24 scenes, rounding each to whole seconds can cause 5-10s of cumulative drift
+  // Extract image URLs and calculate durations
+  // CRITICAL FIX: Calculate duration based on when NEXT scene starts (not this scene's endTime)
+  // This ensures images switch exactly when the new scene's audio begins
   const imageUrls = scenes.map(s => s.videoUrl);
-  const durations = scenes.map(s => {
-    const duration = s.endTime - s.startTime;
-    // Round to 2 decimal places for precision, minimum 0.5s
-    return Math.max(0.5, Math.round(duration * 100) / 100);
+  const durations = scenes.map((s, i) => {
+    if (i < scenes.length - 1) {
+      // Duration = time until next scene starts
+      // This ensures image switches at the EXACT moment next scene's first word begins
+      const duration = scenes[i + 1].startTime - s.startTime;
+      return Math.max(0.5, Math.round(duration * 100) / 100);
+    } else {
+      // Last scene: extend 2-3 seconds past endTime for smooth ending
+      // This prevents abrupt video cutoff right as narration ends
+      const END_BUFFER_SECONDS = 2.5;
+      const duration = (s.endTime - s.startTime) + END_BUFFER_SECONDS;
+      return Math.max(1, Math.round(duration * 100) / 100);
+    }
   });
   
+  // Log timing alignment for debugging
   console.log(`[FFMPEG] Starting render with ${imageUrls.length} images`);
-  console.log(`[FFMPEG] Durations: ${durations.map(d => d.toFixed(2)).join(", ")} seconds`);
-  console.log(`[FFMPEG] Total duration: ${durations.reduce((a, b) => a + b, 0).toFixed(2)}s`);
+  console.log(`[FFMPEG] Scene timing alignment:`);
+  let cumulativeTime = 0;
+  for (let i = 0; i < scenes.length; i++) {
+    const s = scenes[i];
+    console.log(`[FFMPEG]   Scene ${i + 1}: image at ${cumulativeTime.toFixed(2)}s (audio starts ${s.startTime.toFixed(2)}s) - duration ${durations[i].toFixed(2)}s`);
+    cumulativeTime += durations[i];
+  }
+  console.log(`[FFMPEG] Total video duration: ${cumulativeTime.toFixed(2)}s (audio: ${durationSec}s + buffer)`);
   console.log(`[FFMPEG] Captions: ${captions?.length || 0} words`);
   console.log(`[FFMPEG] 🎵 Music settings: enabled=${options.music}, track="${options.musicTrack}", volume=${options.musicVolume}%`);
   
@@ -506,8 +522,12 @@ export interface ParallelImageScene {
   index: number;
   prompt: string;
   text: string;
+  keywords?: string[];
   start_time: number;
   end_time: number;
+  visual_beat?: string | null;
+  mood_level?: number | null;
+  camera_angle?: string | null;
 }
 
 export interface ParallelImageResult {
@@ -518,11 +538,15 @@ export interface ParallelImageResult {
   meta?: {
     scene_index: number;
     scene_text: string;
+    keywords?: string[];
     start_time: number;
     end_time: number;
     image_model: string;
     art_style: string;
     dalle_prompt: string;
+    visual_beat?: string | null;
+    mood_level?: number | null;
+    camera_angle?: string | null;
     generated_at: string;
   };
 }

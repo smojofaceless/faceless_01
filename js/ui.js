@@ -19,6 +19,296 @@ function formatTime(seconds) {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
+// Copy text to clipboard with visual feedback
+async function copyToClipboard(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+        showToast('Copied to clipboard!', 'success');
+        return true;
+    } catch (err) {
+        console.error('Failed to copy:', err);
+        // Fallback for older browsers
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            showToast('Copied to clipboard!', 'success');
+            return true;
+        } catch (e) {
+            showToast('Failed to copy', 'error');
+            return false;
+        } finally {
+            document.body.removeChild(textarea);
+        }
+    }
+}
+
+// Copy scene debug info for a specific scene
+function copySceneDebugInfo(sceneIndex) {
+    const dataEl = document.querySelector(`.scene-debug-data[data-scene="${sceneIndex}"]`);
+    if (!dataEl) {
+        showToast('Scene data not found', 'error');
+        return;
+    }
+    
+    try {
+        const debugData = JSON.parse(dataEl.textContent);
+        
+        // Format as readable text
+        const textOutput = `
+═══════════════════════════════════════
+SCENE ${debugData.scene_number} DEBUG INFO
+═══════════════════════════════════════
+
+📍 TIMING
+   Timestamp: ${debugData.timestamp}
+   Duration: ${debugData.duration_sec}s
+
+📝 NARRATION (${debugData.word_count} words)
+   "${debugData.narration}"
+
+🏷️ KEYWORDS
+   ${debugData.keywords.length > 0 ? debugData.keywords.join(', ') : 'None'}
+
+🎨 IMAGE GENERATION
+   Model: ${debugData.model || 'Unknown'}
+   Art Style: ${debugData.art_style || 'Unknown'}
+   Camera: ${debugData.camera_angle || 'Unknown'}
+   Mood Level: ${debugData.mood_level || 'Unknown'}
+
+🎬 VISUAL BEAT
+   ${debugData.visual_beat || 'None'}
+
+👤 CHARACTER
+   ${debugData.character_description || 'None'}
+
+📜 CONTINUITY RULES
+   ${debugData.continuity_rules || 'None'}
+
+🖼️ IMAGE URL
+   ${debugData.image_url || 'None'}
+
+═══════════════════════════════════════
+FULL PROMPT
+═══════════════════════════════════════
+${debugData.prompt || 'No prompt available'}
+
+═══════════════════════════════════════
+Generated: ${debugData.generated_at ? new Date(debugData.generated_at).toLocaleString() : 'Unknown'}
+═══════════════════════════════════════
+`.trim();
+        
+        copyToClipboard(textOutput);
+    } catch (err) {
+        console.error('Failed to parse scene data:', err);
+        showToast('Failed to copy scene data', 'error');
+    }
+}
+
+// Copy all scenes debug info
+function copyAllScenesDebugInfo() {
+    const dataEls = document.querySelectorAll('.scene-debug-data');
+    if (dataEls.length === 0) {
+        showToast('No scene data found', 'error');
+        return;
+    }
+    
+    let allOutput = '═══════════════════════════════════════\nALL SCENES DEBUG INFO\n═══════════════════════════════════════\n\n';
+    
+    dataEls.forEach((dataEl, i) => {
+        try {
+            const debugData = JSON.parse(dataEl.textContent);
+            allOutput += `
+--- SCENE ${debugData.scene_number} ---
+Timestamp: ${debugData.timestamp} (${debugData.duration_sec}s)
+Words: ${debugData.word_count}
+Narration: "${debugData.narration}"
+Keywords: ${debugData.keywords.join(', ') || 'None'}
+Model: ${debugData.model || 'Unknown'} | Style: ${debugData.art_style || 'Unknown'}
+Prompt: ${debugData.prompt ? debugData.prompt.substring(0, 200) + '...' : 'None'}
+URL: ${debugData.image_url || 'None'}
+
+`;
+        } catch (err) {
+            allOutput += `--- SCENE ${i + 1} --- Error parsing data\n\n`;
+        }
+    });
+    
+    copyToClipboard(allOutput.trim());
+}
+
+// Simple toast notification
+function showToast(message, type = 'info') {
+    // Remove existing toasts
+    const existing = document.querySelector('.copy-toast');
+    if (existing) existing.remove();
+    
+    const toast = document.createElement('div');
+    toast.className = `copy-toast fixed bottom-4 right-4 px-4 py-2 rounded-lg shadow-lg z-50 text-sm font-medium transition-all transform translate-y-0 opacity-100 ${
+        type === 'success' ? 'bg-green-600 text-white' :
+        type === 'error' ? 'bg-red-600 text-white' :
+        'bg-gray-700 text-white'
+    }`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    // Auto-remove after 2 seconds
+    setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+    }, 2000);
+}
+
+// Copy all debug info for a history job
+function copyHistoryJobDebugInfo(jobId) {
+    const dataEl = document.getElementById('history-scenes-data');
+    if (!dataEl) {
+        showToast('Scene data not found', 'error');
+        return;
+    }
+    
+    try {
+        const scenes = JSON.parse(dataEl.textContent);
+        
+        let output = `═══════════════════════════════════════
+ALL SCENES DEBUG INFO (Job: ${jobId})
+═══════════════════════════════════════
+
+`;
+        
+        scenes.forEach((scene) => {
+            output += `--- SCENE ${scene.scene_number} ---
+Timestamp: ${scene.timestamp} (${scene.duration_sec}s)
+Words: ${scene.word_count}
+Narration: "${scene.scene_text}"
+Keywords: ${scene.keywords.length > 0 ? scene.keywords.join(', ') : 'None'}
+Model: ${scene.model} | Style: ${scene.art_style}
+Visual Beat: ${scene.visual_beat || 'None'}
+Camera: ${scene.camera_angle || 'Unknown'}
+Mood Level: ${scene.mood_level || 'Unknown'}
+Character: ${scene.character_description || 'None'}
+URL: ${scene.image_url || 'None'}
+
+PROMPT:
+${scene.prompt || 'No prompt available'}
+
+Generated: ${scene.generated_at ? new Date(scene.generated_at).toLocaleString() : 'Unknown'}
+
+`;
+        });
+        
+        copyToClipboard(output.trim());
+    } catch (err) {
+        console.error('Failed to copy history debug info:', err);
+        showToast('Failed to copy debug info', 'error');
+    }
+}
+
+// Build HTML for history scenes with debug info
+function buildHistoryScenesHtml(sceneAssets, jobId) {
+    // Check if images are stored in Supabase Storage (permanent) vs temporary OpenAI URLs
+    const hasValidImages = sceneAssets.some(a => 
+        a.storage_path?.includes('supabase.co') || 
+        a.public_url?.includes('supabase.co')
+    );
+    const hasExpiredImages = sceneAssets.some(a => 
+        a.storage_path?.includes('oaidalleapiprodscus.blob.core.windows.net') ||
+        a.storage_path?.includes('replicate.delivery')
+    );
+    
+    // Build individual scene HTML
+    let scenesHtml = '';
+    sceneAssets.forEach((asset, i) => {
+        const isImage = asset.type === 'dalle_image';
+        const sceneText = asset.meta?.scene_text || '';
+        const prompt = asset.meta?.dalle_prompt || '';
+        const artStyle = asset.meta?.art_style || 'Unknown';
+        const imageModel = asset.meta?.image_model || 'Unknown';
+        const startTime = asset.meta?.start_time;
+        const endTime = asset.meta?.end_time;
+        const moodLevel = asset.meta?.mood_level;
+        const imageUrl = asset.public_url || asset.storage_path;
+        const isExpired = imageUrl?.includes('oaidalleapiprodscus.blob.core.windows.net') || imageUrl?.includes('replicate.delivery');
+        const wordCount = sceneText ? sceneText.split(/\s+/).filter(w => w).length : 0;
+        
+        const timeStr = startTime !== undefined ? formatTime(startTime) + ' - ' + formatTime(endTime || 0) : '';
+        
+        let mediaHtml = '';
+        if (isImage) {
+            const onclickAttr = isExpired ? '' : 'onclick="showImageModal(\'' + escapeHtml(imageUrl) + '\')"';
+            const cursorClass = isExpired ? '' : 'cursor-pointer';
+            mediaHtml = '<img src="' + escapeHtml(imageUrl) + '" class="w-full h-full object-cover ' + cursorClass + '" ' + onclickAttr + ' loading="lazy" onerror="this.parentElement.innerHTML=\'<div class=\\\'w-full h-full flex items-center justify-center text-gray-500 text-xs\\\'>Expired</div>\'">';
+        } else {
+            mediaHtml = '<video src="' + escapeHtml(imageUrl) + '" class="w-full h-full object-cover" muted></video>';
+        }
+        
+        let metaHtml = '<div class="flex gap-2 text-xs">';
+        if (artStyle !== 'Unknown') {
+            metaHtml += '<span class="text-blue-400">Style: ' + escapeHtml(artStyle) + '</span>';
+        }
+        if (moodLevel) {
+            metaHtml += '<span class="text-yellow-400">Mood: ' + moodLevel + '/10</span>';
+        }
+        metaHtml += '</div>';
+        
+        let promptHtml = '';
+        if (prompt) {
+            promptHtml = '<details class="text-xs mt-2"><summary class="text-purple-400 cursor-pointer hover:text-purple-300">📝 View Prompt</summary><div class="mt-1 bg-gray-800 p-2 rounded max-h-24 overflow-y-auto"><p class="text-green-300/80 whitespace-pre-wrap font-mono text-xs">' + escapeHtml(prompt) + '</p></div></details>';
+        }
+        
+        scenesHtml += '<div class="bg-gray-700/50 rounded-lg p-3 border border-gray-600' + (isExpired ? ' opacity-60' : '') + '">' +
+            '<div class="flex gap-3">' +
+                '<div class="w-16 h-24 flex-shrink-0 bg-gray-800 rounded overflow-hidden">' + mediaHtml + '</div>' +
+                '<div class="flex-1 min-w-0">' +
+                    '<div class="flex items-center gap-2 mb-1 flex-wrap">' +
+                        '<span class="bg-primary/20 text-primary px-2 py-0.5 rounded text-xs font-bold">Scene ' + (i + 1) + '</span>' +
+                        (timeStr ? '<span class="text-xs text-gray-500">' + timeStr + '</span>' : '') +
+                        '<span class="text-xs text-purple-400">' + escapeHtml(imageModel) + '</span>' +
+                        '<span class="text-xs text-gray-500">' + wordCount + ' words</span>' +
+                    '</div>' +
+                    '<p class="text-xs text-gray-300 mb-1 line-clamp-2">' + escapeHtml(sceneText) + '</p>' +
+                    metaHtml +
+                    promptHtml +
+                '</div>' +
+            '</div>' +
+        '</div>';
+    });
+    
+    // Build JSON data for copy function
+    const scenesData = sceneAssets.map((asset, i) => ({
+        scene_number: i + 1,
+        scene_text: asset.meta?.scene_text || '',
+        timestamp: asset.meta?.start_time !== undefined ? asset.meta.start_time.toFixed(2) + 's - ' + (asset.meta?.end_time || 0).toFixed(2) + 's' : 'Unknown',
+        duration_sec: asset.meta?.start_time !== undefined && asset.meta?.end_time !== undefined ? (asset.meta.end_time - asset.meta.start_time).toFixed(2) : 'Unknown',
+        word_count: asset.meta?.scene_text ? asset.meta.scene_text.split(/\s+/).filter(w => w).length : 0,
+        keywords: asset.meta?.keywords || [],
+        image_url: asset.public_url || asset.storage_path || '',
+        prompt: asset.meta?.dalle_prompt || '',
+        model: asset.meta?.image_model || 'Unknown',
+        art_style: asset.meta?.art_style || 'Unknown',
+        visual_beat: asset.meta?.visual_beat || '',
+        mood_level: asset.meta?.mood_level || '',
+        camera_angle: asset.meta?.camera_angle || '',
+        character_description: asset.meta?.character_description || '',
+        generated_at: asset.meta?.generated_at || ''
+    }));
+    
+    const expiredWarning = hasExpiredImages && !hasValidImages ? '<span class="text-yellow-500 text-sm">(⚠️ Images expired)</span>' : '';
+    
+    return '<div class="mb-6">' +
+        '<div class="flex items-center justify-between mb-2">' +
+            '<h3 class="font-semibold">🎬 Scenes ' + expiredWarning + '</h3>' +
+            '<button onclick="copyHistoryJobDebugInfo(\'' + jobId + '\')" class="text-xs bg-purple-700 hover:bg-purple-600 px-3 py-1 rounded text-white">📋 Copy All Debug Info</button>' +
+        '</div>' +
+        '<div class="space-y-3 max-h-80 overflow-y-auto">' + scenesHtml + '</div>' +
+        '<script type="application/json" id="history-scenes-data">' + JSON.stringify(scenesData) + '</script>' +
+    '</div>';
+}
+
 // =====================================================
 // HISTORY TAB
 // =====================================================
@@ -415,44 +705,7 @@ async function showHistoryDetails(jobId) {
                 </div>
             </div>
             
-            ${sceneAssets.length > 0 ? (() => {
-                // Check if images are stored in Supabase Storage (permanent) vs temporary OpenAI URLs
-                const hasValidImages = sceneAssets.some(a => 
-                    a.storage_path?.includes('supabase.co') || 
-                    a.public_url?.includes('supabase.co')
-                );
-                const hasExpiredImages = sceneAssets.some(a => 
-                    a.storage_path?.includes('oaidalleapiprodscus.blob.core.windows.net') ||
-                    a.storage_path?.includes('replicate.delivery')
-                );
-                
-                return `
-                <div class="mb-6">
-                    <h3 class="font-semibold mb-2">🎬 Scenes ${hasExpiredImages && !hasValidImages ? '<span class="text-yellow-500 text-sm">(⚠️ Images expired)</span>' : ''}</h3>
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        ${sceneAssets.map((asset, i) => {
-                            const isImage = asset.type === 'dalle_image';
-                            const prompt = asset.meta?.visual_beat || asset.meta?.dalle_prompt || '';
-                            // Prefer public_url (permanent), fallback to storage_path
-                            const imageUrl = asset.public_url || asset.storage_path;
-                            const isExpired = imageUrl?.includes('oaidalleapiprodscus.blob.core.windows.net') || imageUrl?.includes('replicate.delivery');
-                            return `
-                                <div class="bg-gray-700/50 rounded-lg overflow-hidden ${isExpired ? 'opacity-60' : ''}">
-                                    ${isImage ? `
-                                        <img src="${escapeHtml(imageUrl)}" class="w-full aspect-[9/16] object-cover ${isExpired ? '' : 'cursor-pointer'}" ${isExpired ? '' : `onclick="showImageModal('${escapeHtml(imageUrl)}')"`} loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'w-full aspect-[9/16] bg-gray-800 flex items-center justify-center text-gray-500 text-xs text-center p-2\\'>Image expired<br>Generate new video</div>'">
-                                    ` : `
-                                        <video src="${escapeHtml(imageUrl)}" class="w-full aspect-[9/16] object-cover" muted></video>
-                                    `}
-                                    <div class="p-2">
-                                        <p class="text-xs text-gray-400">Scene ${i + 1} ${isExpired ? '(expired)' : ''}</p>
-                                        ${prompt ? `<p class="text-xs text-purple-400 truncate mt-1" title="${escapeHtml(prompt)}">${escapeHtml(prompt.substring(0, 25))}...</p>` : ''}
-                                    </div>
-                                </div>
-                            `;
-                        }).join('')}
-                    </div>
-                </div>
-            `})() : ''}
+            ${sceneAssets.length > 0 ? buildHistoryScenesHtml(sceneAssets, jobId) : ''}
             
             <div class="flex gap-3 flex-wrap">
                 ${videoAsset ? `
