@@ -737,6 +737,15 @@ async function getVideoDuration(videoPath) {
 }
 
 /**
+ * Format seconds to MM:SS format
+ */
+function formatTime(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+/**
  * Add glitch flicker effect - random brightness spikes on a few frames
  * Creates unsettling micro-disturbances (high retention effect)
  */
@@ -1390,6 +1399,10 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
   const startTime = Date.now();
   const timings = {};
   
+  // Track applied effects with timing info
+  const appliedEffects = [];
+  let currentTimeOffset = 0; // Track where we are in the video timeline
+  
   try {
     const job = jobs.get(jobId);
     
@@ -1488,36 +1501,86 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     }
     job.progress = 75;
     
+    // Get total video duration for timeline tracking
+    const totalDuration = durations.reduce((sum, d) => sum + d, 0);
+    
+    // Build scene timeline info
+    let sceneTimeline = [];
+    let sceneStartTime = 0;
+    for (let i = 0; i < durations.length; i++) {
+      const sceneEnd = sceneStartTime + durations[i];
+      sceneTimeline.push({ 
+        scene: i + 1, 
+        start: formatTime(sceneStartTime), 
+        end: formatTime(sceneEnd),
+        duration: durations[i].toFixed(1),
+        mood: moodLevels[i] || 'N/A'
+      });
+      sceneStartTime = sceneEnd;
+    }
+    
+    // Track Ken Burns if enabled
+    const useKenBurns = effects.kenBurns !== false && !DISABLE_KEN_BURNS;
+    if (useKenBurns) {
+      appliedEffects.push({ 
+        name: 'Ken Burns', 
+        category: 'Animation', 
+        timeline: sceneTimeline.map(s => `Scene ${s.scene}: ${s.start}-${s.end}`).join(', '),
+        duration: `0:00 - ${formatTime(totalDuration)}`,
+        processTime: timings.createVideo 
+      });
+    }
+    
+    // Track captions if added
+    if (captions && captions.length > 0) {
+      appliedEffects.push({ 
+        name: `Captions (${captions.length} words)`, 
+        category: 'Text', 
+        timeline: 'Word-by-word sync',
+        duration: `0:00 - ${formatTime(totalDuration)}`,
+        processTime: timings.captions 
+      });
+    }
+    
     // Step 6: Apply vignette (if enabled)
     if (effects.vignette) {
+      const effectStart = Date.now();
       console.log(`[${jobId}] Adding vignette...`);
       const vignettePath = path.join(jobDir, 'vignette.mp4');
       await addVignette(currentVideo, vignettePath, useLowMemory);
       await fs.unlink(currentVideo).catch(() => {});
       currentVideo = vignettePath;
-      console.log(`[${jobId}] ✓ Vignette added`);
+      const effectTime = Date.now() - effectStart;
+      appliedEffects.push({ name: 'Vignette', category: 'Visual', timeline: 'Full video', duration: `0:00 - ${formatTime(totalDuration)}`, processTime: effectTime });
+      console.log(`[${jobId}] ✓ Vignette added (${Math.round(effectTime/1000)}s)`);
     }
     job.progress = 85;
     
     // Step 7: Apply horror color grade (if enabled)
     if (effects.horrorGrade) {
+      const effectStart = Date.now();
       console.log(`[${jobId}] Adding horror color grade...`);
       const gradedPath = path.join(jobDir, 'graded.mp4');
       await addHorrorGrade(currentVideo, gradedPath, useLowMemory);
       await fs.unlink(currentVideo).catch(() => {});
       currentVideo = gradedPath;
-      console.log(`[${jobId}] ✓ Horror grade added`);
+      const effectTime = Date.now() - effectStart;
+      appliedEffects.push({ name: 'Horror Grade', category: 'Color', timeline: 'Full video', duration: `0:00 - ${formatTime(totalDuration)}`, processTime: effectTime });
+      console.log(`[${jobId}] ✓ Horror grade added (${Math.round(effectTime/1000)}s)`);
     }
     job.progress = 90;
     
     // Step 8: Apply film grain effect (if enabled)
     if (effects.filmGrain) {
+      const effectStart = Date.now();
       console.log(`[${jobId}] Adding film grain/old film effect...`);
       const grainPath = path.join(jobDir, 'grain.mp4');
       await addFilmGrain(currentVideo, grainPath, useLowMemory);
       await fs.unlink(currentVideo).catch(() => {});
       currentVideo = grainPath;
-      console.log(`[${jobId}] ✓ Film grain added`);
+      const effectTime = Date.now() - effectStart;
+      appliedEffects.push({ name: 'Film Grain', category: 'Disturbance', timeline: 'Full video', duration: `0:00 - ${formatTime(totalDuration)}`, processTime: effectTime });
+      console.log(`[${jobId}] ✓ Film grain added (${Math.round(effectTime/1000)}s)`);
     }
     job.progress = 92;
     
@@ -1527,96 +1590,129 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     
     // Glitch flicker (disturbance category)
     if (effects.glitchFlicker) {
+      const effectStart = Date.now();
       console.log(`[${jobId}] Adding glitch flicker effect...`);
       const glitchPath = path.join(jobDir, 'glitch.mp4');
       await addGlitchFlicker(currentVideo, glitchPath, useLowMemory);
       await fs.unlink(currentVideo).catch(() => {});
       currentVideo = glitchPath;
-      console.log(`[${jobId}] ✓ Glitch flicker added`);
+      const effectTime = Date.now() - effectStart;
+      appliedEffects.push({ name: 'Glitch Flicker', category: 'Disturbance', timeline: 'Random frames', duration: `0:00 - ${formatTime(totalDuration)}`, processTime: effectTime });
+      console.log(`[${jobId}] ✓ Glitch flicker added (${Math.round(effectTime/1000)}s)`);
     }
     
     // VHS tracking wobble (disturbance category)
     if (effects.vhsTracking) {
+      const effectStart = Date.now();
       console.log(`[${jobId}] Adding VHS tracking wobble...`);
       const vhsPath = path.join(jobDir, 'vhs.mp4');
       await addVHSTracking(currentVideo, vhsPath, useLowMemory);
       await fs.unlink(currentVideo).catch(() => {});
       currentVideo = vhsPath;
-      console.log(`[${jobId}] ✓ VHS tracking added`);
+      const effectTime = Date.now() - effectStart;
+      appliedEffects.push({ name: 'VHS Tracking', category: 'Disturbance', timeline: 'Full video', duration: `0:00 - ${formatTime(totalDuration)}`, processTime: effectTime });
+      console.log(`[${jobId}] ✓ VHS tracking added (${Math.round(effectTime/1000)}s)`);
     }
     
     // Scanlines (disturbance category)
     if (effects.scanlines) {
+      const effectStart = Date.now();
       console.log(`[${jobId}] Adding scanline overlay...`);
       const scanPath = path.join(jobDir, 'scanlines.mp4');
       await addScanlines(currentVideo, scanPath, useLowMemory);
       await fs.unlink(currentVideo).catch(() => {});
       currentVideo = scanPath;
-      console.log(`[${jobId}] ✓ Scanlines added`);
+      const effectTime = Date.now() - effectStart;
+      appliedEffects.push({ name: 'Scanlines', category: 'Disturbance', timeline: 'Full video', duration: `0:00 - ${formatTime(totalDuration)}`, processTime: effectTime });
+      console.log(`[${jobId}] ✓ Scanlines added (${Math.round(effectTime/1000)}s)`);
     }
     
     // Light flicker (atmospheric category)
     if (effects.lightFlicker) {
+      const effectStart = Date.now();
       console.log(`[${jobId}] Adding light flicker effect...`);
       const flickerPath = path.join(jobDir, 'flicker.mp4');
       await addLightFlicker(currentVideo, flickerPath, useLowMemory);
       await fs.unlink(currentVideo).catch(() => {});
       currentVideo = flickerPath;
-      console.log(`[${jobId}] ✓ Light flicker added`);
+      const effectTime = Date.now() - effectStart;
+      appliedEffects.push({ name: 'Light Flicker', category: 'Atmospheric', timeline: 'Sine wave pattern', duration: `0:00 - ${formatTime(totalDuration)}`, processTime: effectTime });
+      console.log(`[${jobId}] ✓ Light flicker added (${Math.round(effectTime/1000)}s)`);
     }
     
     // Cold color creep (atmospheric category)
     if (effects.coldColorCreep) {
+      const effectStart = Date.now();
       console.log(`[${jobId}] Adding cold color creep effect...`);
       const coldPath = path.join(jobDir, 'cold.mp4');
       await addColdColorCreep(currentVideo, coldPath, useLowMemory);
       await fs.unlink(currentVideo).catch(() => {});
       currentVideo = coldPath;
-      console.log(`[${jobId}] ✓ Cold color creep added`);
+      const effectTime = Date.now() - effectStart;
+      appliedEffects.push({ name: 'Cold Color Creep', category: 'Atmospheric', timeline: 'Progressive (0% → 100%)', duration: `0:00 - ${formatTime(totalDuration)}`, processTime: effectTime });
+      console.log(`[${jobId}] ✓ Cold color creep added (${Math.round(effectTime/1000)}s)`);
     }
     
     // Heartbeat zoom (psychological category)
     if (effects.heartbeatZoom) {
+      const effectStart = Date.now();
       console.log(`[${jobId}] Adding heartbeat zoom effect...`);
       const heartPath = path.join(jobDir, 'heartbeat.mp4');
       await addHeartbeatZoom(currentVideo, heartPath, useLowMemory);
       await fs.unlink(currentVideo).catch(() => {});
       currentVideo = heartPath;
-      console.log(`[${jobId}] ✓ Heartbeat zoom added`);
+      const effectTime = Date.now() - effectStart;
+      appliedEffects.push({ name: 'Heartbeat Zoom', category: 'Psychological', timeline: 'Pulsing pattern', duration: `0:00 - ${formatTime(totalDuration)}`, processTime: effectTime });
+      console.log(`[${jobId}] ✓ Heartbeat zoom added (${Math.round(effectTime/1000)}s)`);
     }
     
     // Negative flash (psychological category)
     if (effects.negativeFlash) {
+      const effectStart = Date.now();
       console.log(`[${jobId}] Adding negative flash effect...`);
       const negPath = path.join(jobDir, 'negative.mp4');
       await addNegativeFlash(currentVideo, negPath, useLowMemory);
       await fs.unlink(currentVideo).catch(() => {});
       currentVideo = negPath;
-      console.log(`[${jobId}] ✓ Negative flash added`);
+      const effectTime = Date.now() - effectStart;
+      appliedEffects.push({ name: 'Negative Flash', category: 'Psychological', timeline: 'Random subliminal flashes', duration: `0:00 - ${formatTime(totalDuration)}`, processTime: effectTime });
+      console.log(`[${jobId}] ✓ Negative flash added (${Math.round(effectTime/1000)}s)`);
     }
     
     // Edge darkening creep (psychological category)
     if (effects.edgeDarkeningCreep) {
+      const effectStart = Date.now();
       console.log(`[${jobId}] Adding edge darkening creep effect...`);
       const edgePath = path.join(jobDir, 'edge.mp4');
       await addEdgeDarkeningCreep(currentVideo, edgePath, useLowMemory);
       await fs.unlink(currentVideo).catch(() => {});
       currentVideo = edgePath;
-      console.log(`[${jobId}] ✓ Edge darkening creep added`);
+      const effectTime = Date.now() - effectStart;
+      appliedEffects.push({ name: 'Edge Darkening Creep', category: 'Psychological', timeline: 'Progressive (light → heavy)', duration: `0:00 - ${formatTime(totalDuration)}`, processTime: effectTime });
+      console.log(`[${jobId}] ✓ Edge darkening creep added (${Math.round(effectTime/1000)}s)`);
     }
     
     // Fade in/out (transition category) - ALWAYS LAST
+    const fadeDuration = effects.fadeDuration || 1.5;
     if (effects.fadeIn || effects.fadeOut) {
+      const effectStart = Date.now();
       console.log(`[${jobId}] Adding fade transitions (in: ${effects.fadeIn}, out: ${effects.fadeOut})...`);
       const fadePath = path.join(jobDir, 'faded.mp4');
       await addFadeEffect(currentVideo, fadePath, {
         fadeIn: effects.fadeIn,
         fadeOut: effects.fadeOut,
-        fadeDuration: effects.fadeDuration || 1.5,
+        fadeDuration: fadeDuration,
       }, useLowMemory);
       await fs.unlink(currentVideo).catch(() => {});
       currentVideo = fadePath;
-      console.log(`[${jobId}] ✓ Fade transitions added`);
+      const effectTime = Date.now() - effectStart;
+      
+      // Build fade timeline description
+      let fadeTimeline = [];
+      if (effects.fadeIn) fadeTimeline.push(`Fade in: 0:00 - ${formatTime(fadeDuration)}`);
+      if (effects.fadeOut) fadeTimeline.push(`Fade out: ${formatTime(totalDuration - fadeDuration)} - ${formatTime(totalDuration)}`);
+      appliedEffects.push({ name: 'Fade Transitions', category: 'Transition', timeline: fadeTimeline.join(', '), duration: `${fadeDuration}s each`, processTime: effectTime });
+      console.log(`[${jobId}] ✓ Fade transitions added (${Math.round(effectTime/1000)}s)`);
     }
     
     job.progress = 95;
@@ -1643,6 +1739,47 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     console.log(`[${jobId}]    Timings: download=${timings.download}ms, video=${timings.createVideo}ms, audio=${timings.addAudio || 0}ms, captions=${timings.captions || 0}ms`);
     console.log(`[${jobId}]    Local: ${job.url}`);
     console.log(`[${jobId}]    Supabase: ${supabaseUrl || 'N/A'}`);
+    
+    // Log detailed effect summary
+    if (appliedEffects.length > 0) {
+      console.log(`[${jobId}]`);
+      console.log(`[${jobId}] 🎬 EFFECTS SUMMARY (${appliedEffects.length} effects applied)`);
+      console.log(`[${jobId}] ════════════════════════════════════════════════════════════`);
+      console.log(`[${jobId}]    Video Duration: ${formatTime(totalDuration)} (${totalDuration.toFixed(1)}s)`);
+      console.log(`[${jobId}]`);
+      
+      // Scene breakdown
+      console.log(`[${jobId}]    📍 SCENE BREAKDOWN`);
+      sceneTimeline.forEach(s => {
+        console.log(`[${jobId}]       Scene ${s.scene}: ${s.start} - ${s.end} (${s.duration}s) | Mood: ${s.mood}/10`);
+      });
+      console.log(`[${jobId}]`);
+      
+      // Group by category
+      const categories = {};
+      appliedEffects.forEach(e => {
+        if (!categories[e.category]) categories[e.category] = [];
+        categories[e.category].push(e);
+      });
+      
+      for (const [category, categoryEffects] of Object.entries(categories)) {
+        console.log(`[${jobId}]    📁 ${category.toUpperCase()}`);
+        categoryEffects.forEach(e => {
+          console.log(`[${jobId}]       ├─ ${e.name}`);
+          console.log(`[${jobId}]       │     Timeline: ${e.timeline}`);
+          console.log(`[${jobId}]       │     Duration: ${e.duration}`);
+          console.log(`[${jobId}]       │     Process Time: ${Math.round(e.processTime/1000)}s`);
+        });
+        console.log(`[${jobId}]`);
+      }
+      
+      // Total effect processing time
+      const totalEffectTime = appliedEffects.reduce((sum, e) => sum + e.processTime, 0);
+      console.log(`[${jobId}]    ⏱️  Total Effect Processing: ${Math.round(totalEffectTime/1000)}s`);
+      console.log(`[${jobId}] ════════════════════════════════════════════════════════════`);
+    } else {
+      console.log(`[${jobId}]    No effects applied`);
+    }
     
     // Update Supabase job record
     await updateJobInSupabase(jobId, supabaseJobId, 'complete', supabaseUrl);
