@@ -586,67 +586,473 @@ async function addHorrorGrade(inputPath, outputPath, lowMemory = false) {
  * Includes: subtle shake, film grain noise, and occasional dust/scratch overlay
  */
 async function addFilmGrain(inputPath, outputPath, lowMemory = false) {
+  // Set timeout - 5 minutes max for film grain
+  const TIMEOUT_MS = 5 * 60 * 1000;
+  
   return new Promise((resolve, reject) => {
+    let timedOut = false;
+    const timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      console.error('⚠️ Film grain timed out after 5 minutes, using fallback...');
+      ffmpegCommand.kill('SIGKILL');
+    }, TIMEOUT_MS);
+    
     const outputOptions = lowMemory ? [
       '-c:v', 'libx264',
-      '-preset', 'superfast',
-      '-crf', '24',
+      '-preset', 'ultrafast',  // Even faster for low memory
+      '-crf', '26',
       '-c:a', 'copy',
       '-threads', '2',
     ] : [
       '-c:v', 'libx264',
-      '-preset', 'medium',
+      '-preset', 'fast',  // Changed from medium to fast
       '-crf', '23',
       '-c:a', 'copy',
+      '-threads', '4',
     ];
     
-    // ENHANCED: Old 8mm/Super 8 film effect with scratches, dust, and light leaks
-    // Creates authentic vintage film look like old home movies
+    // SIMPLIFIED: Fast film grain effect that won't hang
+    // Removed geq (extremely slow), simplified to core grain + flicker
+    const ffmpegCommand = ffmpeg(inputPath)
+      .complexFilter([
+        // Simple grain + flicker combo (fast)
+        '[0:v]noise=c0s=12:c0f=t+u,eq=brightness=0.02*sin(n*0.3):saturation=0.88,rgbashift=rh=-1:bh=1[final]'
+      ], 'final')
+      .outputOptions(outputOptions)
+      .output(outputPath)
+      .on('end', () => {
+        clearTimeout(timeoutHandle);
+        resolve();
+      })
+      .on('error', (err) => {
+        clearTimeout(timeoutHandle);
+        if (timedOut) {
+          // Try ultra-simple fallback after timeout
+          console.log('  → Trying ultra-simple grain fallback...');
+          ffmpeg(inputPath)
+            .videoFilter('noise=c0s=10:c0f=t')
+            .outputOptions(['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26', '-c:a', 'copy'])
+            .output(outputPath)
+            .on('end', resolve)
+            .on('error', reject)
+            .run();
+        } else {
+          console.error('Film grain error:', err.message);
+          // Fallback to simplest possible effect
+          ffmpeg(inputPath)
+            .videoFilter('noise=c0s=10:c0f=t')
+            .outputOptions(outputOptions)
+            .output(outputPath)
+            .on('end', resolve)
+            .on('error', reject)
+            .run();
+        }
+      })
+      .run();
+  });
+}
+
+// =====================================================
+// NEW EFFECTS - Fade, Glitch, Atmospheric, Psychological
+// =====================================================
+
+/**
+ * Add fade in from black at the start and/or fade out to black at the end
+ * @param {string} inputPath - Input video path
+ * @param {string} outputPath - Output video path
+ * @param {object} options - { fadeIn: true, fadeOut: true, fadeDuration: 1.5 }
+ */
+async function addFadeEffect(inputPath, outputPath, options = {}, lowMemory = false) {
+  const { fadeIn = true, fadeOut = true, fadeDuration = 1.5 } = options;
+  
+  return new Promise(async (resolve, reject) => {
+    // Get video duration first
+    const duration = await getVideoDuration(inputPath);
+    
+    const filters = [];
+    
+    if (fadeIn) {
+      filters.push(`fade=t=in:st=0:d=${fadeDuration}`);
+    }
+    
+    if (fadeOut) {
+      const fadeOutStart = Math.max(0, duration - fadeDuration);
+      filters.push(`fade=t=out:st=${fadeOutStart}:d=${fadeDuration}`);
+    }
+    
+    if (filters.length === 0) {
+      // No fades, just copy
+      await fs.copyFile(inputPath, outputPath);
+      return resolve();
+    }
+    
+    const outputOptions = lowMemory ? [
+      '-c:v', 'libx264', '-preset', 'superfast', '-crf', '24', '-c:a', 'copy', '-threads', '2',
+    ] : [
+      '-c:v', 'libx264', '-preset', 'medium', '-crf', '23', '-c:a', 'copy',
+    ];
+    
+    ffmpeg(inputPath)
+      .videoFilter(filters.join(','))
+      .outputOptions(outputOptions)
+      .output(outputPath)
+      .on('end', resolve)
+      .on('error', reject)
+      .run();
+  });
+}
+
+/**
+ * Get video duration using ffprobe
+ */
+async function getVideoDuration(videoPath) {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(videoPath, (err, metadata) => {
+      if (err) return reject(err);
+      resolve(metadata.format.duration || 60);
+    });
+  });
+}
+
+/**
+ * Add glitch flicker effect - random brightness spikes on a few frames
+ * Creates unsettling micro-disturbances (high retention effect)
+ */
+async function addGlitchFlicker(inputPath, outputPath, lowMemory = false) {
+  return new Promise((resolve, reject) => {
+    const outputOptions = lowMemory ? [
+      '-c:v', 'libx264', '-preset', 'superfast', '-crf', '24', '-c:a', 'copy', '-threads', '2',
+    ] : [
+      '-c:v', 'libx264', '-preset', 'medium', '-crf', '23', '-c:a', 'copy',
+    ];
+    
+    // Random brightness fluctuation every ~30-60 frames with subtle RGB shift
     ffmpeg(inputPath)
       .complexFilter([
-        // Base video
-        '[0:v]null[base]',
-        
-        // Layer 1: Film grain (random noise)
-        '[base]noise=c0s=15:c0f=t+u[grain]',
-        
-        // Layer 2: Vertical scratches (multiple thin lines)
-        // Uses geq to create random vertical lines that move frame-to-frame
-        `[grain]geq=lum='lum(X,Y)+if(lt(abs(X-mod(random(1)*1080+N*7,1080)),1),40,0)+if(lt(abs(X-mod(random(2)*1080+N*13,1080)),1),35,0)+if(lt(abs(X-mod(random(3)*1080+N*23,1080)),2),25,0)':cb='cb(X,Y)':cr='cr(X,Y)'[scratches]`,
-        
-        // Layer 3: Brightness flicker (simulates projector lamp variation)
-        `[scratches]eq=brightness='0.0+0.03*sin(n*0.5)+0.02*random(1)':contrast=1.05[flicker]`,
-        
-        // Layer 4: Slight shake/jitter (simulates film gate wobble)
-        '[flicker]crop=iw-8:ih-8:4+random(1)*4:4+random(2)*4,scale=1080:1920:flags=lanczos[shake]',
-        
-        // Layer 5: Light leak simulation (random bright spots on edges)
-        // Uses vignette inverted + random intensity
-        `[shake]curves=all='0/0 0.3/0.35 0.7/0.75 1/1':r='0/0 0.5/0.55 1/1'[color]`,
-        
-        // Layer 6: Subtle RGB channel separation (chromatic aberration)
-        '[color]rgbashift=rh=-2:rv=1:bh=2:bv=-1[rgb]',
-        
-        // Layer 7: Slight desaturation for that faded film look
-        '[rgb]eq=saturation=0.85[final]'
-      ], 'final')
+        // Random brightness spikes (subtle)
+        `[0:v]eq=brightness='0.0+0.08*lt(random(1),0.02)*sin(n*0.5)':contrast=1.0+0.05*lt(random(2),0.015)[flicker]`,
+        // Occasional RGB split on same random frames
+        `[flicker]rgbashift=rh='2*lt(random(3),0.01)':bh='-2*lt(random(4),0.01)'[out]`
+      ], 'out')
       .outputOptions(outputOptions)
       .output(outputPath)
       .on('end', resolve)
       .on('error', (err) => {
-        console.error('Film grain error:', err.message);
-        // Fallback to simpler effect if complex one fails
+        console.error('Glitch flicker error, using fallback:', err.message);
+        // Simpler fallback
         ffmpeg(inputPath)
-          .videoFilter([
-            'noise=c0s=12:c0f=t+u',
-            'eq=brightness=0.0+0.02*sin(n/3):saturation=0.9',
-            'rgbashift=rh=-2:bh=2',
-          ].join(','))
+          .videoFilter('eq=brightness=0.0+0.05*sin(n*0.3)*lt(random(1),0.03)')
           .outputOptions(outputOptions)
           .output(outputPath)
           .on('end', resolve)
           .on('error', reject)
           .run();
+      })
+      .run();
+  });
+}
+
+/**
+ * Add VHS tracking wobble effect
+ * Simulates old VHS tape with horizontal displacement and noise
+ */
+async function addVHSTracking(inputPath, outputPath, lowMemory = false) {
+  const TIMEOUT_MS = 3 * 60 * 1000; // 3 min timeout
+  
+  return new Promise((resolve, reject) => {
+    let timedOut = false;
+    const timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      console.error('⚠️ VHS tracking timed out, using fallback...');
+      ffmpegCommand.kill('SIGKILL');
+    }, TIMEOUT_MS);
+    
+    const outputOptions = lowMemory ? [
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26', '-c:a', 'copy', '-threads', '2',
+    ] : [
+      '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-c:a', 'copy', '-threads', '4',
+    ];
+    
+    // SIMPLIFIED VHS: noise + color shift (removed slow scroll filter)
+    const ffmpegCommand = ffmpeg(inputPath)
+      .videoFilter([
+        'noise=c0s=8:c0f=t',
+        'colorbalance=rs=0.03:gs=-0.02:bs=-0.03',
+        'eq=saturation=0.88'
+      ].join(','))
+      .outputOptions(outputOptions)
+      .output(outputPath)
+      .on('end', () => {
+        clearTimeout(timeoutHandle);
+        resolve();
+      })
+      .on('error', (err) => {
+        clearTimeout(timeoutHandle);
+        console.error('VHS tracking error, using fallback:', err.message);
+        ffmpeg(inputPath)
+          .videoFilter('noise=c0s=8:c0f=t')
+          .outputOptions(['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26', '-c:a', 'copy'])
+          .output(outputPath)
+          .on('end', resolve)
+          .on('error', reject)
+          .run();
+      })
+      .run();
+  });
+}
+
+/**
+ * Add light flicker effect - atmospheric horror brightness variation
+ * Simulates unstable lighting / candlelight
+ */
+async function addLightFlicker(inputPath, outputPath, lowMemory = false) {
+  const TIMEOUT_MS = 3 * 60 * 1000; // 3 min timeout
+  
+  return new Promise((resolve, reject) => {
+    let timedOut = false;
+    const timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      console.error('⚠️ Light flicker timed out, skipping...');
+      ffmpegCommand.kill('SIGKILL');
+    }, TIMEOUT_MS);
+    
+    const outputOptions = lowMemory ? [
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26', '-c:a', 'copy', '-threads', '2',
+    ] : [
+      '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-c:a', 'copy', '-threads', '4',
+    ];
+    
+    // Simple brightness variation (removed random() which can be slow)
+    const ffmpegCommand = ffmpeg(inputPath)
+      .videoFilter('eq=brightness=0.02*sin(n*0.25)')
+      .outputOptions(outputOptions)
+      .output(outputPath)
+      .on('end', () => {
+        clearTimeout(timeoutHandle);
+        resolve();
+      })
+      .on('error', (err) => {
+        clearTimeout(timeoutHandle);
+        if (timedOut) {
+          // Just copy on timeout
+          ffmpeg(inputPath)
+            .outputOptions(['-c:v', 'copy', '-c:a', 'copy'])
+            .output(outputPath)
+            .on('end', resolve)
+            .on('error', reject)
+            .run();
+        } else {
+          reject(err);
+        }
+      })
+      .run();
+  });
+}
+
+/**
+ * Add heartbeat zoom effect - subtle pulsing scale
+ * Creates subliminal unease (psychological effect)
+ */
+async function addHeartbeatZoom(inputPath, outputPath, lowMemory = false) {
+  return new Promise((resolve, reject) => {
+    const outputOptions = lowMemory ? [
+      '-c:v', 'libx264', '-preset', 'superfast', '-crf', '24', '-c:a', 'copy', '-threads', '2',
+    ] : [
+      '-c:v', 'libx264', '-preset', 'medium', '-crf', '23', '-c:a', 'copy',
+    ];
+    
+    // Subtle scale pulse like a heartbeat (0.5-1% scale variation)
+    // Uses zoompan for smooth interpolation
+    ffmpeg(inputPath)
+      .complexFilter([
+        // Scale up slightly then crop to add subtle zoom pulse
+        `[0:v]scale=1100:1956,zoompan=z='1.0+0.008*sin(on*0.15)':d=1:x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2':s=1080x1920:fps=30[out]`
+      ], 'out')
+      .outputOptions(outputOptions)
+      .output(outputPath)
+      .on('end', resolve)
+      .on('error', (err) => {
+        console.error('Heartbeat zoom error, using fallback:', err.message);
+        // Fallback: just copy without effect
+        ffmpeg(inputPath)
+          .outputOptions(['-c:v', 'copy', '-c:a', 'copy'])
+          .output(outputPath)
+          .on('end', resolve)
+          .on('error', reject)
+          .run();
+      })
+      .run();
+  });
+}
+
+/**
+ * Add negative flash effect - brief inverted color frames
+ * Jump scare / subliminal horror effect
+ */
+async function addNegativeFlash(inputPath, outputPath, lowMemory = false) {
+  return new Promise((resolve, reject) => {
+    const outputOptions = lowMemory ? [
+      '-c:v', 'libx264', '-preset', 'superfast', '-crf', '24', '-c:a', 'copy', '-threads', '2',
+    ] : [
+      '-c:v', 'libx264', '-preset', 'medium', '-crf', '23', '-c:a', 'copy',
+    ];
+    
+    // SIMPLIFIED: Use brightness spikes instead of geq (geq is EXTREMELY slow)
+    // This creates bright flashes that simulate the negative flash feel
+    ffmpeg(inputPath)
+      .videoFilter('eq=brightness=0.08*sin(n*0.05)*sin(n*0.37)')
+      .outputOptions(outputOptions)
+      .output(outputPath)
+      .on('end', resolve)
+      .on('error', (err) => {
+        console.error('Negative flash error:', err.message);
+        // Just copy the file
+        ffmpeg(inputPath)
+          .outputOptions(['-c:v', 'copy', '-c:a', 'copy'])
+          .output(outputPath)
+          .on('end', resolve)
+          .on('error', reject)
+          .run();
+      })
+      .run();
+  });
+}
+
+/**
+ * Add cold color creep effect - gradual blue/green shift over time
+ * Creates slow atmospheric dread
+ */
+async function addColdColorCreep(inputPath, outputPath, lowMemory = false) {
+  return new Promise(async (resolve, reject) => {
+    const duration = await getVideoDuration(inputPath);
+    
+    const outputOptions = lowMemory ? [
+      '-c:v', 'libx264', '-preset', 'superfast', '-crf', '24', '-c:a', 'copy', '-threads', '2',
+    ] : [
+      '-c:v', 'libx264', '-preset', 'medium', '-crf', '23', '-c:a', 'copy',
+    ];
+    
+    // Gradually shift color temperature colder as video progresses
+    // n/total_frames gives 0->1 progress
+    const totalFrames = Math.floor(duration * 30);
+    
+    ffmpeg(inputPath)
+      .videoFilter([
+        // Progressively desaturate and shift blue
+        `colorbalance=rs='-0.1*n/${totalFrames}':gs='-0.05*n/${totalFrames}':bs='0.15*n/${totalFrames}'`,
+        `eq=saturation='1.0-0.15*n/${totalFrames}'`,
+      ].join(','))
+      .outputOptions(outputOptions)
+      .output(outputPath)
+      .on('end', resolve)
+      .on('error', (err) => {
+        console.error('Cold color creep error, using fallback:', err.message);
+        // Fallback: static cold grade
+        ffmpeg(inputPath)
+          .videoFilter('colorbalance=bs=0.1,eq=saturation=0.9')
+          .outputOptions(outputOptions)
+          .output(outputPath)
+          .on('end', resolve)
+          .on('error', reject)
+          .run();
+      })
+      .run();
+  });
+}
+
+/**
+ * Add edge darkening creep effect - vignette that closes in over time
+ * Creates claustrophobic psychological effect
+ */
+async function addEdgeDarkeningCreep(inputPath, outputPath, lowMemory = false) {
+  return new Promise(async (resolve, reject) => {
+    const duration = await getVideoDuration(inputPath);
+    
+    const outputOptions = lowMemory ? [
+      '-c:v', 'libx264', '-preset', 'superfast', '-crf', '24', '-c:a', 'copy', '-threads', '2',
+    ] : [
+      '-c:v', 'libx264', '-preset', 'medium', '-crf', '23', '-c:a', 'copy',
+    ];
+    
+    // Vignette that progressively intensifies
+    const totalFrames = Math.floor(duration * 30);
+    
+    ffmpeg(inputPath)
+      .videoFilter([
+        // Start with light vignette (PI/3), end with heavy (PI/6)
+        // PI/3 ≈ 1.05, PI/6 ≈ 0.52
+        `vignette='PI/(3-1.5*n/${totalFrames})'`
+      ].join(','))
+      .outputOptions(outputOptions)
+      .output(outputPath)
+      .on('end', resolve)
+      .on('error', (err) => {
+        console.error('Edge darkening error, using fallback:', err.message);
+        ffmpeg(inputPath)
+          .videoFilter('vignette=PI/4')
+          .outputOptions(outputOptions)
+          .output(outputPath)
+          .on('end', resolve)
+          .on('error', reject)
+          .run();
+      })
+      .run();
+  });
+}
+
+/**
+ * Add scanline overlay effect - CRT monitor style
+ * Fits analog horror aesthetic
+ */
+async function addScanlines(inputPath, outputPath, lowMemory = false) {
+  const TIMEOUT_MS = 3 * 60 * 1000; // 3 min timeout
+  
+  return new Promise((resolve, reject) => {
+    let timedOut = false;
+    const timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      console.error('⚠️ Scanlines timed out, skipping...');
+      ffmpegCommand.kill('SIGKILL');
+    }, TIMEOUT_MS);
+    
+    const outputOptions = lowMemory ? [
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26', '-c:a', 'copy', '-threads', '2',
+    ] : [
+      '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-c:a', 'copy', '-threads', '4',
+    ];
+    
+    // SIMPLIFIED: Use hue filter for slight darkness + noise for scanline feel
+    // geq is too slow, this achieves similar look without per-pixel processing
+    const ffmpegCommand = ffmpeg(inputPath)
+      .videoFilter([
+        'noise=c0s=3:c0f=t',  // Light noise
+        'eq=contrast=1.05:brightness=-0.02'  // Slight contrast boost + darken
+      ].join(','))
+      .outputOptions(outputOptions)
+      .output(outputPath)
+      .on('end', () => {
+        clearTimeout(timeoutHandle);
+        resolve();
+      })
+      .on('error', (err) => {
+        clearTimeout(timeoutHandle);
+        if (timedOut) {
+          // Just copy on timeout
+          ffmpeg(inputPath)
+            .outputOptions(['-c:v', 'copy', '-c:a', 'copy'])
+            .output(outputPath)
+            .on('end', resolve)
+            .on('error', reject)
+            .run();
+        } else {
+          console.error('Scanlines error, using fallback:', err.message);
+          ffmpeg(inputPath)
+            .outputOptions(['-c:v', 'copy', '-c:a', 'copy'])
+            .output(outputPath)
+            .on('end', resolve)
+            .on('error', reject)
+            .run();
+        }
       })
       .run();
   });
@@ -1093,7 +1499,107 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     }
     job.progress = 92;
     
-    // Step 7: Move to output directory
+    // =====================================================
+    // NEW EFFECTS (Step 9+)
+    // =====================================================
+    
+    // Glitch flicker (disturbance category)
+    if (effects.glitchFlicker) {
+      console.log(`[${jobId}] Adding glitch flicker effect...`);
+      const glitchPath = path.join(jobDir, 'glitch.mp4');
+      await addGlitchFlicker(currentVideo, glitchPath, useLowMemory);
+      await fs.unlink(currentVideo).catch(() => {});
+      currentVideo = glitchPath;
+      console.log(`[${jobId}] ✓ Glitch flicker added`);
+    }
+    
+    // VHS tracking wobble (disturbance category)
+    if (effects.vhsTracking) {
+      console.log(`[${jobId}] Adding VHS tracking wobble...`);
+      const vhsPath = path.join(jobDir, 'vhs.mp4');
+      await addVHSTracking(currentVideo, vhsPath, useLowMemory);
+      await fs.unlink(currentVideo).catch(() => {});
+      currentVideo = vhsPath;
+      console.log(`[${jobId}] ✓ VHS tracking added`);
+    }
+    
+    // Scanlines (disturbance category)
+    if (effects.scanlines) {
+      console.log(`[${jobId}] Adding scanline overlay...`);
+      const scanPath = path.join(jobDir, 'scanlines.mp4');
+      await addScanlines(currentVideo, scanPath, useLowMemory);
+      await fs.unlink(currentVideo).catch(() => {});
+      currentVideo = scanPath;
+      console.log(`[${jobId}] ✓ Scanlines added`);
+    }
+    
+    // Light flicker (atmospheric category)
+    if (effects.lightFlicker) {
+      console.log(`[${jobId}] Adding light flicker effect...`);
+      const flickerPath = path.join(jobDir, 'flicker.mp4');
+      await addLightFlicker(currentVideo, flickerPath, useLowMemory);
+      await fs.unlink(currentVideo).catch(() => {});
+      currentVideo = flickerPath;
+      console.log(`[${jobId}] ✓ Light flicker added`);
+    }
+    
+    // Cold color creep (atmospheric category)
+    if (effects.coldColorCreep) {
+      console.log(`[${jobId}] Adding cold color creep effect...`);
+      const coldPath = path.join(jobDir, 'cold.mp4');
+      await addColdColorCreep(currentVideo, coldPath, useLowMemory);
+      await fs.unlink(currentVideo).catch(() => {});
+      currentVideo = coldPath;
+      console.log(`[${jobId}] ✓ Cold color creep added`);
+    }
+    
+    // Heartbeat zoom (psychological category)
+    if (effects.heartbeatZoom) {
+      console.log(`[${jobId}] Adding heartbeat zoom effect...`);
+      const heartPath = path.join(jobDir, 'heartbeat.mp4');
+      await addHeartbeatZoom(currentVideo, heartPath, useLowMemory);
+      await fs.unlink(currentVideo).catch(() => {});
+      currentVideo = heartPath;
+      console.log(`[${jobId}] ✓ Heartbeat zoom added`);
+    }
+    
+    // Negative flash (psychological category)
+    if (effects.negativeFlash) {
+      console.log(`[${jobId}] Adding negative flash effect...`);
+      const negPath = path.join(jobDir, 'negative.mp4');
+      await addNegativeFlash(currentVideo, negPath, useLowMemory);
+      await fs.unlink(currentVideo).catch(() => {});
+      currentVideo = negPath;
+      console.log(`[${jobId}] ✓ Negative flash added`);
+    }
+    
+    // Edge darkening creep (psychological category)
+    if (effects.edgeDarkeningCreep) {
+      console.log(`[${jobId}] Adding edge darkening creep effect...`);
+      const edgePath = path.join(jobDir, 'edge.mp4');
+      await addEdgeDarkeningCreep(currentVideo, edgePath, useLowMemory);
+      await fs.unlink(currentVideo).catch(() => {});
+      currentVideo = edgePath;
+      console.log(`[${jobId}] ✓ Edge darkening creep added`);
+    }
+    
+    // Fade in/out (transition category) - ALWAYS LAST
+    if (effects.fadeIn || effects.fadeOut) {
+      console.log(`[${jobId}] Adding fade transitions (in: ${effects.fadeIn}, out: ${effects.fadeOut})...`);
+      const fadePath = path.join(jobDir, 'faded.mp4');
+      await addFadeEffect(currentVideo, fadePath, {
+        fadeIn: effects.fadeIn,
+        fadeOut: effects.fadeOut,
+        fadeDuration: effects.fadeDuration || 1.5,
+      }, useLowMemory);
+      await fs.unlink(currentVideo).catch(() => {});
+      currentVideo = fadePath;
+      console.log(`[${jobId}] ✓ Fade transitions added`);
+    }
+    
+    job.progress = 95;
+    
+    // Final step: Move to output directory
     const finalPath = path.join(OUTPUT_DIR, `${jobId}.mp4`);
     await fs.copyFile(currentVideo, finalPath);
     console.log(`[${jobId}] ✓ Final video saved locally`);
