@@ -640,7 +640,7 @@ async function addFilmGrain(inputPath, outputPath, lowMemory = false) {
         // Simple grain + flicker combo (fast)
         '[0:v]noise=c0s=12:c0f=t+u,eq=brightness=0.02*sin(n*0.3):saturation=0.88,rgbashift=rh=-1:bh=1[final]'
       ], 'final')
-      .outputOptions(['-map', '[final]', '-map', '0:a?', ...outputOptions])
+      .outputOptions(['-map', '0:a?', ...outputOptions])
       .output(outputPath)
       .on('end', () => {
         clearTimeout(timeoutHandle);
@@ -756,7 +756,7 @@ async function addGlitchFlicker(inputPath, outputPath, lowMemory = false) {
         // Occasional RGB split on same random frames
         `[flicker]rgbashift=rh='2*lt(random(3),0.01)':bh='-2*lt(random(4),0.01)'[out]`
       ], 'out')
-      .outputOptions(['-map', '[out]', '-map', '0:a?', ...outputOptions])
+      .outputOptions(['-map', '0:a?', ...outputOptions])
       .output(outputPath)
       .on('end', resolve)
       .on('error', (err) => {
@@ -890,7 +890,7 @@ async function addHeartbeatZoom(inputPath, outputPath, lowMemory = false) {
         // Scale up slightly then crop to add subtle zoom pulse
         `[0:v]scale=1100:1956,zoompan=z='1.0+0.008*sin(on*0.15)':d=1:x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2':s=1080x1920:fps=30[out]`
       ], 'out')
-      .outputOptions(['-map', '[out]', '-map', '0:a?', ...outputOptions])
+      .outputOptions(['-map', '0:a?', ...outputOptions])
       .output(outputPath)
       .on('end', resolve)
       .on('error', (err) => {
