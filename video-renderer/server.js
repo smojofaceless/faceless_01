@@ -157,9 +157,14 @@ async function uploadToSupabase(localPath, jobId) {
  * Update job status in Supabase (if configured)
  */
 async function updateJobInSupabase(jobId, supabaseJobId, status, videoUrl = null) {
-  if (!supabase || !supabaseJobId) return;
+  if (!supabase || !supabaseJobId) {
+    console.log(`[${jobId}] Skipping Supabase update - no client or job ID`);
+    return;
+  }
   
   try {
+    console.log(`[${jobId}] Updating Supabase job ${supabaseJobId} to ${status}, videoUrl: ${videoUrl ? 'YES' : 'NO'}`);
+    
     const updates = {
       progress: status === 'complete' ? 100 : status === 'failed' ? 0 : 85,
       updated_at: new Date().toISOString(),
@@ -171,22 +176,39 @@ async function updateJobInSupabase(jobId, supabaseJobId, status, videoUrl = null
       updates.status = 'failed';
     }
     
-    await supabase.from('jobs').update(updates).eq('id', supabaseJobId);
+    const { error: jobError } = await supabase.from('jobs').update(updates).eq('id', supabaseJobId);
+    if (jobError) {
+      console.error(`[${jobId}] Jobs table update error:`, jobError);
+    } else {
+      console.log(`[${jobId}] ✓ Jobs table updated`);
+    }
     
     // If we have a video URL, save it to job_assets
     if (videoUrl && status === 'complete') {
+      console.log(`[${jobId}] Saving video URL to job_assets...`);
+      
       // Delete existing then insert
-      await supabase.from('job_assets').delete()
+      const { error: deleteError } = await supabase.from('job_assets').delete()
         .eq('job_id', supabaseJobId)
         .eq('type', 'final_mp4');
       
-      await supabase.from('job_assets').insert({
+      if (deleteError) {
+        console.error(`[${jobId}] Delete existing asset error:`, deleteError);
+      }
+      
+      const { data: insertData, error: insertError } = await supabase.from('job_assets').insert({
         job_id: supabaseJobId,
         type: 'final_mp4',
         storage_path: videoUrl,
         public_url: videoUrl,
         meta: { renderer: 'ffmpeg', completed_at: new Date().toISOString() },
-      });
+      }).select();
+      
+      if (insertError) {
+        console.error(`[${jobId}] ❌ Insert job_assets error:`, insertError);
+      } else {
+        console.log(`[${jobId}] ✓ Video URL saved to job_assets:`, insertData);
+      }
     }
   } catch (err) {
     console.error(`[${jobId}] Failed to update Supabase:`, err.message);
