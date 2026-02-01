@@ -633,12 +633,11 @@ async function addFilmGrain(inputPath, outputPath, lowMemory = false) {
       '-threads', '4',
     ];
     
-    // SIMPLIFIED: Fast film grain effect that won't hang
-    // Removed geq (extremely slow), simplified to core grain + flicker
+    // Film grain: Visible noise + desaturation + color shift
     const ffmpegCommand = ffmpeg(inputPath)
       .complexFilter([
-        // Simple grain + flicker combo (fast)
-        '[0:v]noise=c0s=12:c0f=t+u,eq=brightness=0.02*sin(n*0.3):saturation=0.88,rgbashift=rh=-1:bh=1[final]'
+        // Stronger grain with visible chromatic aberration
+        '[0:v]noise=c0s=20:c1s=15:c0f=t+u,eq=saturation=0.75:contrast=1.08,rgbashift=rh=-2:bh=2[final]'
       ], 'final')
       .outputOptions(['-map', '0:a?', ...outputOptions])
       .output(outputPath)
@@ -652,7 +651,7 @@ async function addFilmGrain(inputPath, outputPath, lowMemory = false) {
           // Try ultra-simple fallback after timeout
           console.log('  → Trying ultra-simple grain fallback...');
           ffmpeg(inputPath)
-            .videoFilter('noise=c0s=10:c0f=t')
+            .videoFilter('noise=c0s=18:c0f=t,eq=saturation=0.8')
             .outputOptions(['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26', '-c:a', 'copy'])
             .output(outputPath)
             .on('end', resolve)
@@ -662,7 +661,7 @@ async function addFilmGrain(inputPath, outputPath, lowMemory = false) {
           console.error('Film grain error:', err.message);
           // Fallback to simplest possible effect
           ffmpeg(inputPath)
-            .videoFilter('noise=c0s=10:c0f=t')
+            .videoFilter('noise=c0s=18:c0f=t,eq=saturation=0.8')
             .outputOptions(outputOptions)
             .output(outputPath)
             .on('end', resolve)
@@ -804,9 +803,9 @@ async function addVHSTracking(inputPath, outputPath, lowMemory = false) {
       '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '24', '-c:a', 'copy', '-threads', '4',
     ];
     
-    // LIGHTER VHS: just noise + slight saturation drop (removed colorbalance which is slow)
+    // VHS: visible noise + desaturation + slight blur for analog feel
     const ffmpegCommand = ffmpeg(inputPath)
-      .videoFilter('noise=c0s=6:c0f=t,eq=saturation=0.9')
+      .videoFilter('noise=c0s=15:c0f=t,eq=saturation=0.7:brightness=-0.03,unsharp=3:3:-0.5')
       .outputOptions(outputOptions)
       .output(outputPath)
       .on('end', () => {
@@ -817,7 +816,7 @@ async function addVHSTracking(inputPath, outputPath, lowMemory = false) {
         clearTimeout(timeoutHandle);
         console.error('VHS tracking error, using fallback:', err.message);
         ffmpeg(inputPath)
-          .videoFilter('noise=c0s=5:c0f=t')
+          .videoFilter('noise=c0s=12:c0f=t,eq=saturation=0.75')
           .outputOptions(['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26', '-c:a', 'copy'])
           .output(outputPath)
           .on('end', resolve)
@@ -849,9 +848,9 @@ async function addLightFlicker(inputPath, outputPath, lowMemory = false) {
       '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-c:a', 'copy', '-threads', '4',
     ];
     
-    // Simple brightness variation (removed random() which can be slow)
+    // Visible light flicker - stronger brightness oscillation
     const ffmpegCommand = ffmpeg(inputPath)
-      .videoFilter('eq=brightness=0.02*sin(n*0.25)')
+      .videoFilter('eq=brightness=0.08*sin(n*0.3):gamma=1.0+0.05*sin(n*0.15)')
       .outputOptions(outputOptions)
       .output(outputPath)
       .on('end', () => {
@@ -1048,12 +1047,12 @@ async function addScanlines(inputPath, outputPath, lowMemory = false) {
       '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-c:a', 'copy', '-threads', '4',
     ];
     
-    // SIMPLIFIED: Use hue filter for slight darkness + noise for scanline feel
-    // geq is too slow, this achieves similar look without per-pixel processing
+    // CRT scanlines: Use interlace deinterlace trick + darken for visible lines
     const ffmpegCommand = ffmpeg(inputPath)
       .videoFilter([
-        'noise=c0s=3:c0f=t',  // Light noise
-        'eq=contrast=1.05:brightness=-0.02'  // Slight contrast boost + darken
+        'curves=all=0/0 0.5/0.45 1/1',  // Darken midtones
+        'noise=c0s=8:c0f=t',  // Light noise
+        'eq=contrast=1.15:brightness=-0.05'  // Higher contrast + darken for CRT feel
       ].join(','))
       .outputOptions(outputOptions)
       .output(outputPath)
