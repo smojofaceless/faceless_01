@@ -1519,8 +1519,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
       sceneStartTime = sceneEnd;
     }
     
-    // Track Ken Burns if enabled
-    const useKenBurns = effects.kenBurns !== false && !DISABLE_KEN_BURNS;
+    // Track Ken Burns if enabled (useKenBurns already declared above)
     if (useKenBurns) {
       appliedEffects.push({ 
         name: 'Ken Burns', 
