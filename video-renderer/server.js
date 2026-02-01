@@ -633,11 +633,11 @@ async function addFilmGrain(inputPath, outputPath, lowMemory = false) {
       '-threads', '4',
     ];
     
-    // Film grain: Visible noise + desaturation + color shift
+    // Film grain: Visible noise + desaturation + color shift (no darkening)
     const ffmpegCommand = ffmpeg(inputPath)
       .complexFilter([
         // Stronger grain with visible chromatic aberration
-        '[0:v]noise=c0s=20:c1s=15:c0f=t+u,eq=saturation=0.75:contrast=1.08,rgbashift=rh=-2:bh=2[final]'
+        '[0:v]noise=c0s=20:c1s=15:c0f=t+u,eq=saturation=0.78:contrast=1.05,rgbashift=rh=-2:bh=2[final]'
       ], 'final')
       .outputOptions(['-map', '0:a?', ...outputOptions])
       .output(outputPath)
@@ -805,7 +805,7 @@ async function addVHSTracking(inputPath, outputPath, lowMemory = false) {
     
     // VHS: visible noise + desaturation + slight blur for analog feel
     const ffmpegCommand = ffmpeg(inputPath)
-      .videoFilter('noise=c0s=15:c0f=t,eq=saturation=0.7:brightness=-0.03,unsharp=3:3:-0.5')
+      .videoFilter('noise=c0s=15:c0f=t,eq=saturation=0.7,unsharp=3:3:-0.5')
       .outputOptions(outputOptions)
       .output(outputPath)
       .on('end', () => {
@@ -1047,12 +1047,11 @@ async function addScanlines(inputPath, outputPath, lowMemory = false) {
       '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-c:a', 'copy', '-threads', '4',
     ];
     
-    // CRT scanlines: Use interlace deinterlace trick + darken for visible lines
+    // CRT scanlines: contrast + noise for visible CRT feel (no darkening)
     const ffmpegCommand = ffmpeg(inputPath)
       .videoFilter([
-        'curves=all=0/0 0.5/0.45 1/1',  // Darken midtones
-        'noise=c0s=8:c0f=t',  // Light noise
-        'eq=contrast=1.15:brightness=-0.05'  // Higher contrast + darken for CRT feel
+        'noise=c0s=8:c0f=t',  // Visible noise
+        'eq=contrast=1.12'  // Contrast for CRT feel without darkening
       ].join(','))
       .outputOptions(outputOptions)
       .output(outputPath)
