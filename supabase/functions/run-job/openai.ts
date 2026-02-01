@@ -1138,7 +1138,7 @@ Return JSON:
  * This is the critical layer that makes images follow the story
  * 
  * BATCHED to avoid output token truncation - GPT-4o-mini has limited output tokens
- * Processing 8 scenes at a time ensures we get complete contracts for all scenes
+ * Processing 6 scenes at a time ensures we get complete contracts for all scenes
  */
 export async function createSceneVisualContracts(
   openaiKey: string,
@@ -1146,10 +1146,26 @@ export async function createSceneVisualContracts(
   storyAnchor: StoryAnchor,
   visualBeats: VisualBeat[]
 ): Promise<SceneVisualContract[]> {
-  const allContracts: SceneVisualContract[] = new Array(scenes.length);
+  // Pre-initialize ALL contracts with fallbacks first
+  // This ensures every scene gets a contract even if API fails
+  const baseLocation = storyAnchor.environment.split(",")[0] || "dark setting";
+  const allContracts: SceneVisualContract[] = scenes.map((scene, i) => ({
+    sceneIndex: i,
+    location: baseLocation,
+    characterPose: "standing, tense posture",
+    facialExpression: "fear, wide eyes",
+    visibleObjects: ["walls", "shadows", "fog"],
+    supernaturalElement: i > 2 ? "unnatural shadows moving" : null,
+    cameraDistance: i === 0 ? "wide" : "medium" as const,
+    lightingSource: "dim ambient light",
+    actionFrozen: scene.text.substring(0, 80),
+    forbiddenElements: ["stairs", "extra people", "text", "words"],
+    continuityFromPrev: i === 0 ? "establishing shot" : `same environment as previous`,
+    evidenceRule: `scene must clearly show ${baseLocation}`,
+  }));
   
-  // Process in batches of 8 to avoid output token truncation
-  const BATCH_SIZE = 8;
+  // Process in batches of 6 (smaller batches = more reliable)
+  const BATCH_SIZE = 6;
   const totalBatches = Math.ceil(scenes.length / BATCH_SIZE);
   
   console.log(`[VISUAL CONTRACTS] Processing ${scenes.length} scenes in ${totalBatches} batches of ${BATCH_SIZE}`);
@@ -1171,57 +1187,61 @@ export async function createSceneVisualContracts(
         scenes.length
       );
       
-      // Store contracts in correct positions
-      for (let i = 0; i < batchContracts.length; i++) {
-        allContracts[startIdx + i] = batchContracts[i];
+      // Store contracts by MATCHING sceneIndex, not by array position
+      // This handles cases where GPT returns them in wrong order or with wrong indices
+      for (const contract of batchContracts) {
+        // Try to match by sceneIndex first
+        let targetIdx = contract.sceneIndex;
+        
+        // If sceneIndex is relative (0-5 instead of 8-13), convert to global
+        if (targetIdx < startIdx && targetIdx < BATCH_SIZE) {
+          targetIdx = startIdx + targetIdx;
+          console.log(`[VISUAL CONTRACTS] Fixing relative index ${contract.sceneIndex} → ${targetIdx}`);
+        }
+        
+        // Validate the index is within expected range
+        if (targetIdx >= startIdx && targetIdx < endIdx) {
+          allContracts[targetIdx] = { ...contract, sceneIndex: targetIdx };
+          console.log(`[VISUAL CONTRACTS] ✓ Scene ${targetIdx + 1}: ${contract.location}, action="${contract.actionFrozen?.substring(0, 40)}..."`);
+        } else {
+          console.warn(`[VISUAL CONTRACTS] ⚠️ Contract sceneIndex ${contract.sceneIndex} out of batch range ${startIdx}-${endIdx-1}`);
+        }
       }
       
-      console.log(`[VISUAL CONTRACTS] Batch ${batchIndex + 1} complete: got ${batchContracts.length} contracts`);
+      console.log(`[VISUAL CONTRACTS] Batch ${batchIndex + 1} complete: processed ${batchContracts.length} contracts`);
       
     } catch (batchError) {
       console.error(`[VISUAL CONTRACTS] Batch ${batchIndex + 1} failed:`, batchError);
-      // Create fallback contracts for this batch
-      const baseLocation = storyAnchor.environment.split(",")[0] || "dark room";
-      for (let i = 0; i < batchScenes.length; i++) {
-        const sceneIdx = startIdx + i;
-        allContracts[sceneIdx] = {
-          sceneIndex: sceneIdx,
-          location: baseLocation,
-          characterPose: "standing, tense posture",
-          facialExpression: "fear, wide eyes",
-          visibleObjects: ["walls", "shadows"],
-          supernaturalElement: sceneIdx > 1 ? "unnatural shadows" : null,
-          cameraDistance: sceneIdx === 0 ? "wide" : "medium" as const,
-          lightingSource: "dim ambient light",
-          actionFrozen: batchScenes[i].text.substring(0, 50),
-          forbiddenElements: ["stairs", "hallway", "extra people", "forest", "outdoors"],
-          continuityFromPrev: sceneIdx === 0 ? "establishing shot" : `same ${baseLocation} as scene 1`,
-          evidenceRule: `scene must clearly show ${baseLocation}`,
-        };
-      }
+      // Fallback contracts were already pre-initialized, so we just log and continue
+      console.log(`[VISUAL CONTRACTS] Using pre-initialized fallback contracts for scenes ${startIdx + 1}-${endIdx}`);
     }
     
-    // Small delay between batches to avoid rate limits
+    // Delay between batches to avoid rate limits
     if (batchIndex < totalBatches - 1) {
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise(r => setTimeout(r, 800));
     }
   }
   
-  // Log all contracts for debugging
-  console.log(`[VISUAL CONTRACTS] Created ${allContracts.filter(c => c).length}/${scenes.length} contracts total`);
+  // Final validation - count how many have real contracts vs fallbacks
+  let realContracts = 0;
+  let fallbackContracts = 0;
   allContracts.forEach((c, i) => {
-    if (c) {
-      console.log(`[VISUAL CONTRACTS] Scene ${i + 1}: location="${c.location}", pose="${c.characterPose}", action="${c.actionFrozen?.substring(0, 50)}"`);
+    if (c.actionFrozen && c.actionFrozen.length > 50) {
+      realContracts++;
     } else {
-      console.log(`[VISUAL CONTRACTS] Scene ${i + 1}: MISSING CONTRACT!`);
+      fallbackContracts++;
+      console.log(`[VISUAL CONTRACTS] Scene ${i + 1}: Using fallback (no detailed contract)`);
     }
   });
+  
+  console.log(`[VISUAL CONTRACTS] Final: ${realContracts} detailed contracts, ${fallbackContracts} fallbacks`);
   
   return allContracts;
 }
 
 /**
  * Create visual contracts for a batch of scenes
+ * Uses enhanced prompt to prevent abstraction/compression on later scenes
  */
 async function createVisualContractsBatch(
   openaiKey: string,
@@ -1232,7 +1252,7 @@ async function createVisualContractsBatch(
   totalScenes: number
 ): Promise<SceneVisualContract[]> {
   const sceneData = scenes.map((s, i) => ({
-    index: startIndex + i,
+    globalIndex: startIndex + i,  // Use globalIndex to be explicit
     text: s.text,
     beat: visualBeats[i]?.visualBeat || "atmospheric moment",
     mood: visualBeats[i]?.moodLevel || 5
@@ -1251,55 +1271,68 @@ async function createVisualContractsBatch(
           role: "system",
           content: `You are a storyboard artist converting story scenes into LITERAL visual frames.
 
+🔒 CRITICAL GLOBAL OVERRIDE - READ CAREFULLY:
+You MUST treat EVERY scene as a first-time image generation.
+Do NOT abstract, summarize, or reduce visual detail for ANY scene.
+Do NOT assume earlier scenes "carry over" visually.
+EVERY scene must have FULL, DETAILED visual specifications.
+
 ENVIRONMENT CONTEXT:
 ${storyAnchor.environment}
 ${storyAnchor.characterDescription ? `CHARACTER: ${storyAnchor.characterDescription}` : ""}
 
-YOUR JOB: Convert each scene into a single FROZEN visual frame.
+YOUR JOB: Convert each scene into a single FROZEN visual frame with FULL DETAIL.
 
-RULES:
-1. Be LITERAL and CONCRETE - no symbolism, no abstraction
-2. Everything you describe MUST be visible in a single image
-3. Location must be a SPECIFIC physical place (bedroom, bathroom, hallway, kitchen)
-4. Character pose must describe EXACTLY what the body is doing
-5. Visible objects must be items that PHYSICALLY APPEAR in frame
-6. Supernatural element should be VISUAL, not conceptual (not "feeling of dread" but "shadow with too many limbs")
-7. MAINTAIN LOCATION CONTINUITY - don't jump to forest if story is in bedroom
+⚠️ ABSTRACT TEXT HANDLING:
+Story fragments like "accounts grew too consistent" or "sightings escalated" are NOT visual instructions.
+You MUST translate abstract narrative into CONCRETE, PHYSICAL, CINEMATIC visuals:
+- "accounts grew consistent" → show multiple witness interviews, scattered documents, worried faces
+- "sightings escalated" → show increasing signs of presence: more shadows, disturbed vegetation, frightened animals
+- "families in anguish" → show grieving person, missing person poster, empty chair at table
 
-For each scene, return:
+For EACH scene, return a contract with these EXACT fields:
 {
-  "sceneIndex": number,
-  "location": "exact physical place - BE SPECIFIC (bedroom, bathroom, kitchen, hallway)",
-  "characterPose": "specific body position and action",
-  "facialExpression": "visible emotion on face",
-  "visibleObjects": ["object1", "object2", "object3"],
-  "supernaturalElement": "the horror visual, or null if none",
+  "sceneIndex": GLOBAL_SCENE_NUMBER (the exact number I give you, e.g., 10, 11, 12),
+  "location": "SPECIFIC physical place with detail",
+  "characterPose": "EXACT body position and action - be specific",
+  "facialExpression": "visible emotion",
+  "visibleObjects": ["object1", "object2", "object3"] - at least 3 items,
+  "supernaturalElement": "the horror visual (or null)",
   "cameraDistance": "close-up" | "medium" | "wide",
-  "lightingSource": "where light comes from",
-  "actionFrozen": "the exact moment in time being captured",
-  "forbiddenElements": ["things that must NOT appear - stairs, hallway, forest, extra people, mirrors, candles - unless story mentions them"],
-  "continuityFromPrev": "what must match previous scene (same room, same outfit, same lighting)",
-  "evidenceRule": "VISUAL PROOF this is the right scene - a specific detail that MUST be visible"
+  "lightingSource": "specific light source",
+  "actionFrozen": "DETAILED description of the EXACT visual moment - minimum 20 words",
+  "forbiddenElements": ["text", "words", "extra people"],
+  "continuityFromPrev": "what must match previous",
+  "evidenceRule": "VISUAL PROOF this is the right scene"
 }
 
-CRITICAL RULES FOR forbiddenElements:
-- If story is in a BEDROOM, forbid: stairs, hallway, forest, outdoors, kitchen
-- If story has ONE character, forbid: extra people, crowd, multiple figures
-- If story has NO mirrors mentioned, forbid: mirrors, reflections
-- Default forbid list: stairs, hallway, extra people (unless story needs them)
+CRITICAL RULES:
+1. sceneIndex MUST match the GLOBAL scene number I provide (e.g., if I say Scene 10, return sceneIndex: 9)
+2. actionFrozen MUST be at least 20 words describing a CONCRETE visual
+3. NEVER return generic "atmospheric moment" - invent specific visuals
+4. EVERY scene gets FULL detail, no shortcuts
 
-Return JSON array: {"contracts": [...]}`,
+Return JSON: {"contracts": [...]}`,
         },
         {
           role: "user",
-          content: `Convert these ${scenes.length} scenes (${startIndex + 1}-${startIndex + scenes.length} of ${totalScenes}) to visual contracts:\n\n${sceneData.map(s => 
-            `Scene ${s.index + 1} (mood ${s.mood}/10):\nText: "${s.text}"\nBeat: ${s.beat}`
-          ).join("\n\n")}`,
+          content: `Convert these ${scenes.length} scenes to DETAILED visual contracts.
+USE THE EXACT GLOBAL SCENE INDICES I PROVIDE:
+
+${sceneData.map(s => 
+  `=== SCENE ${s.globalIndex + 1} of ${totalScenes} (USE sceneIndex: ${s.globalIndex}) ===
+Mood: ${s.mood}/10
+Narration: "${s.text}"
+Visual Beat: ${s.beat}
+REQUIRED: Create a SPECIFIC, CONCRETE visual for this moment.`
+).join("\n\n")}
+
+Remember: sceneIndex values must be ${sceneData.map(s => s.globalIndex).join(", ")} respectively.`,
         },
       ],
-      temperature: 0.4, // Lower temperature for more literal/consistent output
+      temperature: 0.5,
       response_format: { type: "json_object" },
-      max_tokens: 4000, // Ensure we get complete response
+      max_tokens: 4000,
     }),
   });
 
@@ -1312,10 +1345,12 @@ Return JSON array: {"contracts": [...]}`,
   const parsed = JSON.parse(data.choices[0].message.content);
   const contracts = parsed.contracts || parsed.scenes || (Array.isArray(parsed) ? parsed : []);
   
-  // Ensure we got contracts for all scenes in the batch
-  if (contracts.length < scenes.length) {
-    console.warn(`[VISUAL CONTRACTS] Batch only returned ${contracts.length}/${scenes.length} contracts`);
-  }
+  console.log(`[VISUAL CONTRACTS] Batch returned ${contracts.length} contracts for scenes ${startIndex + 1}-${startIndex + scenes.length}`);
+  
+  // Log what we got back
+  contracts.forEach((c: any) => {
+    console.log(`[VISUAL CONTRACTS] Raw: sceneIndex=${c.sceneIndex}, location="${c.location}", actionFrozen="${c.actionFrozen?.substring(0, 50)}..."`);
+  });
   
   return contracts;
 }
