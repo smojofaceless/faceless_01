@@ -788,7 +788,7 @@ async function addGlitchFlicker(inputPath, outputPath, lowMemory = false) {
  * Simulates old VHS tape with horizontal displacement and noise
  */
 async function addVHSTracking(inputPath, outputPath, lowMemory = false) {
-  const TIMEOUT_MS = 3 * 60 * 1000; // 3 min timeout
+  const TIMEOUT_MS = 4 * 60 * 1000; // 4 min timeout (increased)
   
   return new Promise((resolve, reject) => {
     let timedOut = false;
@@ -799,18 +799,14 @@ async function addVHSTracking(inputPath, outputPath, lowMemory = false) {
     }, TIMEOUT_MS);
     
     const outputOptions = lowMemory ? [
-      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26', '-c:a', 'copy', '-threads', '2',
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-c:a', 'copy', '-threads', '2',
     ] : [
-      '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-c:a', 'copy', '-threads', '4',
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '24', '-c:a', 'copy', '-threads', '4',
     ];
     
-    // SIMPLIFIED VHS: noise + color shift (removed slow scroll filter)
+    // LIGHTER VHS: just noise + slight saturation drop (removed colorbalance which is slow)
     const ffmpegCommand = ffmpeg(inputPath)
-      .videoFilter([
-        'noise=c0s=8:c0f=t',
-        'colorbalance=rs=0.03:gs=-0.02:bs=-0.03',
-        'eq=saturation=0.88'
-      ].join(','))
+      .videoFilter('noise=c0s=6:c0f=t,eq=saturation=0.9')
       .outputOptions(outputOptions)
       .output(outputPath)
       .on('end', () => {
@@ -821,7 +817,7 @@ async function addVHSTracking(inputPath, outputPath, lowMemory = false) {
         clearTimeout(timeoutHandle);
         console.error('VHS tracking error, using fallback:', err.message);
         ffmpeg(inputPath)
-          .videoFilter('noise=c0s=8:c0f=t')
+          .videoFilter('noise=c0s=5:c0f=t')
           .outputOptions(['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26', '-c:a', 'copy'])
           .output(outputPath)
           .on('end', resolve)
