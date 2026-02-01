@@ -362,7 +362,7 @@ export async function generateGPT4oImage(
 
       if (!response.ok) {
         const error = await response.text();
-        console.error(`[GPT-4o] Image API error (attempt ${attempt}/${maxRetries}):`, response.status, error.substring(0, 150));
+        console.error(`[GPT-4o] Image API error (attempt ${attempt}/${maxRetries}):`, response.status, error.substring(0, 300));
         
         // Handle rate limiting with exponential backoff
         if (response.status === 429) {
@@ -371,6 +371,21 @@ export async function generateGPT4oImage(
             const waitTime = 20 * attempt * 1000;
             console.log(`[GPT-4o] Rate limited! Waiting ${waitTime/1000}s before retry...`);
             await new Promise(r => setTimeout(r, waitTime));
+            continue;
+          }
+        }
+        
+        // Handle content policy violations (400) - retry with sanitized prompt
+        if (response.status === 400) {
+          console.log(`[GPT-4o] ⚠️ Content policy rejection for scene ${sceneIndex + 1}`);
+          console.log(`[GPT-4o] Original prompt (first 200 chars): ${prompt.substring(0, 200)}...`);
+          
+          if (attempt < maxRetries) {
+            // Try with a heavily sanitized version
+            const sanitizedPrompt = sanitizePromptForRetry(prompt, attempt);
+            console.log(`[GPT-4o] Retrying with sanitized prompt (attempt ${attempt + 1})...`);
+            requestBody.prompt = sanitizedPrompt;
+            await new Promise(r => setTimeout(r, 2000));
             continue;
           }
         }
@@ -408,6 +423,77 @@ export async function generateGPT4oImage(
   }
   
   throw new Error("GPT-4o generation failed after all retries");
+}
+
+// =====================================================
+// PROMPT SANITIZATION FOR CONTENT POLICY RETRIES
+// =====================================================
+function sanitizePromptForRetry(originalPrompt: string, attemptNumber: number): string {
+  // Remove potentially problematic words/phrases that OpenAI may flag
+  const problematicTerms = [
+    // Violence/gore
+    /\b(blood|bloody|bleeding|gore|gory|wound|wounds|injured|injury|dead body|corpse|death|dying|murder|kill|stab|cut|slash|mutilat)/gi,
+    // Scary faces/figures
+    /\b(terrifying|horrifying|grotesque|deformed|disfigured|monstrous|demonic|evil|sinister|menacing|threatening)/gi,
+    // Weapons
+    /\b(knife|blade|weapon|gun|axe|machete|chainsaw)/gi,
+    // Children in danger
+    /\b(child|children|kid|kids|baby|infant|teenager|teen)\s*(scream|cry|fear|terror|danger|hurt|harm)/gi,
+    // Torture/suffering
+    /\b(torture|torment|agony|suffering|pain|scream|screaming)/gi,
+  ];
+  
+  let sanitized = originalPrompt;
+  
+  // First attempt: remove the most problematic terms
+  for (const regex of problematicTerms) {
+    sanitized = sanitized.replace(regex, (match) => {
+      // Replace with neutral alternatives
+      const replacements: Record<string, string> = {
+        'blood': 'red liquid',
+        'bloody': 'stained',
+        'bleeding': 'marked',
+        'gore': 'darkness',
+        'gory': 'dark',
+        'corpse': 'figure',
+        'dead body': 'still figure',
+        'death': 'end',
+        'dying': 'fading',
+        'murder': 'mystery',
+        'kill': 'vanish',
+        'terrifying': 'unsettling',
+        'horrifying': 'mysterious',
+        'grotesque': 'unusual',
+        'deformed': 'shadowy',
+        'disfigured': 'obscured',
+        'monstrous': 'large',
+        'demonic': 'supernatural',
+        'evil': 'dark',
+        'sinister': 'mysterious',
+        'menacing': 'looming',
+        'threatening': 'imposing',
+        'knife': 'object',
+        'blade': 'metal',
+        'weapon': 'item',
+        'scream': 'silence',
+        'screaming': 'silent',
+        'torture': 'darkness',
+        'agony': 'stillness',
+        'suffering': 'solitude',
+      };
+      const lowerMatch = match.toLowerCase();
+      return replacements[lowerMatch] || 'mysterious';
+    });
+  }
+  
+  // Second attempt: make it even more generic
+  if (attemptNumber >= 2) {
+    // Strip to just atmospheric description
+    sanitized = `Atmospheric cinematic scene. Dark moody lighting. ${sanitized.substring(0, 150)}. Professional photography style, 9:16 portrait orientation.`;
+  }
+  
+  console.log(`[SANITIZE] Attempt ${attemptNumber}: ${sanitized.substring(0, 150)}...`);
+  return sanitized;
 }
 
 // =====================================================

@@ -109,7 +109,7 @@ Generated: ${debugData.generated_at ? new Date(debugData.generated_at).toLocaleS
     }
 }
 
-// Copy all scenes debug info
+// Copy all scenes debug info (comprehensive format matching individual scene copy)
 function copyAllScenesDebugInfo() {
     const dataEls = document.querySelectorAll('.scene-debug-data');
     if (dataEls.length === 0) {
@@ -121,16 +121,47 @@ function copyAllScenesDebugInfo() {
     
     dataEls.forEach((dataEl, i) => {
         try {
-            const debugData = JSON.parse(dataEl.textContent);
-            allOutput += `
---- SCENE ${debugData.scene_number} ---
-Timestamp: ${debugData.timestamp} (${debugData.duration_sec}s)
-Words: ${debugData.word_count}
-Narration: "${debugData.narration}"
-Keywords: ${debugData.keywords.join(', ') || 'None'}
-Model: ${debugData.model || 'Unknown'} | Style: ${debugData.art_style || 'Unknown'}
-Prompt: ${debugData.prompt ? debugData.prompt.substring(0, 200) + '...' : 'None'}
-URL: ${debugData.image_url || 'None'}
+            const d = JSON.parse(dataEl.textContent);
+            allOutput += `═══════════════════════════════════════
+SCENE ${d.scene_number} DEBUG INFO
+═══════════════════════════════════════
+
+📍 TIMING
+   Timestamp: ${d.timestamp}
+   Duration: ${d.duration_sec}s
+
+📝 NARRATION (${d.word_count} words)
+   "${d.narration}"
+
+🏷️ KEYWORDS
+   ${d.keywords?.join(', ') || 'None'}
+
+🎨 IMAGE GENERATION
+   Model: ${d.model || 'Unknown'}
+   Art Style: ${d.art_style || 'Unknown'}
+   Camera: ${d.camera_angle || 'Unknown'}
+   Mood Level: ${d.mood_level || 'Unknown'}
+
+🎬 VISUAL BEAT
+   ${d.visual_beat || 'None'}
+
+👤 CHARACTER
+   ${d.character_description || 'null'}
+
+📜 CONTINUITY RULES
+   ${d.continuity_rules || 'None'}
+
+🖼️ IMAGE URL
+   ${d.image_url || 'None'}
+
+═══════════════════════════════════════
+FULL PROMPT
+═══════════════════════════════════════
+${d.prompt || 'None'}
+
+═══════════════════════════════════════
+Generated: ${d.generated_at || 'Unknown'}
+═══════════════════════════════════════
 
 `;
         } catch (err) {
@@ -181,22 +212,46 @@ ALL SCENES DEBUG INFO (Job: ${jobId})
 `;
         
         scenes.forEach((scene) => {
-            output += `--- SCENE ${scene.scene_number} ---
-Timestamp: ${scene.timestamp} (${scene.duration_sec}s)
-Words: ${scene.word_count}
-Narration: "${scene.scene_text}"
-Keywords: ${scene.keywords.length > 0 ? scene.keywords.join(', ') : 'None'}
-Model: ${scene.model} | Style: ${scene.art_style}
-Visual Beat: ${scene.visual_beat || 'None'}
-Camera: ${scene.camera_angle || 'Unknown'}
-Mood Level: ${scene.mood_level || 'Unknown'}
-Character: ${scene.character_description || 'None'}
-URL: ${scene.image_url || 'None'}
+            output += `═══════════════════════════════════════
+SCENE ${scene.scene_number} DEBUG INFO
+═══════════════════════════════════════
 
-PROMPT:
+📍 TIMING
+   Timestamp: ${scene.timestamp}
+   Duration: ${scene.duration_sec}s
+
+📝 NARRATION (${scene.word_count} words)
+   "${scene.scene_text}"
+
+🏷️ KEYWORDS
+   ${scene.keywords?.length > 0 ? scene.keywords.join(', ') : 'None'}
+
+🎨 IMAGE GENERATION
+   Model: ${scene.model || 'Unknown'}
+   Art Style: ${scene.art_style || 'Unknown'}
+   Camera: ${scene.camera_angle || 'Unknown'}
+   Mood Level: ${scene.mood_level || 'Unknown'}
+
+🎬 VISUAL BEAT
+   ${scene.visual_beat || 'None'}
+
+👤 CHARACTER
+   ${scene.character_description || 'null'}
+
+📜 CONTINUITY RULES
+   ${scene.continuity_rules || 'None'}
+
+🖼️ IMAGE URL
+   ${scene.image_url || 'None'}
+
+═══════════════════════════════════════
+FULL PROMPT
+═══════════════════════════════════════
 ${scene.prompt || 'No prompt available'}
 
+═══════════════════════════════════════
 Generated: ${scene.generated_at ? new Date(scene.generated_at).toLocaleString() : 'Unknown'}
+═══════════════════════════════════════
 
 `;
         });

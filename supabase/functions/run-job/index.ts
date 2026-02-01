@@ -81,15 +81,31 @@ serve(async (req) => {
     // Get effect options (with defaults from job meta or request)
     const jobMeta = job.meta || {};
     const effectOptions = {
-      filter: body.effect_filter ?? jobMeta.effect_filter ?? true,
-      kenburns: body.effect_kenburns ?? jobMeta.effect_kenburns ?? true,
+      // Transitions
+      fadeIn: body.effect_fade_in ?? jobMeta.effect_fade_in ?? true,
+      fadeOut: body.effect_fade_out ?? jobMeta.effect_fade_out ?? true,
       transitions: body.effect_transitions ?? jobMeta.effect_transitions ?? true,
-      vignette: body.effect_vignette ?? jobMeta.effect_vignette ?? true,
+      // Disturbance & Glitch
+      glitchFlicker: body.effect_glitch_flicker ?? jobMeta.effect_glitch_flicker ?? false,
+      vhsTracking: body.effect_vhs_tracking ?? jobMeta.effect_vhs_tracking ?? false,
+      scanlines: body.effect_scanlines ?? jobMeta.effect_scanlines ?? false,
       filmGrain: body.effect_filmgrain ?? jobMeta.effect_filmgrain ?? false,
+      // Atmospheric
+      kenburns: body.effect_kenburns ?? jobMeta.effect_kenburns ?? true,
+      filter: body.effect_filter ?? jobMeta.effect_filter ?? true,
+      vignette: body.effect_vignette ?? jobMeta.effect_vignette ?? true,
+      lightFlicker: body.effect_light_flicker ?? jobMeta.effect_light_flicker ?? false,
+      coldColorCreep: body.effect_cold_creep ?? jobMeta.effect_cold_creep ?? false,
+      // Psychological
+      heartbeatZoom: body.effect_heartbeat_zoom ?? jobMeta.effect_heartbeat_zoom ?? false,
+      negativeFlash: body.effect_negative_flash ?? jobMeta.effect_negative_flash ?? false,
+      edgeDarkeningCreep: body.effect_edge_darkening ?? jobMeta.effect_edge_darkening ?? false,
+      // Audio
       music: body.audio_music ?? jobMeta.audio_music ?? false,
       musicTrack: body.audio_track ?? jobMeta.audio_track ?? '',
       musicVolume: body.audio_volume ?? jobMeta.audio_volume ?? 15,
       sfx: body.audio_sfx ?? jobMeta.audio_sfx ?? false,
+      // Captions
       captionStyle: body.caption_style ?? jobMeta.caption_style ?? "bold",
       highlightScary: body.highlight_scary ?? jobMeta.highlight_scary ?? true,
       voiceSpeed: jobMeta.voice_speed ?? "1.0",

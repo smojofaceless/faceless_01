@@ -421,13 +421,28 @@ export async function renderWithFFmpeg(
           durations: durations,
           captions: captions || [], // Word-by-word captions with timestamps
           effects: {
-            kenBurns: options.kenburns,
+            // Transitions
+            fadeIn: options.fadeIn ?? true,
+            fadeOut: options.fadeOut ?? true,
             fadeTransitions: options.transitions,
-            vignette: options.vignette,
+            // Disturbance & Glitch
+            glitchFlicker: options.glitchFlicker ?? false,
+            vhsTracking: options.vhsTracking ?? false,
+            scanlines: options.scanlines ?? false,
+            filmGrain: options.filmGrain ?? false,
+            // Atmospheric
+            kenBurns: options.kenburns,
             horrorGrade: options.filter,
-            filmGrain: options.filmGrain, // Film grain/old film effect
-            captionStyle: options.captionStyle || "bold", // Caption style
-            highlightScary: options.highlightScary !== false, // Highlight scary words
+            vignette: options.vignette,
+            lightFlicker: options.lightFlicker ?? false,
+            coldColorCreep: options.coldColorCreep ?? false,
+            // Psychological
+            heartbeatZoom: options.heartbeatZoom ?? false,
+            negativeFlash: options.negativeFlash ?? false,
+            edgeDarkeningCreep: options.edgeDarkeningCreep ?? false,
+            // Captions
+            captionStyle: options.captionStyle || "bold",
+            highlightScary: options.highlightScary !== false,
           },
           // Per-scene mood intensity for intelligent Ken Burns effect selection
           // 1-4 = subtle effects, 5-7 = medium, 8-10 = dramatic

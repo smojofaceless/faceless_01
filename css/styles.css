@@ -273,3 +273,262 @@ input[type="radio"] {
 .copy-toast {
     transition: opacity 0.3s ease, transform 0.3s ease;
 }
+
+/* =====================================================
+   VIDEO EFFECT PREVIEWS
+   ===================================================== */
+.effect-preview {
+    width: 32px;
+    height: 48px;
+    border-radius: 4px;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f0f23 100%);
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+    border: 1px solid #374151;
+}
+
+.effect-preview::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: inherit;
+}
+
+/* Fade In Preview */
+.effect-preview-fade-in::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: #000;
+    animation: fadeInPreview 2s infinite;
+}
+@keyframes fadeInPreview {
+    0% { opacity: 1; }
+    50% { opacity: 0; }
+    100% { opacity: 1; }
+}
+
+/* Fade Out Preview */
+.effect-preview-fade-out::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: #000;
+    animation: fadeOutPreview 2s infinite;
+}
+@keyframes fadeOutPreview {
+    0% { opacity: 0; }
+    50% { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+/* Scene Transitions Preview */
+.effect-preview-transitions {
+    animation: transitionPreview 1.5s infinite;
+}
+@keyframes transitionPreview {
+    0%, 45% { opacity: 1; }
+    50% { opacity: 0.3; }
+    55%, 100% { opacity: 1; }
+}
+
+/* Glitch Flicker Preview */
+.effect-preview-glitch::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.8);
+    animation: glitchFlicker 0.5s steps(2) infinite;
+    mix-blend-mode: overlay;
+}
+.effect-preview-glitch::before {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f0f23 100%);
+    animation: rgbSplit 0.3s steps(3) infinite;
+}
+@keyframes glitchFlicker {
+    0%, 90% { opacity: 0; }
+    92% { opacity: 1; }
+    94% { opacity: 0; }
+    96% { opacity: 0.5; }
+    100% { opacity: 0; }
+}
+@keyframes rgbSplit {
+    0% { filter: none; }
+    33% { filter: drop-shadow(-2px 0 #ff0000) drop-shadow(2px 0 #00ffff); }
+    66% { filter: none; }
+}
+
+/* VHS Tracking Preview */
+.effect-preview-vhs {
+    animation: vhsWobble 0.8s linear infinite;
+}
+.effect-preview-vhs::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+        0deg,
+        transparent 0px,
+        transparent 2px,
+        rgba(255,255,255,0.03) 2px,
+        rgba(255,255,255,0.03) 4px
+    );
+    animation: vhsNoise 0.2s steps(4) infinite;
+}
+@keyframes vhsWobble {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(1px); }
+    75% { transform: translateX(-1px); }
+}
+@keyframes vhsNoise {
+    0% { opacity: 0.5; }
+    50% { opacity: 0.8; }
+    100% { opacity: 0.5; }
+}
+
+/* Scanlines Preview */
+.effect-preview-scanlines::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+        0deg,
+        transparent 0px,
+        transparent 1px,
+        rgba(0,0,0,0.4) 1px,
+        rgba(0,0,0,0.4) 2px
+    );
+    pointer-events: none;
+}
+
+/* Film Grain Preview */
+.effect-preview-grain::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    opacity: 0.3;
+    animation: grainMove 0.5s steps(5) infinite;
+}
+@keyframes grainMove {
+    0% { transform: translate(0, 0); }
+    20% { transform: translate(-2px, 1px); }
+    40% { transform: translate(1px, -1px); }
+    60% { transform: translate(-1px, 2px); }
+    80% { transform: translate(2px, -2px); }
+    100% { transform: translate(0, 0); }
+}
+
+/* Ken Burns Preview */
+.effect-preview-kenburns {
+    animation: kenburnsPreview 4s ease-in-out infinite;
+}
+@keyframes kenburnsPreview {
+    0% { transform: scale(1) translate(0, 0); }
+    50% { transform: scale(1.15) translate(-3px, -2px); }
+    100% { transform: scale(1) translate(0, 0); }
+}
+
+/* Horror Color Grade Preview */
+.effect-preview-horror {
+    filter: saturate(0.6) contrast(1.2) brightness(0.9);
+    background: linear-gradient(135deg, #1a1a2e 0%, #1a2634 50%, #0f1a23 100%);
+}
+.effect-preview-horror::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 40, 80, 0.2);
+}
+
+/* Vignette Preview */
+.effect-preview-vignette::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.8) 100%);
+}
+
+/* Light Flicker Preview */
+.effect-preview-flicker {
+    animation: lightFlicker 0.8s ease-in-out infinite;
+}
+@keyframes lightFlicker {
+    0%, 100% { filter: brightness(1); }
+    10% { filter: brightness(1.1); }
+    20% { filter: brightness(0.9); }
+    30% { filter: brightness(1.05); }
+    50% { filter: brightness(0.95); }
+    70% { filter: brightness(1.1); }
+    90% { filter: brightness(0.92); }
+}
+
+/* Cold Color Creep Preview */
+.effect-preview-cold {
+    animation: coldCreep 3s ease-in-out infinite;
+}
+@keyframes coldCreep {
+    0% { filter: saturate(1) hue-rotate(0deg); }
+    100% { filter: saturate(0.8) hue-rotate(-20deg) brightness(0.95); }
+}
+
+/* Heartbeat Zoom Preview */
+.effect-preview-heartbeat {
+    animation: heartbeatZoom 1s ease-in-out infinite;
+}
+@keyframes heartbeatZoom {
+    0%, 100% { transform: scale(1); }
+    15% { transform: scale(1.04); }
+    30% { transform: scale(1); }
+    45% { transform: scale(1.02); }
+    60% { transform: scale(1); }
+}
+
+/* Negative Flash Preview */
+.effect-preview-negative::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: #fff;
+    mix-blend-mode: difference;
+    animation: negativeFlash 2s steps(1) infinite;
+}
+@keyframes negativeFlash {
+    0%, 94%, 100% { opacity: 0; }
+    95% { opacity: 1; }
+    96% { opacity: 0; }
+    97% { opacity: 1; }
+}
+
+/* Edge Darkening Creep Preview */
+.effect-preview-edge::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 20%, rgba(0,0,0,0.9) 100%);
+    animation: edgeCreep 3s ease-in-out infinite;
+}
+@keyframes edgeCreep {
+    0% { opacity: 0.3; }
+    100% { opacity: 1; }
+}
+
+/* Highlight Scary Words Preview */
+.effect-preview-highlight::after {
+    content: 'FEAR';
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 8px;
+    font-weight: bold;
+    color: #ef4444;
+    text-shadow: 0 0 4px #ef4444;
+    animation: highlightPulse 1.5s ease-in-out infinite;
+}
+@keyframes highlightPulse {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1; text-shadow: 0 0 8px #ef4444, 0 0 12px #dc2626; }
+}

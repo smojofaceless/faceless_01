@@ -80,6 +80,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize audio controls
     initAudioControls();
     
+    // Initialize effect render time tracking
+    initEffectTimeTracking();
+    
     // Initialize cost
     updateCostEstimate();
 });
@@ -1343,10 +1346,16 @@ async function generateImages() {
 function pollForCompletion() {
     if (pollInterval) clearInterval(pollInterval);
     
+    let consecutiveErrors = 0;
+    const MAX_CONSECUTIVE_ERRORS = 5; // Allow up to 5 consecutive poll errors before giving up
+    
     pollInterval = setInterval(async () => {
         try {
             const status = await checkJob(currentJobId);
             console.log('Poll result:', status);
+            
+            // Reset error counter on successful poll
+            consecutiveErrors = 0;
             
             // Update debug panel with backend info
             updateDebugInfo(status);
@@ -1378,9 +1387,18 @@ function pollForCompletion() {
             
         } catch (error) {
             console.error('Poll error:', error);
-            clearInterval(pollInterval);
-            addLog(`Error: ${error.message}`);
-            showError(error.message);
+            consecutiveErrors++;
+            
+            // Only give up after multiple consecutive errors
+            if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                clearInterval(pollInterval);
+                addLog(`Error after ${MAX_CONSECUTIVE_ERRORS} retries: ${error.message}`);
+                showError(`Connection lost after ${MAX_CONSECUTIVE_ERRORS} retries. Please check your connection and try refreshing.`);
+            } else {
+                // Log but continue polling - transient errors are common
+                console.log(`Poll error (attempt ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}), will retry...`);
+                addLog(`⚠️ Connection hiccup, retrying... (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})`);
+            }
         }
     }, 3000);
 }
@@ -1744,6 +1762,106 @@ function closeErrorModal() {
 // HELPER FUNCTIONS
 // =====================================================
 
+// Effect render time estimates (in seconds)
+const EFFECT_RENDER_TIMES = {
+    'effect-fade-in': 2,
+    'effect-fade-out': 2,
+    'effect-transitions': 0,
+    'effect-glitch-flicker': 3,
+    'effect-vhs-tracking': 4,
+    'effect-scanlines': 3,
+    'effect-filmgrain': 5,
+    'effect-kenburns': 0,
+    'effect-filter': 3,
+    'effect-vignette': 2,
+    'effect-light-flicker': 3,
+    'effect-cold-creep': 3,
+    'effect-heartbeat-zoom': 4,
+    'effect-negative-flash': 3,
+    'effect-edge-darkening': 3,
+    'effect-highlight': 0
+};
+
+// Effect Presets
+const EFFECT_PRESETS = {
+    // Classic Horror - Cinematic, subtle, professional
+    classic: [
+        'effect-fade-in', 'effect-fade-out', 'effect-transitions',
+        'effect-kenburns', 'effect-filter', 'effect-vignette', 'effect-highlight'
+    ],
+    // Found Footage - VHS, grainy, amateur video feel
+    found: [
+        'effect-fade-in', 'effect-fade-out',
+        'effect-vhs-tracking', 'effect-scanlines', 'effect-filmgrain', 
+        'effect-light-flicker', 'effect-highlight'
+    ],
+    // Psychological Terror - Maximum unease and discomfort
+    psycho: [
+        'effect-fade-in', 'effect-fade-out', 'effect-transitions',
+        'effect-glitch-flicker', 'effect-cold-creep', 'effect-heartbeat-zoom',
+        'effect-negative-flash', 'effect-edge-darkening', 'effect-highlight'
+    ],
+    // None - Clear all effects
+    none: []
+};
+
+// Apply effect preset
+function applyEffectPreset(presetName) {
+    const preset = EFFECT_PRESETS[presetName];
+    if (preset === undefined) return;
+    
+    // Uncheck all effects first
+    for (const id of Object.keys(EFFECT_RENDER_TIMES)) {
+        const checkbox = document.getElementById(id);
+        if (checkbox) checkbox.checked = false;
+    }
+    
+    // Check the preset effects
+    for (const id of preset) {
+        const checkbox = document.getElementById(id);
+        if (checkbox) checkbox.checked = true;
+    }
+    
+    // Update render time display
+    updateEffectRenderTime();
+    
+    // Visual feedback - flash the preset button
+    const btnText = presetName === 'none' ? '✓ Cleared!' : '✓ Applied!';
+    showToast(btnText, 'success');
+}
+
+// Make it globally accessible
+window.applyEffectPreset = applyEffectPreset;
+
+function updateEffectRenderTime() {
+    let totalTime = 0;
+    for (const [id, time] of Object.entries(EFFECT_RENDER_TIMES)) {
+        const checkbox = document.getElementById(id);
+        if (checkbox?.checked) {
+            totalTime += time;
+        }
+    }
+    const display = document.getElementById('effect-render-time');
+    if (display) {
+        display.textContent = totalTime > 0 ? `+${totalTime}s` : '+0s';
+        display.className = totalTime > 15 ? 'text-red-400 font-semibold' : 
+                           totalTime > 8 ? 'text-yellow-400 font-semibold' : 
+                           'text-primary font-semibold';
+    }
+}
+
+// Initialize effect time tracking
+function initEffectTimeTracking() {
+    for (const id of Object.keys(EFFECT_RENDER_TIMES)) {
+        const checkbox = document.getElementById(id);
+        if (checkbox) {
+            checkbox.addEventListener('change', updateEffectRenderTime);
+        }
+    }
+    // Initial calculation
+    updateEffectRenderTime();
+}
+
 function getSettings() {
     return {
         theme: document.getElementById('theme')?.value || 'general',
@@ -1762,7 +1880,18 @@ function getSettings() {
             vignette: document.getElementById('effect-vignette')?.checked ?? true,
             filmGrain: document.getElementById('effect-filmgrain')?.checked ?? false,
             highlight: document.getElementById('effect-highlight')?.checked ?? true,
-            transitions: document.getElementById('effect-transitions')?.checked ?? true
+            transitions: document.getElementById('effect-transitions')?.checked ?? true,
+            // New effects
+            fadeIn: document.getElementById('effect-fade-in')?.checked ?? true,
+            fadeOut: document.getElementById('effect-fade-out')?.checked ?? true,
+            glitchFlicker: document.getElementById('effect-glitch-flicker')?.checked ?? false,
+            vhsTracking: document.getElementById('effect-vhs-tracking')?.checked ?? false,
+            scanlines: document.getElementById('effect-scanlines')?.checked ?? false,
+            lightFlicker: document.getElementById('effect-light-flicker')?.checked ?? false,
+            coldColorCreep: document.getElementById('effect-cold-creep')?.checked ?? false,
+            heartbeatZoom: document.getElementById('effect-heartbeat-zoom')?.checked ?? false,
+            negativeFlash: document.getElementById('effect-negative-flash')?.checked ?? false,
+            edgeDarkeningCreep: document.getElementById('effect-edge-darkening')?.checked ?? false
         },
         audio: {
             music: document.getElementById('audio-music')?.checked ?? false,

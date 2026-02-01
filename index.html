@@ -301,31 +301,164 @@
                             <!-- Effects -->
                             <div>
                                 <label class="block text-sm font-semibold mb-2">✨ Video Effects</label>
-                                <div class="space-y-2">
-                                    <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-3 cursor-pointer hover:bg-gray-800">
-                                        <input type="checkbox" id="effect-filter" checked class="accent-primary w-4 h-4">
-                                        <span class="text-sm">🎨 Horror Color Grading</span>
-                                    </label>
-                                    <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-3 cursor-pointer hover:bg-gray-800">
-                                        <input type="checkbox" id="effect-kenburns" checked class="accent-primary w-4 h-4">
-                                        <span class="text-sm">🎥 Ken Burns Effect</span>
-                                    </label>
-                                    <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-3 cursor-pointer hover:bg-gray-800">
-                                        <input type="checkbox" id="effect-transitions" checked class="accent-primary w-4 h-4">
-                                        <span class="text-sm">✨ Scene Transitions</span>
-                                    </label>
-                                    <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-3 cursor-pointer hover:bg-gray-800">
-                                        <input type="checkbox" id="effect-vignette" checked class="accent-primary w-4 h-4">
-                                        <span class="text-sm">🔲 Vignette</span>
-                                    </label>
-                                    <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-3 cursor-pointer hover:bg-gray-800">
-                                        <input type="checkbox" id="effect-filmgrain" class="accent-primary w-4 h-4">
-                                        <span class="text-sm">📽️ Film Grain (Old Film)</span>
-                                    </label>
-                                    <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-3 cursor-pointer hover:bg-gray-800">
-                                        <input type="checkbox" id="effect-highlight" checked class="accent-primary w-4 h-4">
-                                        <span class="text-sm">🩸 Highlight Scary Words</span>
-                                    </label>
+                                
+                                <!-- Effect Presets -->
+                                <div class="mb-3 flex flex-wrap gap-2">
+                                    <button onclick="applyEffectPreset('classic')" class="preset-btn px-3 py-1.5 bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-500 hover:to-blue-700 rounded-lg text-xs font-semibold transition-all hover:scale-105">
+                                        🎬 Classic Horror
+                                    </button>
+                                    <button onclick="applyEffectPreset('found')" class="preset-btn px-3 py-1.5 bg-gradient-to-r from-amber-600 to-orange-800 hover:from-amber-500 hover:to-orange-700 rounded-lg text-xs font-semibold transition-all hover:scale-105">
+                                        📼 Found Footage
+                                    </button>
+                                    <button onclick="applyEffectPreset('psycho')" class="preset-btn px-3 py-1.5 bg-gradient-to-r from-red-600 to-purple-800 hover:from-red-500 hover:to-purple-700 rounded-lg text-xs font-semibold transition-all hover:scale-105">
+                                        👁️ Psychological
+                                    </button>
+                                    <button onclick="applyEffectPreset('none')" class="preset-btn px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs font-semibold transition-all hover:scale-105">
+                                        ✖️ Clear All
+                                    </button>
+                                </div>
+                                
+                                <!-- 🎬 TRANSITIONS -->
+                                <div class="mb-3">
+                                    <div class="text-xs text-purple-400 font-semibold mb-1.5 flex items-center gap-1">
+                                        <span>🎬</span> TRANSITIONS
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
+                                            <input type="checkbox" id="effect-fade-in" checked class="accent-primary w-4 h-4">
+                                            <div class="effect-preview effect-preview-fade-in"></div>
+                                            <span class="text-sm flex-1">Fade In from Black</span>
+                                            <span class="text-xs text-gray-500">+2s</span>
+                                        </label>
+                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
+                                            <input type="checkbox" id="effect-fade-out" checked class="accent-primary w-4 h-4">
+                                            <div class="effect-preview effect-preview-fade-out"></div>
+                                            <span class="text-sm flex-1">Fade Out to Black</span>
+                                            <span class="text-xs text-gray-500">+2s</span>
+                                        </label>
+                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
+                                            <input type="checkbox" id="effect-transitions" checked class="accent-primary w-4 h-4">
+                                            <div class="effect-preview effect-preview-transitions"></div>
+                                            <span class="text-sm flex-1">Scene Transitions</span>
+                                            <span class="text-xs text-gray-500">+0s</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                
+                                <!-- 🩸 DISTURBANCE & GLITCH -->
+                                <div class="mb-3">
+                                    <div class="text-xs text-red-400 font-semibold mb-1.5 flex items-center gap-1">
+                                        <span>🩸</span> DISTURBANCE & GLITCH
+                                        <span class="text-gray-500 font-normal ml-1">(high retention)</span>
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
+                                            <input type="checkbox" id="effect-glitch-flicker" class="accent-red-500 w-4 h-4">
+                                            <div class="effect-preview effect-preview-glitch"></div>
+                                            <span class="text-sm flex-1">Micro Glitch Flicker</span>
+                                            <span class="text-xs text-gray-500">+3s</span>
+                                        </label>
+                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
+                                            <input type="checkbox" id="effect-vhs-tracking" class="accent-red-500 w-4 h-4">
+                                            <div class="effect-preview effect-preview-vhs"></div>
+                                            <span class="text-sm flex-1">VHS Tracking Wobble</span>
+                                            <span class="text-xs text-gray-500">+4s</span>
+                                        </label>
+                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
+                                            <input type="checkbox" id="effect-scanlines" class="accent-red-500 w-4 h-4">
+                                            <div class="effect-preview effect-preview-scanlines"></div>
+                                            <span class="text-sm flex-1">CRT Scanlines</span>
+                                            <span class="text-xs text-gray-500">+3s</span>
+                                        </label>
+                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
+                                            <input type="checkbox" id="effect-filmgrain" class="accent-red-500 w-4 h-4">
+                                            <div class="effect-preview effect-preview-grain"></div>
+                                            <span class="text-sm flex-1">Film Grain & Scratches</span>
+                                            <span class="text-xs text-gray-500">+5s</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                
+                                <!-- 🌫 ATMOSPHERIC HORROR -->
+                                <div class="mb-3">
+                                    <div class="text-xs text-blue-400 font-semibold mb-1.5 flex items-center gap-1">
+                                        <span>🌫️</span> ATMOSPHERIC HORROR
+                                        <span class="text-gray-500 font-normal ml-1">(slow dread)</span>
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
+                                            <input type="checkbox" id="effect-kenburns" checked class="accent-blue-500 w-4 h-4">
+                                            <div class="effect-preview effect-preview-kenburns"></div>
+                                            <span class="text-sm flex-1">Ken Burns Motion</span>
+                                            <span class="text-xs text-gray-500">+0s</span>
+                                        </label>
+                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
+                                            <input type="checkbox" id="effect-filter" checked class="accent-blue-500 w-4 h-4">
+                                            <div class="effect-preview effect-preview-horror"></div>
+                                            <span class="text-sm flex-1">Horror Color Grading</span>
+                                            <span class="text-xs text-gray-500">+3s</span>
+                                        </label>
+                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
+                                            <input type="checkbox" id="effect-vignette" checked class="accent-blue-500 w-4 h-4">
+                                            <div class="effect-preview effect-preview-vignette"></div>
+                                            <span class="text-sm flex-1">Vignette</span>
+                                            <span class="text-xs text-gray-500">+2s</span>
+                                        </label>
+                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
+                                            <input type="checkbox" id="effect-light-flicker" class="accent-blue-500 w-4 h-4">
+                                            <div class="effect-preview effect-preview-flicker"></div>
+                                            <span class="text-sm flex-1">Light Flicker</span>
+                                            <span class="text-xs text-gray-500">+3s</span>
+                                        </label>
+                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
+                                            <input type="checkbox" id="effect-cold-creep" class="accent-blue-500 w-4 h-4">
+                                            <div class="effect-preview effect-preview-cold"></div>
+                                            <span class="text-sm flex-1">Cold Color Creep</span>
+                                            <span class="text-xs text-gray-500">+3s</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                
+                                <!-- 👁 PSYCHOLOGICAL -->
+                                <div class="mb-3">
+                                    <div class="text-xs text-yellow-400 font-semibold mb-1.5 flex items-center gap-1">
+                                        <span>👁️</span> PSYCHOLOGICAL
+                                        <span class="text-gray-500 font-normal ml-1">(unease)</span>
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
+                                            <input type="checkbox" id="effect-heartbeat-zoom" class="accent-yellow-500 w-4 h-4">
+                                            <div class="effect-preview effect-preview-heartbeat"></div>
+                                            <span class="text-sm flex-1">Heartbeat Zoom Pulse</span>
+                                            <span class="text-xs text-gray-500">+4s</span>
+                                        </label>
+                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
+                                            <input type="checkbox" id="effect-negative-flash" class="accent-yellow-500 w-4 h-4">
+                                            <div class="effect-preview effect-preview-negative"></div>
+                                            <span class="text-sm flex-1">Negative Flash (Subliminal)</span>
+                                            <span class="text-xs text-gray-500">+3s</span>
+                                        </label>
+                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
+                                            <input type="checkbox" id="effect-edge-darkening" class="accent-yellow-500 w-4 h-4">
+                                            <div class="effect-preview effect-preview-edge"></div>
+                                            <span class="text-sm flex-1">Edge Darkening Creep</span>
+                                            <span class="text-xs text-gray-500">+3s</span>
+                                        </label>
+                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
+                                            <input type="checkbox" id="effect-highlight" checked class="accent-yellow-500 w-4 h-4">
+                                            <div class="effect-preview effect-preview-highlight"></div>
+                                            <span class="text-sm flex-1">Highlight Scary Words</span>
+                                            <span class="text-xs text-gray-500">+0s</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                
+                                <!-- Render time estimate -->
+                                <div class="mt-2 p-2 bg-gray-900/50 rounded-lg border border-gray-700">
+                                    <div class="flex items-center justify-between text-xs">
+                                        <span class="text-gray-400">⏱️ Estimated effect render time:</span>
+                                        <span id="effect-render-time" class="text-primary font-semibold">+12s</span>
+                                    </div>
                                 </div>
                             </div>
                             

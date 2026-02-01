@@ -27,11 +27,25 @@ interface CreateJobRequest {
   preview_only?: boolean;
   // Debug mode - skip video assembly
   skip_video_assembly?: boolean;
-  // Effects
-  effect_filter?: boolean;
-  effect_kenburns?: boolean;
+  // Effects - Transitions
+  effect_fade_in?: boolean;
+  effect_fade_out?: boolean;
   effect_transitions?: boolean;
+  // Effects - Disturbance & Glitch
+  effect_glitch_flicker?: boolean;
+  effect_vhs_tracking?: boolean;
+  effect_scanlines?: boolean;
+  effect_filmgrain?: boolean;
+  // Effects - Atmospheric
+  effect_kenburns?: boolean;
+  effect_filter?: boolean;
   effect_vignette?: boolean;
+  effect_light_flicker?: boolean;
+  effect_cold_creep?: boolean;
+  // Effects - Psychological
+  effect_heartbeat_zoom?: boolean;
+  effect_negative_flash?: boolean;
+  effect_edge_darkening?: boolean;
   // Audio
   audio_music?: boolean;
   audio_track?: string;
@@ -80,14 +94,31 @@ serve(async (req) => {
       art_style: body.art_style || "cinematic-dark",
       scene_count: body.scene_count || 4,
       skip_video_assembly: body.skip_video_assembly === true,
-      effect_filter: body.effect_filter !== false,
-      effect_kenburns: body.effect_kenburns !== false,
+      // Transitions
+      effect_fade_in: body.effect_fade_in !== false,
+      effect_fade_out: body.effect_fade_out !== false,
       effect_transitions: body.effect_transitions !== false,
+      // Disturbance & Glitch
+      effect_glitch_flicker: body.effect_glitch_flicker === true,
+      effect_vhs_tracking: body.effect_vhs_tracking === true,
+      effect_scanlines: body.effect_scanlines === true,
+      effect_filmgrain: body.effect_filmgrain === true,
+      // Atmospheric
+      effect_kenburns: body.effect_kenburns !== false,
+      effect_filter: body.effect_filter !== false,
       effect_vignette: body.effect_vignette !== false,
+      effect_light_flicker: body.effect_light_flicker === true,
+      effect_cold_creep: body.effect_cold_creep === true,
+      // Psychological
+      effect_heartbeat_zoom: body.effect_heartbeat_zoom === true,
+      effect_negative_flash: body.effect_negative_flash === true,
+      effect_edge_darkening: body.effect_edge_darkening === true,
+      // Audio
       audio_music: body.audio_music === true,
       audio_track: body.audio_track || '',
       audio_volume: body.audio_volume ?? 15,
       audio_sfx: body.audio_sfx === true,
+      // Captions
       caption_style: body.caption_style || "bold",
       highlight_scary: body.highlight_scary !== false,
     };

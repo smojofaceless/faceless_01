@@ -208,15 +208,31 @@ export interface SceneVisualContract {
 }
 
 export interface VideoOptions {
-  filter: boolean;
-  kenburns: boolean;
+  // Transitions
+  fadeIn: boolean;
+  fadeOut: boolean;
   transitions: boolean;
-  vignette: boolean;
+  // Disturbance & Glitch
+  glitchFlicker: boolean;
+  vhsTracking: boolean;
+  scanlines: boolean;
   filmGrain: boolean;
+  // Atmospheric
+  kenburns: boolean;
+  filter: boolean;  // horror color grading
+  vignette: boolean;
+  lightFlicker: boolean;
+  coldColorCreep: boolean;
+  // Psychological
+  heartbeatZoom: boolean;
+  negativeFlash: boolean;
+  edgeDarkeningCreep: boolean;
+  // Audio
   music: boolean;
   musicTrack: string;  // filename in storage, e.g. "dark-ambient.mp3"
   musicVolume: number; // 0-100 percentage
   sfx: boolean;
+  // Captions
   captionStyle: string;
   highlightScary: boolean;
 }

@@ -23,12 +23,25 @@ async function createJob(options) {
         preview_only: options.preview_only || false,
         // Debug mode - skip video assembly
         skip_video_assembly: options.skip_video_assembly || false,
-        // Video effects
-        effect_filter: options.effects?.filter ?? true,
-        effect_kenburns: options.effects?.kenburns ?? true,
+        // Video effects - Transitions
+        effect_fade_in: options.effects?.fadeIn ?? true,
+        effect_fade_out: options.effects?.fadeOut ?? true,
         effect_transitions: options.effects?.transitions ?? true,
-        effect_vignette: options.effects?.vignette ?? true,
+        // Video effects - Disturbance & Glitch
+        effect_glitch_flicker: options.effects?.glitchFlicker ?? false,
+        effect_vhs_tracking: options.effects?.vhsTracking ?? false,
+        effect_scanlines: options.effects?.scanlines ?? false,
         effect_filmgrain: options.effects?.filmGrain ?? false,
+        // Video effects - Atmospheric
+        effect_kenburns: options.effects?.kenburns ?? true,
+        effect_filter: options.effects?.filter ?? true,
+        effect_vignette: options.effects?.vignette ?? true,
+        effect_light_flicker: options.effects?.lightFlicker ?? false,
+        effect_cold_creep: options.effects?.coldColorCreep ?? false,
+        // Video effects - Psychological
+        effect_heartbeat_zoom: options.effects?.heartbeatZoom ?? false,
+        effect_negative_flash: options.effects?.negativeFlash ?? false,
+        effect_edge_darkening: options.effects?.edgeDarkeningCreep ?? false,
         // Audio settings
         audio_music: options.audio?.music ?? false,
         audio_track: options.audio?.track || '',
@@ -77,18 +90,41 @@ async function runJob(jobId, options = {}) {
 }
 
 /**
- * Check the status of a job
+ * Check the status of a job (with retry for transient errors)
  */
-async function checkJob(jobId) {
+async function checkJob(jobId, retries = 3) {
     const client = getSupabaseClient();
     
-    const { data, error } = await client.functions.invoke('check-job', {
-        body: { job_id: jobId },
-    });
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            const { data, error } = await client.functions.invoke('check-job', {
+                body: { job_id: jobId },
+            });
 
-    if (error) throw new Error(error.message);
+            if (error) {
+                // Check if it's a transient error (502, 503, network issues)
+                const isTransient = error.message?.includes('502') || 
+                                   error.message?.includes('503') || 
+                                   error.message?.includes('Failed to send') ||
+                                   error.message?.includes('network');
+                
+                if (isTransient && attempt < retries) {
+                    console.log(`[API] checkJob attempt ${attempt} failed (transient), retrying in ${attempt * 1000}ms...`);
+                    await new Promise(r => setTimeout(r, attempt * 1000));
+                    continue;
+                }
+                throw new Error(error.message);
+            }
 
-    return data;
+            return data;
+        } catch (err) {
+            if (attempt === retries) {
+                throw new Error(`Failed to send a request to the Edge Function`);
+            }
+            console.log(`[API] checkJob attempt ${attempt} threw, retrying...`);
+            await new Promise(r => setTimeout(r, attempt * 1000));
+        }
+    }
 }
 
 /**

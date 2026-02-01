@@ -18,6 +18,8 @@ import {
   type CharacterLock,
 } from "./config.ts";
 
+import { type ThemeGuidance } from "./stories.ts";
+
 // =====================================================
 // STORY GENERATION (Enhanced Viral System v2.0)
 // =====================================================
@@ -54,6 +56,39 @@ const ENDING_TYPES = [
   "The horror was inside them all along",
   "The cycle is revealed to repeat",
   "The watcher becomes the watched",
+  "The thing they feared was protecting them from something worse",
+  "The monster was the only survivor",
+  "Everyone except the narrator knows the truth",
+  "The rescue was another layer of the nightmare",
+  "The recording continues after they stopped filming",
+  "The thing has always worn familiar faces",
+  "The children remember what the adults forgot",
+];
+
+// OPENING STYLES for structural variety (randomly selected)
+const OPENING_STYLES = [
+  { style: "date_location", example: "In [month] of [year], in [specific place]..." },
+  { style: "object_focus", example: "The old [object] had been in the family for generations..." },
+  { style: "action_cold_open", example: "She was already running when she realized..." },
+  { style: "dialogue_hook", example: "'Don't go in there,' the old man said..." },
+  { style: "sensory_immersion", example: "The smell hit first. Then the sound..." },
+  { style: "retrospective", example: "Looking back, the signs were always there..." },
+  { style: "document_found", example: "The following was found in an abandoned..." },
+  { style: "witness_account", example: "Multiple witnesses reported the same thing..." },
+  { style: "routine_disrupted", example: "It started like any other [day/night]..." },
+  { style: "discovery", example: "Nobody knows who first found the [thing]..." },
+];
+
+// NARRATIVE STRUCTURES for variety
+const NARRATIVE_STRUCTURES = [
+  "linear_escalation",     // Normal → weird → terrifying
+  "false_resolution",     // Problem solved... no wait, it's worse
+  "parallel_revelation",  // Two storylines converge horrifyingly  
+  "countdown",            // Time pressure adds dread
+  "investigation",        // Discovering pieces of the truth
+  "infection_spread",     // The horror grows/spreads
+  "isolation",            // Trapped and alone
+  "perspective_shift",    // The truth was hidden by POV
 ];
 
 /**
@@ -64,19 +99,43 @@ export async function generateStory(
   vibePreset: string,
   lengthPreset: string,
   visualPreset?: string,
-  artStyle?: string
+  artStyle?: string,
+  themeGuidance?: ThemeGuidance
 ): Promise<{ title: string; story: string; hook: string }> {
   const config = LENGTH_CONFIG[lengthPreset as keyof typeof LENGTH_CONFIG];
   const vibe = VIBE_CONFIG[vibePreset as keyof typeof VIBE_CONFIG];
   const vibeHint = VIBE_STRUCTURE_HINTS[vibePreset] || VIBE_STRUCTURE_HINTS["slow_creepy"];
   const visualEnv = VISUAL_ENVIRONMENT_DESCRIPTIONS[visualPreset || "forest"] || VISUAL_ENVIRONMENT_DESCRIPTIONS["forest"];
   
+  // Pick random structural elements for variety
+  const selectedOpening = OPENING_STYLES[Math.floor(Math.random() * OPENING_STYLES.length)];
+  const selectedStructure = NARRATIVE_STRUCTURES[Math.floor(Math.random() * NARRATIVE_STRUCTURES.length)];
+  
   // Pick a random ending type for variety
   const endingHint = ENDING_TYPES[Math.floor(Math.random() * ENDING_TYPES.length)];
 
   console.log(`[STORY] Enhanced generation: ${lengthPreset}s, ${vibePreset}, ${visualPreset || 'forest'}`);
   console.log(`[STORY] Word range: ${config.minWords}-${config.maxWords}, ending hint: "${endingHint}"`);
+  console.log(`[STORY] Structure: ${selectedStructure}, Opening: ${selectedOpening.style}`);
   console.log(`[STORY] Using ${vibePreset === "urban_legend" ? "URBAN LEGEND" : "STANDARD"} prompt`);
+  if (themeGuidance) {
+    console.log(`[STORY] Theme guidance: ${themeGuidance.bucket} / ${themeGuidance.suggestedTheme}`);
+    console.log(`[STORY] Avoiding recent themes: ${themeGuidance.recentThemesAvoided.join(', ') || 'none'}`);
+  }
+
+  // Build theme guidance section if available
+  const themeSection = themeGuidance ? `
+═══════════════════════════════════════
+🎯 THEME DIRECTION (REQUIRED FOR UNIQUENESS):
+═══════════════════════════════════════
+✅ FOCUS ON: ${themeGuidance.suggestedTheme}
+✅ SETTING: ${themeGuidance.suggestedSetting}  
+✅ INCLUDE: ${themeGuidance.suggestedElement}
+${themeGuidance.recentThemesAvoided.length > 0 ? `
+❌ DO NOT USE THESE (recently generated):
+${themeGuidance.recentThemesAvoided.map(t => `   - ${t}`).join('\n')}
+These themes were used in recent stories. Pick something DIFFERENT.` : ''}
+` : '';
 
   // Use special prompt for Urban Legend style
   let prompt: string;
@@ -85,60 +144,110 @@ export async function generateStory(
   if (vibePreset === "urban_legend") {
     console.log(`[STORY] ✓ Urban Legend mode ACTIVE - using faux true-crime prompt`);
     // URBAN LEGEND / FAUX TRUE-CRIME PROMPT
-    systemPrompt = "You are a viral horror writer specializing in 'true story' style urban legends. You write as if documenting real, suppressed historical events. Always respond with valid JSON.";
+    systemPrompt = "You are a viral horror writer specializing in 'true story' style urban legends. You write as if documenting real, suppressed historical events. Be CREATIVE and UNIQUE - each story should feel completely different. Always respond with valid JSON.";
     
     prompt = `You are writing a faux–true crime horror story designed to feel like a suppressed historical event.
 
+🎲 THIS STORY'S UNIQUE ANGLE (MUST USE):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Opening Style: ${selectedOpening.style} - "${selectedOpening.example}"
+Narrative Structure: ${selectedStructure}
+Ending Direction: "${endingHint}"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${themeSection}
 ═══════════════════════════════════════
-STRUCTURE (CRITICAL - follow this exactly):
+STRUCTURE OPTIONS (Pick ONE creatively):
 ═══════════════════════════════════════
-1. OPENING CLAIM: State this really happened (use vague time: "In the late 1970s...")
-2. EARLY REPORTS: Authorities initially dismissed the first sightings
-3. REPEATED SIGHTINGS: Same disturbing figure/pattern appears across different locations  
-4. CONSISTENT DETAIL: One unsettling visual detail that every witness remembers
-5. ESCALATION: Sightings → disappearances
-6. UNRESOLVED ENDING: No arrest, no explanation, just a chilling final image
+
+OPTION A - Classic Urban Legend:
+1. Opening claim (specific date/place)
+2. Early dismissed reports
+3. Repeated sightings across locations
+4. One consistent disturbing detail
+5. Escalation to disappearances
+6. Unresolved chilling ending
+
+OPTION B - Found Document:
+1. Introduce the document/recording
+2. What it contains (disturbing account)
+3. Where/when it was found
+4. Why it was suppressed
+5. What happened to the finder
+6. The document's current status
+
+OPTION C - Investigation Report:
+1. Case file introduction
+2. Initial incident
+3. Follow-up incidents
+4. Pattern recognition
+5. Investigation terminated (why?)
+6. Final unsettling note
+
+OPTION D - Witness Compilation:
+1. Multiple witnesses introduced
+2. Each describes the same thing differently
+3. Common thread emerges
+4. One witness goes silent
+5. What happened to them
+6. The thing witnesses won't say
+
+═══════════════════════════════════════
+TIME PERIOD (BE CREATIVE - any decade):
+═══════════════════════════════════════
+Pick ANY decade from 1940s-2010s. Examples:
+- "In the winter of 1952..." (post-war America)
+- "During the summer of 1963..." (pre-Vietnam)
+- "In late 1987..." (Cold War paranoia)
+- "Throughout the fall of 1971..." (Vietnam era)
+- "In the early months of 1994..." (pre-internet)
+- "During 1958..." (atomic age fears)
+- "Summer of 2007..." (digital transition)
+- "Early 1978..." (serial killer era)
+- "October 2001..." (post-9/11 paranoia)
+- "March 1946..." (post-WWII)
+
+Be SPECIFIC: exact month, season, or date adds authenticity.
+
+═══════════════════════════════════════
+THREAT VARIETY (Pick ONE creatively):
+═══════════════════════════════════════
+- A figure (tall, hunched, wrong proportions)
+- A sound (repeated pattern, music, voice)
+- An object (appears in multiple places)
+- A phenomenon (lights, fog, time distortion)
+- A vehicle (wrong car, black van, bus)
+- A pattern (symbols, behavior, deaths)
+- A place (building, crossroads, coordinates)
+- An animal (wrong behavior, impossible presence)
+- A broadcast (radio signal, TV interference)
+- A photograph/recording (shows impossible things)
 
 ═══════════════════════════════════════
 RULES (CRITICAL):
 ═══════════════════════════════════════
-- PRESENTED AS REAL but keep everything ANONYMOUS
-- No real person names (use "a local farmer", "truck drivers", "the sheriff")
-- Use a historical time period (1950s–1980s works best)
-- Reference multiple locations or states for credibility
-- Authorities DENY or IGNORE the events
-- Witnesses describe the SAME disturbing figure or pattern
-- Tone: CALM, FACTUAL, DOCUMENTARY - this makes it feel real
-- NO humor, NO over-explaining
-- The threat is mostly IMPLIED, not explicit
-
-═══════════════════════════════════════
-DETAILS TO INCLUDE:
-═══════════════════════════════════════
-- One REPEATING visual detail (tall figure, glowing eyes, wrong smile, etc.)
-- One object or phrase witnesses remember
-- Mention of files being "lost" or investigations being "quietly closed"
+- PRESENTED AS REAL but ANONYMOUS (no real names)
+- Reference multiple locations/states for credibility
+- Authorities DENY, IGNORE, or ACTIVELY SUPPRESS
+- Tone: CALM, FACTUAL, DOCUMENTARY
+- The threat is mostly IMPLIED
 
 ═══════════════════════════════════════
 WORD COUNT (CRITICAL):
 ═══════════════════════════════════════
 - MINIMUM: ${config.minWords} words
 - MAXIMUM: ${config.maxWords} words
-- Count carefully. Do NOT exceed or fall short.
 
 ═══════════════════════════════════════
 VISUAL ENVIRONMENT:
 ═══════════════════════════════════════
 ${visualEnv}
-The setting should match this aesthetic.
 
 ═══════════════════════════════════════
-ENDING (CRITICAL):
+ENDING (Follow this direction):
 ═══════════════════════════════════════
+"${endingHint}"
 - NO resolution, NO explanation
-- End with a CHILLING DESCRIPTION, not an action
-- Final image should LINGER in the reader's mind
-- Example: "To this day, no one can explain what the children drew."
+- End with a CHILLING IMAGE that lingers
 
 Return ONLY valid JSON:
 {
@@ -148,20 +257,27 @@ Return ONLY valid JSON:
 }`;
   } else {
     // STANDARD HORROR PROMPT
-    systemPrompt = "You are an expert viral horror story writer. You understand pacing, hooks, and what makes content shareable. Always respond with valid JSON. Never include markdown or code blocks.";
+    systemPrompt = "You are an expert viral horror story writer. You understand pacing, hooks, and what makes content shareable. Be CREATIVE - each story should feel unique and fresh. Always respond with valid JSON. Never include markdown or code blocks.";
     
     prompt = `You are a viral horror short-story writer for TikTok, Instagram Reels, and YouTube Shorts.
 
-Write a scary story with these EXACT requirements:
+🎲 THIS STORY'S UNIQUE ANGLE (MUST USE):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Opening Style: ${selectedOpening.style} - "${selectedOpening.example}"
+Narrative Structure: ${selectedStructure}
+Ending Direction: "${endingHint}"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${themeSection}
+Write a scary story with these requirements:
 
 ═══════════════════════════════════════
-STRUCTURE (CRITICAL - follow this pacing):
+STRUCTURE (follow general pacing):
 ═══════════════════════════════════════
-1. HOOK (1-2 sentences): Immediately create fear or curiosity. Make them NEED to keep watching.
-2. SETUP (15-25 words): Establish the setting and a sense of unease. Ground the reader.
-3. ESCALATION (50-70 words): Slow, creepy buildup. Something feels wrong. Build tension through details.
-4. REVEAL/TWIST (20-30 words): A disturbing realization or terrifying event. The horror crystallizes.
-5. FINAL LINE (1 sentence): A definitive, chilling ending that lingers. No ambiguity.
+1. HOOK (1-2 sentences): Use the opening style above. Create fear/curiosity.
+2. SETUP (15-25 words): Establish setting and unease.
+3. ESCALATION (50-70 words): Build tension using ${selectedStructure} structure.
+4. REVEAL/TWIST (20-30 words): The horror crystallizes.
+5. FINAL LINE: "${endingHint}"
 
 ═══════════════════════════════════════
 STYLE REQUIREMENTS:
@@ -171,43 +287,25 @@ STYLE REQUIREMENTS:
 - Present tense preferred
 - Simple, punchy sentences
 - First person POV ("I") for intimacy
-- NO humor, NO explanations, NO meta commentary
-- NO "based on true story" claims
+- NO humor, NO explanations
 
 ═══════════════════════════════════════
 WORD COUNT (CRITICAL):
 ═══════════════════════════════════════
 - MINIMUM: ${config.minWords} words
 - MAXIMUM: ${config.maxWords} words
-- Count carefully. Do NOT exceed or fall short.
-
-═══════════════════════════════════════
-SENSORY & VISUAL REQUIREMENTS:
-═══════════════════════════════════════
-- Include at least 2 sensory details (sound, movement, shadows, breathing, texture, temperature)
-- Every paragraph should be VISUALLY DEPICTABLE (this will become AI images)
-- Describe physical actions and environments, not abstract thoughts
-- Avoid concepts that can't be shown in an image
 
 ═══════════════════════════════════════
 VISUAL ENVIRONMENT:
 ═══════════════════════════════════════
 ${visualEnv}
-Write scenes that fit this aesthetic. The environment should enhance the horror.
 
 ═══════════════════════════════════════
 CHARACTER RULES:
 ═══════════════════════════════════════
-- No real person names (use "I", "my friend", "the figure", etc.)
+- No real person names
 - Faceless or obscured antagonists work best
-- Algorithm-safe (no extreme gore, just psychological horror)
-
-═══════════════════════════════════════
-ENDING GUIDANCE:
-═══════════════════════════════════════
-- Must be COMPLETE (no mid-thought cutoffs)
-- Ending type to aim for: "${endingHint}"
-- The final sentence must feel DEFINITIVE - a hard stop that haunts
+- Algorithm-safe (psychological horror, no extreme gore)
 
 Return ONLY valid JSON:
 {
@@ -229,7 +327,7 @@ Return ONLY valid JSON:
         { role: "system", content: systemPrompt },
         { role: "user", content: prompt },
       ],
-      temperature: 0.85, // Slightly lower for more consistent structure
+      temperature: 0.95, // Higher for more creative variety
       response_format: { type: "json_object" },
     }),
   });
@@ -1041,92 +1139,191 @@ function createFallbackAnchor(visualPreset: string): StoryAnchor {
 
 /**
  * Create visual beats with escalating mood for each scene
+ * 
+ * BATCHED to avoid output token truncation - GPT-4o-mini has limited output tokens
+ * Processing 6 scenes at a time ensures we get complete beats for all scenes
  */
 export async function createVisualBeats(
   openaiKey: string,
   scenes: StoryScene[],
   storyAnchor: StoryAnchor
 ): Promise<VisualBeat[]> {
-  try {
-    const sceneTexts = scenes.map((s, i) => `Scene ${i + 1} of ${scenes.length}: "${s.text}"`).join("\n\n");
-    console.log(`[BEATS] Creating visual beats for ${scenes.length} scenes. Scene texts:\n${sceneTexts.substring(0, 500)}...`);
+  // Pre-initialize ALL beats with fallbacks first
+  const allBeats: VisualBeat[] = scenes.map((scene, i) => ({
+    sceneIndex: i,
+    visualBeat: `atmospheric horror scene: ${scene.text.substring(0, 50)}`,
+    cameraAngle: i === 0 ? "wide establishing shot" : i === scenes.length - 1 ? "close-up" : "medium shot",
+    focus: "the growing darkness",
+    moodLevel: Math.min(3 + Math.floor(i * 0.35 * 10), 10), // Gradual escalation
+    mirrorBehavior: i < scenes.length * 0.2 ? "none" : i < scenes.length * 0.5 ? "reflection shows different expression" : "something in reflection that isn't there",
+    realityRule: i < scenes.length * 0.3 ? "normal" : i < scenes.length * 0.6 ? "shadows wrong direction" : "eyes follow camera",
+    compositionHint: "centered subject",
+  }));
+  
+  // Process in batches of 6 (smaller batches = more reliable)
+  const BATCH_SIZE = 6;
+  const totalBatches = Math.ceil(scenes.length / BATCH_SIZE);
+  
+  console.log(`[BEATS] Creating visual beats for ${scenes.length} scenes in ${totalBatches} batches of ${BATCH_SIZE}`);
+  
+  for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+    const startIdx = batchIndex * BATCH_SIZE;
+    const endIdx = Math.min(startIdx + BATCH_SIZE, scenes.length);
+    const batchScenes = scenes.slice(startIdx, endIdx);
     
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${openaiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `You are a horror cinematographer creating "visual beats" for each scene of a horror story.
+    console.log(`[BEATS] Batch ${batchIndex + 1}/${totalBatches}: scenes ${startIdx + 1}-${endIdx}`);
+    
+    try {
+      const batchBeats = await createVisualBeatsBatch(
+        openaiKey,
+        batchScenes,
+        storyAnchor,
+        startIdx,
+        scenes.length
+      );
+      
+      // Store beats by matching sceneIndex
+      for (const beat of batchBeats) {
+        let targetIdx = beat.sceneIndex;
+        
+        // If sceneIndex is relative (0-5 instead of global), convert to global
+        if (targetIdx < startIdx && targetIdx < BATCH_SIZE) {
+          targetIdx = startIdx + targetIdx;
+          console.log(`[BEATS] Fixing relative index ${beat.sceneIndex} → ${targetIdx}`);
+        }
+        
+        // Validate the index is within expected range
+        if (targetIdx >= startIdx && targetIdx < endIdx) {
+          allBeats[targetIdx] = { ...beat, sceneIndex: targetIdx };
+          console.log(`[BEATS] ✓ Scene ${targetIdx + 1}: "${beat.visualBeat?.substring(0, 50)}...", mood=${beat.moodLevel}`);
+        } else {
+          console.warn(`[BEATS] ⚠️ Beat sceneIndex ${beat.sceneIndex} out of batch range ${startIdx}-${endIdx-1}`);
+        }
+      }
+      
+      console.log(`[BEATS] Batch ${batchIndex + 1} complete: processed ${batchBeats.length} beats`);
+      
+    } catch (batchError) {
+      console.error(`[BEATS] Batch ${batchIndex + 1} failed:`, batchError);
+      console.log(`[BEATS] Using pre-initialized fallback beats for scenes ${startIdx + 1}-${endIdx}`);
+    }
+    
+    // Delay between batches to avoid rate limits
+    if (batchIndex < totalBatches - 1) {
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
+  
+  // Final validation
+  let realBeats = 0;
+  let fallbackBeats = 0;
+  allBeats.forEach((b, i) => {
+    if (b.visualBeat && b.visualBeat.length > 60 && !b.visualBeat.startsWith("atmospheric horror scene:")) {
+      realBeats++;
+    } else {
+      fallbackBeats++;
+      console.log(`[BEATS] Scene ${i + 1}: Using fallback (no detailed beat)`);
+    }
+  });
+  
+  console.log(`[BEATS] Final: ${realBeats} detailed beats, ${fallbackBeats} fallbacks`);
+  
+  return allBeats;
+}
+
+/**
+ * Create visual beats for a batch of scenes
+ */
+async function createVisualBeatsBatch(
+  openaiKey: string,
+  scenes: StoryScene[],
+  storyAnchor: StoryAnchor,
+  startIndex: number,
+  totalScenes: number
+): Promise<VisualBeat[]> {
+  const sceneData = scenes.map((s, i) => ({
+    globalIndex: startIndex + i,
+    text: s.text
+  }));
+  
+  const sceneTexts = sceneData.map(s => 
+    `=== SCENE ${s.globalIndex + 1} of ${totalScenes} (USE sceneIndex: ${s.globalIndex}) ===\n"${s.text}"`
+  ).join("\n\n");
+  
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${openaiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `You are a horror cinematographer creating "visual beats" for each scene of a horror story.
+
+🔒 CRITICAL: You MUST create a COMPLETE, DETAILED visual beat for EVERY scene.
+Do NOT summarize, abstract, or compress later scenes.
+EVERY scene gets the SAME level of detail as the first scene.
 
 The story takes place in: ${storyAnchor.environment}
 Horror tone: ${storyAnchor.horrorTone}
 
 For EACH scene, create a visual beat with these fields:
-1. VISUAL_BEAT: Specific visual moment to capture. Be CINEMATIC not literal. Use horror cinematography language.
-2. CAMERA_ANGLE: wide establishing shot, medium shot, close-up, extreme close-up, low angle, high angle, POV shot, over-the-shoulder
-3. FOCUS: What the viewer's eye should be drawn to (be specific)
-4. MOOD_LEVEL: 1-10 escalating intensity (MUST increase or stay same, never decrease)
-5. MIRROR_BEHAVIOR: How reflections/mirrors behave (pick one): "none" | "reflection shows different expression" | "something in reflection that isn't there" | "reflection delayed" | "no reflection at all"
-6. REALITY_RULE: What's wrong with reality (pick one): "normal" | "shadows wrong direction" | "too many fingers" | "eyes follow camera" | "background subtly wrong" | "time seems frozen"
-7. COMPOSITION_HINT: Framing suggestion (pick one): "centered subject" | "rule of thirds" | "negative space left" | "negative space right" | "claustrophobic tight" | "vast empty"
+{
+  "sceneIndex": GLOBAL_SCENE_NUMBER (the exact number I give you),
+  "visualBeat": "DETAILED cinematic description - minimum 15 words. Use horror cinematography language: 'barely visible', 'partially obscured', 'emerging from shadow'. This MUST be a VISUAL DESCRIPTION, not story text.",
+  "cameraAngle": "wide establishing shot | medium shot | close-up | extreme close-up | low angle | high angle | POV shot | over-the-shoulder",
+  "focus": "What the viewer's eye should be drawn to (be specific)",
+  "moodLevel": 1-10 escalating intensity,
+  "mirrorBehavior": "none | reflection shows different expression | something in reflection that isn't there | reflection delayed | no reflection at all",
+  "realityRule": "normal | shadows wrong direction | too many fingers | eyes follow camera | background subtly wrong | time seems frozen",
+  "compositionHint": "centered subject | rule of thirds | negative space left | negative space right | claustrophobic tight | vast empty"
+}
 
 CRITICAL RULES:
-- KEEP THE SAME ENVIRONMENT unless story EXPLICITLY changes location
-- Use horror visual language: "barely visible", "partially obscured", "emerging from shadow", "something watching", "unnatural stillness"
+- sceneIndex MUST be the GLOBAL index I provide (e.g., 6, 7, 8, 9, 10, 11)
+- visualBeat MUST be a VISUAL/CINEMATIC description, NOT the story narration
+- EVERY beat needs FULL detail - no shortcuts for later scenes
 - ESCALATE tension - each beat more unsettling than the last
-- Avoid showing monster/threat directly - use silhouettes, shadows, implications
-- Focus on ATMOSPHERE over explicit horror
-- Mirror/reality rules should be "none"/"normal" for early scenes, getting stranger as mood escalates
 
-Return JSON:
-{"beats": [{"sceneIndex": 0, "visualBeat": "description", "cameraAngle": "angle type", "focus": "focus point", "moodLevel": 3, "mirrorBehavior": "none", "realityRule": "normal", "compositionHint": "centered subject"}, ...]}`,
-          },
-          {
-            role: "user",
-            content: `Scenes:\n${sceneTexts}`,
-          },
-        ],
-        temperature: 0.7,
-        response_format: { type: "json_object" },
-      }),
-    });
+Return JSON: {"beats": [...]}`,
+        },
+        {
+          role: "user",
+          content: `Create DETAILED visual beats for these ${scenes.length} scenes.
+USE THE EXACT GLOBAL SCENE INDICES I PROVIDE:
 
-    if (!response.ok) {
-      throw new Error("Failed to create visual beats");
-    }
+${sceneTexts}
 
-    const data = await response.json();
-    const parsed = JSON.parse(data.choices[0].message.content);
-    const beats = parsed.beats || parsed.scenes || (Array.isArray(parsed) ? parsed : []);
-    
-    console.log(`[VISUAL BEATS] Created ${beats.length} beats`);
-    
-    // Log each beat to verify uniqueness
-    beats.forEach((beat: any, i: number) => {
-      console.log(`[VISUAL BEATS] Scene ${i + 1}: "${beat.visualBeat?.substring(0, 60)}...", mood=${beat.moodLevel}`);
-    });
-    
-    return beats;
-  } catch (error) {
-    console.error("Failed to create visual beats:", error);
-    // Fallback: create escalating beats with default mirror/reality rules
-    return scenes.map((scene, i) => ({
-      sceneIndex: i,
-      visualBeat: `atmospheric horror scene: ${scene.text.substring(0, 50)}`,
-      cameraAngle: i === 0 ? "wide establishing shot" : i === scenes.length - 1 ? "close-up" : "medium shot",
-      focus: "the growing darkness",
-      moodLevel: Math.min(3 + (i * 2), 10),
-      mirrorBehavior: i < 2 ? "none" : i < 4 ? "reflection shows different expression" : "something in reflection that isn't there",
-      realityRule: i < 3 ? "normal" : i < 5 ? "shadows wrong direction" : "eyes follow camera",
-      compositionHint: "centered subject",
-    }));
+Remember: sceneIndex values must be ${sceneData.map(s => s.globalIndex).join(", ")} respectively.
+EVERY visualBeat must be a cinematic description (15+ words), NOT story text.`,
+        },
+      ],
+      temperature: 0.7,
+      response_format: { type: "json_object" },
+      max_tokens: 2500,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to create visual beats batch: ${response.status} ${errorText}`);
   }
+
+  const data = await response.json();
+  const parsed = JSON.parse(data.choices[0].message.content);
+  const beats = parsed.beats || parsed.scenes || (Array.isArray(parsed) ? parsed : []);
+  
+  console.log(`[BEATS] Batch returned ${beats.length} beats for scenes ${startIndex + 1}-${startIndex + scenes.length}`);
+  
+  // Log what we got back
+  beats.forEach((b: any) => {
+    console.log(`[BEATS] Raw: sceneIndex=${b.sceneIndex}, visualBeat="${b.visualBeat?.substring(0, 50)}..."`);
+  });
+  
+  return beats;
 }
 
 // =====================================================
@@ -1184,7 +1381,8 @@ export async function createSceneVisualContracts(
         storyAnchor,
         visualBeats.slice(startIdx, endIdx),
         startIdx,
-        scenes.length
+        scenes.length,
+        scenes // Pass ALL scenes for context
       );
       
       // Store contracts by MATCHING sceneIndex, not by array position
@@ -1242,6 +1440,7 @@ export async function createSceneVisualContracts(
 /**
  * Create visual contracts for a batch of scenes
  * Uses enhanced prompt to prevent abstraction/compression on later scenes
+ * NOW includes surrounding context so AI understands split sentences
  */
 async function createVisualContractsBatch(
   openaiKey: string,
@@ -1249,14 +1448,102 @@ async function createVisualContractsBatch(
   storyAnchor: StoryAnchor,
   visualBeats: VisualBeat[],
   startIndex: number,
-  totalScenes: number
+  totalScenes: number,
+  allScenes?: StoryScene[] // Pass all scenes for context
 ): Promise<SceneVisualContract[]> {
-  const sceneData = scenes.map((s, i) => ({
-    globalIndex: startIndex + i,  // Use globalIndex to be explicit
-    text: s.text,
-    beat: visualBeats[i]?.visualBeat || "atmospheric moment",
-    mood: visualBeats[i]?.moodLevel || 5
-  }));
+  // Helper: detect if text contains specific content types
+  const detectContentType = (text: string, fullContext: string): string[] => {
+    const hints: string[] = [];
+    const combined = `${text} ${fullContext}`.toLowerCase();
+    
+    // Date patterns: years, months, specific dates
+    const datePatterns = [
+      /\b(19|20)\d{2}\b/, // Years like 1946, 2024
+      /\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i,
+      /\b(spring|summer|fall|autumn|winter)\s+(of\s+)?(19|20)\d{2}\b/i,
+      /\b(early|late|mid)[\s-]?(19|20)\d{2}\b/i,
+      /\b\d{1,2}(st|nd|rd|th)\s+of\s+\w+/i, // "3rd of March"
+    ];
+    if (datePatterns.some(p => p.test(combined))) {
+      hints.push("🗓️ DATE DETECTED → Show: vintage calendar page, dated newspaper clipping, era-appropriate technology, or clock");
+    }
+    
+    // Location patterns: states, cities, geographical references
+    const locationPatterns = [
+      /\b(wisconsin|minnesota|michigan|ohio|illinois|iowa|indiana|texas|california|oregon|maine|florida|new\s+york|pennsylvania)\b/i,
+      /\brural\s+\w+\b/i, // "rural Wisconsin"
+      /\b(town|city|village|county)\s+of\s+\w+/i,
+      /\b(small\s+town|remote\s+town|isolated\s+town)\b/i,
+      /\b(lake|river|forest|mountain|hill)\s+\w+\b/i, // Named places
+    ];
+    if (locationPatterns.some(p => p.test(combined))) {
+      hints.push("📍 LOCATION DETECTED → Show: welcome sign, state road sign, map with location marked, or regional landmark");
+    }
+    
+    // Investigation patterns
+    const investigationPatterns = [
+      /\b(investigation|investigate|detective|police|sheriff|authority|authorities)\b/i,
+      /\b(file|files|report|reports|case|cases|evidence)\b/i,
+      /\b(halted|suppressed|covered[\s-]?up|classified)\b/i,
+    ];
+    if (investigationPatterns.some(p => p.test(combined))) {
+      hints.push("🔍 INVESTIGATION DETECTED → Show: police file, detective's desk, evidence board, or official documents");
+    }
+    
+    // Disappearance patterns  
+    const disappearancePatterns = [
+      /\b(vanish|vanished|disappear|disappeared|missing|gone)\b/i,
+      /\b(without\s+a?\s*trace|never\s+found|never\s+seen)\b/i,
+    ];
+    if (disappearancePatterns.some(p => p.test(combined))) {
+      hints.push("👻 DISAPPEARANCE DETECTED → Show: empty chair, abandoned belongings, missing person poster, or vacant space");
+    }
+    
+    // Witness/testimony patterns
+    const witnessPatterns = [
+      /\b(witness|witnesses|testimony|testified|claimed|reported|sighting|sightings)\b/i,
+      /\b(locals?\s+(say|claim|report)|people\s+claim)\b/i,
+    ];
+    if (witnessPatterns.some(p => p.test(combined))) {
+      hints.push("🗣️ WITNESS/TESTIMONY DETECTED → Show: interview setting, tape recorder, person's face recounting, or group gathered");
+    }
+    
+    return hints;
+  };
+
+  // Build scene data WITH surrounding context
+  const sceneData = scenes.map((s, i) => {
+    const globalIdx = startIndex + i;
+    
+    // Get surrounding scene text for context (the full sentence might be split across scenes)
+    let prevContext = "";
+    let nextContext = "";
+    
+    if (allScenes) {
+      // Get up to 2 previous scenes for context
+      if (globalIdx > 0) {
+        prevContext = allScenes.slice(Math.max(0, globalIdx - 2), globalIdx)
+          .map(sc => sc.text).join(" ");
+      }
+      // Get up to 2 next scenes for context  
+      if (globalIdx < allScenes.length - 1) {
+        nextContext = allScenes.slice(globalIdx + 1, Math.min(allScenes.length, globalIdx + 3))
+          .map(sc => sc.text).join(" ");
+      }
+    }
+    
+    const fullContext = `${prevContext} [THIS SCENE: ${s.text}] ${nextContext}`.trim();
+    const contentHints = detectContentType(s.text, fullContext);
+    
+    return {
+      globalIndex: globalIdx,
+      text: s.text,
+      fullContext,
+      contentHints,
+      beat: visualBeats[i]?.visualBeat || "atmospheric moment",
+      mood: visualBeats[i]?.moodLevel || 5
+    };
+  });
   
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -1269,48 +1556,110 @@ async function createVisualContractsBatch(
       messages: [
         {
           role: "system",
-          content: `You are a storyboard artist converting story scenes into LITERAL visual frames.
+          content: `You are a CREATIVE storyboard artist converting story scenes into VISUALLY INTERESTING frames.
 
-🔒 CRITICAL GLOBAL OVERRIDE - READ CAREFULLY:
+🔒 CRITICAL GLOBAL OVERRIDE:
 You MUST treat EVERY scene as a first-time image generation.
-Do NOT abstract, summarize, or reduce visual detail for ANY scene.
-Do NOT assume earlier scenes "carry over" visually.
 EVERY scene must have FULL, DETAILED visual specifications.
+BE CREATIVE - don't always default to the same visual approach!
+
+⚠️ ANTI-REPETITION RULE:
+If I flag specific content (dates, locations, etc.) - you MUST visualize that content!
+Do NOT default to "foggy atmosphere" when the narration mentions specific things.
 
 ENVIRONMENT CONTEXT:
 ${storyAnchor.environment}
 ${storyAnchor.characterDescription ? `CHARACTER: ${storyAnchor.characterDescription}` : ""}
 
-YOUR JOB: Convert each scene into a single FROZEN visual frame with FULL DETAIL.
+YOUR JOB: Convert each scene into a single FROZEN visual frame. Be CREATIVE with HOW you visualize concepts.
 
-⚠️ ABSTRACT TEXT HANDLING:
-Story fragments like "accounts grew too consistent" or "sightings escalated" are NOT visual instructions.
-You MUST translate abstract narrative into CONCRETE, PHYSICAL, CINEMATIC visuals:
-- "accounts grew consistent" → show multiple witness interviews, scattered documents, worried faces
-- "sightings escalated" → show increasing signs of presence: more shadows, disturbed vegetation, frightened animals
-- "families in anguish" → show grieving person, missing person poster, empty chair at table
+═══════════════════════════════════════
+🎨 CONTENT-SPECIFIC VISUALS (MANDATORY when detected!)
+═══════════════════════════════════════
+When narration mentions specific content, you MUST show it visually:
 
-For EACH scene, return a contract with these EXACT fields:
+📅 DATES/TIME PERIODS (e.g., "March 1946", "winter of 1972"):
+→ REQUIRED: Show the date/era visually!
+• vintage calendar page with month/year visible
+• old newspaper with date in masthead  
+• dated photograph corner
+• era-specific car/TV/radio/phone
+• clock with specific time
+• weathered datebook or diary
+
+🗺️ LOCATIONS/GEOGRAPHY (e.g., "rural Wisconsin", "Black Lake"):
+→ REQUIRED: Show the location identifier!
+• weathered "Welcome to [State]" road sign
+• bent/worn state highway sign
+• map spread on table with pin/circle
+• faded postcard of the area
+• regional landmark silhouette
+• old license plate from state
+
+📁 INVESTIGATIONS/AUTHORITIES:
+→ REQUIRED: Show official elements!
+• manila folder with CLASSIFIED stamp
+• detective desk with lamp and papers
+• cork board with photos and string
+• police station interior
+• filing cabinet drawer
+• typed official report
+
+👥 WITNESSES/SIGHTINGS:
+→ REQUIRED: Show testimony context!
+• person's face in interview lighting
+• tape recorder reels turning
+• notepad with scribbled notes
+• silhouette gesturing/pointing
+• group huddled in conversation
+• telephone receiver
+
+💀 DISAPPEARANCE/MISSING:
+→ REQUIRED: Show absence evidence!
+• empty chair with jacket draped
+• abandoned shoes by door
+• untouched meal on table
+• faded missing person flyer
+• empty bed with sheets disturbed
+• door left slightly ajar
+
+🎬 CAMERA VARIETY (Mix it up!):
+• extreme close-up (eyes, hands, object detail)
+• dutch angle (unease)
+• low angle (intimidating)
+• high angle (vulnerable)
+• over-shoulder
+• POV shot
+• silhouette against light
+• reflection in surface
+
+⚠️ SPLIT SENTENCE HANDLING:
+Narration is often SPLIT across scenes. I provide CONTEXT (prev/next scenes).
+Understand the FULL MEANING and create a visual for the COMPLETE IDEA.
+
+═══════════════════════════════════════
+
+For EACH scene, return a contract with these fields:
 {
-  "sceneIndex": GLOBAL_SCENE_NUMBER (the exact number I give you, e.g., 10, 11, 12),
-  "location": "SPECIFIC physical place with detail",
-  "characterPose": "EXACT body position and action - be specific",
+  "sceneIndex": GLOBAL_SCENE_NUMBER (exact number I give you),
+  "location": "SPECIFIC physical place",
+  "characterPose": "body position and action",
   "facialExpression": "visible emotion",
-  "visibleObjects": ["object1", "object2", "object3"] - at least 3 items,
+  "visibleObjects": ["object1", "object2", "object3"] - at least 3 RELEVANT items,
   "supernaturalElement": "the horror visual (or null)",
-  "cameraDistance": "close-up" | "medium" | "wide",
+  "cameraDistance": "close-up" | "medium" | "wide" | "extreme-close-up" | "POV",
   "lightingSource": "specific light source",
-  "actionFrozen": "DETAILED description of the EXACT visual moment - minimum 20 words",
+  "actionFrozen": "DETAILED description (20+ words) - be CREATIVE!",
   "forbiddenElements": ["text", "words", "extra people"],
   "continuityFromPrev": "what must match previous",
-  "evidenceRule": "VISUAL PROOF this is the right scene"
+  "evidenceRule": "how this visual represents the narration"
 }
 
-CRITICAL RULES:
-1. sceneIndex MUST match the GLOBAL scene number I provide (e.g., if I say Scene 10, return sceneIndex: 9)
-2. actionFrozen MUST be at least 20 words describing a CONCRETE visual
-3. NEVER return generic "atmospheric moment" - invent specific visuals
-4. EVERY scene gets FULL detail, no shortcuts
+RULES:
+1. sceneIndex MUST match the GLOBAL scene number
+2. actionFrozen MUST be at least 20 words
+3. BE CREATIVE - vary camera angles, object choices, and visual approaches
+4. Don't always show landscapes - show SPECIFIC objects, details, perspectives
 
 Return JSON: {"contracts": [...]}`,
         },
@@ -1319,18 +1668,32 @@ Return JSON: {"contracts": [...]}`,
           content: `Convert these ${scenes.length} scenes to DETAILED visual contracts.
 USE THE EXACT GLOBAL SCENE INDICES I PROVIDE:
 
-${sceneData.map(s => 
-  `=== SCENE ${s.globalIndex + 1} of ${totalScenes} (USE sceneIndex: ${s.globalIndex}) ===
+${sceneData.map(s => {
+  const hintsBlock = s.contentHints.length > 0 
+    ? `\n⚠️ CONTENT DETECTED - MUST USE APPROPRIATE VISUAL:\n${s.contentHints.join("\n")}`
+    : "";
+  
+  return `=== SCENE ${s.globalIndex + 1} of ${totalScenes} (USE sceneIndex: ${s.globalIndex}) ===
 Mood: ${s.mood}/10
-Narration: "${s.text}"
-Visual Beat: ${s.beat}
-REQUIRED: Create a SPECIFIC, CONCRETE visual for this moment.`
-).join("\n\n")}
 
-Remember: sceneIndex values must be ${sceneData.map(s => s.globalIndex).join(", ")} respectively.`,
+THIS SCENE'S NARRATION: "${s.text}"
+
+FULL CONTEXT (to understand split sentences):
+${s.fullContext}
+
+Visual Beat: ${s.beat}${hintsBlock}`;
+}).join("\n\n")}
+
+Remember: sceneIndex values must be ${sceneData.map(s => s.globalIndex).join(", ")} respectively.
+
+🎯 CRITICAL RULES:
+1. If DATE/YEAR is mentioned → Show calendar, newspaper date, or era-appropriate item - NOT just atmosphere!
+2. If LOCATION/STATE is mentioned → Show welcome sign, map, or regional identifier - NOT just landscape!
+3. If DISAPPEARANCE is mentioned → Show empty chair, abandoned items, or missing poster - NOT just fog!
+4. BE SPECIFIC and CREATIVE - avoid defaulting to "atmospheric fog" for everything!`,
         },
       ],
-      temperature: 0.5,
+      temperature: 0.7, // Higher for more creative visual variety
       response_format: { type: "json_object" },
       max_tokens: 4000,
     }),
@@ -1638,14 +2001,10 @@ export function buildFluxPrompt(
   // ========== CHARACTER (SHORT!) ==========
   let characterShort = "";
   if (storyAnchor.characterDescription) {
-    const char = storyAnchor.characterDescription;
-    // Just the essentials: gender/age, outfit, key feature
-    const parts = [
-      char.build || "",
-      char.outfit || "",
-      char.eyesAndExpression ? `eyes ${char.eyesAndExpression.split(",")[0]}` : "",
-    ].filter(Boolean);
-    characterShort = parts.join(", ");
+    // characterDescription is a string - extract key details
+    const charDesc = storyAnchor.characterDescription;
+    // Take first ~100 chars of character description for brevity
+    characterShort = charDesc.length > 100 ? charDesc.substring(0, 100).trim() + "..." : charDesc;
   }
   
   // ========== SCENE (SHORT!) ==========
