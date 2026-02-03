@@ -756,22 +756,21 @@ async function addGlitchFlicker(inputPath, outputPath, lowMemory = false) {
       '-c:v', 'libx264', '-preset', 'medium', '-crf', '23', '-c:a', 'copy',
     ];
     
-    // Random brightness fluctuation every ~30-60 frames with subtle RGB shift
+    // Glitch effect: periodic brightness spikes + color shift (no random() which fails)
+    // Uses modulo math to create pseudo-random feel
     ffmpeg(inputPath)
       .complexFilter([
-        // Random brightness spikes (subtle)
-        `[0:v]eq=brightness='0.0+0.08*lt(random(1),0.02)*sin(n*0.5)':contrast=1.0+0.05*lt(random(2),0.015)[flicker]`,
-        // Occasional RGB split on same random frames
-        `[flicker]rgbashift=rh='2*lt(random(3),0.01)':bh='-2*lt(random(4),0.01)'[out]`
+        // Brightness spike every ~50 frames using mod trick + RGB shift
+        `[0:v]eq=brightness='0.1*lt(mod(n*7,50),2)',rgbashift=rh=2:bh=-2[out]`
       ], 'out')
       .outputOptions(['-map', '0:a?', ...outputOptions])
       .output(outputPath)
       .on('end', resolve)
       .on('error', (err) => {
         console.error('Glitch flicker error, using fallback:', err.message);
-        // Simpler fallback
+        // Ultra-simple fallback: just periodic brightness flicker
         ffmpeg(inputPath)
-          .videoFilter('eq=brightness=0.0+0.05*sin(n*0.3)*lt(random(1),0.03)')
+          .videoFilter('eq=brightness=0.08*sin(n*0.4)')
           .outputOptions(outputOptions)
           .output(outputPath)
           .on('end', resolve)
