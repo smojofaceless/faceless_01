@@ -143,96 +143,52 @@ These themes were used in recent stories. Pick something DIFFERENT.` : ''}
   
   if (vibePreset === "urban_legend") {
     console.log(`[STORY] ✓ Urban Legend mode ACTIVE - using faux true-crime prompt`);
-    // URBAN LEGEND / FAUX TRUE-CRIME PROMPT
-    systemPrompt = "You are a viral horror writer specializing in 'true story' style urban legends. You write as if documenting real, suppressed historical events. Be CREATIVE and UNIQUE - each story should feel completely different. Always respond with valid JSON.";
+    // URBAN LEGEND / FAUX TRUE-CRIME PROMPT - STRICT VERSION
+    systemPrompt = "You are a viral horror writer specializing in 'true story' style urban legends. You write as if documenting real, suppressed historical events. CRITICAL: You MUST follow the exact structure provided. Always respond with valid JSON.";
     
-    prompt = `You are writing a faux–true crime horror story designed to feel like a suppressed historical event.
+    // Build theme section with specific decade
+    const decades = ["late 1940s", "early 1950s", "mid-1950s", "late 1950s", "early 1960s", "mid-1960s", "late 1960s", "early 1970s", "mid-1970s", "late 1970s", "early 1980s", "late 1980s"];
+    const randomDecade = decades[Math.floor(Math.random() * decades.length)];
+    
+    prompt = `You are writing a faux–true crime horror story. This MUST feel like a real suppressed historical event.
 
-🎲 THIS STORY'S UNIQUE ANGLE (MUST USE):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Opening Style: ${selectedOpening.style} - "${selectedOpening.example}"
-Narrative Structure: ${selectedStructure}
-Ending Direction: "${endingHint}"
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+═══════════════════════════════════════
+⚠️ MANDATORY STRUCTURE (FOLLOW EXACTLY):
+═══════════════════════════════════════
+1. OPENING: Start with "In the ${randomDecade}..." and name 2-3 specific US states/regions
+2. EARLY REPORTS: Authorities dismiss initial sightings (use phrases like "local police dismissed" or "reports were filed but ignored")
+3. PATTERN: The SAME disturbing detail appears across multiple locations (a figure, sound, or object)
+4. ESCALATION: Sightings lead to disappearances
+5. SUPPRESSION: Investigation closed, files lost, witnesses silenced
+6. ENDING: Unresolved - end with a chilling image, NOT action
+
+═══════════════════════════════════════
+⚠️ REQUIRED ELEMENTS (MUST INCLUDE ALL):
+═══════════════════════════════════════
+✓ MUST start with "In the ${randomDecade}..."
+✓ MUST mention 2-3 specific US states (e.g., "Oregon", "northern California", "Washington")
+✓ MUST have authorities deny/ignore the events
+✓ MUST have ONE repeating visual detail (same figure/sound/object in each location)
+✓ MUST end unresolved with a haunting image
 ${themeSection}
 ═══════════════════════════════════════
-STRUCTURE OPTIONS (Pick ONE creatively):
+TONE (CRITICAL):
 ═══════════════════════════════════════
-
-OPTION A - Classic Urban Legend:
-1. Opening claim (specific date/place)
-2. Early dismissed reports
-3. Repeated sightings across locations
-4. One consistent disturbing detail
-5. Escalation to disappearances
-6. Unresolved chilling ending
-
-OPTION B - Found Document:
-1. Introduce the document/recording
-2. What it contains (disturbing account)
-3. Where/when it was found
-4. Why it was suppressed
-5. What happened to the finder
-6. The document's current status
-
-OPTION C - Investigation Report:
-1. Case file introduction
-2. Initial incident
-3. Follow-up incidents
-4. Pattern recognition
-5. Investigation terminated (why?)
-6. Final unsettling note
-
-OPTION D - Witness Compilation:
-1. Multiple witnesses introduced
-2. Each describes the same thing differently
-3. Common thread emerges
-4. One witness goes silent
-5. What happened to them
-6. The thing witnesses won't say
+- Documentary/factual voice - THIS REALLY HAPPENED
+- Calm, serious narration throughout
+- No first-person ("I") - use third person or passive voice
+- Phrases like "reports indicated", "witnesses described", "according to records"
 
 ═══════════════════════════════════════
-TIME PERIOD (BE CREATIVE - any decade):
+THREAT TYPE (Be creative within this):
 ═══════════════════════════════════════
-Pick ANY decade from 1940s-2010s. Examples:
-- "In the winter of 1952..." (post-war America)
-- "During the summer of 1963..." (pre-Vietnam)
-- "In late 1987..." (Cold War paranoia)
-- "Throughout the fall of 1971..." (Vietnam era)
-- "In the early months of 1994..." (pre-internet)
-- "During 1958..." (atomic age fears)
-- "Summer of 2007..." (digital transition)
-- "Early 1978..." (serial killer era)
-- "October 2001..." (post-9/11 paranoia)
-- "March 1946..." (post-WWII)
-
-Be SPECIFIC: exact month, season, or date adds authenticity.
-
-═══════════════════════════════════════
-THREAT VARIETY (Pick ONE creatively):
-═══════════════════════════════════════
-- A figure (tall, hunched, wrong proportions)
-- A sound (repeated pattern, music, voice)
+- A figure (described the same way by different witnesses)
+- A sound/signal (radio interference, music, voice)
+- A phenomenon (specific type of fog, lights, time distortion)
 - An object (appears in multiple places)
-- A phenomenon (lights, fog, time distortion)
-- A vehicle (wrong car, black van, bus)
-- A pattern (symbols, behavior, deaths)
-- A place (building, crossroads, coordinates)
-- An animal (wrong behavior, impossible presence)
-- A broadcast (radio signal, TV interference)
-- A photograph/recording (shows impossible things)
 
 ═══════════════════════════════════════
-RULES (CRITICAL):
-═══════════════════════════════════════
-- PRESENTED AS REAL but ANONYMOUS (no real names)
-- Reference multiple locations/states for credibility
-- Authorities DENY, IGNORE, or ACTIVELY SUPPRESS
-- Tone: CALM, FACTUAL, DOCUMENTARY
-- The threat is mostly IMPLIED
-
-═══════════════════════════════════════
-WORD COUNT (CRITICAL):
+WORD COUNT (CRITICAL - Count carefully):
 ═══════════════════════════════════════
 - MINIMUM: ${config.minWords} words
 - MAXIMUM: ${config.maxWords} words
@@ -246,13 +202,18 @@ ${visualEnv}
 ENDING (Follow this direction):
 ═══════════════════════════════════════
 "${endingHint}"
-- NO resolution, NO explanation
-- End with a CHILLING IMAGE that lingers
+- The final line MUST be a chilling image/description
+- NOT an action, NOT a revelation - just a haunting image that lingers
+
+═══════════════════════════════════════
+EXAMPLE STRUCTURE (for reference):
+═══════════════════════════════════════
+"In the late 1970s, reports began surfacing from rural highways in Oregon and northern California about [threat]. Authorities dismissed the sightings as [reason]. But over the next several years, similar reports appeared in Washington and Idaho, always describing the same detail: [specific repeating visual]. As sightings increased, so did reports of [escalation]. Local investigations were quietly closed, files later reported lost. To this day, [chilling unresolved image]."
 
 Return ONLY valid JSON:
 {
   "title": "Short mysterious title (3-5 words, no quotes)",
-  "hook": "The attention-grabbing opening claim",
+  "hook": "The opening claim starting with 'In the ${randomDecade}...'",
   "story": "The complete story including the hook"
 }`;
   } else {
@@ -327,7 +288,8 @@ Return ONLY valid JSON:
         { role: "system", content: systemPrompt },
         { role: "user", content: prompt },
       ],
-      temperature: 0.95, // Higher for more creative variety
+      // Use lower temperature for urban legend (strict structure) vs higher for creative variety
+      temperature: vibePreset === "urban_legend" ? 0.8 : 0.95,
       response_format: { type: "json_object" },
     }),
   });
@@ -365,39 +327,41 @@ export function buildStoryPromptForDisplay(
   
   // Special display for Urban Legend style
   if (vibePreset === "urban_legend") {
-    return `URBAN LEGEND / FAUX TRUE-CRIME PROMPT (v2.1)
+    return `URBAN LEGEND / FAUX TRUE-CRIME PROMPT (v3.0 - Strict Structure)
 
-📐 STRUCTURE:
-  1. Opening Claim → "In the late 1970s..."
-  2. Early Reports → Authorities dismiss sightings
-  3. Repeated Sightings → Same figure across locations
-  4. Consistent Detail → One visual that repeats
-  5. Escalation → Sightings → Disappearances
-  6. Unresolved Ending → No explanation, chilling image
+📐 MANDATORY STRUCTURE:
+  1. Opening → "In the [late 1940s-1980s]..." (specific decade)
+  2. Location → Must name 2-3 specific US states
+  3. Early Reports → Authorities dismiss sightings
+  4. Pattern → Same disturbing detail across multiple locations
+  5. Escalation → Sightings lead to disappearances
+  6. Suppression → Investigation closed, files lost
+  7. Ending → Unresolved - chilling image that lingers
 
 🎭 STYLE:
   - Tone: ${vibe}
+  - Voice: Documentary/Factual (third person or passive)
   - Pacing: ${vibeHint}
-  - Documentary/Factual voice
-  - Calm, serious narration
+  - Phrases: "reports indicated", "witnesses described", "according to records"
 
 📏 WORD COUNT: ${config.minWords}-${config.maxWords} words
 
 📍 REQUIRED ELEMENTS:
-  - Historical time period (1950s-1980s)
-  - Multiple states/locations mentioned
-  - Authorities deny or ignore events
-  - One REPEATING unsettling visual detail
-  - Files "lost" or investigations "closed"
+  ✓ Historical time period (1940s-1980s)
+  ✓ Multiple specific US states mentioned
+  ✓ Authorities deny or ignore events  
+  ✓ ONE repeating visual detail (same in each location)
+  ✓ Files "lost" or investigations "closed"
+  ✓ Unresolved ending with haunting image
 
 🌲 VISUAL ENVIRONMENT:
   ${visualEnv}
 
 🚫 RULES:
   - No real names (use roles: "a farmer", "the sheriff")
+  - No first-person narration
   - Implied threat, not explicit violence
-  - Unresolved ending - no arrests, no explanation
-  - Final line: chilling description, not action`;
+  - Final line: chilling description, NOT action`;
   }
   
   // Standard prompt display
