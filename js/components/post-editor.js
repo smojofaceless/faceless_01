@@ -113,6 +113,12 @@ class PostEditor {
                                 </button>
                                 <p class="text-muted text-sm">AI will create optimized content for all platforms</p>
                             </div>
+                            
+                            <!-- Platform Selection -->
+                            <div class="post-editor__platforms-section">
+                                <h4 class="text-sm" style="margin-bottom: var(--space-2);">Post To Platforms</h4>
+                                ${this.renderPlatformToggles()}
+                            </div>
                         </div>
                         
                         <!-- Platform Tabs & Content -->
@@ -166,6 +172,109 @@ class PostEditor {
         
         document.body.insertAdjacentHTML('beforeend', html);
         this.modal = document.getElementById('post-editor-modal');
+    }
+
+    /**
+     * Render platform toggle checkboxes
+     */
+    renderPlatformToggles() {
+        const allPlatforms = ['youtube', 'instagram', 'facebook'];
+        const currentPlatforms = this.post.platforms || ['youtube'];
+        
+        return allPlatforms.map(p => {
+            const config = getPlatformConfig(p);
+            const isChecked = currentPlatforms.includes(p);
+            
+            return `
+                <label class="platform-toggle" style="--platform-color: ${config?.color || '#666'}">
+                    <input type="checkbox" 
+                           class="platform-toggle__input" 
+                           data-platform-toggle="${p}"
+                           ${isChecked ? 'checked' : ''}>
+                    <span class="platform-toggle__box">
+                        <span class="platform-toggle__icon">${config?.icon || '📱'}</span>
+                        <span class="platform-toggle__name">${config?.name || p}</span>
+                        <span class="platform-toggle__check">✓</span>
+                    </span>
+                </label>
+            `;
+        }).join('');
+    }
+
+    /**
+     * Handle platform toggle change
+     */
+    togglePlatform(platformId, enabled) {
+        const currentPlatforms = this.post.platforms || ['youtube'];
+        
+        if (enabled && !currentPlatforms.includes(platformId)) {
+            // Add platform
+            this.post.platforms = [...currentPlatforms, platformId];
+            
+            // Initialize content for new platform
+            if (!this.post.platform_content[platformId]) {
+                this.post.platform_content[platformId] = getDefaultPlatformContent(platformId);
+            }
+            
+            this.isDirty = true;
+            this.refreshTabs();
+            
+            // Switch to the newly added platform
+            this.switchPlatform(platformId);
+            
+        } else if (!enabled && currentPlatforms.includes(platformId)) {
+            // Remove platform (must keep at least one)
+            if (currentPlatforms.length <= 1) {
+                Toast.warning('Must have at least one platform');
+                // Re-check the checkbox
+                const checkbox = this.modal.querySelector(`[data-platform-toggle="${platformId}"]`);
+                if (checkbox) checkbox.checked = true;
+                return;
+            }
+            
+            this.post.platforms = currentPlatforms.filter(p => p !== platformId);
+            this.isDirty = true;
+            this.refreshTabs();
+            
+            // If we removed the current platform, switch to first available
+            if (this.currentPlatform === platformId) {
+                this.switchPlatform(this.post.platforms[0]);
+            }
+        }
+    }
+
+    /**
+     * Refresh platform tabs after adding/removing platforms
+     */
+    refreshTabs() {
+        const tabsContainer = this.modal.querySelector('.post-editor__tabs');
+        if (tabsContainer) {
+            const platforms = this.post.platforms || ['youtube'];
+            
+            tabsContainer.innerHTML = platforms.map(p => {
+                const config = getPlatformConfig(p);
+                const isActive = p === this.currentPlatform;
+                const content = this.post.platform_content[p] || {};
+                const hasContent = content.ai_generated || content.manually_edited;
+                
+                return `
+                    <button class="post-editor__tab ${isActive ? 'post-editor__tab--active' : ''}" 
+                            data-platform="${p}"
+                            style="--platform-color: ${config?.color || '#666'}">
+                        <span class="post-editor__tab-icon">${config?.icon || '📱'}</span>
+                        <span class="post-editor__tab-name">${config?.name || p}</span>
+                        ${hasContent ? '<span class="post-editor__tab-check">✓</span>' : ''}
+                    </button>
+                `;
+            }).join('');
+            
+            // Re-bind tab click events
+            tabsContainer.querySelectorAll('.post-editor__tab').forEach(tab => {
+                tab.addEventListener('click', () => {
+                    this.switchPlatform(tab.dataset.platform);
+                });
+            });
+        }
     }
 
     /**
@@ -335,6 +444,13 @@ class PostEditor {
         
         // Generate all content
         modal.querySelector('#generate-all-btn')?.addEventListener('click', () => this.generateAllContent());
+        
+        // Platform toggle handlers
+        modal.querySelectorAll('[data-platform-toggle]').forEach(checkbox => {
+            checkbox.addEventListener('change', (e) => {
+                this.togglePlatform(e.target.dataset.platformToggle, e.target.checked);
+            });
+        });
         
         // Platform tab switching
         modal.querySelectorAll('.post-editor__tab').forEach(tab => {
@@ -706,6 +822,7 @@ class PostEditor {
             Toast.info('Saving...');
             
             const updates = {
+                platforms: this.post.platforms || ['youtube'],
                 platform_content: this.post.platform_content,
                 title: this.post.platform_content.youtube?.title || this.post.title,
                 description: this.post.platform_content.youtube?.description || this.post.description,
