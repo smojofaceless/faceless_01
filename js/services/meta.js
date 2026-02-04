@@ -41,8 +41,7 @@ class MetaService {
             'pages_show_list',
             'pages_read_engagement',
             'pages_manage_posts',
-            'business_management',
-            'publish_video'
+            'business_management'
         ].join(',');
     }
 
