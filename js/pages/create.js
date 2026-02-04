@@ -522,58 +522,157 @@ class CreatePageController {
         console.log('renderContentStep - formData:', this.formData);
         console.log('renderContentStep - sceneBuilder.scenes:', this.sceneBuilder.scenes);
         
+        // Generate a title if not set
+        const title = this.formData.title || this.generateTitle();
+        
+        // Get the content - handle array case
+        let content = this.formData.content || '';
+        if (Array.isArray(content)) {
+            content = content.map(s => typeof s === 'string' ? s : s.text || '').join(' ');
+        }
+        
         container.innerHTML = `
             <div class="create-card">
                 <h2 class="create-card__title">📖 Review & Edit Content</h2>
                 
                 <div class="form-group">
                     <label class="form-label">📝 Title</label>
-                    <input type="text" id="content-title" class="form-control" value="${this.formData.title || ''}">
+                    <input type="text" id="content-title" class="form-control" value="${title}" placeholder="Enter a title for your video...">
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">📜 Content <span class="form-label__hint">(editable)</span></label>
-                    <textarea id="content-text" class="form-control" rows="6">${this.formData.content || ''}</textarea>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">🎬 Scene Breakdown</label>
-                    <div id="scene-breakdown" class="scene-breakdown">
+                    <label class="form-label">🎬 Scene Breakdown <span class="form-label__hint">(${this.sceneBuilder.scenes.length} scenes)</span></label>
+                    <div id="scene-breakdown" class="scene-breakdown scene-breakdown--columns">
                         ${this.sceneBuilder.scenes.length === 0 ? '<p class="text-muted">No scenes generated yet</p>' : ''}
                     </div>
                 </div>
             </div>
         `;
 
-        // Render scenes
+        // Render scenes with improved layout
         if (this.sceneBuilder && this.sceneBuilder.scenes && this.sceneBuilder.scenes.length > 0) {
             console.log('Rendering scene cards...');
-            this.sceneBuilder.renderSceneCards('scene-breakdown', {
-                editable: true,
-                onEdit: (sceneId, field, value) => {
-                    console.log('Scene edited:', sceneId, field, value);
-                }
-            });
+            this.renderSceneCardsColumnar('scene-breakdown');
         } else {
             console.log('No scenes to render');
         }
     }
 
+    /**
+     * Generate a title based on template and settings
+     */
+    generateTitle() {
+        const theme = this.formData.category || '';
+        const templateName = this.template?.name || 'Story';
+        
+        // Generate based on first scene text if available
+        if (this.sceneBuilder.scenes.length > 0) {
+            const firstScene = this.sceneBuilder.scenes[0].text;
+            // Take first few words as title
+            const words = firstScene.split(' ').slice(0, 5).join(' ');
+            return words + '...';
+        }
+        
+        return `${templateName} - ${theme || 'Untitled'}`;
+    }
+
+    /**
+     * Render scene cards in columnar layout (scene # on left, text on right)
+     */
+    renderSceneCardsColumnar(containerId) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        container.innerHTML = this.sceneBuilder.scenes.map((scene, index) => `
+            <div class="scene-card scene-card--columnar" data-scene-id="${scene.id}">
+                <div class="scene-card__left">
+                    <div class="scene-card__number-badge">Scene ${scene.id}</div>
+                    <span class="scene-card__mood">${scene.mood || 'neutral'}</span>
+                </div>
+                <div class="scene-card__right">
+                    <textarea class="scene-card__text" data-scene-id="${scene.id}" rows="3">${scene.text}</textarea>
+                </div>
+            </div>
+        `).join('');
+
+        // Add event listeners
+        container.querySelectorAll('.scene-card__text').forEach(textarea => {
+            textarea.addEventListener('input', (e) => {
+                const sceneId = parseInt(e.target.dataset.sceneId);
+                this.sceneBuilder.updateScene(sceneId, { text: e.target.value });
+            });
+        });
+    }
+
     renderImagesStep(container) {
         container.innerHTML = `
             <div class="create-card">
-                <h2 class="create-card__title">🎨 Image Generation</h2>
-                <p>Your images will be generated in the next step.</p>
+                <h2 class="create-card__title">🎨 Image Preview</h2>
+                <p class="create-card__subtitle">Review your scenes before generating</p>
+                
+                <div class="image-generation-controls">
+                    <div class="image-source-info">
+                        <span class="image-source-badge">
+                            ${this.formData.visualSource === 'ai' ? '🎨 AI Generated' : '📹 Stock (Pexels)'}
+                        </span>
+                        ${this.formData.visualSource === 'ai' ? 
+                            `<span class="image-model-badge">${this.getModelDisplayName(this.formData.imageModel || 'gpt-4o')}</span>` : ''}
+                    </div>
+                    <div class="image-cost-estimate">
+                        <span class="text-muted">Est. cost: </span>
+                        <span class="text-primary">~$${this.calculateImageCost().toFixed(2)}</span>
+                    </div>
+                </div>
+                
                 <div id="image-preview-grid" class="image-preview-grid">
                     ${this.sceneBuilder.scenes.map((scene, i) => `
-                        <div class="image-preview-card">
-                            <div class="image-preview-card__placeholder">Scene ${i + 1}</div>
-                            <p class="image-preview-card__text">${scene.text.substring(0, 50)}...</p>
+                        <div class="image-preview-card" data-scene-id="${scene.id}">
+                            <div class="image-preview-card__placeholder">
+                                <span class="image-preview-card__placeholder-icon">🎬</span>
+                                <span>Scene ${i + 1}</span>
+                            </div>
+                            <div class="image-preview-card__overlay">
+                                <span class="image-preview-card__number">Scene ${i + 1}</span>
+                            </div>
+                            <p class="image-preview-card__text">${scene.text.substring(0, 80)}${scene.text.length > 80 ? '...' : ''}</p>
                         </div>
                     `).join('')}
                 </div>
+                
+                <div class="image-step-note">
+                    <span class="note-icon">💡</span>
+                    <span>Images will be generated when you click "Generate" in the next step</span>
+                </div>
             </div>
         `;
+    }
+
+    /**
+     * Get display name for AI model
+     */
+    getModelDisplayName(model) {
+        const names = {
+            'gpt-4o': 'GPT-4o',
+            'dall-e-3': 'DALL-E 3',
+            'flux': 'FLUX Pro'
+        };
+        return names[model] || model;
+    }
+
+    /**
+     * Calculate estimated image generation cost
+     */
+    calculateImageCost() {
+        const sceneCount = this.sceneBuilder.scenes.length;
+        if (this.formData.visualSource !== 'ai') return 0;
+        
+        const costs = {
+            'gpt-4o': 0.016,
+            'dall-e-3': 0.08,
+            'flux': 0.04
+        };
+        const costPer = costs[this.formData.imageModel] || 0.016;
+        return sceneCount * costPer;
     }
 
     renderGenerateStep(container) {
@@ -718,7 +817,13 @@ class CreatePageController {
 
             // Store in formData for rendering
             this.formData.title = response.title || '';
-            this.formData.content = response.story || '';
+            
+            // Handle story being array or string
+            if (Array.isArray(response.story)) {
+                this.formData.content = response.story.map(s => typeof s === 'string' ? s : s.text || '').join(' ');
+            } else {
+                this.formData.content = response.story || this.sceneBuilder.scenes.map(s => s.text).join(' ');
+            }
             
             console.log('🎬 [Create] Content stored in formData');
             this.addLog('Story generation complete!', 'success');
