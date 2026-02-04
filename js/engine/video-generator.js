@@ -147,6 +147,7 @@ class VideoGenerator {
             // Handle different response formats
             // Food-facts returns: { facts: [...], hook, outro }
             // Horror/generic returns: { story, scenes: [...] }
+            // Some templates return story as array of scene objects
             if (response.facts && Array.isArray(response.facts)) {
                 // Convert facts format to scenes format
                 this.state.story = response.hook + ' ' + response.facts.map(f => f.text).join(' ') + ' ' + (response.outro || '');
@@ -155,10 +156,28 @@ class VideoGenerator {
                     text: fact.text,
                     imagePrompt: fact.visualSuggestion || fact.text
                 }));
+            } else if (Array.isArray(response.story)) {
+                // Story returned as array of scene objects
+                console.log('[VideoGenerator] Story is an array, converting to scenes...');
+                this.state.scenes = response.story.map((scene, i) => ({
+                    id: i + 1,
+                    text: scene.text || scene.narration || scene,
+                    imagePrompt: scene.imagePrompt || scene.image_prompt || scene.visual || scene.text || ''
+                }));
+                this.state.story = this.state.scenes.map(s => s.text).join(' ');
+            } else if (response.scenes && Array.isArray(response.scenes) && response.scenes.length > 0) {
+                // Scenes array provided directly
+                console.log('[VideoGenerator] Using provided scenes array');
+                this.state.scenes = response.scenes.map((scene, i) => ({
+                    id: scene.id || i + 1,
+                    text: scene.text || scene.narration || '',
+                    imagePrompt: scene.imagePrompt || scene.image_prompt || scene.visual || scene.text || ''
+                }));
+                this.state.story = typeof response.story === 'string' ? response.story : this.state.scenes.map(s => s.text).join(' ');
             } else {
-                // Standard story/scenes format
-                this.state.story = response.story || '';
-                this.state.scenes = response.scenes || (this.state.story ? this.parseScenes(this.state.story) : []);
+                // Standard story string format
+                this.state.story = typeof response.story === 'string' ? response.story : '';
+                this.state.scenes = this.state.story ? this.parseScenes(this.state.story) : [];
             }
             
             // Ensure we have content

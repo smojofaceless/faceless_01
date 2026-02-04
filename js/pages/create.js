@@ -708,9 +708,12 @@ class CreatePageController {
             if (response.scenes && response.scenes.length > 0) {
                 this.sceneBuilder.setScenes(response.scenes);
                 this.addLog(`✅ Generated ${response.scenes.length} scenes`, 'success');
-            } else if (response.story) {
+            } else if (response.story && typeof response.story === 'string' && response.story.length > 0) {
                 this.sceneBuilder.parseStoryIntoScenes(response.story, settings.sceneCount || 6);
                 this.addLog(`✅ Parsed story into ${this.sceneBuilder.scenes.length} scenes`, 'success');
+            } else {
+                console.warn('[Create] No scenes or story text in response:', response);
+                this.addLog('⚠️ Warning: No valid story/scenes received', 'warning');
             }
 
             // Store in formData for rendering

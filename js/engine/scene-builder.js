@@ -45,6 +45,27 @@ class SceneBuilder {
      * Parse story text into scenes
      */
     parseStoryIntoScenes(storyText, count = 6) {
+        // Handle if storyText is already an array
+        if (Array.isArray(storyText)) {
+            console.log('[SceneBuilder] Story is already an array, converting to scenes...');
+            this.scenes = storyText.map((item, i) => ({
+                id: i + 1,
+                text: typeof item === 'string' ? item : (item.text || item.narration || ''),
+                imagePrompt: item.imagePrompt || item.image_prompt || item.visual || null,
+                imageUrl: null,
+                mood: this.detectMood(typeof item === 'string' ? item : (item.text || '')),
+                cameraAngle: this.suggestCameraAngle(i, storyText.length)
+            }));
+            this.emit('scenesUpdated', this.scenes);
+            return this.scenes;
+        }
+        
+        // Handle non-string input
+        if (!storyText || typeof storyText !== 'string') {
+            console.warn('[SceneBuilder] Invalid storyText input:', typeof storyText);
+            return [];
+        }
+        
         // Split by sentences
         const sentences = storyText.match(/[^.!?]+[.!?]+/g) || [storyText];
         const sentencesPerScene = Math.ceil(sentences.length / count);
