@@ -1420,18 +1420,37 @@ export async function runAssemblePhase(
   let renderId: string;
   
   if (useFFmpeg) {
-    // Use FFmpeg renderer
+    // Use FFmpeg renderer - wrap in try/catch to handle failures gracefully
     console.log("[ASSEMBLE] Calling FFmpeg renderer...");
-    const result = await renderWithFFmpeg(
-      audioUrlData.publicUrl,
-      scenes,
-      job.duration_sec || 60,
-      options,
-      job_id, // Pass job_id for direct Supabase upload
-      captionsData.captions, // Pass captions for text overlay
-      moodLevels // Pass mood intensities for intelligent Ken Burns
-    );
-    renderId = result.renderId;
+    try {
+      const result = await renderWithFFmpeg(
+        audioUrlData.publicUrl,
+        scenes,
+        job.duration_sec || 60,
+        options,
+        job_id, // Pass job_id for direct Supabase upload
+        captionsData.captions, // Pass captions for text overlay
+        moodLevels // Pass mood intensities for intelligent Ken Burns
+      );
+      renderId = result.renderId;
+    } catch (ffmpegError) {
+      // FFmpeg render failed to start - release lock and let check-job retry
+      console.error(`[ASSEMBLE] FFmpeg render failed to start:`, (ffmpegError as Error).message);
+      await updateJob(supabase, job_id, {
+        progress: 71, // Stay at 71% to indicate ready for assembly but not started
+        meta: { 
+          ...jobMeta, 
+          assemble_phase_running: false, // Release lock
+          assemble_error: (ffmpegError as Error).message,
+          assemble_retry_count: (jobMeta.assemble_retry_count || 0) + 1
+        }
+      });
+      return { 
+        status: "generating", 
+        nextPhase: "assemble", 
+        message: `FFmpeg error: ${(ffmpegError as Error).message}. Will retry...` 
+      };
+    }
   } else {
     // Use Creatomate
     console.log("[ASSEMBLE] Calling Creatomate...");

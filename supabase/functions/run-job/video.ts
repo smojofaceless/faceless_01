@@ -406,28 +406,23 @@ export async function renderWithFFmpeg(
     console.log(`[FFMPEG] ⚠️ Music enabled but no track selected`);
   }
   
-  // Retry logic with exponential backoff for 503 "Server busy" errors
-  // Render.com free tier can be slow and busy
-  let lastError: Error | null = null;
-  const maxAttempts = 5;
-  const baseDelay = 30000; // 30 seconds base delay
+  // Single attempt with short timeout - edge functions have limited time
+  // If server is busy (503), we return error and let check-job retry later
+  console.log(`[FFMPEG] Sending render request...`);
   
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      console.log(`[FFMPEG] Render attempt ${attempt}/${maxAttempts}...`);
-      
-      const response = await fetch(`${FFMPEG_RENDERER_URL}/render`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          images: imageUrls,
-          audio_url: audioUrl,
-          durations: durations,
-          captions: captions || [], // Word-by-word captions with timestamps
-          effects: {
-            // Transitions
-            fadeIn: options.fadeIn ?? true,
-            fadeOut: options.fadeOut ?? true,
+  try {
+    const response = await fetch(`${FFMPEG_RENDERER_URL}/render`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        images: imageUrls,
+        audio_url: audioUrl,
+        durations: durations,
+        captions: captions || [], // Word-by-word captions with timestamps
+        effects: {
+          // Transitions
+          fadeIn: options.fadeIn ?? true,
+          fadeOut: options.fadeOut ?? true,
             fadeTransitions: options.transitions,
             // Disturbance & Glitch
             glitchFlicker: options.glitchFlicker ?? false,
@@ -461,15 +456,14 @@ export async function renderWithFFmpeg(
       
       if (!response.ok) {
         const errorText = await response.text();
-        // Check for 503 "Server busy" error
+        // Check for 503 "Server busy" error - don't retry, just report
         if (response.status === 503) {
-          // Parse retry_after from response if available
           let retryAfter = 60;
           try {
             const errJson = JSON.parse(errorText);
             retryAfter = errJson.retry_after || 60;
           } catch {}
-          throw new Error(`SERVER_BUSY:${retryAfter}`);
+          throw new Error(`FFmpeg server is busy. Try again in ${retryAfter} seconds.`);
         }
         throw new Error(`FFmpeg renderer error: ${response.status} - ${errorText}`);
       }
@@ -482,31 +476,9 @@ export async function renderWithFFmpeg(
         status: "processing",
       };
     } catch (err) {
-      lastError = err as Error;
-      console.log(`[FFMPEG] Attempt ${attempt} failed: ${lastError.message}`);
-      
-      if (attempt < maxAttempts) {
-        // Check if it's a "Server busy" error
-        let waitTime = baseDelay * attempt; // Exponential backoff
-        
-        if (lastError.message.startsWith('SERVER_BUSY:')) {
-          const retryAfter = parseInt(lastError.message.split(':')[1]) || 60;
-          waitTime = retryAfter * 1000; // Use server's suggested wait time
-          console.log(`[FFMPEG] Server busy, waiting ${retryAfter}s as requested...`);
-        } else {
-          console.log(`[FFMPEG] Waiting ${waitTime/1000}s before retry (attempt ${attempt + 1})...`);
-        }
-        
-        await new Promise(r => setTimeout(r, waitTime));
-      }
+      console.error(`[FFMPEG] Render request failed:`, (err as Error).message);
+      throw err;
     }
-  }
-  
-  // Provide clearer error message
-  const errMsg = lastError?.message?.startsWith('SERVER_BUSY:') 
-    ? 'FFmpeg server is busy. Please try again in a few minutes.'
-    : lastError?.message || 'Unknown error';
-  throw new Error(`FFmpeg render failed after ${maxAttempts} attempts: ${errMsg}`);
 }
 
 /**

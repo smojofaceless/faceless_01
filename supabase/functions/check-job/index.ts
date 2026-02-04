@@ -621,8 +621,25 @@ serve(async (req) => {
       const skipVideoAssembly = jobMeta.skip_video_assembly === true;
       console.log(`[CHECK] skipVideoAssembly=${skipVideoAssembly}`);
       
+      // Check if assemble phase previously failed and needs retry
+      const assembleError = jobMeta.assemble_error;
+      const assembleRetryCount = jobMeta.assemble_retry_count || 0;
+      const maxAssembleRetries = 3;
+      
+      if (assembleError && assembleRetryCount < maxAssembleRetries) {
+        console.log(`[CHECK] Previous assemble attempt failed: ${assembleError} (retry ${assembleRetryCount}/${maxAssembleRetries})`);
+        // Wait a bit before retry (based on retry count)
+        const waitTime = assembleRetryCount * 30; // 30s, 60s, 90s
+        console.log(`[CHECK] Will retry assemble after ${waitTime}s delay on next poll`);
+      }
+      
       // Also trigger if images_complete is true but progress wasn't updated (edge case)
-      if ((progress >= 70 && progress < 75) || (allImagesReady && progress >= 50 && progress < 75)) {
+      // OR if there was an assemble error and we haven't exceeded retries
+      const shouldTriggerAssemble = (progress >= 70 && progress < 75) || 
+                                     (allImagesReady && progress >= 50 && progress < 75) ||
+                                     (assembleError && !jobMeta.assemble_phase_running && assembleRetryCount < maxAssembleRetries);
+      
+      if (shouldTriggerAssemble) {
         if (!jobMeta.assemble_phase_running) {
           if (skipVideoAssembly) {
             // Skip assembly - mark job as complete with images only
@@ -666,7 +683,8 @@ serve(async (req) => {
             }
           } else {
             nextPhase = "assemble";
-            console.log(`[CHECK] Triggering assemble phase (images: ${imagesReady}/${totalScenes}, progress: ${progress})`);
+            const retryInfo = assembleError ? ` (retry ${assembleRetryCount + 1}/${maxAssembleRetries})` : '';
+            console.log(`[CHECK] Triggering assemble phase${retryInfo} (images: ${imagesReady}/${totalScenes}, progress: ${progress})`);
             const result = await triggerNextPhase(supabaseUrl, supabaseServiceKey, job_id, "assemble");
             phaseTriggered = result?.success === true;
           }
