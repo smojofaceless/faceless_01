@@ -5,7 +5,12 @@ let supabaseClient = null;
 
 function initSupabase() {
     if (!window.supabase) {
-        console.error('Supabase SDK not loaded');
+        console.warn('⚠️ Supabase SDK not loaded - using localStorage only');
+        return null;
+    }
+    
+    if (!CONFIG || !CONFIG.SUPABASE_URL || !CONFIG.SUPABASE_ANON_KEY) {
+        console.warn('⚠️ Supabase config not found - using localStorage only');
         return null;
     }
     
@@ -14,6 +19,7 @@ function initSupabase() {
         CONFIG.SUPABASE_ANON_KEY
     );
     
+    console.log('✅ Supabase client initialized');
     return supabaseClient;
 }
 
@@ -22,4 +28,17 @@ function getSupabaseClient() {
         return initSupabase();
     }
     return supabaseClient;
+}
+
+// Auto-initialize when script loads
+if (typeof window !== 'undefined') {
+    // Wait for DOM to ensure CONFIG is loaded
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            initSupabase();
+        });
+    } else {
+        // DOM already loaded, init now
+        initSupabase();
+    }
 }

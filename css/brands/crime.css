@@ -1,0 +1,97 @@
+/* =====================================================
+   CRIME BRAND THEME
+   True Crime / Documentary style
+   ===================================================== */
+
+/* Crime-specific color overrides */
+[data-brand="crime"] {
+    --brand-primary: #f59e0b;      /* Amber/Yellow - police tape */
+    --brand-secondary: #78350f;    /* Brown - case files */
+    --brand-accent: #fbbf24;       /* Bright amber */
+    
+    --brand-gradient: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    --brand-glow: 0 0 20px rgba(245, 158, 11, 0.3);
+    
+    /* Surface adjustments for crime theme */
+    --surface-1: #0f0f0f;
+    --surface-2: #1a1817;
+    --surface-3: #252220;
+}
+
+/* Crime brand animations */
+@keyframes crime-flash {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+/* Crime-specific component styles */
+[data-brand="crime"] .btn--primary {
+    background: var(--brand-gradient);
+    box-shadow: var(--brand-glow);
+}
+
+[data-brand="crime"] .btn--primary:hover {
+    box-shadow: 0 0 30px rgba(245, 158, 11, 0.5);
+}
+
+/* Crime card accent */
+[data-brand="crime"] .card {
+    border-left: 3px solid var(--brand-primary);
+}
+
+/* Case file styling */
+[data-brand="crime"] .coming-soon-card {
+    background: 
+        repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 28px,
+            rgba(245, 158, 11, 0.03) 28px,
+            rgba(245, 158, 11, 0.03) 29px
+        ),
+        var(--surface-2);
+}
+
+/* Evidence tag styling */
+[data-brand="crime"] .brand-tag {
+    background: var(--brand-primary);
+    color: #000;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+/* Police tape effect for borders */
+[data-brand="crime"] .coming-soon-icon {
+    background: repeating-linear-gradient(
+        45deg,
+        var(--brand-primary),
+        var(--brand-primary) 10px,
+        #000 10px,
+        #000 20px
+    );
+}
+
+[data-brand="crime"] .coming-soon-icon svg {
+    stroke: #000;
+}
+
+/* Document/case file feel */
+[data-brand="crime"] .feature-list {
+    background: rgba(245, 158, 11, 0.05);
+    padding: var(--space-4);
+    border-radius: var(--radius-md);
+    border: 1px dashed rgba(245, 158, 11, 0.3);
+}
+
+[data-brand="crime"] .feature-list li {
+    border-color: rgba(245, 158, 11, 0.2);
+}
+
+/* Redacted text effect utility */
+[data-brand="crime"] .redacted {
+    background: #000;
+    color: #000;
+    padding: 0 var(--space-2);
+    border-radius: 2px;
+}

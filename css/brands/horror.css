@@ -1,0 +1,89 @@
+/* =====================================================
+   HORROR BRAND - Theme Overrides
+   Brand-specific styling for Horror Stories
+   ===================================================== */
+
+/* Horror brand color tokens */
+[data-brand="horror"] {
+  --brand-primary: #ef4444;
+  --brand-primary-hover: #f87171;
+  --brand-primary-muted: rgba(239, 68, 68, 0.15);
+  --brand-secondary: #991b1b;
+  --brand-gradient: linear-gradient(135deg, #ef4444, #991b1b);
+  --brand-glow: rgba(239, 68, 68, 0.3);
+}
+
+/* Horror-specific background */
+.horror-gradient-bg {
+  background: linear-gradient(135deg, #0a0a0f 0%, #1a0a1a 50%, #0a0a0f 100%);
+}
+
+/* Blood red glow effect */
+.horror-glow {
+  box-shadow: 0 0 30px var(--brand-glow);
+}
+
+/* Pulsing glow animation */
+.horror-pulse-glow {
+  animation: horrorPulse 2s ease-in-out infinite;
+}
+
+@keyframes horrorPulse {
+  0%, 100% { 
+    box-shadow: 0 0 20px var(--brand-glow); 
+  }
+  50% { 
+    box-shadow: 0 0 40px rgba(239, 68, 68, 0.6); 
+  }
+}
+
+/* Horror accent colors */
+.text-horror-red { color: #ef4444; }
+.text-horror-blood { color: #991b1b; }
+.bg-horror-red { background-color: #ef4444; }
+.bg-horror-blood { background-color: #991b1b; }
+
+/* Horror-specific button styles */
+.btn-horror {
+  background: linear-gradient(135deg, #ef4444, #991b1b);
+  color: white;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.25);
+}
+
+.btn-horror:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.4);
+}
+
+/* Horror card accents */
+.horror-card {
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.horror-card:hover {
+  border-color: rgba(239, 68, 68, 0.5);
+  box-shadow: 0 0 30px rgba(239, 68, 68, 0.1);
+}
+
+/* Scene card horror theme */
+.scene-card.horror {
+  border-left: 3px solid #ef4444;
+}
+
+.scene-card.horror:hover {
+  border-color: #ef4444;
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.2);
+}
+
+/* Scary word highlight */
+.scary-word {
+  color: #ef4444;
+  text-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+}
+
+/* Horror effect preview badges */
+.effect-badge-horror {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}

@@ -1,0 +1,142 @@
+-- =====================================================
+-- Link Jobs to Posts Queue
+-- Allows importing completed jobs into the posting system
+-- =====================================================
+
+-- Add reference to source job in posts table
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS source_job_id UUID REFERENCES jobs(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_posts_source_job_id ON posts(source_job_id);
+
+-- =====================================================
+-- FUNCTION: Import job to posts queue
+-- Takes a completed job and creates a draft post from it
+-- =====================================================
+CREATE OR REPLACE FUNCTION import_job_to_posts(
+    p_job_id UUID,
+    p_brand_id UUID DEFAULT NULL,
+    p_platforms TEXT[] DEFAULT ARRAY['youtube']
+)
+RETURNS UUID AS $$
+DECLARE
+    v_job RECORD;
+    v_video_url TEXT;
+    v_post_id UUID;
+BEGIN
+    -- Get job details
+    SELECT * INTO v_job FROM jobs WHERE id = p_job_id AND status = 'complete';
+    
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Job not found or not complete: %', p_job_id;
+    END IF;
+    
+    -- Get video URL from job_assets
+    SELECT COALESCE(public_url, storage_path) INTO v_video_url
+    FROM job_assets
+    WHERE job_id = p_job_id AND type = 'final_mp4'
+    LIMIT 1;
+    
+    IF v_video_url IS NULL THEN
+        RAISE EXCEPTION 'No video found for job: %', p_job_id;
+    END IF;
+    
+    -- Check if already imported
+    SELECT id INTO v_post_id FROM posts WHERE source_job_id = p_job_id LIMIT 1;
+    IF FOUND THEN
+        RETURN v_post_id; -- Already imported, return existing post
+    END IF;
+    
+    -- Create post from job
+    INSERT INTO posts (
+        brand_id,
+        source_job_id,
+        video_url,
+        duration_seconds,
+        title,
+        description,
+        platforms,
+        status,
+        theme,
+        ai_metadata
+    ) VALUES (
+        p_brand_id,
+        p_job_id,
+        v_video_url,
+        v_job.duration_sec,
+        COALESCE(v_job.title, 'Untitled Video'),
+        v_job.story_text,
+        p_platforms,
+        'draft',
+        v_job.vibe_preset,
+        jsonb_build_object(
+            'importedFrom', 'jobs',
+            'importedAt', NOW(),
+            'originalJobId', p_job_id,
+            'lengthPreset', v_job.length_preset,
+            'visualPreset', v_job.visual_preset
+        )
+    )
+    RETURNING id INTO v_post_id;
+    
+    RETURN v_post_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- =====================================================
+-- FUNCTION: Bulk import completed jobs
+-- Imports all completed jobs that haven't been imported yet
+-- =====================================================
+CREATE OR REPLACE FUNCTION bulk_import_jobs_to_posts(
+    p_brand_id UUID DEFAULT NULL,
+    p_limit INTEGER DEFAULT 100
+)
+RETURNS TABLE(job_id UUID, post_id UUID, success BOOLEAN, error TEXT) AS $$
+DECLARE
+    v_job RECORD;
+    v_post_id UUID;
+    v_error TEXT;
+BEGIN
+    FOR v_job IN 
+        SELECT j.id 
+        FROM jobs j
+        LEFT JOIN posts p ON p.source_job_id = j.id
+        WHERE j.status = 'complete' 
+        AND p.id IS NULL -- Not already imported
+        ORDER BY j.created_at DESC
+        LIMIT p_limit
+    LOOP
+        BEGIN
+            v_post_id := import_job_to_posts(v_job.id, p_brand_id);
+            RETURN QUERY SELECT v_job.id, v_post_id, TRUE, NULL::TEXT;
+        EXCEPTION WHEN OTHERS THEN
+            v_error := SQLERRM;
+            RETURN QUERY SELECT v_job.id, NULL::UUID, FALSE, v_error;
+        END;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+-- =====================================================
+-- VIEW: Completed jobs available for import
+-- Shows jobs that haven't been imported yet
+-- =====================================================
+CREATE OR REPLACE VIEW jobs_available_for_import AS
+SELECT 
+    j.id,
+    j.title,
+    j.story_text,
+    j.duration_sec,
+    j.vibe_preset,
+    j.visual_preset,
+    j.created_at,
+    ja.public_url AS video_url,
+    ja.storage_path,
+    CASE 
+        WHEN p.id IS NOT NULL THEN TRUE 
+        ELSE FALSE 
+    END AS already_imported,
+    p.id AS existing_post_id
+FROM jobs j
+LEFT JOIN job_assets ja ON ja.job_id = j.id AND ja.type = 'final_mp4'
+LEFT JOIN posts p ON p.source_job_id = j.id
+WHERE j.status = 'complete'
+ORDER BY j.created_at DESC;

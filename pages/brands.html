@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brands - ContentEngine</title>
+    
+    <!-- Core Design System -->
+    <link rel="stylesheet" href="../css/core/tokens.css">
+    <link rel="stylesheet" href="../css/core/base.css">
+    <link rel="stylesheet" href="../css/core/components.css">
+    <link rel="stylesheet" href="../css/core/layout.css">
+    <link rel="stylesheet" href="../css/dashboard.css">
+    <link rel="stylesheet" href="../css/brands.css">
+    
+    <style>
+        /* Preset Grid Styling */
+        .preset-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .preset-btn {
+            width: 42px;
+            height: 42px;
+            border-radius: 10px;
+            border: 2px solid transparent;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+        .preset-btn:hover {
+            transform: scale(1.1);
+            border-color: rgba(255,255,255,0.5);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        
+        /* Niche select styling */
+        #brand-niche optgroup {
+            font-weight: bold;
+            color: #a0a0a0;
+            background: #1a1a2e;
+        }
+        #brand-niche option {
+            padding: 8px;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar__header">
+                <a href="../index.html" class="logo">
+                    <svg class="logo__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                        <polyline points="2 17 12 22 22 17"/>
+                        <polyline points="2 12 12 17 22 12"/>
+                    </svg>
+                    <span class="logo__text">ContentEngine</span>
+                </a>
+            </div>
+
+            <nav class="sidebar__nav">
+                <div class="nav-section">
+                    <span class="nav-section__title">Overview</span>
+                    <a href="../index.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="7" height="7"/>
+                            <rect x="14" y="3" width="7" height="7"/>
+                            <rect x="14" y="14" width="7" height="7"/>
+                            <rect x="3" y="14" width="7" height="7"/>
+                        </svg>
+                        <span>Dashboard</span>
+                    </a>
+                    <a href="create.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="23 7 16 12 23 17 23 7"/>
+                            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                        </svg>
+                        <span>Create Video</span>
+                    </a>
+                    <a href="calendar.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                            <line x1="16" y1="2" x2="16" y2="6"/>
+                            <line x1="8" y1="2" x2="8" y2="6"/>
+                            <line x1="3" y1="10" x2="21" y2="10"/>
+                        </svg>
+                        <span>Calendar</span>
+                    </a>
+                    <a href="posts.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="16" y1="13" x2="8" y2="13"/>
+                            <line x1="16" y1="17" x2="8" y2="17"/>
+                        </svg>
+                        <span>Posts Queue</span>
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <span class="nav-section__title">Management</span>
+                    <a href="brands.html" class="nav-link active">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                            <line x1="7" y1="7" x2="7.01" y2="7"/>
+                        </svg>
+                        <span>Brands</span>
+                    </a>
+                    <a href="connections.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                        </svg>
+                        <span>Connections</span>
+                    </a>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Header -->
+            <header class="header">
+                <div class="header__left">
+                    <h1 class="header__title">Brand Management</h1>
+                </div>
+                <div class="header__right">
+                    <button class="btn btn--primary" id="create-brand-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"/>
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        New Brand
+                    </button>
+                </div>
+            </header>
+
+            <!-- Brands Content -->
+            <div class="content">
+                <!-- Info Card -->
+                <div class="info-card">
+                    <div class="info-card__icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="12" y1="16" x2="12" y2="12"/>
+                            <line x1="12" y1="8" x2="12.01" y2="8"/>
+                        </svg>
+                    </div>
+                    <div class="info-card__content">
+                        <h3>What are Brands?</h3>
+                        <p>Each brand represents a separate faceless social media channel. Create brands for different niches like horror stories, food recipes, science facts, car content, or anything else. Each brand has its own theme colors, platform connections, and content library - completely isolated from your other brands.</p>
+                    </div>
+                </div>
+
+                <!-- Brands Grid -->
+                <div class="brands-grid" id="brands-grid">
+                    <!-- Brands will be rendered here -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Create/Edit Brand Modal -->
+    <div class="modal" id="brand-modal">
+        <div class="modal__overlay"></div>
+        <div class="modal__content modal__content--lg">
+            <div class="modal__header">
+                <h3 class="modal__title" id="modal-title">Create Brand</h3>
+                <button class="modal__close">&times;</button>
+            </div>
+            <div class="modal__body">
+                <form id="brand-form">
+                    <div class="form-section">
+                        <h4 class="form-section__title">Basic Information</h4>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label class="form-label">Brand Name *</label>
+                                <input type="text" class="form-control" id="brand-name" required placeholder="e.g., QuickBites, DarkTales, FactFeed">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Niche *</label>
+                                <select class="select form-control" id="brand-niche" required>
+                                    <option value="">Select Niche</option>
+                                    <optgroup label="Entertainment">
+                                        <option value="horror">🎃 Horror & Scary Stories</option>
+                                        <option value="crime">🔍 True Crime</option>
+                                        <option value="mystery">🕵️ Mystery & Thriller</option>
+                                        <option value="scifi">🚀 Sci-Fi & Fantasy</option>
+                                        <option value="gaming">🎮 Gaming</option>
+                                    </optgroup>
+                                    <optgroup label="Lifestyle">
+                                        <option value="food">🍳 Food & Recipes</option>
+                                        <option value="fitness">💪 Fitness & Health</option>
+                                        <option value="travel">✈️ Travel & Adventure</option>
+                                        <option value="fashion">👗 Fashion & Beauty</option>
+                                        <option value="diy">🔨 DIY & Crafts</option>
+                                    </optgroup>
+                                    <optgroup label="Educational">
+                                        <option value="science">🔬 Science & Facts</option>
+                                        <option value="tech">💻 Tech & Gadgets</option>
+                                        <option value="finance">💰 Finance & Money</option>
+                                        <option value="history">📜 History</option>
+                                    </optgroup>
+                                    <optgroup label="Automotive">
+                                        <option value="cars">🚗 Cars & Automotive</option>
+                                        <option value="motorcycles">🏍️ Motorcycles</option>
+                                    </optgroup>
+                                    <optgroup label="Other">
+                                        <option value="pets">🐾 Pets & Animals</option>
+                                        <option value="motivation">🌟 Motivation & Quotes</option>
+                                        <option value="other">📝 Other</option>
+                                    </optgroup>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Description</label>
+                            <textarea class="form-control" id="brand-description" rows="2" placeholder="Brief description of this brand..."></textarea>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h4 class="form-section__title">Theme</h4>
+                        <div class="form-grid form-grid--3">
+                            <div class="form-group">
+                                <label class="form-label">Primary Color</label>
+                                <div class="color-input">
+                                    <input type="color" class="color-picker" id="brand-primary" value="#8B5CF6">
+                                    <input type="text" class="form-control" id="brand-primary-text" value="#8B5CF6" placeholder="#8B5CF6">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Secondary Color</label>
+                                <div class="color-input">
+                                    <input type="color" class="color-picker" id="brand-secondary" value="#1E1E2E">
+                                    <input type="text" class="form-control" id="brand-secondary-text" value="#1E1E2E" placeholder="#1E1E2E">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Accent Color</label>
+                                <div class="color-input">
+                                    <input type="color" class="color-picker" id="brand-accent" value="#EF4444">
+                                    <input type="text" class="form-control" id="brand-accent-text" value="#EF4444" placeholder="#EF4444">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="preset-colors">
+                            <span class="preset-label">Theme Presets:</span>
+                            <div class="preset-grid">
+                                <button type="button" class="preset-btn" data-preset="horror" style="background: linear-gradient(135deg, #8B5CF6, #EF4444)" title="Horror">🎃</button>
+                                <button type="button" class="preset-btn" data-preset="food" style="background: linear-gradient(135deg, #F97316, #FBBF24)" title="Food">🍳</button>
+                                <button type="button" class="preset-btn" data-preset="science" style="background: linear-gradient(135deg, #3B82F6, #06B6D4)" title="Science">🔬</button>
+                                <button type="button" class="preset-btn" data-preset="cars" style="background: linear-gradient(135deg, #EF4444, #1F2937)" title="Cars">🚗</button>
+                                <button type="button" class="preset-btn" data-preset="finance" style="background: linear-gradient(135deg, #10B981, #047857)" title="Finance">💰</button>
+                                <button type="button" class="preset-btn" data-preset="fitness" style="background: linear-gradient(135deg, #EC4899, #F43F5E)" title="Fitness">💪</button>
+                                <button type="button" class="preset-btn" data-preset="tech" style="background: linear-gradient(135deg, #6366F1, #8B5CF6)" title="Tech">💻</button>
+                                <button type="button" class="preset-btn" data-preset="travel" style="background: linear-gradient(135deg, #0EA5E9, #38BDF8)" title="Travel">✈️</button>
+                                <button type="button" class="preset-btn" data-preset="gaming" style="background: linear-gradient(135deg, #A855F7, #EC4899)" title="Gaming">🎮</button>
+                                <button type="button" class="preset-btn" data-preset="motivation" style="background: linear-gradient(135deg, #FBBF24, #F59E0B)" title="Motivation">🌟</button>
+                                <button type="button" class="preset-btn" data-preset="pets" style="background: linear-gradient(135deg, #F472B6, #FB923C)" title="Pets">🐾</button>
+                                <button type="button" class="preset-btn" data-preset="dark" style="background: linear-gradient(135deg, #374151, #111827)" title="Dark">🌙</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h4 class="form-section__title">Posting Settings</h4>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label class="form-label">Default Timezone</label>
+                                <select class="select form-control" id="brand-timezone">
+                                    <option value="America/New_York">Eastern Time (ET)</option>
+                                    <option value="America/Chicago">Central Time (CT)</option>
+                                    <option value="America/Denver">Mountain Time (MT)</option>
+                                    <option value="America/Los_Angeles">Pacific Time (PT)</option>
+                                    <option value="Europe/London">London (GMT)</option>
+                                    <option value="Europe/Paris">Paris (CET)</option>
+                                    <option value="Asia/Tokyo">Tokyo (JST)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Max Posts Per Day</label>
+                                <input type="number" class="form-control" id="brand-max-posts" value="3" min="1" max="20">
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal__footer">
+                <button class="btn btn--secondary" id="modal-cancel">Cancel</button>
+                <button class="btn btn--primary" id="modal-save">Save Brand</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <!-- Scripts -->
+    <script src="../js/config.js"></script>
+    <script src="../js/supabase.js"></script>
+    <script src="../js/core/utils.js"></script>
+    <script src="../js/models/Brand.js"></script>
+    <script src="../js/models/Platform.js"></script>
+    <script src="../js/models/Post.js"></script>
+    <script src="../js/models/Schedule.js"></script>
+    <script src="../js/models/index.js"></script>
+    <script src="../js/services/platformAPI.js"></script>
+    <script src="../js/services/postManager.js"></script>
+    <script src="../js/services/scheduler.js"></script>
+    <script src="../js/services/brandManager.js"></script>
+    <script src="../js/services/index.js"></script>
+    <script src="../js/components/toast.js"></script>
+    <script src="../js/components/sidebar.js"></script>
+    <script>
+        let editingBrandId = null;
+
+        // Theme presets for different niches
+        const THEME_PRESETS = {
+            // Entertainment
+            horror: { primary: '#8B5CF6', secondary: '#1E1E2E', accent: '#EF4444' },
+            crime: { primary: '#3B82F6', secondary: '#1A1A2E', accent: '#F59E0B' },
+            mystery: { primary: '#10B981', secondary: '#1E1E2E', accent: '#6366F1' },
+            scifi: { primary: '#06B6D4', secondary: '#0F172A', accent: '#8B5CF6' },
+            gaming: { primary: '#A855F7', secondary: '#1E1E2E', accent: '#EC4899' },
+            // Lifestyle
+            food: { primary: '#F97316', secondary: '#1C1917', accent: '#FBBF24' },
+            fitness: { primary: '#EC4899', secondary: '#1E1E2E', accent: '#F43F5E' },
+            travel: { primary: '#0EA5E9', secondary: '#0C4A6E', accent: '#38BDF8' },
+            fashion: { primary: '#F472B6', secondary: '#1E1E2E', accent: '#A855F7' },
+            diy: { primary: '#F59E0B', secondary: '#1E1E2E', accent: '#84CC16' },
+            // Educational
+            science: { primary: '#3B82F6', secondary: '#1E293B', accent: '#06B6D4' },
+            tech: { primary: '#6366F1', secondary: '#1E1E2E', accent: '#8B5CF6' },
+            finance: { primary: '#10B981', secondary: '#1E1E2E', accent: '#047857' },
+            history: { primary: '#92400E', secondary: '#1C1917', accent: '#FBBF24' },
+            // Automotive
+            cars: { primary: '#EF4444', secondary: '#1F2937', accent: '#F97316' },
+            motorcycles: { primary: '#F97316', secondary: '#1E1E2E', accent: '#FBBF24' },
+            // Other
+            pets: { primary: '#F472B6', secondary: '#1E1E2E', accent: '#FB923C' },
+            motivation: { primary: '#FBBF24', secondary: '#1E1E2E', accent: '#F59E0B' },
+            dark: { primary: '#374151', secondary: '#111827', accent: '#6B7280' },
+            other: { primary: '#6366F1', secondary: '#1E1E2E', accent: '#8B5CF6' }
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('Brands page: DOMContentLoaded');
+            const sidebar = new Sidebar();
+
+            window.addEventListener('contentengine:ready', () => {
+                console.log('Brands page: contentengine:ready event received');
+                init();
+            });
+            
+            // Check if already initialized
+            if (typeof contentEngine !== 'undefined' && contentEngine.initialized) {
+                console.log('Brands page: contentEngine already initialized');
+                init();
+            } else {
+                console.log('Brands page: contentEngine not yet initialized, waiting for event');
+                // Fallback: try init after a short delay
+                setTimeout(() => {
+                    if (typeof brandManager !== 'undefined') {
+                        console.log('Brands page: Fallback init');
+                        init();
+                    }
+                }, 100);
+            }
+        });
+
+        function init() {
+            console.log('Brands page: init() called');
+            loadBrands();
+            setupModal();
+            setupColorInputs();
+            setupPresets();
+            console.log('Brands page: init() complete');
+        }
+
+        function loadBrands() {
+            const container = document.getElementById('brands-grid');
+            const brands = brandManager.getAll();
+
+            if (brands.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-card">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                            <line x1="7" y1="7" x2="7.01" y2="7"/>
+                        </svg>
+                        <h3>No Brands Yet</h3>
+                        <p>Create your first brand to start organizing your content</p>
+                        <button class="btn btn--primary" onclick="openCreateModal()">Create Brand</button>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = brands.map(brand => renderBrandCard(brand)).join('');
+
+            // Attach event listeners
+            const editBtns = container.querySelectorAll('.brand-card__action--edit');
+            console.log('Found edit buttons:', editBtns.length);
+            editBtns.forEach(btn => {
+                console.log('Attaching edit listener to button with id:', btn.dataset.id);
+                btn.addEventListener('click', (e) => {
+                    console.log('Edit button clicked for id:', btn.dataset.id);
+                    e.stopPropagation();
+                    const brand = brandManager.get(btn.dataset.id);
+                    console.log('Brand found:', brand);
+                    if (brand) openEditModal(brand);
+                });
+            });
+
+            container.querySelectorAll('.brand-card__action--delete').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteBrand(btn.dataset.id);
+                });
+            });
+
+            container.querySelectorAll('.brand-card__action--activate').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    brandManager.setActive(btn.dataset.id);
+                    loadBrands();
+                    toast.success('Brand activated');
+                });
+            });
+        }
+
+        // Niche labels with emojis
+        const NICHE_LABELS = {
+            horror: '🎃 Horror',
+            crime: '🔍 True Crime',
+            mystery: '🕵️ Mystery',
+            scifi: '🚀 Sci-Fi',
+            gaming: '🎮 Gaming',
+            food: '🍳 Food',
+            fitness: '💪 Fitness',
+            travel: '✈️ Travel',
+            fashion: '👗 Fashion',
+            diy: '🔨 DIY',
+            science: '🔬 Science',
+            tech: '💻 Tech',
+            finance: '💰 Finance',
+            history: '📜 History',
+            cars: '🚗 Cars',
+            motorcycles: '🏍️ Motorcycles',
+            pets: '🐾 Pets',
+            motivation: '🌟 Motivation',
+            other: '📝 Other'
+        };
+
+        function renderBrandCard(brand) {
+            const stats = brandManager.getStats(brand.id);
+            const isActive = brandManager.getActive()?.id === brand.id;
+            const connectedPlatforms = Object.keys(brand.platformConnections || {}).length;
+            const nicheLabel = NICHE_LABELS[brand.niche] || brand.niche;
+
+            return `
+                <div class="brand-card ${isActive ? 'brand-card--active' : ''}" data-brand="${brand.id}">
+                    <div class="brand-card__header" style="background: linear-gradient(135deg, ${brand.theme.primaryColor}, ${brand.theme.accentColor})">
+                        <span class="brand-card__niche">${nicheLabel}</span>
+                        ${isActive ? '<span class="brand-card__badge">Active</span>' : ''}
+                    </div>
+                    <div class="brand-card__body">
+                        <h3 class="brand-card__name">${brand.name}</h3>
+                        ${brand.description ? `<p class="brand-card__desc">${brand.description}</p>` : ''}
+                        
+                        <div class="brand-card__stats">
+                            <div class="brand-stat">
+                                <span class="brand-stat__value">${stats.totalPosts}</span>
+                                <span class="brand-stat__label">Posts</span>
+                            </div>
+                            <div class="brand-stat">
+                                <span class="brand-stat__value">${stats.scheduledPosts}</span>
+                                <span class="brand-stat__label">Scheduled</span>
+                            </div>
+                            <div class="brand-stat">
+                                <span class="brand-stat__value">${connectedPlatforms}</span>
+                                <span class="brand-stat__label">Platforms</span>
+                            </div>
+                        </div>
+
+                        <div class="brand-card__theme">
+                            <span class="theme-swatch" style="background: ${brand.theme.primaryColor}"></span>
+                            <span class="theme-swatch" style="background: ${brand.theme.secondaryColor}"></span>
+                            <span class="theme-swatch" style="background: ${brand.theme.accentColor}"></span>
+                        </div>
+                    </div>
+                    <div class="brand-card__footer">
+                        ${!isActive ? `
+                            <button class="btn btn--sm btn--secondary brand-card__action--activate" data-id="${brand.id}">
+                                Set Active
+                            </button>
+                        ` : '<span class="text-muted">Currently Active</span>'}
+                        <div class="brand-card__actions">
+                            <button class="btn btn--icon btn--sm brand-card__action--edit" data-id="${brand.id}" title="Edit">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                </svg>
+                            </button>
+                            <button class="btn btn--icon btn--sm brand-card__action--delete" data-id="${brand.id}" title="Delete">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="3 6 5 6 21 6"/>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function setupModal() {
+            console.log('setupModal() called');
+            const modal = document.getElementById('brand-modal');
+            console.log('Modal element:', modal);
+            
+            // Move modal to body to ensure no parent constraints
+            if (modal.parentElement !== document.body) {
+                document.body.appendChild(modal);
+                console.log('Modal moved to body');
+            }
+            
+            const closeBtn = modal.querySelector('.modal__close');
+            const cancelBtn = document.getElementById('modal-cancel');
+            const saveBtn = document.getElementById('modal-save');
+            const overlay = modal.querySelector('.modal__overlay');
+            
+            const createBtn = document.getElementById('create-brand-btn');
+            console.log('Create brand button:', createBtn);
+            
+            if (createBtn) {
+                createBtn.addEventListener('click', () => {
+                    console.log('Create brand button clicked!');
+                    openCreateModal();
+                });
+                console.log('Create brand button listener attached');
+            } else {
+                console.error('Create brand button not found!');
+            }
+
+            [closeBtn, cancelBtn, overlay].forEach(el => {
+                if (el) el.addEventListener('click', closeModal);
+            });
+
+            if (saveBtn) saveBtn.addEventListener('click', saveBrand);
+            
+            // Auto-apply preset when niche is selected
+            const nicheSelect = document.getElementById('brand-niche');
+            if (nicheSelect) {
+                nicheSelect.addEventListener('change', (e) => {
+                    const niche = e.target.value;
+                    if (THEME_PRESETS[niche]) {
+                        applyPreset(niche);
+                    }
+                });
+            }
+        }
+        
+        function applyPreset(presetName) {
+            const preset = THEME_PRESETS[presetName];
+            if (!preset) return;
+            
+            document.getElementById('brand-primary').value = preset.primary;
+            document.getElementById('brand-primary-text').value = preset.primary;
+            document.getElementById('brand-secondary').value = preset.secondary;
+            document.getElementById('brand-secondary-text').value = preset.secondary;
+            document.getElementById('brand-accent').value = preset.accent;
+            document.getElementById('brand-accent-text').value = preset.accent;
+        }
+
+        function setupColorInputs() {
+            ['primary', 'secondary', 'accent'].forEach(color => {
+                const picker = document.getElementById(`brand-${color}`);
+                const text = document.getElementById(`brand-${color}-text`);
+
+                picker.addEventListener('input', (e) => {
+                    text.value = e.target.value;
+                });
+
+                text.addEventListener('input', (e) => {
+                    if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) {
+                        picker.value = e.target.value;
+                    }
+                });
+            });
+        }
+
+        function setupPresets() {
+            document.querySelectorAll('.preset-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const presetName = btn.dataset.preset;
+                    applyPreset(presetName);
+                    
+                    // Also set niche if preset matches a niche and niche isn't set
+                    const nicheSelect = document.getElementById('brand-niche');
+                    if (!nicheSelect.value && THEME_PRESETS[presetName]) {
+                        // Check if this preset name is a valid niche option
+                        const option = nicheSelect.querySelector(`option[value="${presetName}"]`);
+                        if (option) {
+                            nicheSelect.value = presetName;
+                        }
+                    }
+                });
+            });
+        }
+
+        function openCreateModal() {
+            console.log('openCreateModal() called');
+            editingBrandId = null;
+            document.getElementById('modal-title').textContent = 'Create Brand';
+            document.getElementById('brand-form').reset();
+            
+            // Set default colors
+            const defaults = THEME_PRESETS.tech; // Default neutral preset
+            document.getElementById('brand-primary').value = defaults.primary;
+            document.getElementById('brand-primary-text').value = defaults.primary;
+            document.getElementById('brand-secondary').value = defaults.secondary;
+            document.getElementById('brand-secondary-text').value = defaults.secondary;
+            document.getElementById('brand-accent').value = defaults.accent;
+            document.getElementById('brand-accent-text').value = defaults.accent;
+
+            document.getElementById('brand-modal').classList.add('active');
+        }
+
+        function openEditModal(brand) {
+            editingBrandId = brand.id;
+            document.getElementById('modal-title').textContent = 'Edit Brand';
+
+            document.getElementById('brand-name').value = brand.name;
+            document.getElementById('brand-niche').value = brand.niche;
+            document.getElementById('brand-description').value = brand.description || '';
+            document.getElementById('brand-timezone').value = brand.settings?.timezone || 'America/New_York';
+            document.getElementById('brand-max-posts').value = brand.settings?.postingConfig?.maxPostsPerDay || 3;
+
+            document.getElementById('brand-primary').value = brand.theme.primaryColor;
+            document.getElementById('brand-primary-text').value = brand.theme.primaryColor;
+            document.getElementById('brand-secondary').value = brand.theme.secondaryColor;
+            document.getElementById('brand-secondary-text').value = brand.theme.secondaryColor;
+            document.getElementById('brand-accent').value = brand.theme.accentColor;
+            document.getElementById('brand-accent-text').value = brand.theme.accentColor;
+
+            document.getElementById('brand-modal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('brand-modal').classList.remove('active');
+            editingBrandId = null;
+        }
+
+        async function saveBrand() {
+            const name = document.getElementById('brand-name').value.trim();
+            const niche = document.getElementById('brand-niche').value;
+
+            if (!name || !niche) {
+                toast.error('Please fill in required fields');
+                return;
+            }
+
+            const brandData = {
+                name,
+                niche,
+                description: document.getElementById('brand-description').value.trim(),
+                theme: {
+                    primaryColor: document.getElementById('brand-primary').value,
+                    secondaryColor: document.getElementById('brand-secondary').value,
+                    accentColor: document.getElementById('brand-accent').value
+                },
+                settings: {
+                    timezone: document.getElementById('brand-timezone').value,
+                    postingConfig: {
+                        maxPostsPerDay: parseInt(document.getElementById('brand-max-posts').value) || 3
+                    }
+                }
+            };
+
+            try {
+                if (editingBrandId) {
+                    await brandManager.update(editingBrandId, brandData);
+                    toast.success('Brand updated!');
+                } else {
+                    await brandManager.create(brandData);
+                    toast.success('Brand created!');
+                }
+
+                closeModal();
+                loadBrands();
+            } catch (e) {
+                console.error('Failed to save brand:', e);
+                toast.error('Failed to save brand');
+            }
+        }
+
+        async function deleteBrand(id) {
+            const brand = brandManager.get(id);
+            if (!brand) return;
+
+            if (confirm(`Are you sure you want to delete "${brand.name}"? This cannot be undone.`)) {
+                await brandManager.delete(id);
+                loadBrands();
+                toast.success('Brand deleted');
+            }
+        }
+    </script>
+</body>
+</html>

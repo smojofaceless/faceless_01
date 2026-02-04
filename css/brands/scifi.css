@@ -1,0 +1,181 @@
+/* =====================================================
+   SCI-FI BRAND THEME
+   Futuristic / Space / AI style
+   ===================================================== */
+
+/* Sci-Fi specific color overrides */
+[data-brand="scifi"] {
+    --brand-primary: #06b6d4;      /* Cyan - tech/hologram */
+    --brand-secondary: #0e7490;    /* Deep cyan */
+    --brand-accent: #22d3ee;       /* Bright cyan */
+    
+    --brand-gradient: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
+    --brand-glow: 0 0 20px rgba(6, 182, 212, 0.3);
+    
+    /* Surface adjustments for sci-fi theme */
+    --surface-1: #030712;
+    --surface-2: #0a1628;
+    --surface-3: #0f1f35;
+}
+
+/* Sci-Fi brand animations */
+@keyframes scifi-scan {
+    0% { 
+        background-position: 0 -100%;
+    }
+    100% { 
+        background-position: 0 200%;
+    }
+}
+
+@keyframes scifi-glow {
+    0%, 100% { 
+        box-shadow: 
+            0 0 5px var(--brand-primary),
+            0 0 10px var(--brand-primary),
+            0 0 20px rgba(6, 182, 212, 0.3);
+    }
+    50% { 
+        box-shadow: 
+            0 0 10px var(--brand-primary),
+            0 0 20px var(--brand-primary),
+            0 0 40px rgba(6, 182, 212, 0.5);
+    }
+}
+
+@keyframes scifi-flicker {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.95; }
+    52% { opacity: 0.8; }
+    54% { opacity: 1; }
+}
+
+/* Sci-Fi specific component styles */
+[data-brand="scifi"] .btn--primary {
+    background: var(--brand-gradient);
+    box-shadow: var(--brand-glow);
+    border: 1px solid rgba(6, 182, 212, 0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+[data-brand="scifi"] .btn--primary:hover {
+    animation: scifi-glow 1.5s ease-in-out infinite;
+}
+
+/* Holographic card effect */
+[data-brand="scifi"] .card {
+    border: 1px solid rgba(6, 182, 212, 0.3);
+    background: 
+        linear-gradient(
+            180deg,
+            rgba(6, 182, 212, 0.1) 0%,
+            transparent 50%,
+            rgba(6, 182, 212, 0.05) 100%
+        ),
+        var(--surface-2);
+}
+
+/* Tech interface styling */
+[data-brand="scifi"] .coming-soon-card {
+    position: relative;
+    border: 1px solid rgba(6, 182, 212, 0.3);
+}
+
+[data-brand="scifi"] .coming-soon-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 100%;
+    background: linear-gradient(
+        180deg,
+        rgba(6, 182, 212, 0.1) 0%,
+        transparent 30%,
+        transparent 70%,
+        rgba(6, 182, 212, 0.05) 100%
+    );
+    pointer-events: none;
+}
+
+/* Scan line effect */
+[data-brand="scifi"] .coming-soon-card::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 100%;
+    background: linear-gradient(
+        180deg,
+        transparent 0%,
+        rgba(6, 182, 212, 0.03) 50%,
+        transparent 100%
+    );
+    background-size: 100% 4px;
+    animation: scifi-scan 8s linear infinite;
+    pointer-events: none;
+}
+
+/* Futuristic tag styling */
+[data-brand="scifi"] .brand-tag {
+    background: transparent;
+    border: 1px solid var(--brand-primary);
+    color: var(--brand-primary);
+    animation: scifi-flicker 4s infinite;
+}
+
+/* Glowing icon */
+[data-brand="scifi"] .coming-soon-icon {
+    animation: scifi-glow 3s ease-in-out infinite;
+    background: linear-gradient(135deg, var(--brand-primary), var(--brand-secondary));
+}
+
+/* Tech interface feature list */
+[data-brand="scifi"] .feature-list {
+    background: rgba(6, 182, 212, 0.05);
+    border: 1px solid rgba(6, 182, 212, 0.2);
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+}
+
+[data-brand="scifi"] .feature-list li {
+    border-color: rgba(6, 182, 212, 0.15);
+    font-family: 'Courier New', monospace;
+    font-size: var(--text-sm);
+}
+
+[data-brand="scifi"] .feature-list li::before {
+    content: '>';
+    color: var(--brand-primary);
+    margin-right: var(--space-2);
+}
+
+/* Terminal text effect utility */
+[data-brand="scifi"] .terminal-text {
+    font-family: 'Courier New', monospace;
+    color: var(--brand-primary);
+}
+
+/* Holographic text effect */
+[data-brand="scifi"] .hologram {
+    background: linear-gradient(
+        90deg,
+        var(--brand-primary),
+        var(--brand-accent),
+        var(--brand-primary)
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: scifi-flicker 3s infinite;
+}
+
+/* Grid overlay utility */
+[data-brand="scifi"] .grid-overlay {
+    background-image: 
+        linear-gradient(rgba(6, 182, 212, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(6, 182, 212, 0.03) 1px, transparent 1px);
+    background-size: 20px 20px;
+}

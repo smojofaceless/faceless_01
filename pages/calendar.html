@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calendar - ContentEngine</title>
+    
+    <!-- Core Design System -->
+    <link rel="stylesheet" href="../css/core/tokens.css">
+    <link rel="stylesheet" href="../css/core/base.css">
+    <link rel="stylesheet" href="../css/core/components.css">
+    <link rel="stylesheet" href="../css/core/layout.css">
+    <link rel="stylesheet" href="../css/dashboard.css">
+    <link rel="stylesheet" href="../css/calendar.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar__header">
+                <a href="../index.html" class="logo">
+                    <svg class="logo__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                        <polyline points="2 17 12 22 22 17"/>
+                        <polyline points="2 12 12 17 22 12"/>
+                    </svg>
+                    <span class="logo__text">ContentEngine</span>
+                </a>
+            </div>
+
+            <nav class="sidebar__nav">
+                <div class="nav-section">
+                    <span class="nav-section__title">Overview</span>
+                    <a href="../index.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="7" height="7"/>
+                            <rect x="14" y="3" width="7" height="7"/>
+                            <rect x="14" y="14" width="7" height="7"/>
+                            <rect x="3" y="14" width="7" height="7"/>
+                        </svg>
+                        <span>Dashboard</span>
+                    </a>
+                    <a href="create.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="23 7 16 12 23 17 23 7"/>
+                            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                        </svg>
+                        <span>Create Video</span>
+                    </a>
+                    <a href="calendar.html" class="nav-link active">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                            <line x1="16" y1="2" x2="16" y2="6"/>
+                            <line x1="8" y1="2" x2="8" y2="6"/>
+                            <line x1="3" y1="10" x2="21" y2="10"/>
+                        </svg>
+                        <span>Calendar</span>
+                    </a>
+                    <a href="posts.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="16" y1="13" x2="8" y2="13"/>
+                            <line x1="16" y1="17" x2="8" y2="17"/>
+                        </svg>
+                        <span>Posts Queue</span>
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <span class="nav-section__title">Management</span>
+                    <a href="brands.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                            <line x1="7" y1="7" x2="7.01" y2="7"/>
+                        </svg>
+                        <span>Brands</span>
+                    </a>
+                    <a href="connections.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                        </svg>
+                        <span>Connections</span>
+                    </a>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Header -->
+            <header class="header">
+                <div class="header__left">
+                    <h1 class="header__title">Content Calendar</h1>
+                </div>
+                <div class="header__right">
+                    <div id="brand-switcher"></div>
+                    <button class="btn btn--primary" id="create-post-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"/>
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        Schedule Post
+                    </button>
+                </div>
+            </header>
+
+            <!-- Calendar Content -->
+            <div class="content">
+                <!-- Calendar Toolbar -->
+                <div class="calendar-toolbar">
+                    <div class="calendar-toolbar__left">
+                        <button class="btn btn--secondary" id="today-btn">Today</button>
+                        <div class="btn-group">
+                            <button class="btn btn--icon" id="prev-btn">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="15 18 9 12 15 6"/>
+                                </svg>
+                            </button>
+                            <button class="btn btn--icon" id="next-btn">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="9 18 15 12 9 6"/>
+                                </svg>
+                            </button>
+                        </div>
+                        <h2 class="calendar-title" id="calendar-title">January 2025</h2>
+                    </div>
+                    <div class="calendar-toolbar__right">
+                        <div class="view-toggle">
+                            <button class="view-toggle__btn active" data-view="month">Month</button>
+                            <button class="view-toggle__btn" data-view="week">Week</button>
+                        </div>
+                        <div class="filter-group">
+                            <select class="select" id="platform-filter">
+                                <option value="">All Platforms</option>
+                                <option value="instagram">Instagram</option>
+                                <option value="tiktok">TikTok</option>
+                                <option value="youtube">YouTube</option>
+                                <option value="facebook">Facebook</option>
+                                <option value="twitter">Twitter</option>
+                                <option value="threads">Threads</option>
+                            </select>
+                            <select class="select" id="status-filter">
+                                <option value="">All Status</option>
+                                <option value="scheduled">Scheduled</option>
+                                <option value="published">Published</option>
+                                <option value="failed">Failed</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Calendar Container -->
+                <div id="calendar-container" class="calendar-container"></div>
+
+                <!-- Legend -->
+                <div class="calendar-legend">
+                    <div class="legend-item">
+                        <span class="legend-dot legend-dot--scheduled"></span>
+                        <span>Scheduled</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot legend-dot--published"></span>
+                        <span>Published</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot legend-dot--failed"></span>
+                        <span>Failed</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Post Details Modal -->
+    <div class="modal" id="post-modal">
+        <div class="modal__overlay"></div>
+        <div class="modal__content">
+            <div class="modal__header">
+                <h3 class="modal__title">Post Details</h3>
+                <button class="modal__close">&times;</button>
+            </div>
+            <div class="modal__body" id="post-modal-body"></div>
+            <div class="modal__footer">
+                <button class="btn btn--secondary" id="modal-close-btn">Close</button>
+                <button class="btn btn--primary" id="modal-edit-btn">Edit Post</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="../js/config.js"></script>
+    <script src="../js/supabase.js"></script>
+    <script src="../js/core/utils.js"></script>
+    <script src="../js/models/Brand.js"></script>
+    <script src="../js/models/Platform.js"></script>
+    <script src="../js/models/Post.js"></script>
+    <script src="../js/models/Schedule.js"></script>
+    <script src="../js/models/index.js"></script>
+    <script src="../js/services/platformAPI.js"></script>
+    <script src="../js/services/postManager.js"></script>
+    <script src="../js/services/scheduler.js"></script>
+    <script src="../js/services/brandManager.js"></script>
+    <script src="../js/services/index.js"></script>
+    <script src="../js/components/toast.js"></script>
+    <script src="../js/components/sidebar.js"></script>
+    <script src="../js/components/brand-switcher.js"></script>
+    <script src="../js/components/calendar.js"></script>
+    <script>
+        let calendar;
+        let currentView = 'month';
+        let selectedPost = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const sidebar = new Sidebar();
+            
+            const brandSwitcher = new BrandSwitcher({
+                onSelect: (brand) => {
+                    calendar?.setFilters({ brandId: brand.id });
+                }
+            });
+            brandSwitcher.init();
+
+            window.addEventListener('contentengine:ready', initCalendar);
+            if (typeof contentEngine !== 'undefined' && contentEngine.initialized) {
+                initCalendar();
+            }
+        });
+
+        function initCalendar() {
+            calendar = new Calendar({
+                container: document.getElementById('calendar-container'),
+                onDateClick: handleDateClick,
+                onPostClick: handlePostClick
+            });
+            calendar.init();
+
+            setupToolbar();
+            setupFilters();
+            setupModal();
+        }
+
+        function setupToolbar() {
+            document.getElementById('today-btn').addEventListener('click', () => calendar.today());
+            document.getElementById('prev-btn').addEventListener('click', () => calendar.prev());
+            document.getElementById('next-btn').addEventListener('click', () => calendar.next());
+
+            document.querySelectorAll('.view-toggle__btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.view-toggle__btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentView = btn.dataset.view;
+                    calendar.render(calendar.currentDate);
+                });
+            });
+
+            // Update title on calendar changes
+            const observer = new MutationObserver(() => {
+                updateCalendarTitle();
+            });
+            observer.observe(document.getElementById('calendar-container'), { childList: true });
+        }
+
+        function updateCalendarTitle() {
+            const title = document.getElementById('calendar-title');
+            const date = calendar.currentDate;
+            title.textContent = date.toLocaleDateString('en-US', { 
+                month: 'long', 
+                year: 'numeric' 
+            });
+        }
+
+        function setupFilters() {
+            document.getElementById('platform-filter').addEventListener('change', (e) => {
+                calendar.setFilters({ platformId: e.target.value || null });
+            });
+
+            document.getElementById('status-filter').addEventListener('change', (e) => {
+                calendar.setFilters({ status: e.target.value || null });
+            });
+        }
+
+        function setupModal() {
+            const modal = document.getElementById('post-modal');
+            
+            // Move modal to body to ensure no parent constraints
+            if (modal.parentElement !== document.body) {
+                document.body.appendChild(modal);
+            }
+            
+            const closeBtn = modal.querySelector('.modal__close');
+            const closeBtnFooter = document.getElementById('modal-close-btn');
+            const overlay = modal.querySelector('.modal__overlay');
+
+            [closeBtn, closeBtnFooter, overlay].forEach(el => {
+                if (el) el.addEventListener('click', () => closeModal());
+            });
+
+            document.getElementById('modal-edit-btn').addEventListener('click', () => {
+                if (selectedPost) {
+                    window.location.href = `posts.html?edit=${selectedPost.id}`;
+                }
+            });
+        }
+
+        function handleDateClick(date) {
+            // Could open a quick-create modal here
+            console.log('Date clicked:', date);
+        }
+
+        function handlePostClick(post) {
+            selectedPost = post;
+            showPostModal(post);
+        }
+
+        function showPostModal(post) {
+            const modal = document.getElementById('post-modal');
+            const body = document.getElementById('post-modal-body');
+            const platform = getPlatform(post.platformId);
+
+            body.innerHTML = `
+                <div class="post-detail">
+                    <div class="post-detail__header">
+                        <span class="platform-badge platform-badge--${post.platformId}">${platform?.name || post.platformId}</span>
+                        <span class="badge badge--${getStatusClass(post.status)}">${post.status}</span>
+                    </div>
+                    <h4 class="post-detail__title">${post.content.title || 'Untitled'}</h4>
+                    ${post.content.description ? `<p class="post-detail__desc">${post.content.description}</p>` : ''}
+                    <div class="post-detail__meta">
+                        <div class="meta-item">
+                            <strong>Scheduled:</strong>
+                            <span>${new Date(post.scheduledAt).toLocaleString()}</span>
+                        </div>
+                        ${post.publishedAt ? `
+                        <div class="meta-item">
+                            <strong>Published:</strong>
+                            <span>${new Date(post.publishedAt).toLocaleString()}</span>
+                        </div>
+                        ` : ''}
+                        ${post.error ? `
+                        <div class="meta-item meta-item--error">
+                            <strong>Error:</strong>
+                            <span>${post.error}</span>
+                        </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+
+            modal.classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('post-modal').classList.remove('active');
+            selectedPost = null;
+        }
+
+        function getStatusClass(status) {
+            return { published: 'success', scheduled: 'warning', failed: 'error', draft: 'default' }[status] || 'default';
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en" data-brand="crime">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>True Crime Stories - ContentEngine</title>
+    
+    <!-- Core Design System -->
+    <link rel="stylesheet" href="../../css/core/tokens.css">
+    <link rel="stylesheet" href="../../css/core/base.css">
+    <link rel="stylesheet" href="../../css/core/components.css">
+    <link rel="stylesheet" href="../../css/core/layout.css">
+    <link rel="stylesheet" href="../../css/brands/crime.css">
+    
+    <style>
+        .coming-soon-container {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: var(--space-8);
+            background: var(--surface-1);
+        }
+
+        .coming-soon-card {
+            max-width: 500px;
+            text-align: center;
+            padding: var(--space-12);
+            background: var(--surface-2);
+            border-radius: var(--radius-xl);
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-2xl);
+        }
+
+        .coming-soon-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto var(--space-6);
+            padding: var(--space-4);
+            background: var(--brand-primary);
+            border-radius: var(--radius-full);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .coming-soon-icon svg {
+            width: 48px;
+            height: 48px;
+            stroke: white;
+        }
+
+        .coming-soon-card h1 {
+            font-size: var(--text-3xl);
+            margin-bottom: var(--space-4);
+            color: var(--text-primary);
+        }
+
+        .coming-soon-card p {
+            color: var(--text-secondary);
+            margin-bottom: var(--space-8);
+            line-height: 1.6;
+        }
+
+        .brand-tag {
+            display: inline-block;
+            padding: var(--space-2) var(--space-4);
+            background: var(--brand-primary);
+            color: white;
+            border-radius: var(--radius-full);
+            font-size: var(--text-sm);
+            font-weight: 600;
+            margin-bottom: var(--space-6);
+        }
+
+        .feature-list {
+            text-align: left;
+            margin: var(--space-8) 0;
+            padding: 0;
+            list-style: none;
+        }
+
+        .feature-list li {
+            display: flex;
+            align-items: center;
+            gap: var(--space-3);
+            padding: var(--space-3) 0;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .feature-list li:last-child {
+            border-bottom: none;
+        }
+
+        .feature-list svg {
+            width: 20px;
+            height: 20px;
+            stroke: var(--brand-primary);
+            flex-shrink: 0;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: var(--space-4);
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="coming-soon-container">
+        <div class="coming-soon-card">
+            <div class="coming-soon-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <path d="M14 2v6h6"/>
+                    <path d="M16 13H8"/>
+                    <path d="M16 17H8"/>
+                    <path d="M10 9H8"/>
+                </svg>
+            </div>
+            
+            <span class="brand-tag">True Crime</span>
+            
+            <h1>Coming Soon</h1>
+            
+            <p>The True Crime generator is currently in development. Create compelling true crime content with documentary-style narration and investigation themes.</p>
+            
+            <ul class="feature-list">
+                <li>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 6L9 17l-5-5"/>
+                    </svg>
+                    <span>Documentary narration style</span>
+                </li>
+                <li>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 6L9 17l-5-5"/>
+                    </svg>
+                    <span>Case file visual templates</span>
+                </li>
+                <li>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 6L9 17l-5-5"/>
+                    </svg>
+                    <span>Investigation music library</span>
+                </li>
+                <li>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 6L9 17l-5-5"/>
+                    </svg>
+                    <span>Timeline and evidence visuals</span>
+                </li>
+            </ul>
+            
+            <div class="btn-group">
+                <a href="../../index.html" class="btn btn--secondary">
+                    ← Back to Dashboard
+                </a>
+                <button class="btn btn--primary" disabled>
+                    Notify Me
+                </button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

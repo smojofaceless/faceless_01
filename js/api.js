@@ -8,6 +8,10 @@
 async function createJob(options) {
     const client = getSupabaseClient();
     
+    if (!client) {
+        throw new Error('Supabase is not configured. Please check your config.js has valid SUPABASE_URL and SUPABASE_ANON_KEY, or ensure the Supabase SDK is loaded.');
+    }
+    
     // Build the request body
     const requestBody = {
         // Theme and content
@@ -254,3 +258,150 @@ function getAudioTrackUrl(filename) {
     const supabaseUrl = CONFIG?.SUPABASE_URL || 'https://ustmetegzisztqqcjigt.supabase.co';
     return `${supabaseUrl}/storage/v1/object/public/${AUDIO_BUCKET}/${AUDIO_PATH}/${filename}`;
 }
+
+// =====================================================
+// DIRECT OPENAI STORY GENERATION (Client-side)
+// Uses API keys from settings
+// =====================================================
+
+/**
+ * Generate a story using direct OpenAI API call
+ * This uses the client-side API keys from settings
+ */
+async function generateStory(options) {
+    // Get API key from settings
+    const openaiKey = window.apiKeys?.get('openai');
+    
+    if (!openaiKey) {
+        throw new Error('OpenAI API key not configured. Please add it in Settings.');
+    }
+    
+    // Extract options
+    const settings = options.settings || options;
+    const niche = options.niche || settings.niche || 'general';
+    const customPrompt = options.prompt; // Template-provided prompt
+    
+    // Get niche-specific config if available
+    const nicheConfig = window.getNicheConfig ? window.getNicheConfig(niche) : null;
+    const promptPrefix = nicheConfig?.promptPrefix || '';
+    
+    // Build the system prompt
+    let systemPrompt = `You are a creative content writer specializing in short-form video scripts.
+Create engaging, attention-grabbing content that works well for TikTok, YouTube Shorts, and Instagram Reels.
+Write in a natural, conversational style that hooks viewers from the first sentence.
+${promptPrefix}
+
+IMPORTANT: Always return valid JSON. Parse your response carefully.`;
+
+    // Use the template's custom prompt if provided, otherwise build a generic one
+    let userPrompt;
+    
+    if (customPrompt) {
+        // Template provided its own prompt - use it directly
+        // This allows templates to define their own output format (facts, story, etc.)
+        userPrompt = customPrompt;
+    } else {
+        // Build a generic prompt
+        const contentType = settings.contentType || settings.category || 'story';
+        const style = settings.style || settings.visualStyle || 'engaging';
+        const duration = settings.duration || 'medium';
+        const topic = settings.topic || settings.theme || niche;
+        const sceneCount = settings.sceneCount || 5;
+        const imagePromptSuffix = nicheConfig?.imagePromptSuffix || '';
+        
+        // Get word count target based on duration
+        const wordTargets = {
+            short: { min: 80, max: 120 },
+            medium: { min: 120, max: 180 },
+            long: { min: 180, max: 250 }
+        };
+        const words = wordTargets[duration] || wordTargets.medium;
+        
+        userPrompt = `Create a ${contentType} about "${topic}".
+
+Requirements:
+- Length: ${words.min}-${words.max} words (for a ${duration} video)
+- Style: ${style}
+- Niche/Theme: ${niche}
+- Number of natural scene breaks: ${sceneCount}
+
+Format your response as JSON:
+{
+    "title": "Catchy title",
+    "story": "The full story text with natural paragraph breaks",
+    "scenes": [
+        { "text": "Scene 1 text", "imagePrompt": "Visual description for this scene${imagePromptSuffix}" },
+        { "text": "Scene 2 text", "imagePrompt": "Visual description for this scene${imagePromptSuffix}" }
+    ],
+    "hook": "First attention-grabbing sentence"
+}`;
+    }
+
+    try {
+        console.log('[API] Generating content with prompt:', userPrompt.substring(0, 200) + '...');
+        
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${openaiKey}`
+            },
+            body: JSON.stringify({
+                model: 'gpt-4o-mini',
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userPrompt }
+                ],
+                temperature: 0.8,
+                response_format: { type: 'json_object' }
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({ error: { message: response.statusText } }));
+            throw new Error(error.error?.message || `API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        if (!data.choices || !data.choices[0]?.message?.content) {
+            throw new Error('Invalid response from OpenAI API');
+        }
+        
+        const content = JSON.parse(data.choices[0].message.content);
+        console.log('[API] Generated content:', content);
+        
+        // Return the raw content - let the video-generator handle the format
+        return {
+            success: true,
+            ...content
+        };
+    } catch (error) {
+        console.error('[API] Story generation error:', error);
+        throw new Error(`Story generation failed: ${error.message}`);
+    }
+}
+
+// =====================================================
+// API NAMESPACE - Global access to all API functions
+// =====================================================
+
+const API = {
+    // Job management
+    createJob,
+    runJob,
+    checkJob,
+    reRenderVideo,
+    
+    // Content generation
+    generateStory,
+    
+    // Audio library
+    listAudioTracks,
+    uploadAudioTrack,
+    removeAudioTrack,
+    getAudioTrackUrl
+};
+
+// Export to global scope
+window.API = API;

@@ -3,1010 +3,482 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scary Story Video Generator</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <link rel="stylesheet" href="css/styles.css">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👻</text></svg>">
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        primary: '#ff6b6b',
-                        secondary: '#9b59b6',
-                        dark: '#0a0a0f',
-                        darker: '#050508',
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-        
-        .gradient-bg {
-            background: linear-gradient(135deg, #0a0a0f 0%, #1a0a1a 50%, #0a0a0f 100%);
-        }
-        
-        .glow-red { box-shadow: 0 0 30px rgba(255, 107, 107, 0.3); }
-        .glow-purple { box-shadow: 0 0 30px rgba(155, 89, 182, 0.3); }
-        
-        .step-indicator { transition: all 0.3s ease; }
-        .step-indicator.active {
-            background: linear-gradient(135deg, #ff6b6b, #9b59b6);
-            box-shadow: 0 0 20px rgba(255, 107, 107, 0.5);
-        }
-        .step-indicator.completed { background: #22c55e; }
-        
-        .scene-card { transition: all 0.3s ease; }
-        .scene-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-        }
-        
-        .image-placeholder {
-            background: repeating-linear-gradient(45deg, #1a1a2e, #1a1a2e 10px, #16162a 10px, #16162a 20px);
-        }
-        
-        .video-thumbnail {
-            aspect-ratio: 9/16;
-            object-fit: cover;
-        }
-        
-        .hide-scrollbar::-webkit-scrollbar { display: none; }
-        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        
-        .pulse-glow { animation: pulseGlow 2s ease-in-out infinite; }
-        @keyframes pulseGlow {
-            0%, 100% { box-shadow: 0 0 20px rgba(255, 107, 107, 0.3); }
-            50% { box-shadow: 0 0 40px rgba(255, 107, 107, 0.6); }
-        }
-        
-        .spin { animation: spin 1s linear infinite; }
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-    </style>
+    <title>ContentEngine - Command Center</title>
+    
+    <!-- Core Design System -->
+    <link rel="stylesheet" href="css/core/tokens.css">
+    <link rel="stylesheet" href="css/core/base.css">
+    <link rel="stylesheet" href="css/core/components.css">
+    <link rel="stylesheet" href="css/core/layout.css">
+    <link rel="stylesheet" href="css/dashboard.css">
+    
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
 </head>
-<body class="gradient-bg min-h-screen text-white">
-    <!-- Navigation -->
-    <nav class="border-b border-gray-800 bg-darker/80 backdrop-blur-lg sticky top-0 z-50">
-        <div class="max-w-6xl mx-auto px-4 py-4">
-            <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                    <span class="text-3xl">👻</span>
-                    <h1 class="text-xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-                        Scary Story Generator
-                    </h1>
+<body>
+    <div class="app">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar__header">
+                <div class="logo">
+                    <svg class="logo__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                        <polyline points="2 17 12 22 22 17"/>
+                        <polyline points="2 12 12 17 22 12"/>
+                    </svg>
+                    <span class="logo__text">ContentEngine</span>
                 </div>
-                <div class="flex gap-2">
-                    <button onclick="showTab('create')" id="tab-create" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-all bg-primary/20 text-primary">
-                        ✨ Create
-                    </button>
-                    <button onclick="showTab('styles')" id="tab-styles" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-400 hover:text-white">
-                        🎨 Styles
-                    </button>
-                    <button onclick="showTab('history')" id="tab-history" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-400 hover:text-white">
-                        📜 History
-                    </button>
-                </div>
-            </div>
-        </div>
-    </nav>
-
-    <!-- Main Content -->
-    <main class="max-w-6xl mx-auto px-4 py-8">
-        
-        <!-- CREATE TAB -->
-        <div id="tab-content-create">
-            <!-- Step Indicators -->
-            <div class="flex items-center justify-center gap-4 mb-8">
-                <div class="flex items-center gap-2">
-                    <div id="step-1-indicator" class="step-indicator w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm active">1</div>
-                    <span class="text-sm font-medium hidden sm:block">Settings</span>
-                </div>
-                <div class="w-8 md:w-12 h-0.5 bg-gray-700"></div>
-                <div class="flex items-center gap-2">
-                    <div id="step-2-indicator" class="step-indicator w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-gray-700">2</div>
-                    <span class="text-sm font-medium text-gray-500 hidden sm:block">Story</span>
-                </div>
-                <div class="w-8 md:w-12 h-0.5 bg-gray-700"></div>
-                <div class="flex items-center gap-2">
-                    <div id="step-3-indicator" class="step-indicator w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-gray-700">3</div>
-                    <span class="text-sm font-medium text-gray-500 hidden sm:block">Images</span>
-                </div>
-                <div class="w-8 md:w-12 h-0.5 bg-gray-700"></div>
-                <div class="flex items-center gap-2">
-                    <div id="step-4-indicator" class="step-indicator w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-gray-700">4</div>
-                    <span class="text-sm font-medium text-gray-500 hidden sm:block">Video</span>
-                </div>
-            </div>
-
-            <!-- STEP 1: Settings -->
-            <section id="step-1" class="step-content">
-                <div class="bg-gray-900/50 rounded-2xl border border-gray-800 p-6 md:p-8">
-                    <h2 class="text-2xl font-bold mb-6">🎬 Configure Your Video</h2>
-                    
-                    <div class="grid md:grid-cols-2 gap-6">
-                        <!-- Left Column -->
-                        <div class="space-y-5">
-                            <!-- Theme -->
-                            <div>
-                                <label class="block text-sm font-semibold mb-2">🎭 Horror Theme</label>
-                                <select id="theme" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 focus:border-primary focus:outline-none">
-                                    <option value="general">General Horror</option>
-                                    <option value="paranormal">Paranormal / Ghosts</option>
-                                    <option value="creature">Creature Horror</option>
-                                    <option value="psychological">Psychological Horror</option>
-                                    <option value="folklore">Folklore / Urban Legend</option>
-                                    <option value="cosmic">Cosmic Horror</option>
-                                </select>
-                            </div>
-                            
-                            <!-- Story Vibe -->
-                            <div>
-                                <label class="block text-sm font-semibold mb-2">📖 Story Style</label>
-                                <select id="vibe-preset" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 focus:border-primary focus:outline-none">
-                                    <option value="slow_creepy">🐢 Slow Creepy - Atmospheric buildup</option>
-                                    <option value="punchy_shock">⚡ Punchy Shock - Fast-paced twist</option>
-                                    <option value="atmospheric">🌫️ Atmospheric - Mood-driven dread</option>
-                                    <option value="urban_legend">📰 Urban Legend - Faux true-crime documentary</option>
-                                </select>
-                                <p id="vibe-hint" class="text-xs text-gray-500 mt-1">Changes how the story is paced and structured</p>
-                            </div>
-                            
-                            <!-- Visual Source -->
-                            <div>
-                                <label class="block text-sm font-semibold mb-2">🖼️ Visual Source</label>
-                                <div class="grid grid-cols-2 gap-3">
-                                    <label class="relative cursor-pointer">
-                                        <input type="radio" name="visual-source" value="ai" class="peer sr-only" checked>
-                                        <div class="bg-gray-800 border-2 border-gray-700 peer-checked:border-purple-500 peer-checked:bg-purple-900/20 rounded-xl p-4 transition-all">
-                                            <div class="text-2xl mb-2">🎨</div>
-                                            <div class="font-semibold text-sm">AI Generated</div>
-                                            <div class="text-xs text-gray-400 mt-1">DALL-E, GPT-4o, FLUX</div>
-                                            <div class="text-xs text-yellow-500 mt-1">~$0.03-0.12/image</div>
-                                        </div>
-                                    </label>
-                                    <label class="relative cursor-pointer">
-                                        <input type="radio" name="visual-source" value="pexels" class="peer sr-only">
-                                        <div class="bg-gray-800 border-2 border-gray-700 peer-checked:border-blue-500 peer-checked:bg-blue-900/20 rounded-xl p-4 transition-all">
-                                            <div class="text-2xl mb-2">📹</div>
-                                            <div class="font-semibold text-sm">Pexels</div>
-                                            <div class="text-xs text-gray-400 mt-1">Stock video clips</div>
-                                            <div class="text-xs text-green-500 mt-1">Free</div>
-                                        </div>
-                                    </label>
-                                </div>
-                                <!-- AI Model Selection (shown when AI is selected) -->
-                                <div id="ai-model-container" class="mt-3">
-                                    <label class="block text-xs font-medium text-gray-400 mb-2">AI Image Model</label>
-                                    <select id="ai-model" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:border-primary focus:outline-none">
-                                        <option value="dall-e-3">DALL-E 3 - Best for cartoons/illustrations (~$0.08/img)</option>
-                                        <option value="gpt-4o" selected>GPT-4o - Great all-rounder (~$0.016/img) ⭐ Best Value</option>
-                                        <option value="flux">FLUX Pro - Best for cinematic/realistic (~$0.04/img)</option>
-                                    </select>
-                                    <p id="ai-model-hint" class="text-xs text-gray-500 mt-1">
-                                        <span class="text-yellow-500">💡 Tip:</span> GPT-4o is now 5x cheaper! Use DALL-E 3 for cartoon styles, FLUX for photorealistic horror.
-                                    </p>
-                                </div>
-                            </div>
-                            
-                            <!-- Art Style (for AI Images) -->
-                            <div id="art-style-container">
-                                <label class="block text-sm font-semibold mb-2">🎨 Art Style</label>
-                                <select id="art-style" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 focus:border-primary focus:outline-none mb-3">
-                                    <option value="cinematic-dark">🎬 Cinematic Dark Photography</option>
-                                    <option value="analog-horror">📼 Analog Horror / VHS Glitch</option>
-                                    <option value="editorial-cartoon">📰 Editorial Cartoon / Satirical Comic</option>
-                                    <option value="horror-anime">🎌 Dark Anime / Manga Style</option>
-                                    <option value="oil-painting">🖼️ Classic Oil Painting</option>
-                                    <option value="found-footage">📹 Found Footage / Grainy</option>
-                                    <option value="surreal-nightmare">🌀 Surreal Nightmare</option>
-                                </select>
-                                <!-- Art Style Preview -->
-                                <div id="art-style-preview" class="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
-                                    <div class="flex items-start gap-3">
-                                        <div id="art-style-icon" class="text-3xl">🎬</div>
-                                        <div class="flex-1">
-                                            <div id="art-style-name" class="font-semibold text-sm">Cinematic Dark Photography</div>
-                                            <p id="art-style-desc" class="text-xs text-gray-400 mt-1">A24 horror film aesthetic. Moody desaturated colors, deep shadows, film grain, shallow depth of field, realistic but atmospheric.</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- Visual Preset -->
-                            <div>
-                                <label class="block text-sm font-semibold mb-2">🌲 Visual Environment</label>
-                                <select id="visual-preset" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 focus:border-primary focus:outline-none">
-                                    <option value="forest">Dark Forest</option>
-                                    <option value="hallway">Abandoned Hallway</option>
-                                    <option value="attic">Dusty Attic</option>
-                                    <option value="foggy">Foggy Landscape</option>
-                                    <option value="rain">Rainy Night</option>
-                                </select>
-                            </div>
-                            
-                            <!-- Number of Scenes -->
-                            <div>
-                                <label class="block text-sm font-semibold mb-2">📷 Number of Scenes</label>
-                                <div class="flex items-center gap-4">
-                                    <input type="range" id="scene-count" min="3" max="24" value="6" class="flex-1 accent-primary">
-                                    <span id="scene-count-display" class="bg-gray-800 px-4 py-2 rounded-lg font-bold text-primary w-12 text-center">6</span>
-                                </div>
-                                <p class="text-xs text-gray-500 mt-1">More scenes = longer video, higher cost</p>
-                                <!-- Scene count warning (NEW) -->
-                                <div id="scene-count-warning" class="hidden mt-2 p-2 bg-yellow-900/50 border border-yellow-700 rounded-lg">
-                                    <p class="text-xs text-yellow-400">⚠️ <span id="scene-warning-text">Warning text</span></p>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Right Column -->
-                        <div class="space-y-5">
-                            <!-- Duration -->
-                            <div>
-                                <label class="block text-sm font-semibold mb-2">⏱️ Video Duration</label>
-                                <select id="duration" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 focus:border-primary focus:outline-none">
-                                    <option value="short">Short (~30 seconds)</option>
-                                    <option value="medium" selected>Medium (~45 seconds)</option>
-                                    <option value="long">Long (~60 seconds)</option>
-                                </select>
-                            </div>
-                            
-                            <!-- Caption Style -->
-                            <div>
-                                <label class="block text-sm font-semibold mb-2">💬 Caption Style</label>
-                                <input type="hidden" id="caption-style" value="bold">
-                                <div class="grid grid-cols-2 gap-2" id="caption-style-grid">
-                                    <!-- Row 1 -->
-                                    <button type="button" class="caption-style-btn active" data-style="bold">
-                                        <span class="caption-preview caption-bold">BOLD</span>
-                                    </button>
-                                    <button type="button" class="caption-style-btn" data-style="horror">
-                                        <span class="caption-preview caption-horror">HORROR</span>
-                                    </button>
-                                    <!-- Row 2 -->
-                                    <button type="button" class="caption-style-btn" data-style="glitch">
-                                        <span class="caption-preview caption-glitch">GLITCH</span>
-                                    </button>
-                                    <button type="button" class="caption-style-btn" data-style="minimal">
-                                        <span class="caption-preview caption-minimal">minimal</span>
-                                    </button>
-                                    <!-- Row 3 -->
-                                    <button type="button" class="caption-style-btn" data-style="neon">
-                                        <span class="caption-preview caption-neon">NEON</span>
-                                    </button>
-                                    <button type="button" class="caption-style-btn" data-style="vintage">
-                                        <span class="caption-preview caption-vintage">Vintage</span>
-                                    </button>
-                                    <!-- Row 4 -->
-                                    <button type="button" class="caption-style-btn" data-style="blood">
-                                        <span class="caption-preview caption-blood">BLOOD</span>
-                                    </button>
-                                    <button type="button" class="caption-style-btn" data-style="typewriter">
-                                        <span class="caption-preview caption-typewriter">typewriter</span>
-                                    </button>
-                                    <!-- Row 5 -->
-                                    <button type="button" class="caption-style-btn" data-style="shadow">
-                                        <span class="caption-preview caption-shadow">SHADOW</span>
-                                    </button>
-                                    <button type="button" class="caption-style-btn" data-style="comic">
-                                        <span class="caption-preview caption-comic">COMIC!</span>
-                                    </button>
-                                </div>
-                            </div>
-                            
-                            <!-- Effects -->
-                            <div>
-                                <label class="block text-sm font-semibold mb-2">✨ Video Effects</label>
-                                
-                                <!-- Effect Presets -->
-                                <div class="mb-3 flex flex-wrap gap-2">
-                                    <button onclick="applyEffectPreset('classic')" class="preset-btn px-3 py-1.5 bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-500 hover:to-blue-700 rounded-lg text-xs font-semibold transition-all hover:scale-105">
-                                        🎬 Classic Horror
-                                    </button>
-                                    <button onclick="applyEffectPreset('found')" class="preset-btn px-3 py-1.5 bg-gradient-to-r from-amber-600 to-orange-800 hover:from-amber-500 hover:to-orange-700 rounded-lg text-xs font-semibold transition-all hover:scale-105">
-                                        📼 Found Footage
-                                    </button>
-                                    <button onclick="applyEffectPreset('psycho')" class="preset-btn px-3 py-1.5 bg-gradient-to-r from-red-600 to-purple-800 hover:from-red-500 hover:to-purple-700 rounded-lg text-xs font-semibold transition-all hover:scale-105">
-                                        👁️ Psychological
-                                    </button>
-                                    <button onclick="applyEffectPreset('none')" class="preset-btn px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs font-semibold transition-all hover:scale-105">
-                                        ✖️ Clear All
-                                    </button>
-                                </div>
-                                
-                                <!-- 🎬 TRANSITIONS -->
-                                <div class="mb-3">
-                                    <div class="text-xs text-purple-400 font-semibold mb-1.5 flex items-center gap-1">
-                                        <span>🎬</span> TRANSITIONS
-                                    </div>
-                                    <div class="space-y-1.5">
-                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
-                                            <input type="checkbox" id="effect-fade-in" checked class="accent-primary w-4 h-4">
-                                            <div class="effect-preview effect-preview-fade-in"></div>
-                                            <span class="text-sm flex-1">Fade In from Black</span>
-                                            <span class="text-xs text-gray-500">+2s</span>
-                                        </label>
-                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
-                                            <input type="checkbox" id="effect-fade-out" checked class="accent-primary w-4 h-4">
-                                            <div class="effect-preview effect-preview-fade-out"></div>
-                                            <span class="text-sm flex-1">Fade Out to Black</span>
-                                            <span class="text-xs text-gray-500">+2s</span>
-                                        </label>
-                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
-                                            <input type="checkbox" id="effect-transitions" checked class="accent-primary w-4 h-4">
-                                            <div class="effect-preview effect-preview-transitions"></div>
-                                            <span class="text-sm flex-1">Scene Transitions</span>
-                                            <span class="text-xs text-gray-500">+0s</span>
-                                        </label>
-                                    </div>
-                                </div>
-                                
-                                <!-- 🩸 DISTURBANCE & GLITCH -->
-                                <div class="mb-3">
-                                    <div class="text-xs text-red-400 font-semibold mb-1.5 flex items-center gap-1">
-                                        <span>🩸</span> DISTURBANCE & GLITCH
-                                        <span class="text-gray-500 font-normal ml-1">(high retention)</span>
-                                    </div>
-                                    <div class="space-y-1.5">
-                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
-                                            <input type="checkbox" id="effect-glitch-flicker" class="accent-red-500 w-4 h-4">
-                                            <div class="effect-preview effect-preview-glitch"></div>
-                                            <span class="text-sm flex-1">Micro Glitch Flicker</span>
-                                            <span class="text-xs text-gray-500">+3s</span>
-                                        </label>
-                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
-                                            <input type="checkbox" id="effect-vhs-tracking" class="accent-red-500 w-4 h-4">
-                                            <div class="effect-preview effect-preview-vhs"></div>
-                                            <span class="text-sm flex-1">VHS Tracking Wobble</span>
-                                            <span class="text-xs text-gray-500">+4s</span>
-                                        </label>
-                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
-                                            <input type="checkbox" id="effect-scanlines" class="accent-red-500 w-4 h-4">
-                                            <div class="effect-preview effect-preview-scanlines"></div>
-                                            <span class="text-sm flex-1">CRT Scanlines</span>
-                                            <span class="text-xs text-gray-500">+3s</span>
-                                        </label>
-                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
-                                            <input type="checkbox" id="effect-filmgrain" class="accent-red-500 w-4 h-4">
-                                            <div class="effect-preview effect-preview-grain"></div>
-                                            <span class="text-sm flex-1">Film Grain & Scratches</span>
-                                            <span class="text-xs text-gray-500">+5s</span>
-                                        </label>
-                                    </div>
-                                </div>
-                                
-                                <!-- 🌫 ATMOSPHERIC HORROR -->
-                                <div class="mb-3">
-                                    <div class="text-xs text-blue-400 font-semibold mb-1.5 flex items-center gap-1">
-                                        <span>🌫️</span> ATMOSPHERIC HORROR
-                                        <span class="text-gray-500 font-normal ml-1">(slow dread)</span>
-                                    </div>
-                                    <div class="space-y-1.5">
-                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
-                                            <input type="checkbox" id="effect-kenburns" checked class="accent-blue-500 w-4 h-4">
-                                            <div class="effect-preview effect-preview-kenburns"></div>
-                                            <span class="text-sm flex-1">Ken Burns Motion</span>
-                                            <span class="text-xs text-gray-500">+0s</span>
-                                        </label>
-                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
-                                            <input type="checkbox" id="effect-filter" checked class="accent-blue-500 w-4 h-4">
-                                            <div class="effect-preview effect-preview-horror"></div>
-                                            <span class="text-sm flex-1">Horror Color Grading</span>
-                                            <span class="text-xs text-gray-500">+3s</span>
-                                        </label>
-                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
-                                            <input type="checkbox" id="effect-vignette" checked class="accent-blue-500 w-4 h-4">
-                                            <div class="effect-preview effect-preview-vignette"></div>
-                                            <span class="text-sm flex-1">Vignette</span>
-                                            <span class="text-xs text-gray-500">+2s</span>
-                                        </label>
-                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
-                                            <input type="checkbox" id="effect-light-flicker" class="accent-blue-500 w-4 h-4">
-                                            <div class="effect-preview effect-preview-flicker"></div>
-                                            <span class="text-sm flex-1">Light Flicker</span>
-                                            <span class="text-xs text-gray-500">+3s</span>
-                                        </label>
-                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
-                                            <input type="checkbox" id="effect-cold-creep" class="accent-blue-500 w-4 h-4">
-                                            <div class="effect-preview effect-preview-cold"></div>
-                                            <span class="text-sm flex-1">Cold Color Creep</span>
-                                            <span class="text-xs text-gray-500">+3s</span>
-                                        </label>
-                                    </div>
-                                </div>
-                                
-                                <!-- 👁 PSYCHOLOGICAL -->
-                                <div class="mb-3">
-                                    <div class="text-xs text-yellow-400 font-semibold mb-1.5 flex items-center gap-1">
-                                        <span>👁️</span> PSYCHOLOGICAL
-                                        <span class="text-gray-500 font-normal ml-1">(unease)</span>
-                                    </div>
-                                    <div class="space-y-1.5">
-                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
-                                            <input type="checkbox" id="effect-heartbeat-zoom" class="accent-yellow-500 w-4 h-4">
-                                            <div class="effect-preview effect-preview-heartbeat"></div>
-                                            <span class="text-sm flex-1">Heartbeat Zoom Pulse</span>
-                                            <span class="text-xs text-gray-500">+4s</span>
-                                        </label>
-                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
-                                            <input type="checkbox" id="effect-negative-flash" class="accent-yellow-500 w-4 h-4">
-                                            <div class="effect-preview effect-preview-negative"></div>
-                                            <span class="text-sm flex-1">Negative Flash (Subliminal)</span>
-                                            <span class="text-xs text-gray-500">+3s</span>
-                                        </label>
-                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
-                                            <input type="checkbox" id="effect-edge-darkening" class="accent-yellow-500 w-4 h-4">
-                                            <div class="effect-preview effect-preview-edge"></div>
-                                            <span class="text-sm flex-1">Edge Darkening Creep</span>
-                                            <span class="text-xs text-gray-500">+3s</span>
-                                        </label>
-                                        <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-2.5 cursor-pointer hover:bg-gray-800">
-                                            <input type="checkbox" id="effect-highlight" checked class="accent-yellow-500 w-4 h-4">
-                                            <div class="effect-preview effect-preview-highlight"></div>
-                                            <span class="text-sm flex-1">Highlight Scary Words</span>
-                                            <span class="text-xs text-gray-500">+0s</span>
-                                        </label>
-                                    </div>
-                                </div>
-                                
-                                <!-- Render time estimate -->
-                                <div class="mt-2 p-2 bg-gray-900/50 rounded-lg border border-gray-700">
-                                    <div class="flex items-center justify-between text-xs">
-                                        <span class="text-gray-400">⏱️ Estimated effect render time:</span>
-                                        <span id="effect-render-time" class="text-primary font-semibold">+12s</span>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- Background Audio -->
-                            <div>
-                                <label class="block text-sm font-semibold mb-2">🎵 Background Audio</label>
-                                <div class="space-y-2">
-                                    <label class="flex items-center gap-3 bg-gray-800/50 rounded-lg p-3 cursor-pointer hover:bg-gray-800">
-                                        <input type="checkbox" id="audio-music" class="accent-primary w-4 h-4">
-                                        <span class="text-sm">🎶 Enable Background Music</span>
-                                    </label>
-                                    
-                                    <!-- Track Selection (shown when enabled) -->
-                                    <div id="audio-track-container" class="hidden">
-                                        <div class="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
-                                            <div class="flex items-center gap-2 mb-2">
-                                                <select id="audio-track" class="flex-1 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-sm focus:border-primary focus:outline-none">
-                                                    <option value="">Loading tracks...</option>
-                                                </select>
-                                                <button onclick="previewAudioTrack()" id="btn-preview-audio" class="bg-gray-700 hover:bg-gray-600 p-2 rounded-lg" title="Preview">
-                                                    <span id="preview-icon">▶️</span>
-                                                </button>
-                                            </div>
-                                            <audio id="audio-preview-player" class="hidden"></audio>
-                                            
-                                            <!-- Volume Slider -->
-                                            <div class="flex items-center gap-2 mb-2">
-                                                <span class="text-xs text-gray-400">🔊 Volume:</span>
-                                                <input type="range" id="audio-volume" min="5" max="30" value="15" class="flex-1 accent-primary h-1">
-                                                <span id="audio-volume-display" class="text-xs text-gray-400 w-8">15%</span>
-                                            </div>
-                                            
-                                            <button onclick="openAudioManager()" class="w-full mt-2 bg-gray-700 hover:bg-gray-600 text-sm py-2 rounded-lg flex items-center justify-center gap-2">
-                                                <span>⚙️</span> Manage Audio Library
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- Dev Options -->
-                            <div class="mt-4 pt-4 border-t border-gray-700">
-                                <label class="block text-sm font-semibold mb-2 text-yellow-500">🛠️ Developer Options</label>
-                                <div class="space-y-2">
-                                    <label class="flex items-center gap-3 bg-yellow-900/20 rounded-lg p-3 cursor-pointer hover:bg-yellow-900/30 border border-yellow-800/50">
-                                        <input type="checkbox" id="skip-video-assembly" class="accent-yellow-500 w-4 h-4">
-                                        <span class="text-sm text-yellow-400">⏭️ Skip video assembly (images only)</span>
-                                    </label>
-                                </div>
-                                <p class="text-xs text-gray-500 mt-1">Use this to test image generation without creating the final video.</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Info: How Art Style Works -->
-                    <div class="mt-6 bg-gradient-to-r from-purple-900/30 to-blue-900/30 rounded-xl p-4 border border-purple-800/50">
-                        <div class="flex items-start gap-3">
-                            <span class="text-2xl">🎨</span>
-                            <div>
-                                <h3 class="font-semibold text-sm mb-2">How Image Generation Works</h3>
-                                <div class="text-xs text-gray-300 space-y-1.5">
-                                    <p><strong>1. Story Anchor:</strong> AI analyzes your story to create a "visual bible" - consistent environment, colors, and mood.</p>
-                                    <p><strong>2. Art Style Applied:</strong> Your selected style (e.g., "Analog Horror") defines the aesthetic - VHS grain, colors, lighting.</p>
-                                    <p><strong>3. Visual Beats:</strong> Each scene gets camera angles and mood levels that escalate tension.</p>
-                                    <p><strong>4. AI Generation:</strong> Images created using: <code class="bg-gray-800 px-1 rounded">Art Style + Story Anchor + Scene Beat</code> (FLUX uses Scene 1 as reference)</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Cost Estimate -->
-                    <div id="cost-estimate" class="mt-6 bg-gray-800/50 rounded-xl p-4 border border-gray-700">
-                        <h3 class="font-semibold text-sm mb-3">💰 Estimated Cost Breakdown</h3>
-                        <div class="grid grid-cols-2 md:grid-cols-5 gap-3 text-center text-sm">
-                            <div class="bg-gray-900/50 rounded-lg p-2">
-                                <div class="text-gray-400 text-xs">Story (GPT)</div>
-                                <div class="font-bold text-green-400">~$0.01</div>
-                            </div>
-                            <div class="bg-gray-900/50 rounded-lg p-2">
-                                <div class="text-gray-400 text-xs">Voice (11Labs)</div>
-                                <div class="font-bold text-blue-400">~$0.05</div>
-                            </div>
-                            <div class="bg-gray-900/50 rounded-lg p-2">
-                                <div class="text-gray-400 text-xs">Images</div>
-                                <div id="cost-images" class="font-bold text-purple-400">~$0.32</div>
-                            </div>
-                            <div class="bg-gray-900/50 rounded-lg p-2">
-                                <div class="text-gray-400 text-xs">Video Render</div>
-                                <div class="font-bold text-orange-400">Plan-based</div>
-                            </div>
-                            <div class="bg-gray-900/50 rounded-lg p-2 border border-primary/50">
-                                <div class="text-gray-400 text-xs">Total Est.</div>
-                                <div id="cost-total" class="font-bold text-primary">~$0.38</div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Generate Story Button -->
-                    <button onclick="generateStoryPreview()" id="btn-generate-story" class="w-full mt-6 bg-gradient-to-r from-primary to-secondary hover:opacity-90 text-white font-bold py-4 rounded-xl transition-all pulse-glow">
-                        ✨ Generate Story Preview
-                    </button>
-                </div>
-            </section>
-
-            <!-- STEP 2: Story & Scene Preview -->
-            <section id="step-2" class="step-content hidden">
-                <div class="bg-gray-900/50 rounded-2xl border border-gray-800 p-6 md:p-8">
-                    <div class="flex items-center justify-between mb-6">
-                        <h2 class="text-2xl font-bold">📖 Story & Scene Breakdown</h2>
-                        <button onclick="goToStep(1)" class="text-gray-400 hover:text-white text-sm">← Back</button>
-                    </div>
-                    
-                    <!-- Story Title -->
-                    <div class="mb-4">
-                        <label class="block text-sm font-semibold mb-2">📝 Title</label>
-                        <input type="text" id="story-title" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 focus:border-primary focus:outline-none text-lg font-semibold">
-                    </div>
-                    
-                    <!-- Full Story -->
-                    <div class="mb-6">
-                        <label class="block text-sm font-semibold mb-2">📜 Full Story <span class="text-gray-500 font-normal">(editable)</span></label>
-                        <textarea id="story-text" rows="4" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 focus:border-primary focus:outline-none resize-none"></textarea>
-                    </div>
-                    
-                    <!-- Generation Details (Expandable) -->
-                    <div class="mb-6">
-                        <button onclick="toggleGenerationDetails()" class="flex items-center justify-between w-full bg-gray-800/50 rounded-xl p-4 border border-gray-700 hover:border-gray-600 transition-all">
-                            <div class="flex items-center gap-2">
-                                <span class="text-lg">⚙️</span>
-                                <span class="font-semibold">Generation Details</span>
-                                <span class="text-xs text-gray-500">(what went into creating this story)</span>
-                            </div>
-                            <span id="gen-details-arrow" class="text-gray-400 transition-transform">▼</span>
-                        </button>
-                        <div id="generation-details" class="hidden mt-2 bg-gray-800/30 rounded-xl p-4 border border-gray-700 space-y-4">
-                            <!-- Settings Summary -->
-                            <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                <div class="bg-gray-900/50 rounded-lg p-3">
-                                    <p class="text-xs text-gray-500 mb-1">Horror Theme</p>
-                                    <p id="detail-vibe" class="text-sm font-semibold text-purple-400">-</p>
-                                </div>
-                                <div class="bg-gray-900/50 rounded-lg p-3">
-                                    <p class="text-xs text-gray-500 mb-1">Video Duration</p>
-                                    <p id="detail-duration" class="text-sm font-semibold text-blue-400">-</p>
-                                </div>
-                                <div class="bg-gray-900/50 rounded-lg p-3">
-                                    <p class="text-xs text-gray-500 mb-1">Word Range</p>
-                                    <p id="detail-words" class="text-sm font-semibold text-green-400">-</p>
-                                </div>
-                                <div class="bg-gray-900/50 rounded-lg p-3">
-                                    <p class="text-xs text-gray-500 mb-1">Visual Environment</p>
-                                    <p id="detail-visual" class="text-sm font-semibold text-amber-400">-</p>
-                                </div>
-                                <div class="bg-gray-900/50 rounded-lg p-3">
-                                    <p class="text-xs text-gray-500 mb-1">Art Style</p>
-                                    <p id="detail-art-style" class="text-sm font-semibold text-pink-400">-</p>
-                                </div>
-                                <div class="bg-gray-900/50 rounded-lg p-3">
-                                    <p class="text-xs text-gray-500 mb-1">Image Model</p>
-                                    <p id="detail-model" class="text-sm font-semibold text-cyan-400">-</p>
-                                </div>
-                            </div>
-                            
-                            <!-- Vibe Description -->
-                            <div class="bg-gray-900/50 rounded-lg p-3">
-                                <p class="text-xs text-gray-500 mb-1">Theme Description (how it affects the story)</p>
-                                <p id="detail-vibe-desc" class="text-sm text-gray-300 italic">-</p>
-                            </div>
-                            
-                            <!-- Story Prompt -->
-                            <div>
-                                <div class="flex items-center justify-between mb-2">
-                                    <p class="text-xs text-gray-500">📝 Prompt Used to Generate Story</p>
-                                    <button onclick="copyStoryPrompt()" class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">📋 Copy</button>
-                                </div>
-                                <pre id="detail-prompt" class="text-xs text-gray-400 bg-gray-900 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap font-mono max-h-48 overflow-y-auto">-</pre>
-                            </div>
-                            
-                            <!-- Technical Details -->
-                            <div class="flex gap-4 text-xs text-gray-500">
-                                <span>Model: <span id="detail-story-model" class="text-gray-400">gpt-4o-mini</span></span>
-                                <span>Temperature: <span id="detail-temp" class="text-gray-400">0.9</span></span>
-                                <span>Scenes: <span id="detail-scenes" class="text-gray-400">-</span></span>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Scene Breakdown -->
-                    <div class="mb-6">
-                        <div class="flex items-center justify-between mb-3">
-                            <label class="text-sm font-semibold">🎬 Scene Breakdown <span class="text-gray-500 font-normal">(auto-updates when you edit the story)</span></label>
-                        </div>
-                        <div id="scene-breakdown" class="space-y-3">
-                            <!-- Scenes rendered here -->
-                        </div>
-                    </div>
-                    
-                    <!-- Cost -->
-                    <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700 mb-6">
-                        <div class="flex items-center justify-between">
-                            <span class="font-semibold">Estimated Cost:</span>
-                            <span id="step2-cost" class="text-2xl font-bold text-primary">~$0.38</span>
-                        </div>
-                    </div>
-                    
-                    <!-- Buttons -->
-                    <div class="flex gap-4">
-                        <button onclick="goToStep(1)" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-4 rounded-xl transition-all">
-                            ← Back
-                        </button>
-                        <button onclick="generateImages()" id="btn-generate-images" class="flex-1 bg-gradient-to-r from-primary to-secondary hover:opacity-90 text-white font-bold py-4 rounded-xl transition-all pulse-glow">
-                            🎨 Generate Images & Video
-                        </button>
-                    </div>
-                </div>
-            </section>
-
-            <!-- STEP 3: Generation Progress -->
-            <section id="step-3" class="step-content hidden">
-                <div class="bg-gray-900/50 rounded-2xl border border-gray-800 p-6 md:p-8">
-                    <div class="flex items-center justify-between mb-6">
-                        <h2 class="text-2xl font-bold">🎨 Generating Your Video</h2>
-                        <div id="generation-status" class="text-sm text-gray-400">Preparing...</div>
-                    </div>
-                    
-                    <!-- Progress Bar -->
-                    <div class="mb-8">
-                        <div class="flex justify-between text-sm mb-2">
-                            <span id="progress-label">Starting...</span>
-                            <span id="progress-percent">0%</span>
-                        </div>
-                        <div class="h-3 bg-gray-800 rounded-full overflow-hidden">
-                            <div id="progress-bar" class="h-full bg-gradient-to-r from-primary to-secondary transition-all duration-500" style="width: 0%"></div>
-                        </div>
-                    </div>
-                    
-                    <!-- Scene Images Grid -->
-                    <div class="mb-6">
-                        <h3 class="text-lg font-semibold mb-4">🖼️ Scene Images</h3>
-                        <div id="image-generation-grid" class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <!-- Image cards rendered here -->
-                        </div>
-                    </div>
-                    
-                    <!-- Log -->
-                    <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700">
-                        <div class="flex items-center justify-between mb-2">
-                            <h4 class="text-sm font-semibold">📋 Generation Log</h4>
-                            <button onclick="toggleDebugPanel()" class="text-xs text-purple-400 hover:text-purple-300">🔧 Debug Info</button>
-                        </div>
-                        <div id="generation-log" class="text-xs text-gray-400 space-y-1 max-h-32 overflow-y-auto hide-scrollbar font-mono">
-                            <p>Waiting to start...</p>
-                        </div>
-                    </div>
-                    
-                    <!-- Debug Panel (hidden by default) -->
-                    <div id="debug-panel" class="hidden mt-4 bg-purple-900/30 rounded-xl p-4 border border-purple-700">
-                        <h4 class="text-sm font-semibold mb-3 text-purple-300">🔧 Debug Information</h4>
-                        <div class="grid md:grid-cols-2 gap-4 text-xs font-mono">
-                            <div>
-                                <p class="text-gray-400 mb-1">Job ID:</p>
-                                <p id="debug-job-id" class="text-white bg-gray-800 rounded px-2 py-1">-</p>
-                            </div>
-                            <div>
-                                <p class="text-gray-400 mb-1">Image Model (Selected):</p>
-                                <p id="debug-selected-model" class="text-white bg-gray-800 rounded px-2 py-1">-</p>
-                            </div>
-                            <div>
-                                <p class="text-gray-400 mb-1">Image Model (Backend):</p>
-                                <p id="debug-backend-model" class="text-yellow-400 bg-gray-800 rounded px-2 py-1">Waiting for response...</p>
-                            </div>
-                            <div>
-                                <p class="text-gray-400 mb-1">Resolved Model (Actual):</p>
-                                <p id="debug-resolved-model" class="text-cyan-400 bg-gray-800 rounded px-2 py-1">-</p>
-                            </div>
-                            <div>
-                                <p class="text-gray-400 mb-1">Visual Source:</p>
-                                <p id="debug-visual-source" class="text-white bg-gray-800 rounded px-2 py-1">-</p>
-                            </div>
-                            <div class="md:col-span-2">
-                                <div class="flex items-center justify-between mb-1">
-                                    <p class="text-gray-400">Backend Logs:</p>
-                                    <button onclick="copyDebugLogs()" class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-white">📋 Copy Logs</button>
-                                </div>
-                                <div id="debug-backend-logs" class="text-green-400 bg-gray-900 rounded px-2 py-1 max-h-40 overflow-y-auto">
-                                    <p class="text-gray-500">No logs yet...</p>
-                                </div>
-                            </div>
-                            <div class="md:col-span-2">
-                                <p class="text-gray-400 mb-1">Replicate API Inputs (FLUX only):</p>
-                                <div id="debug-replicate-inputs" class="bg-gray-900 rounded px-2 py-1 max-h-60 overflow-y-auto">
-                                    <p class="text-gray-500">No Replicate calls yet (only shown for FLUX model)...</p>
-                                </div>
-                                <button onclick="copyReplicateInputs()" class="mt-2 text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-white">
-                                    📋 Copy Replicate Inputs
-                                </button>
-                            </div>
-                            
-                            <!-- Scene Data Debug (NEW) -->
-                            <div class="md:col-span-2 border-t border-purple-700 pt-4 mt-4">
-                                <div class="flex items-center justify-between mb-2">
-                                    <p class="text-gray-400">📊 Scene Data Analysis:</p>
-                                    <button onclick="copySceneData()" class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-white">📋 Copy</button>
-                                </div>
-                                <div id="debug-scene-warnings" class="hidden mb-2 bg-yellow-900/50 border border-yellow-700 rounded p-2">
-                                    <p class="text-yellow-400 text-xs font-bold">⚠️ Scene Issues Detected:</p>
-                                    <div id="debug-scene-warnings-list" class="text-yellow-300 text-xs mt-1"></div>
-                                </div>
-                                <div id="debug-scene-data" class="bg-gray-900 rounded px-2 py-1 max-h-60 overflow-y-auto text-xs">
-                                    <p class="text-gray-500">No scene data yet...</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- STEP 4: Final Result -->
-            <section id="step-4" class="step-content hidden">
-                <div class="bg-gray-900/50 rounded-2xl border border-gray-800 p-6 md:p-8">
-                    <div class="flex items-center justify-between mb-6">
-                        <h2 class="text-2xl font-bold">🎉 Your Video is Ready!</h2>
-                        <button onclick="resetGenerator()" class="text-primary hover:underline text-sm">+ Create Another</button>
-                    </div>
-                    
-                    <div class="grid md:grid-cols-2 gap-8">
-                        <!-- Video Player -->
-                        <div>
-                            <div class="bg-black rounded-xl overflow-hidden aspect-[9/16] max-h-[500px] mx-auto">
-                                <video id="result-video" controls class="w-full h-full object-contain"></video>
-                            </div>
-                            <a id="download-btn" href="#" download class="block w-full mt-4 bg-gradient-to-r from-primary to-secondary text-white font-bold py-3 rounded-xl text-center hover:opacity-90 transition-all">
-                                ⬇️ Download Video
-                            </a>
-                        </div>
-                        
-                        <!-- Details -->
-                        <div class="space-y-4">
-                            <div class="bg-gray-800/50 rounded-xl p-4">
-                                <h3 id="result-title" class="text-xl font-bold mb-2">Title</h3>
-                                <p class="text-gray-400 text-sm"><span id="result-duration">0</span>s • <span id="result-scenes">0</span> scenes</p>
-                            </div>
-                            
-                            <div class="bg-gray-800/50 rounded-xl p-4">
-                                <h4 class="font-semibold text-sm mb-2">📖 Story</h4>
-                                <p id="result-story" class="text-gray-300 text-sm leading-relaxed"></p>
-                            </div>
-                            
-                            <div class="bg-gray-800/50 rounded-xl p-4">
-                                <div class="flex items-center justify-between mb-3">
-                                    <h4 class="font-semibold text-sm">🎬 Scenes</h4>
-                                    <div class="flex gap-2">
-                                        <button onclick="copyAllScenesDebugInfo()" id="copy-all-scenes-btn" class="hidden text-xs bg-purple-700 hover:bg-purple-600 px-2 py-1 rounded text-white" title="Copy all scene data">📋 Copy All</button>
-                                        <button onclick="toggleScenesView()" id="scenes-view-toggle" class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-white">📋 Show Details</button>
-                                    </div>
-                                </div>
-                                <div id="result-scenes-gallery" class="grid grid-cols-4 gap-2"></div>
-                                <div id="result-scenes-detailed" class="hidden space-y-3 mt-4 max-h-96 overflow-y-auto"></div>
-                            </div>
-                            
-                            <div class="bg-gray-800/50 rounded-xl p-4 border border-green-900/50">
-                                <h4 class="font-semibold text-sm mb-3">💰 Cost Breakdown</h4>
-                                <div class="space-y-2 text-sm">
-                                    <div class="flex justify-between">
-                                        <span class="text-gray-400">Story (GPT-4o-mini)</span>
-                                        <span class="text-green-400">~$0.01</span>
-                                    </div>
-                                    <div class="flex justify-between">
-                                        <span class="text-gray-400">Voice (ElevenLabs)</span>
-                                        <span class="text-blue-400">~$0.05</span>
-                                    </div>
-                                    <div class="flex justify-between">
-                                        <span class="text-gray-400">Images (<span id="result-image-count">4</span>x <span id="result-image-model">AI</span>)</span>
-                                        <span id="result-image-cost" class="text-purple-400">~$0.12</span>
-                                    </div>
-                                    <div class="flex justify-between">
-                                        <span class="text-gray-400">Video Render</span>
-                                        <span class="text-orange-400">Plan-based</span>
-                                    </div>
-                                    <div class="border-t border-gray-700 my-2"></div>
-                                    <div class="flex justify-between font-bold">
-                                        <span>Total Estimated</span>
-                                        <span id="result-cost" class="text-green-400">~$0.38</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-        </div>
-
-        <!-- STYLES TAB -->
-        <div id="tab-content-styles" class="hidden">
-            <div class="flex items-center justify-between mb-6">
-                <h2 class="text-2xl font-bold">🎨 Art Style Editor</h2>
-                <button onclick="addNewCustomStyle()" class="bg-primary hover:bg-primary/80 px-4 py-2 rounded-lg text-sm font-medium transition-all">
-                    + Add Custom Style
+                <button class="sidebar-toggle" aria-label="Toggle sidebar">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 12h18M3 6h18M3 18h18"/>
+                    </svg>
                 </button>
             </div>
-            
-            <!-- Info Section -->
-            <div class="bg-blue-900/30 rounded-xl p-4 border border-blue-800/50 mb-6">
-                <h3 class="font-semibold text-sm mb-2">📖 How Art Styles Work in Image Generation</h3>
-                <div class="text-xs text-gray-300 space-y-2">
-                    <p>Each art style has 4 key components that get injected into the AI image prompt:</p>
-                    <div class="grid md:grid-cols-2 gap-3 mt-3">
-                        <div class="bg-gray-800/50 rounded-lg p-3">
-                            <strong class="text-purple-400">Base Prompt:</strong>
-                            <p class="text-gray-400 mt-1">The main style description. Sets the overall look (e.g., "VHS static, glitch artifacts, scanlines").</p>
+
+            <nav class="sidebar__nav">
+                <div class="nav-section">
+                    <span class="nav-section__title">Overview</span>
+                    <a href="index.html" class="nav-link active">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="7" height="7"/>
+                            <rect x="14" y="3" width="7" height="7"/>
+                            <rect x="14" y="14" width="7" height="7"/>
+                            <rect x="3" y="14" width="7" height="7"/>
+                        </svg>
+                        <span>Dashboard</span>
+                    </a>
+                    <a href="pages/create.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="23 7 16 12 23 17 23 7"/>
+                            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                        </svg>
+                        <span>Create Video</span>
+                    </a>
+                    <a href="pages/calendar.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                            <line x1="16" y1="2" x2="16" y2="6"/>
+                            <line x1="8" y1="2" x2="8" y2="6"/>
+                            <line x1="3" y1="10" x2="21" y2="10"/>
+                        </svg>
+                        <span>Calendar</span>
+                    </a>
+                    <a href="pages/posts.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="16" y1="13" x2="8" y2="13"/>
+                            <line x1="16" y1="17" x2="8" y2="17"/>
+                        </svg>
+                        <span>Posts Queue</span>
+                        <span class="nav-link__badge" id="queue-badge">0</span>
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <span class="nav-section__title">Management</span>
+                    <a href="pages/brands.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                            <line x1="7" y1="7" x2="7.01" y2="7"/>
+                        </svg>
+                        <span>Brands</span>
+                    </a>
+                    <a href="pages/connections.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                        </svg>
+                        <span>Connections</span>
+                    </a>
+                </div>
+            </nav>
+
+            <div class="sidebar__footer">
+                <a href="pages/settings.html" class="nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+                    </svg>
+                    <span>Settings</span>
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Header -->
+            <header class="header">
+                <div class="header__left">
+                    <h1 class="header__title">Command Center</h1>
+                </div>
+                <div class="header__right">
+                    <div id="brand-switcher"></div>
+                    <button class="btn btn--primary" onclick="location.href='brands/horror/index.html'">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"/>
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        New Content
+                    </button>
+                </div>
+            </header>
+
+            <!-- Dashboard Content -->
+            <div class="content">
+                <!-- Status Bar -->
+                <div class="status-bar">
+                    <div class="status-bar__item status-bar__item--success">
+                        <span class="status-bar__indicator"></span>
+                        <span>Scheduler Active</span>
+                    </div>
+                    <div class="status-bar__item" id="next-post-status">
+                        <span class="status-bar__label">Next Post:</span>
+                        <span class="status-bar__value">--</span>
+                    </div>
+                    <div class="status-bar__item">
+                        <span class="status-bar__label">Queue:</span>
+                        <span class="status-bar__value" id="queue-count">0 posts</span>
+                    </div>
+                </div>
+
+                <!-- Stats Grid -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-card__icon stat-card__icon--primary">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="23 7 16 12 23 17 23 7"/>
+                                <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                            </svg>
                         </div>
-                        <div class="bg-gray-800/50 rounded-lg p-3">
-                            <strong class="text-blue-400">Color Override:</strong>
-                            <p class="text-gray-400 mt-1">Color palette to use (e.g., "washed out colors, muted greens and grays").</p>
+                        <div class="stat-card__content">
+                            <span class="stat-card__value" id="stat-posts-today">0</span>
+                            <span class="stat-card__label">Posted Today</span>
                         </div>
-                        <div class="bg-gray-800/50 rounded-lg p-3">
-                            <strong class="text-green-400">Technical Style:</strong>
-                            <p class="text-gray-400 mt-1">Keywords for the rendering method (e.g., "lo-fi horror, found footage").</p>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card__icon stat-card__icon--warning">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polyline points="12 6 12 12 16 14"/>
+                            </svg>
                         </div>
-                        <div class="bg-gray-800/50 rounded-lg p-3">
-                            <strong class="text-red-400">Negative Prompt:</strong>
-                            <p class="text-gray-400 mt-1">What to avoid (e.g., "bright colors, clean, professional").</p>
+                        <div class="stat-card__content">
+                            <span class="stat-card__value" id="stat-scheduled">0</span>
+                            <span class="stat-card__label">Scheduled</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card__icon stat-card__icon--success">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                                <polyline points="22 4 12 14.01 9 11.01"/>
+                            </svg>
+                        </div>
+                        <div class="stat-card__content">
+                            <span class="stat-card__value" id="stat-week">0</span>
+                            <span class="stat-card__label">This Week</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-card__icon stat-card__icon--error">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <line x1="15" y1="9" x2="9" y2="15"/>
+                                <line x1="9" y1="9" x2="15" y2="15"/>
+                            </svg>
+                        </div>
+                        <div class="stat-card__content">
+                            <span class="stat-card__value" id="stat-failed">0</span>
+                            <span class="stat-card__label">Failed</span>
                         </div>
                     </div>
                 </div>
-            </div>
-            
-            <!-- Custom Styles -->
-            <div id="custom-styles-container" class="space-y-4 mb-6">
-                <!-- Custom styles rendered here -->
-            </div>
-            
-            <!-- Built-in Styles (Read-only) -->
-            <div class="bg-gray-900/50 rounded-2xl border border-gray-800 p-6">
-                <h3 class="text-lg font-semibold mb-4">📦 Built-in Styles (Reference)</h3>
-                <div id="builtin-styles-grid" class="grid md:grid-cols-2 gap-4">
-                    <!-- Built-in styles rendered here by JS -->
-                </div>
-            </div>
-        </div>
 
-        <!-- HISTORY TAB -->
-        <div id="tab-content-history" class="hidden">
-            <div class="flex items-center justify-between mb-6">
-                <h2 class="text-2xl font-bold">📜 History</h2>
-                <div class="flex gap-3">
-                    <select id="history-filter" onchange="loadHistory()" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
-                        <option value="completed">✓ Completed</option>
-                        <option value="all">All</option>
-                        <option value="failed">✗ Failed</option>
-                    </select>
-                    <select id="history-sort" onchange="loadHistory()" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
-                        <option value="newest">Newest</option>
-                        <option value="oldest">Oldest</option>
-                    </select>
-                </div>
-            </div>
-            
-            <div id="history-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4"></div>
-            
-            <div id="history-empty" class="hidden text-center py-16">
-                <div class="text-6xl mb-4">👻</div>
-                <p class="text-gray-400">No videos yet</p>
-                <button onclick="showTab('create')" class="mt-4 text-primary hover:underline">Create your first →</button>
-            </div>
-            
-            <div id="history-pagination" class="hidden flex items-center justify-center gap-4 mt-8">
-                <button onclick="loadHistory('prev')" id="history-prev" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-lg disabled:opacity-50">← Prev</button>
-                <span id="history-page-info" class="text-gray-400">Page 1</span>
-                <button onclick="loadHistory('next')" id="history-next" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-lg disabled:opacity-50">Next →</button>
-            </div>
-        </div>
-    </main>
-
-    <!-- Audio Manager Modal -->
-    <div id="audio-manager-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-        <div class="bg-gray-900 rounded-2xl p-6 max-w-2xl w-full border border-gray-700 max-h-[90vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-4">
-                <h3 class="text-xl font-bold">🎵 Audio Library Manager</h3>
-                <button onclick="closeAudioManager()" class="text-gray-400 hover:text-white text-2xl">&times;</button>
-            </div>
-            
-            <!-- Upload Section -->
-            <div class="mb-6">
-                <h4 class="font-semibold mb-2 text-sm">📤 Upload New Track</h4>
-                <div id="audio-dropzone" class="border-2 border-dashed border-gray-600 hover:border-primary rounded-xl p-6 text-center transition-colors cursor-pointer">
-                    <div class="text-4xl mb-2">🎶</div>
-                    <p class="text-gray-400 text-sm mb-2">Drag & drop audio files here</p>
-                    <p class="text-gray-500 text-xs mb-3">or</p>
-                    <label class="inline-block bg-primary hover:bg-primary/80 text-white px-4 py-2 rounded-lg cursor-pointer text-sm">
-                        Choose Files
-                        <input type="file" id="audio-file-input" accept=".mp3,.wav,.m4a,.ogg" multiple class="hidden">
-                    </label>
-                    <p class="text-gray-500 text-xs mt-3">Supported: MP3, WAV, M4A, OGG (max 50MB each)</p>
-                </div>
-                
-                <!-- Upload Progress -->
-                <div id="audio-upload-progress" class="hidden mt-3">
-                    <div class="flex items-center gap-2">
-                        <div class="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
-                            <div id="audio-upload-bar" class="h-full bg-primary transition-all" style="width: 0%"></div>
+                <!-- Main Grid -->
+                <div class="dashboard-grid">
+                    <!-- Upcoming Posts -->
+                    <section class="card dashboard-card">
+                        <div class="card__header">
+                            <h2 class="card__title">Upcoming Posts</h2>
+                            <a href="pages/posts.html" class="card__action">View All →</a>
                         </div>
-                        <span id="audio-upload-percent" class="text-xs text-gray-400">0%</span>
-                    </div>
-                    <p id="audio-upload-status" class="text-xs text-gray-400 mt-1">Uploading...</p>
-                </div>
-            </div>
-            
-            <!-- Audio Library -->
-            <div>
-                <div class="flex items-center justify-between mb-3">
-                    <h4 class="font-semibold text-sm">📚 Your Audio Library</h4>
-                    <button onclick="refreshAudioLibrary()" class="text-xs text-gray-400 hover:text-white">🔄 Refresh</button>
-                </div>
-                
-                <div id="audio-library-list" class="space-y-2 max-h-64 overflow-y-auto">
-                    <div class="text-center py-8 text-gray-500">
-                        <div class="text-3xl mb-2">🎵</div>
-                        <p class="text-sm">Loading audio library...</p>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Info Box -->
-            <div class="mt-4 bg-blue-900/20 border border-blue-800/50 rounded-lg p-3">
-                <p class="text-xs text-blue-300">
-                    <strong>💡 Tip:</strong> Use royalty-free horror ambient music for best results. 
-                    The audio will play at low volume (10-30%) behind the narration.
-                </p>
-            </div>
-        </div>
-    </div>
+                        <div class="card__body" id="upcoming-posts">
+                            <div class="empty-state">
+                                <p>No scheduled posts</p>
+                                <p class="text-muted">Schedule content to see it here</p>
+                            </div>
+                        </div>
+                    </section>
 
-    <!-- Error Modal -->
-    <div id="error-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-        <div class="bg-gray-900 rounded-2xl p-6 max-w-md w-full border border-red-900/50">
-            <div class="text-4xl text-center mb-4">😱</div>
-            <h3 class="text-xl font-bold text-center text-red-400 mb-2">Error</h3>
-            <p id="error-message" class="text-gray-400 text-center text-sm mb-6">Something went wrong...</p>
-            <button onclick="closeErrorModal()" class="w-full bg-gray-700 hover:bg-gray-600 py-3 rounded-xl font-semibold">Close</button>
-        </div>
+                    <!-- Platform Status -->
+                    <section class="card dashboard-card">
+                        <div class="card__header">
+                            <h2 class="card__title">Platform Status</h2>
+                            <a href="pages/connections.html" class="card__action">Manage →</a>
+                        </div>
+                        <div class="card__body" id="platform-status">
+                            <div class="platform-list"></div>
+                        </div>
+                    </section>
+
+                    <!-- Brand Overview -->
+                    <section class="card dashboard-card">
+                        <div class="card__header">
+                            <h2 class="card__title">Brand Overview</h2>
+                            <a href="pages/brands.html" class="card__action">Manage →</a>
+                        </div>
+                        <div class="card__body" id="brand-overview"></div>
+                    </section>
+
+                    <!-- Quick Actions -->
+                    <section class="card dashboard-card">
+                        <div class="card__header">
+                            <h2 class="card__title">Quick Actions</h2>
+                        </div>
+                        <div class="card__body">
+                            <div class="quick-actions">
+                                <a href="brands/horror/index.html" class="quick-action">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polygon points="23 7 16 12 23 17 23 7"/>
+                                        <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                                    </svg>
+                                    <span>Generate Video</span>
+                                </a>
+                                <a href="pages/posts.html" class="quick-action">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <line x1="12" y1="5" x2="12" y2="19"/>
+                                        <line x1="5" y1="12" x2="19" y2="12"/>
+                                    </svg>
+                                    <span>Create Post</span>
+                                </a>
+                                <a href="pages/calendar.html" class="quick-action">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                                        <line x1="16" y1="2" x2="16" y2="6"/>
+                                        <line x1="8" y1="2" x2="8" y2="6"/>
+                                        <line x1="3" y1="10" x2="21" y2="10"/>
+                                    </svg>
+                                    <span>View Schedule</span>
+                                </a>
+                                <a href="pages/connections.html" class="quick-action">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                                    </svg>
+                                    <span>Connect Platform</span>
+                                </a>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Recent Activity -->
+                    <section class="card dashboard-card dashboard-card--wide">
+                        <div class="card__header">
+                            <h2 class="card__title">Recent Activity</h2>
+                        </div>
+                        <div class="card__body" id="recent-activity">
+                            <div class="empty-state">
+                                <p>No recent activity</p>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </main>
     </div>
 
     <!-- Scripts -->
     <script src="js/config.js"></script>
     <script src="js/supabase.js"></script>
-    <script src="js/api.js"></script>
-    <script src="js/ui.js"></script>
-    <script src="js/app.js"></script>
+    <script src="js/core/utils.js"></script>
+    <script src="js/models/Brand.js"></script>
+    <script src="js/models/Platform.js"></script>
+    <script src="js/models/Post.js"></script>
+    <script src="js/models/Schedule.js"></script>
+    <script src="js/models/index.js"></script>
+    <script src="js/services/platformAPI.js"></script>
+    <script src="js/services/postManager.js"></script>
+    <script src="js/services/scheduler.js"></script>
+    <script src="js/services/brandManager.js"></script>
+    <script src="js/services/index.js"></script>
+    <script src="js/components/toast.js"></script>
+    <script src="js/components/sidebar.js"></script>
+    <script src="js/components/brand-switcher.js"></script>
+    <script>
+        // Dashboard initialization
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Initialize sidebar
+            const sidebar = new Sidebar();
+            
+            // Initialize brand switcher
+            const brandSwitcher = new BrandSwitcher({
+                onSelect: (brand) => {
+                    loadDashboardData();
+                }
+            });
+            brandSwitcher.init();
+
+            // Wait for ContentEngine to initialize
+            window.addEventListener('contentengine:ready', () => {
+                loadDashboardData();
+            });
+
+            // If already initialized
+            if (typeof contentEngine !== 'undefined' && contentEngine.initialized) {
+                loadDashboardData();
+            }
+        });
+
+        async function loadDashboardData() {
+            const stats = contentEngine.getStats();
+            
+            // Update stats
+            document.getElementById('stat-posts-today').textContent = stats.postsToday;
+            document.getElementById('stat-scheduled').textContent = stats.scheduledPosts;
+            document.getElementById('stat-week').textContent = stats.postsThisWeek;
+            document.getElementById('stat-failed').textContent = stats.failedPosts;
+            document.getElementById('queue-count').textContent = `${stats.queuedPosts} posts`;
+            document.getElementById('queue-badge').textContent = stats.queuedPosts || '';
+
+            loadUpcomingPosts();
+            loadPlatformStatus();
+            loadBrandOverview();
+            loadRecentActivity();
+            updateNextPostStatus();
+        }
+
+        function loadUpcomingPosts() {
+            const container = document.getElementById('upcoming-posts');
+            const posts = contentEngine.getUpcomingPosts(5);
+
+            if (posts.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <p>No scheduled posts</p>
+                        <p class="text-muted">Schedule content to see it here</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = posts.map(post => `
+                <div class="post-item">
+                    <div class="post-item__time">${formatRelativeTime(post.scheduledAt)}</div>
+                    <div class="post-item__content">
+                        <div class="post-item__title">${post.content.title || 'Untitled'}</div>
+                        <div class="post-item__meta">
+                            <span class="platform-badge platform-badge--${post.platformId}">${post.platformId}</span>
+                        </div>
+                    </div>
+                    <span class="badge badge--${getStatusClass(post.status)}">${post.status}</span>
+                </div>
+            `).join('');
+        }
+
+        function loadPlatformStatus() {
+            const container = document.getElementById('platform-status').querySelector('.platform-list');
+            const platforms = getAllPlatforms();
+            const accounts = accountManager.getAll();
+
+            container.innerHTML = platforms.slice(0, 6).map(platform => {
+                const account = accounts.find(a => a.platformId === platform.id);
+                const isConnected = account?.isActive();
+
+                return `
+                    <div class="platform-item">
+                        <div class="platform-item__icon" style="background: ${platform.color}15; color: ${platform.color}">
+                            ${platform.name.charAt(0)}
+                        </div>
+                        <div class="platform-item__info">
+                            <span class="platform-item__name">${platform.name}</span>
+                        </div>
+                        <span class="platform-item__status ${isConnected ? 'platform-item__status--connected' : ''}">
+                            ${isConnected ? '●' : '○'}
+                        </span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function loadBrandOverview() {
+            const container = document.getElementById('brand-overview');
+            const brands = brandManager.getAll();
+
+            if (brands.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <p>No brands configured</p>
+                        <a href="pages/brands.html" class="btn btn--sm btn--primary">Add Brand</a>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = brands.map(brand => {
+                const stats = brandManager.getStats(brand.id);
+                return `
+                    <div class="brand-item">
+                        <div class="brand-item__indicator" style="background: ${brand.theme.primaryColor}"></div>
+                        <div class="brand-item__info">
+                            <span class="brand-item__name">${brand.name}</span>
+                            <span class="brand-item__niche">${brand.niche}</span>
+                        </div>
+                        <div class="brand-item__stats">
+                            <span>${stats.totalPosts} posts</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function loadRecentActivity() {
+            const container = document.getElementById('recent-activity');
+            const activity = contentEngine.getRecentActivity(8);
+
+            if (activity.length === 0) {
+                container.innerHTML = `<div class="empty-state"><p>No recent activity</p></div>`;
+                return;
+            }
+
+            container.innerHTML = `<div class="activity-list">${activity.map(item => `
+                <div class="activity-item">
+                    <div class="activity-item__icon activity-item__icon--${item.status}">
+                        ${getStatusIcon(item.status)}
+                    </div>
+                    <div class="activity-item__content">
+                        <div class="activity-item__title">${item.title}</div>
+                        <div class="activity-item__meta">
+                            <span class="text-muted">${formatRelativeTime(item.timestamp)}</span>
+                        </div>
+                    </div>
+                    <span class="badge badge--${getStatusClass(item.status)}">${item.status}</span>
+                </div>
+            `).join('')}</div>`;
+        }
+
+        function updateNextPostStatus() {
+            const container = document.getElementById('next-post-status');
+            const scheduled = postManager.getScheduled();
+
+            container.querySelector('.status-bar__value').textContent = 
+                scheduled.length > 0 ? formatRelativeTime(scheduled[0].scheduledAt) : 'None scheduled';
+        }
+
+        function getStatusClass(status) {
+            return { published: 'success', complete: 'success', scheduled: 'warning', 
+                     queued: 'info', processing: 'warning', failed: 'error', draft: 'default' }[status] || 'default';
+        }
+
+        function getStatusIcon(status) {
+            const icons = {
+                published: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>`,
+                complete: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>`,
+                scheduled: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`,
+                failed: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>`
+            };
+            return icons[status] || `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>`;
+        }
+    </script>
 </body>
 </html>

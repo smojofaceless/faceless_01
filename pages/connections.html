@@ -1,0 +1,1095 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connections - ContentEngine</title>
+    
+    <!-- Core Design System -->
+    <link rel="stylesheet" href="../css/core/tokens.css">
+    <link rel="stylesheet" href="../css/core/base.css">
+    <link rel="stylesheet" href="../css/core/components.css">
+    <link rel="stylesheet" href="../css/core/layout.css">
+    <link rel="stylesheet" href="../css/dashboard.css">
+    <link rel="stylesheet" href="../css/connections.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar__header">
+                <a href="../index.html" class="logo">
+                    <svg class="logo__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                        <polyline points="2 17 12 22 22 17"/>
+                        <polyline points="2 12 12 17 22 12"/>
+                    </svg>
+                    <span class="logo__text">ContentEngine</span>
+                </a>
+            </div>
+
+            <nav class="sidebar__nav">
+                <div class="nav-section">
+                    <span class="nav-section__title">Overview</span>
+                    <a href="../index.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="7" height="7"/>
+                            <rect x="14" y="3" width="7" height="7"/>
+                            <rect x="14" y="14" width="7" height="7"/>
+                            <rect x="3" y="14" width="7" height="7"/>
+                        </svg>
+                        <span>Dashboard</span>
+                    </a>
+                    <a href="create.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="23 7 16 12 23 17 23 7"/>
+                            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                        </svg>
+                        <span>Create Video</span>
+                    </a>
+                    <a href="calendar.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                            <line x1="16" y1="2" x2="16" y2="6"/>
+                            <line x1="8" y1="2" x2="8" y2="6"/>
+                            <line x1="3" y1="10" x2="21" y2="10"/>
+                        </svg>
+                        <span>Calendar</span>
+                    </a>
+                    <a href="posts.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="16" y1="13" x2="8" y2="13"/>
+                            <line x1="16" y1="17" x2="8" y2="17"/>
+                        </svg>
+                        <span>Posts Queue</span>
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <span class="nav-section__title">Management</span>
+                    <a href="brands.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                            <line x1="7" y1="7" x2="7.01" y2="7"/>
+                        </svg>
+                        <span>Brands</span>
+                    </a>
+                    <a href="connections.html" class="nav-link active">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                        </svg>
+                        <span>Connections</span>
+                    </a>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Header -->
+            <header class="header">
+                <div class="header__left">
+                    <h1 class="header__title">Platform Connections</h1>
+                </div>
+                <div class="header__right">
+                    <div id="brand-switcher"></div>
+                </div>
+            </header>
+
+            <!-- Connections Content -->
+            <div class="content">
+                <!-- Brand Selection Notice -->
+                <div class="notice notice--info" id="brand-notice" style="display: none;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="12" y1="16" x2="12" y2="12"/>
+                        <line x1="12" y1="8" x2="12.01" y2="8"/>
+                    </svg>
+                    <span>Select a brand to manage its platform connections</span>
+                </div>
+
+                <!-- Active Brand Info -->
+                <div class="brand-header" id="brand-header">
+                    <div class="brand-header__info">
+                        <span class="brand-header__label">Managing connections for:</span>
+                        <h2 class="brand-header__name" id="active-brand-name">--</h2>
+                    </div>
+                </div>
+
+                <!-- Platforms Grid -->
+                <div class="platforms-grid" id="platforms-grid">
+                    <!-- Platform cards will be rendered here -->
+                </div>
+
+                <!-- API Information -->
+                <section class="info-section">
+                    <h3 class="info-section__title">About Platform APIs</h3>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <h4>Instagram / Facebook</h4>
+                            <p>Requires Meta Business Suite and an approved app with publish permissions. Videos must be under 60 seconds for Reels.</p>
+                            <a href="https://developers.facebook.com/" target="_blank" class="info-link">Developer Portal →</a>
+                        </div>
+                        <div class="info-item">
+                            <h4>TikTok</h4>
+                            <p>Uses TikTok for Developers API. Requires app approval for content posting. Videos up to 10 minutes supported.</p>
+                            <a href="https://developers.tiktok.com/" target="_blank" class="info-link">Developer Portal →</a>
+                        </div>
+                        <div class="info-item">
+                            <h4>YouTube</h4>
+                            <p>Uses YouTube Data API v3. Requires OAuth 2.0 consent. Daily quota limits apply (10,000 units/day default).</p>
+                            <a href="https://console.cloud.google.com/" target="_blank" class="info-link">Google Cloud Console →</a>
+                        </div>
+                        <div class="info-item">
+                            <h4>Twitter/X</h4>
+                            <p>Requires Twitter API v2 with elevated access for media uploads. Free tier limited to 500k tweets/month.</p>
+                            <a href="https://developer.twitter.com/" target="_blank" class="info-link">Developer Portal →</a>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- Connect Platform Modal -->
+    <div class="modal" id="connect-modal">
+        <div class="modal__overlay"></div>
+        <div class="modal__content">
+            <div class="modal__header">
+                <h3 class="modal__title">Connect <span id="platform-name">Platform</span></h3>
+                <button class="modal__close">&times;</button>
+            </div>
+            <div class="modal__body">
+                <div class="connect-info">
+                    <p>To connect your <strong id="platform-name-2">platform</strong> account, you'll need to provide API credentials from the platform's developer portal.</p>
+                </div>
+
+                <form id="connect-form">
+                    <div class="form-group">
+                        <label class="form-label">Account Name / Handle</label>
+                        <input type="text" class="form-control" id="connect-handle" placeholder="@youraccount">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">API Key / Client ID</label>
+                        <input type="text" class="form-control" id="connect-api-key" placeholder="Enter API key...">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">API Secret / Client Secret</label>
+                        <input type="password" class="form-control" id="connect-api-secret" placeholder="Enter API secret...">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Access Token (if available)</label>
+                        <input type="password" class="form-control" id="connect-access-token" placeholder="Enter access token...">
+                        <div class="form-hint">Some platforms require OAuth flow instead. Leave blank if not available.</div>
+                    </div>
+                </form>
+
+                <div class="connect-note">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    </svg>
+                    <span>Credentials are stored locally and encrypted. They're never sent to our servers.</span>
+                </div>
+            </div>
+            <div class="modal__footer">
+                <button class="btn btn--secondary" id="modal-cancel">Cancel</button>
+                <button class="btn btn--primary" id="modal-connect">Connect Account</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Supabase SDK (must be loaded before supabase.js) -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- Scripts -->
+    <script src="../js/config.js"></script>
+    <script src="../js/supabase.js"></script>
+    <script src="../js/core/utils.js"></script>
+    <script src="../js/models/Brand.js"></script>
+    <script src="../js/models/Platform.js"></script>
+    <script src="../js/models/Post.js"></script>
+    <script src="../js/models/Schedule.js"></script>
+    <script src="../js/models/index.js"></script>
+    <script src="../js/services/platformAPI.js"></script>
+    <script src="../js/services/youtube.js"></script>
+    <script src="../js/services/meta.js"></script>
+    <script src="../js/services/postManager.js"></script>
+    <script src="../js/services/scheduler.js"></script>
+    <script src="../js/services/brandManager.js"></script>
+    <script src="../js/services/index.js"></script>
+    <script src="../js/components/toast.js"></script>
+    <script src="../js/components/sidebar.js"></script>
+    <script src="../js/components/brand-switcher.js"></script>
+    <script>
+        let selectedPlatform = null;
+
+        // YouTube OAuth config - UPDATE THESE WITH YOUR CREDENTIALS
+        const YOUTUBE_CONFIG = {
+            clientId: localStorage.getItem('youtube_client_id') || '',
+            clientSecret: localStorage.getItem('youtube_client_secret') || '',
+            redirectUri: window.location.origin + '/pages/connections.html'
+        };
+
+        // Meta (Instagram/Facebook) OAuth config
+        const META_CONFIG = {
+            appId: localStorage.getItem('meta_app_id') || '',
+            appSecret: localStorage.getItem('meta_app_secret') || '',
+            redirectUri: window.location.origin + '/pages/connections.html'
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const sidebar = new Sidebar();
+            
+            const brandSwitcher = new BrandSwitcher({
+                onSelect: () => {
+                    updateBrandHeader();
+                    loadPlatforms();
+                }
+            });
+            brandSwitcher.init();
+
+            // Handle OAuth callbacks
+            handleOAuthCallback();
+
+            // Re-render when brands finish loading from Supabase
+            brandManager.on('brands:loaded', () => {
+                updateBrandHeader();
+                loadPlatforms();
+            });
+
+            window.addEventListener('contentengine:ready', init);
+            if (typeof contentEngine !== 'undefined' && contentEngine.initialized) {
+                init();
+            }
+        });
+
+        function handleOAuthCallback() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
+            const state = urlParams.get('state');
+            
+            // Check for YouTube OAuth callback with brand ID in state
+            if (code && state && state.startsWith('youtube_auth:')) {
+                const brandId = youtubeService.parseOAuthState(state);
+                console.log('YouTube OAuth callback received for brand:', brandId);
+                completeYouTubeAuth(code, brandId);
+                // Clean URL
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+            
+            // Check for Meta OAuth callback
+            if (code && state && !state.startsWith('youtube_auth:')) {
+                try {
+                    const stateData = JSON.parse(state);
+                    if (stateData.brandId) {
+                        console.log('Meta OAuth callback received for brand:', stateData.brandId);
+                        completeMetaAuth(code, stateData.brandId);
+                        // Clean URL
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                    }
+                } catch (e) {
+                    // Not a Meta callback
+                }
+            }
+        }
+
+        async function completeYouTubeAuth(code, brandId) {
+            try {
+                Toast.info('Completing YouTube connection...');
+                
+                if (!YOUTUBE_CONFIG.clientId || !YOUTUBE_CONFIG.clientSecret) {
+                    throw new Error('YouTube API credentials not configured');
+                }
+                
+                // Initialize YouTube service with client ID
+                youtubeService.init(YOUTUBE_CONFIG.clientId);
+                
+                // Exchange code for tokens - pass brandId to associate connection with this brand
+                await youtubeService.exchangeCodeForTokens(
+                    code, 
+                    YOUTUBE_CONFIG.redirectUri, 
+                    YOUTUBE_CONFIG.clientSecret,
+                    brandId  // Brand ID from OAuth state
+                );
+                
+                // Also update the brand's connectedPlatforms array
+                const brand = brandManager.get(brandId);
+                if (brand && !brand.hasPlatform('youtube')) {
+                    brand.connectPlatform('youtube');
+                    await brandManager.update(brandId, { connectedPlatforms: brand.connectedPlatforms });
+                }
+                
+                Toast.success('YouTube connected successfully!');
+                loadPlatforms();
+                
+            } catch (error) {
+                console.error('YouTube auth error:', error);
+                Toast.error(`YouTube connection failed: ${error.message}`);
+            }
+        }
+
+        async function completeMetaAuth(code, brandId) {
+            try {
+                Toast.info('Completing Meta connection...');
+                
+                if (!META_CONFIG.appId || !META_CONFIG.appSecret) {
+                    throw new Error('Meta API credentials not configured');
+                }
+                
+                // Initialize Meta service
+                metaService.init(META_CONFIG.appId, META_CONFIG.appSecret);
+                await metaService.setBrand(brandId);
+                
+                // Exchange code for tokens
+                const result = await metaService.handleCallback(code, META_CONFIG.redirectUri);
+                
+                if (result.needsPageSelection && result.pages.length > 0) {
+                    // Show page selection modal
+                    openMetaPageSelector(result.pages, brandId);
+                } else if (result.pages.length === 0) {
+                    Toast.warning('Connected but no Facebook Pages found. Make sure you have a Facebook Page linked to your Instagram.');
+                } else {
+                    // Auto-select first page
+                    await metaService.selectPage(result.pages[0].id);
+                    finalizeMetaConnection(brandId, result.pages[0]);
+                }
+                
+            } catch (error) {
+                console.error('Meta auth error:', error);
+                Toast.error(`Meta connection failed: ${error.message}`);
+            }
+        }
+
+        function openMetaPageSelector(pages, brandId) {
+            // Create modal for page selection
+            let modal = document.getElementById('meta-page-modal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'meta-page-modal';
+                modal.className = 'modal';
+                modal.innerHTML = `
+                    <div class="modal__overlay"></div>
+                    <div class="modal__content">
+                        <div class="modal__header">
+                            <h3 class="modal__title">Select Facebook Page</h3>
+                            <button class="modal__close">&times;</button>
+                        </div>
+                        <div class="modal__body">
+                            <p class="mb-4">Choose which Facebook Page to connect. The linked Instagram account will also be connected.</p>
+                            <div id="meta-page-list" class="page-list"></div>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+                
+                modal.querySelector('.modal__close').addEventListener('click', () => {
+                    modal.classList.remove('active');
+                });
+                modal.querySelector('.modal__overlay').addEventListener('click', () => {
+                    modal.classList.remove('active');
+                });
+            }
+            
+            // Render page options
+            const pageList = modal.querySelector('#meta-page-list');
+            pageList.innerHTML = pages.map(page => `
+                <div class="page-option" onclick="selectMetaPage('${page.id}', '${brandId}')">
+                    <div class="page-option__info">
+                        <strong>${page.name}</strong>
+                        ${page.instagram ? `
+                            <span class="page-option__instagram">
+                                <span class="text-muted">Instagram:</span> @${page.instagram.username}
+                            </span>
+                        ` : `
+                            <span class="page-option__instagram text-warning">No Instagram account linked</span>
+                        `}
+                    </div>
+                    <button class="btn btn--sm btn--primary">Select</button>
+                </div>
+            `).join('');
+            
+            modal.classList.add('active');
+        }
+
+        async function selectMetaPage(pageId, brandId) {
+            try {
+                const result = await metaService.selectPage(pageId);
+                
+                // Close modal
+                document.getElementById('meta-page-modal').classList.remove('active');
+                
+                // Finalize connection
+                finalizeMetaConnection(brandId, result);
+                
+            } catch (error) {
+                Toast.error(`Failed to select page: ${error.message}`);
+            }
+        }
+
+        async function finalizeMetaConnection(brandId, connectionInfo) {
+            const brand = brandManager.get(brandId);
+            
+            // Connect Instagram if available
+            if (connectionInfo.instagram) {
+                if (!brand.hasPlatform('instagram')) {
+                    brand.connectPlatform('instagram');
+                }
+                Toast.success(`Instagram connected: @${connectionInfo.instagram.username || connectionInfo.instagram}`);
+            }
+            
+            // Connect Facebook
+            if (connectionInfo.facebook) {
+                if (!brand.hasPlatform('facebook')) {
+                    brand.connectPlatform('facebook');
+                }
+                Toast.success(`Facebook Page connected: ${connectionInfo.facebook.pageName || connectionInfo.facebook}`);
+            }
+            
+            await brandManager.update(brandId, { connectedPlatforms: brand.connectedPlatforms });
+            loadPlatforms();
+        }
+
+        function init() {
+            updateBrandHeader();
+            updateYouTubeBrandContext();
+            updateMetaBrandContext();
+            loadPlatforms();
+            setupModal();
+            
+            // Initialize YouTube service if credentials exist
+            if (YOUTUBE_CONFIG.clientId) {
+                youtubeService.init(YOUTUBE_CONFIG.clientId);
+            }
+            
+            // Initialize Meta service if credentials exist
+            if (META_CONFIG.appId) {
+                metaService.init(META_CONFIG.appId, META_CONFIG.appSecret);
+            }
+        }
+        
+        // Update YouTube service with current brand context
+        function updateYouTubeBrandContext() {
+            const brand = brandManager.getActiveBrand();
+            if (brand) {
+                youtubeService.setBrand(brand.id);
+            }
+        }
+        
+        // Update Meta service with current brand context
+        function updateMetaBrandContext() {
+            const brand = brandManager.getActiveBrand();
+            if (brand) {
+                metaService.setBrand(brand.id);
+            }
+        }
+
+        function updateBrandHeader() {
+            const brand = brandManager.getActiveBrand();
+            const notice = document.getElementById('brand-notice');
+            const header = document.getElementById('brand-header');
+
+            if (brand) {
+                notice.style.display = 'none';
+                header.style.display = 'flex';
+                document.getElementById('active-brand-name').textContent = brand.name;
+                
+                // Update YouTube context when brand changes
+                updateYouTubeBrandContext();
+            } else {
+                notice.style.display = 'flex';
+                header.style.display = 'none';
+            }
+        }
+
+        function loadPlatforms() {
+            // Update brand contexts before loading
+            updateYouTubeBrandContext();
+            updateMetaBrandContext();
+            
+            const container = document.getElementById('platforms-grid');
+            const platforms = getAllPlatforms();
+            const brand = brandManager.getActiveBrand();
+            const accounts = accountManager.getAll();
+
+            container.innerHTML = platforms.map(platform => {
+                // Special handling for YouTube
+                if (platform.id === 'youtube') {
+                    return renderYouTubeCard(platform, brand);
+                }
+                
+                // Special handling for Instagram
+                if (platform.id === 'instagram') {
+                    return renderInstagramCard(platform, brand);
+                }
+                
+                // Special handling for Facebook
+                if (platform.id === 'facebook') {
+                    return renderFacebookCard(platform, brand);
+                }
+                
+                const account = brand ? 
+                    accounts.find(a => a.platformId === platform.id && a.brandId === brand.id) : 
+                    null;
+                const isConnected = account?.isActive();
+
+                return `
+                    <div class="platform-card ${isConnected ? 'platform-card--connected' : ''}">
+                        <div class="platform-card__header" style="background: ${platform.color}">
+                            <span class="platform-card__icon">${platform.name.charAt(0)}</span>
+                        </div>
+                        <div class="platform-card__body">
+                            <h3 class="platform-card__name">${platform.name}</h3>
+                            <div class="platform-card__status">
+                                ${isConnected ? `
+                                    <span class="status-indicator status-indicator--success"></span>
+                                    <span>Connected</span>
+                                    ${account.handle ? `<span class="text-muted">· ${account.handle}</span>` : ''}
+                                ` : `
+                                    <span class="status-indicator"></span>
+                                    <span class="text-muted">Not connected</span>
+                                `}
+                            </div>
+                            <div class="platform-card__info">
+                                <div class="info-row">
+                                    <span>Max video:</span>
+                                    <span>${platform.constraints.maxVideoDuration}s</span>
+                                </div>
+                                <div class="info-row">
+                                    <span>Hashtags:</span>
+                                    <span>${platform.constraints.maxHashtags}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="platform-card__footer">
+                            ${isConnected ? `
+                                <button class="btn btn--sm btn--secondary" onclick="testConnection('${platform.id}')">
+                                    Test
+                                </button>
+                                <button class="btn btn--sm btn--error" onclick="disconnectPlatform('${platform.id}')">
+                                    Disconnect
+                                </button>
+                            ` : `
+                                <button class="btn btn--sm btn--primary" onclick="openConnectModal('${platform.id}')" ${!brand ? 'disabled title="Select a brand first"' : ''}>
+                                    Connect
+                                </button>
+                            `}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderYouTubeCard(platform, brand) {
+            // Show brand-specific YouTube connection status
+            const isConnected = brand ? youtubeService.isBrandConnected(brand.id) : false;
+            const status = brand ? youtubeService.getBrandStatus(brand.id) : { channels: [], selectedChannel: null };
+            const selectedChannel = status.selectedChannel;
+            
+            return `
+                <div class="platform-card platform-card--youtube ${isConnected ? 'platform-card--connected' : ''}">
+                    <div class="platform-card__header" style="background: ${platform.color}">
+                        <svg viewBox="0 0 24 24" fill="currentColor" width="32" height="32">
+                            <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                        </svg>
+                    </div>
+                    <div class="platform-card__body">
+                        <h3 class="platform-card__name">${platform.name}</h3>
+                        ${!brand ? `
+                            <div class="platform-card__status">
+                                <span class="status-indicator status-indicator--warning"></span>
+                                <span class="text-muted">Select a brand first</span>
+                            </div>
+                        ` : `
+                            <div class="platform-card__status">
+                                ${isConnected ? `
+                                    <span class="status-indicator status-indicator--success"></span>
+                                    <span>Connected</span>
+                                    ${selectedChannel ? `<span class="text-muted">· ${selectedChannel.title}</span>` : ''}
+                                ` : `
+                                    <span class="status-indicator"></span>
+                                    <span class="text-muted">Not connected</span>
+                                `}
+                            </div>
+                        `}
+                        ${isConnected && status.channels.length > 0 ? `
+                            <div class="platform-card__channels">
+                                <label class="form-label form-label--sm">Channel:</label>
+                                <select class="select select--sm youtube-channel-selector" onchange="selectYouTubeChannel(this.value)">
+                                    ${status.channels.map(ch => `
+                                        <option value="${ch.id}" ${ch.id === selectedChannel?.id ? 'selected' : ''}>
+                                            ${ch.title} (${ch.subscriberCount || 0} subs)
+                                        </option>
+                                    `).join('')}
+                                </select>
+                            </div>
+                        ` : ''}
+                        <div class="platform-card__info">
+                            <div class="info-row">
+                                <span>Max video:</span>
+                                <span>60s (Shorts)</span>
+                            </div>
+                            <div class="info-row">
+                                <span>Auth:</span>
+                                <span>OAuth 2.0</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="platform-card__footer">
+                        ${isConnected ? `
+                            <button class="btn btn--sm btn--secondary" onclick="testYouTubeConnection()">
+                                Test
+                            </button>
+                            <button class="btn btn--sm btn--error" onclick="disconnectYouTube()">
+                                Disconnect
+                            </button>
+                        ` : `
+                            <button class="btn btn--sm btn--primary" onclick="connectYouTube()" ${!brand ? 'disabled title="Select a brand first"' : ''}>
+                                Connect with Google
+                            </button>
+                        `}
+                    </div>
+                    ${!YOUTUBE_CONFIG.clientId ? `
+                        <div class="platform-card__setup">
+                            <button class="btn btn--sm btn--secondary" onclick="openYouTubeSetup()">
+                                ⚙️ Setup API Keys
+                            </button>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        function renderInstagramCard(platform, brand) {
+            const isConnected = brand ? metaService.isInstagramConnected() : false;
+            const connectionInfo = brand ? metaService.getConnectionInfo() : null;
+            
+            return `
+                <div class="platform-card platform-card--instagram ${isConnected ? 'platform-card--connected' : ''}">
+                    <div class="platform-card__header" style="background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)">
+                        <svg viewBox="0 0 24 24" fill="currentColor" width="32" height="32">
+                            <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+                        </svg>
+                    </div>
+                    <div class="platform-card__body">
+                        <h3 class="platform-card__name">${platform.name}</h3>
+                        ${!brand ? `
+                            <div class="platform-card__status">
+                                <span class="status-indicator status-indicator--warning"></span>
+                                <span class="text-muted">Select a brand first</span>
+                            </div>
+                        ` : `
+                            <div class="platform-card__status">
+                                ${isConnected ? `
+                                    <span class="status-indicator status-indicator--success"></span>
+                                    <span>Connected</span>
+                                    ${connectionInfo?.instagram?.username ? `<span class="text-muted">· @${connectionInfo.instagram.username}</span>` : ''}
+                                ` : `
+                                    <span class="status-indicator"></span>
+                                    <span class="text-muted">Not connected</span>
+                                `}
+                            </div>
+                        `}
+                        <div class="platform-card__info">
+                            <div class="info-row">
+                                <span>Max video:</span>
+                                <span>90s (Reels)</span>
+                            </div>
+                            <div class="info-row">
+                                <span>Auth:</span>
+                                <span>Meta OAuth</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="platform-card__footer">
+                        ${isConnected ? `
+                            <button class="btn btn--sm btn--secondary" onclick="testMetaConnection('instagram')">
+                                Test
+                            </button>
+                            <button class="btn btn--sm btn--error" onclick="disconnectMeta()">
+                                Disconnect
+                            </button>
+                        ` : `
+                            <button class="btn btn--sm btn--primary" onclick="connectMeta()" ${!brand ? 'disabled title="Select a brand first"' : ''}>
+                                Connect with Facebook
+                            </button>
+                        `}
+                    </div>
+                    ${!META_CONFIG.appId ? `
+                        <div class="platform-card__setup">
+                            <button class="btn btn--sm btn--secondary" onclick="openMetaSetup()">
+                                ⚙️ Setup API Keys
+                            </button>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        function renderFacebookCard(platform, brand) {
+            const isConnected = brand ? metaService.isFacebookConnected() : false;
+            const connectionInfo = brand ? metaService.getConnectionInfo() : null;
+            
+            return `
+                <div class="platform-card platform-card--facebook ${isConnected ? 'platform-card--connected' : ''}">
+                    <div class="platform-card__header" style="background: #1877F2">
+                        <svg viewBox="0 0 24 24" fill="currentColor" width="32" height="32">
+                            <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                        </svg>
+                    </div>
+                    <div class="platform-card__body">
+                        <h3 class="platform-card__name">${platform.name}</h3>
+                        ${!brand ? `
+                            <div class="platform-card__status">
+                                <span class="status-indicator status-indicator--warning"></span>
+                                <span class="text-muted">Select a brand first</span>
+                            </div>
+                        ` : `
+                            <div class="platform-card__status">
+                                ${isConnected ? `
+                                    <span class="status-indicator status-indicator--success"></span>
+                                    <span>Connected</span>
+                                    ${connectionInfo?.facebook?.pageName ? `<span class="text-muted">· ${connectionInfo.facebook.pageName}</span>` : ''}
+                                ` : `
+                                    <span class="status-indicator"></span>
+                                    <span class="text-muted">Not connected</span>
+                                `}
+                            </div>
+                        `}
+                        <div class="platform-card__info">
+                            <div class="info-row">
+                                <span>Max video:</span>
+                                <span>90s (Reels)</span>
+                            </div>
+                            <div class="info-row">
+                                <span>Auth:</span>
+                                <span>Meta OAuth</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="platform-card__footer">
+                        ${isConnected ? `
+                            <button class="btn btn--sm btn--secondary" onclick="testMetaConnection('facebook')">
+                                Test
+                            </button>
+                            <button class="btn btn--sm btn--error" onclick="disconnectMeta()">
+                                Disconnect
+                            </button>
+                        ` : `
+                            <button class="btn btn--sm btn--primary" onclick="connectMeta()" ${!brand ? 'disabled title="Select a brand first"' : ''}>
+                                Connect with Facebook
+                            </button>
+                        `}
+                    </div>
+                    ${!META_CONFIG.appId ? `
+                        <div class="platform-card__setup">
+                            <button class="btn btn--sm btn--secondary" onclick="openMetaSetup()">
+                                ⚙️ Setup API Keys
+                            </button>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        function connectMeta() {
+            const brand = brandManager.getActiveBrand();
+            if (!brand) {
+                Toast.error('Please select a brand first');
+                return;
+            }
+            
+            if (!META_CONFIG.appId) {
+                openMetaSetup();
+                return;
+            }
+            
+            // Set brand context before generating auth URL
+            metaService.init(META_CONFIG.appId, META_CONFIG.appSecret);
+            metaService.setBrand(brand.id);
+            
+            const authUrl = metaService.getAuthUrl(META_CONFIG.redirectUri);
+            window.location.href = authUrl;
+        }
+
+        async function disconnectMeta() {
+            const brand = brandManager.getActiveBrand();
+            if (!brand) {
+                Toast.error('Please select a brand first');
+                return;
+            }
+            
+            if (confirm(`Disconnect Instagram & Facebook from "${brand.name}"? You'll need to reconnect to upload videos.`)) {
+                await metaService.disconnect();
+                
+                // Update brand's connectedPlatforms
+                brand.disconnectPlatform('instagram');
+                brand.disconnectPlatform('facebook');
+                await brandManager.update(brand.id, { connectedPlatforms: brand.connectedPlatforms });
+                
+                loadPlatforms();
+                Toast.success('Meta platforms disconnected');
+            }
+        }
+
+        async function testMetaConnection(platform) {
+            Toast.info(`Testing ${platform} connection...`);
+            try {
+                const connectionInfo = metaService.getConnectionInfo();
+                if (platform === 'instagram' && connectionInfo?.instagram) {
+                    Toast.success(`Instagram connected: @${connectionInfo.instagram.username}`);
+                } else if (platform === 'facebook' && connectionInfo?.facebook) {
+                    Toast.success(`Facebook Page connected: ${connectionInfo.facebook.pageName}`);
+                } else {
+                    Toast.warning('Connection status unknown');
+                }
+            } catch (error) {
+                Toast.error(`Test failed: ${error.message}`);
+            }
+        }
+
+        function openMetaSetup() {
+            const appId = prompt('Enter your Meta App ID:', META_CONFIG.appId);
+            if (appId === null) return;
+            
+            const appSecret = prompt('Enter your Meta App Secret:', META_CONFIG.appSecret);
+            if (appSecret === null) return;
+            
+            localStorage.setItem('meta_app_id', appId);
+            localStorage.setItem('meta_app_secret', appSecret);
+            
+            META_CONFIG.appId = appId;
+            META_CONFIG.appSecret = appSecret;
+            
+            Toast.success('Meta API credentials saved!');
+            loadPlatforms();
+        }
+
+        function connectYouTube() {
+            const brand = brandManager.getActiveBrand();
+            if (!brand) {
+                Toast.error('Please select a brand first');
+                return;
+            }
+            
+            if (!YOUTUBE_CONFIG.clientId) {
+                openYouTubeSetup();
+                return;
+            }
+            
+            // Set brand context before generating auth URL
+            youtubeService.init(YOUTUBE_CONFIG.clientId);
+            youtubeService.setBrand(brand.id);
+            
+            const authUrl = youtubeService.getAuthUrl(YOUTUBE_CONFIG.redirectUri);
+            window.location.href = authUrl;
+        }
+
+        function disconnectYouTube() {
+            const brand = brandManager.getActiveBrand();
+            if (!brand) {
+                Toast.error('Please select a brand first');
+                return;
+            }
+            
+            if (confirm(`Disconnect YouTube from "${brand.name}"? You'll need to reconnect to upload videos.`)) {
+                youtubeService.disconnect();
+                
+                // Also update brand's connectedPlatforms
+                brand.disconnectPlatform('youtube');
+                brandManager.save();
+                
+                loadPlatforms();
+                Toast.success('YouTube disconnected');
+            }
+        }
+
+        function selectYouTubeChannel(channelId) {
+            youtubeService.selectChannel(channelId);
+            Toast.success('Channel selected');
+        }
+
+        async function testYouTubeConnection() {
+            Toast.info('Testing YouTube connection...');
+            try {
+                const channels = await youtubeService.fetchChannels();
+                if (channels.length > 0) {
+                    Toast.success(`Connected! Found ${channels.length} channel(s)`);
+                    loadPlatforms();
+                } else {
+                    Toast.warning('Connected but no channels found');
+                }
+            } catch (error) {
+                Toast.error(`Test failed: ${error.message}`);
+            }
+        }
+
+        function openYouTubeSetup() {
+            const clientId = prompt('Enter your Google OAuth Client ID:', YOUTUBE_CONFIG.clientId);
+            if (clientId === null) return;
+            
+            const clientSecret = prompt('Enter your Google OAuth Client Secret:', YOUTUBE_CONFIG.clientSecret);
+            if (clientSecret === null) return;
+            
+            localStorage.setItem('youtube_client_id', clientId);
+            localStorage.setItem('youtube_client_secret', clientSecret);
+            
+            YOUTUBE_CONFIG.clientId = clientId;
+            YOUTUBE_CONFIG.clientSecret = clientSecret;
+            
+            Toast.success('YouTube API credentials saved!');
+            loadPlatforms();
+        }
+
+        function setupModal() {
+            const modal = document.getElementById('connect-modal');
+            
+            // Move modal to body to ensure no parent constraints
+            if (modal.parentElement !== document.body) {
+                document.body.appendChild(modal);
+            }
+            
+            const closeBtn = modal.querySelector('.modal__close');
+            const cancelBtn = document.getElementById('modal-cancel');
+            const connectBtn = document.getElementById('modal-connect');
+            const overlay = modal.querySelector('.modal__overlay');
+
+            [closeBtn, cancelBtn, overlay].forEach(el => {
+                if (el) el.addEventListener('click', closeModal);
+            });
+
+            connectBtn.addEventListener('click', connectPlatform);
+        }
+
+        function openConnectModal(platformId) {
+            // YouTube uses OAuth, not modal
+            if (platformId === 'youtube') {
+                connectYouTube();
+                return;
+            }
+            
+            const platform = getPlatform(platformId);
+            if (!platform) return;
+
+            selectedPlatform = platform;
+            document.getElementById('platform-name').textContent = platform.name;
+            document.getElementById('platform-name-2').textContent = platform.name;
+            document.getElementById('connect-form').reset();
+            document.getElementById('connect-modal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('connect-modal').classList.remove('active');
+            selectedPlatform = null;
+        }
+
+        function connectPlatform() {
+            if (!selectedPlatform) return;
+
+            const brand = brandManager.getActiveBrand();
+            if (!brand) {
+                Toast.error('Please select a brand first');
+                return;
+            }
+
+            const handle = document.getElementById('connect-handle').value.trim();
+            const apiKey = document.getElementById('connect-api-key').value.trim();
+            const apiSecret = document.getElementById('connect-api-secret').value.trim();
+            const accessToken = document.getElementById('connect-access-token').value.trim();
+
+            if (!apiKey) {
+                Toast.error('API Key is required');
+                return;
+            }
+
+            // Create account
+            const account = new PlatformAccount({
+                platformId: selectedPlatform.id,
+                brandId: brand.id,
+                handle: handle,
+                credentials: {
+                    apiKey,
+                    apiSecret,
+                    accessToken
+                },
+                accessToken: accessToken,
+                tokenExpiry: accessToken ? new Date(Date.now() + 3600000) : null // 1 hour default
+            });
+
+            accountManager.add(account);
+            
+            // Also update brand's platform connections
+            brand.connectPlatform(selectedPlatform.id, { accountId: account.id });
+            brandManager.save();
+
+            closeModal();
+            loadPlatforms();
+            Toast.success(`${selectedPlatform.name} connected!`);
+        }
+
+        function disconnectPlatform(platformId) {
+            // YouTube uses its own disconnect
+            if (platformId === 'youtube') {
+                disconnectYouTube();
+                return;
+            }
+            
+            const brand = brandManager.getActiveBrand();
+            if (!brand) return;
+
+            if (confirm(`Disconnect ${getPlatform(platformId)?.name}? You'll need to reconnect to post again.`)) {
+                // Remove account
+                const account = accountManager.getAll().find(a => 
+                    a.platformId === platformId && a.brandId === brand.id
+                );
+                if (account) {
+                    accountManager.remove(account.id);
+                }
+
+                // Update brand
+                brand.disconnectPlatform(platformId);
+                brandManager.save();
+
+                loadPlatforms();
+                Toast.success('Platform disconnected');
+            }
+        }
+
+        async function testConnection(platformId) {
+            // YouTube uses its own test
+            if (platformId === 'youtube') {
+                testYouTubeConnection();
+                return;
+            }
+            
+            const brand = brandManager.getActiveBrand();
+            const account = accountManager.getAll().find(a => 
+                a.platformId === platformId && a.brandId === brand?.id
+            );
+
+            if (!account) {
+                Toast.error('No account found');
+                return;
+            }
+
+            Toast.info('Testing connection...');
+
+            try {
+                // Get platform API and test
+                const api = PlatformAPIFactory.getAPI(platformId);
+                const result = await api.testConnection(account);
+
+                if (result.success) {
+                    Toast.success('Connection working!');
+                } else {
+                    Toast.error(result.error || 'Connection failed');
+                }
+            } catch (error) {
+                Toast.error(`Test failed: ${error.message}`);
+            }
+        }
+    </script>
+</body>
+</html>
