@@ -808,13 +808,13 @@ class MetaService {
         console.log('📘 Video ID:', videoId);
         onProgress(30, 'Uploading to Facebook...');
 
-        // Step 2: Poll for video upload status until ready
+        // Step 2: Poll for video upload status - but with smarter exit conditions
         console.log('📘 Step 2: Polling for video upload status...');
-        let uploadReady = false;
         let attempts = 0;
-        const maxAttempts = 60; // 5 minutes max (5 sec intervals)
+        const maxWaitAttempts = 24; // 2 minutes max wait (5 sec intervals)
+        let lastStatus = 'unknown';
 
-        while (!uploadReady && attempts < maxAttempts) {
+        while (attempts < maxWaitAttempts) {
             await this.sleep(5000); // Wait 5 seconds between polls
             attempts++;
             
@@ -826,46 +826,30 @@ class MetaService {
             console.log(`📘 Video status (attempt ${attempts}):`, statusData);
 
             if (statusData.error) {
-                // If we get "Object does not exist" it might still be processing
-                if (statusData.error.code === 100) {
-                    console.log('📘 Video not yet available, continuing to wait...');
-                } else {
-                    throw new Error(statusData.error.message || 'Failed to check video status');
-                }
+                console.log('📘 Status check error, continuing...');
             } else if (statusData.status) {
-                const videoStatus = statusData.status.video_status;
-                console.log(`📘 Video status: ${videoStatus}`);
+                lastStatus = statusData.status.video_status || 'unknown';
+                console.log(`📘 Video status: ${lastStatus}`);
                 
-                // Update progress based on status
-                const progress = Math.min(30 + (attempts * 1.5), 80);
-                onProgress(progress, `Processing... ${videoStatus || 'uploading'}`);
+                // Update progress
+                const progress = Math.min(30 + (attempts * 2), 75);
+                onProgress(progress, `Processing... ${lastStatus}`);
                 
-                // Check if ready for publishing
-                if (videoStatus === 'ready' || videoStatus === 'complete' || videoStatus === 'processing') {
-                    // Even "processing" might be enough to attempt finish
-                    if (attempts >= 3) { // Give it at least 15 seconds
-                        uploadReady = true;
-                    }
-                } else if (videoStatus === 'error') {
+                // Check for completion statuses
+                if (lastStatus === 'ready' || lastStatus === 'complete') {
+                    console.log('📘 Video is ready!');
+                    break;
+                } else if (lastStatus === 'error') {
                     throw new Error('Video processing failed on Facebook servers');
                 }
-            } else {
-                // No status field - try to proceed after minimum wait
-                if (attempts >= 6) { // 30 seconds minimum
-                    console.log('📘 No status returned, attempting to finish...');
-                    uploadReady = true;
-                }
+                // For "uploading" or "processing" - continue waiting up to max
             }
         }
 
-        if (!uploadReady && attempts >= maxAttempts) {
-            throw new Error('Video upload timed out');
-        }
-
-        onProgress(85, 'Publishing...');
-
-        // Step 3: Finish and publish
-        console.log('📘 Step 3: Finishing and publishing...');
+        // Step 3: Try to finish regardless of status (Facebook sometimes accepts it)
+        onProgress(80, 'Publishing...');
+        console.log(`📘 Step 3: Attempting to finish (last status: ${lastStatus})...`);
+        
         const finishResponse = await fetch(
             `${this.API_BASE}/${connection.facebookPageId}/video_reels`,
             {
@@ -886,6 +870,15 @@ class MetaService {
 
         if (finishData.error) {
             console.error('📘 Finish failed:', finishData.error);
+            
+            // If still uploading, the file_url method isn't working well
+            // Fall back to regular video post
+            if (finishData.error.error_subcode === 1363130 || 
+                finishData.error.message.includes('not uploaded')) {
+                console.log('📘 Reel upload failed, trying regular video post...');
+                return await this.uploadFacebookVideoByUrl(videoUrl, metadata, pageToken, onProgress);
+            }
+            
             throw new Error(finishData.error.message || 'Failed to publish Reel');
         }
 
