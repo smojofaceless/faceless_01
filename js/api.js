@@ -94,6 +94,64 @@ async function runJob(jobId, options = {}) {
 }
 
 /**
+ * Run a specific phase of video generation
+ * @param {string} jobId - The job ID
+ * @param {string} phase - The phase to run: 'audio', 'images', 'assemble'
+ * @param {object} options - Optional parameters
+ * @returns {object} Phase result with nextPhase indicator
+ */
+async function runJobPhase(jobId, phase, options = {}) {
+    const client = getSupabaseClient();
+    
+    console.log(`[API] runJobPhase: job=${jobId.substring(0,8)}..., phase=${phase}`);
+    const startTime = performance.now();
+    
+    const { data, error } = await client.functions.invoke('run-job', {
+        body: { 
+            job_id: jobId,
+            phase: phase,
+            preview_only: false,
+            ...options
+        },
+    });
+    
+    const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+    console.log(`[API] runJobPhase completed in ${elapsed}s:`, data);
+
+    if (error) throw new Error(error.message);
+    if (!data.success) throw new Error(data.error);
+
+    return data;
+}
+
+/**
+ * Run preview mode (story generation only, synchronous)
+ * @param {string} jobId - The job ID
+ * @returns {object} Preview result with story, title, scenes
+ */
+async function runPreviewMode(jobId) {
+    const client = getSupabaseClient();
+    
+    console.log(`[API] runPreviewMode: job=${jobId.substring(0,8)}...`);
+    const startTime = performance.now();
+    
+    const { data, error } = await client.functions.invoke('run-job', {
+        body: { 
+            job_id: jobId,
+            preview_only: true,
+        },
+    });
+    
+    const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+    console.log(`[API] runPreviewMode completed in ${elapsed}s:`, data);
+
+    if (error) throw new Error(error.message);
+    if (!data.success) throw new Error(data.error);
+
+    return data;
+}
+
+/**
  * Check the status of a job (with retry for transient errors)
  */
 async function checkJob(jobId, retries = 3) {
@@ -390,6 +448,8 @@ const API = {
     // Job management
     createJob,
     runJob,
+    runJobPhase,
+    runPreviewMode,
     checkJob,
     reRenderVideo,
     
@@ -402,6 +462,13 @@ const API = {
     removeAudioTrack,
     getAudioTrackUrl
 };
+
+// Also expose individual functions for direct access
+window.createJob = createJob;
+window.runJob = runJob;
+window.runJobPhase = runJobPhase;
+window.runPreviewMode = runPreviewMode;
+window.checkJob = checkJob;
 
 // Export to global scope
 window.API = API;

@@ -1,6 +1,12 @@
 /**
  * Create Page Controller
- * Handles the unified content creation interface
+ * Handles the unified content creation interface with phased generation
+ * 
+ * Flow:
+ * Step 1: Settings - User chooses options
+ * Step 2: Story + Audio - Generate story (preview mode) + voice audio
+ * Step 3: Images - Generate images (show real-time progress)
+ * Step 4: Video - Assemble final video
  */
 
 class CreatePageController {
@@ -10,6 +16,15 @@ class CreatePageController {
         this.template = null;
         this.currentStep = 1;
         this.formData = {};
+        
+        // Job state
+        this.jobId = null;
+        this.jobStatus = null;
+        
+        // Debug state
+        this.debugMode = false;
+        this.verboseMode = false;
+        this.apiLogs = [];
 
         this.init();
     }
@@ -605,10 +620,13 @@ class CreatePageController {
     }
 
     renderImagesStep(container) {
+        // Check if images have already been generated
+        const hasImages = this.sceneBuilder.scenes.some(s => s.imageUrl);
+        
         container.innerHTML = `
             <div class="create-card">
-                <h2 class="create-card__title">🎨 Image Preview</h2>
-                <p class="create-card__subtitle">Review your scenes before generating</p>
+                <h2 class="create-card__title">🎨 ${hasImages ? 'Generated Images' : 'Generate Images'}</h2>
+                <p class="create-card__subtitle">${hasImages ? 'Your images are ready!' : 'Click Continue to generate images for each scene'}</p>
                 
                 <div class="image-generation-controls">
                     <div class="image-source-info">
@@ -626,11 +644,14 @@ class CreatePageController {
                 
                 <div id="image-preview-grid" class="image-preview-grid">
                     ${this.sceneBuilder.scenes.map((scene, i) => `
-                        <div class="image-preview-card" data-scene-id="${scene.id}">
-                            <div class="image-preview-card__placeholder">
-                                <span class="image-preview-card__placeholder-icon">🎬</span>
-                                <span>Scene ${i + 1}</span>
-                            </div>
+                        <div class="image-preview-card ${scene.imageUrl ? 'image-preview-card--loaded' : ''}" data-scene-id="${scene.id}">
+                            ${scene.imageUrl 
+                                ? `<img src="${scene.imageUrl}" class="image-preview-card__img" alt="Scene ${i + 1}">`
+                                : `<div class="image-preview-card__placeholder">
+                                    <span class="image-preview-card__placeholder-icon">🎬</span>
+                                    <span>Scene ${i + 1}</span>
+                                </div>`
+                            }
                             <div class="image-preview-card__overlay">
                                 <span class="image-preview-card__number">Scene ${i + 1}</span>
                             </div>
@@ -639,10 +660,12 @@ class CreatePageController {
                     `).join('')}
                 </div>
                 
+                ${!hasImages ? `
                 <div class="image-step-note">
-                    <span class="note-icon">💡</span>
-                    <span>Images will be generated when you click "Generate" in the next step</span>
+                    <span class="note-icon">⚡</span>
+                    <span>Click "Continue" to start generating images. You'll see them appear in real-time!</span>
                 </div>
+                ` : ''}
             </div>
         `;
     }
@@ -676,30 +699,57 @@ class CreatePageController {
     }
 
     renderGenerateStep(container) {
+        // Show generated images and final summary
+        const hasImages = this.sceneBuilder.scenes.some(s => s.imageUrl);
+        
         container.innerHTML = `
             <div class="create-card">
-                <h2 class="create-card__title">🎬 Ready to Generate</h2>
+                <h2 class="create-card__title">🎬 Ready to Assemble Video</h2>
+                <p class="create-card__subtitle">Your story and images are ready. Click below to create the final video.</p>
+                
                 <div class="generate-summary">
                     <div class="generate-summary__item">
-                        <span class="generate-summary__label">Template</span>
-                        <span class="generate-summary__value">${this.template.name}</span>
+                        <span class="generate-summary__label">📖 Title</span>
+                        <span class="generate-summary__value">${this.formData.title || 'Untitled'}</span>
                     </div>
                     <div class="generate-summary__item">
-                        <span class="generate-summary__label">Scenes</span>
-                        <span class="generate-summary__value">${this.sceneBuilder.scenes.length || this.formData.sceneCount || 6}</span>
+                        <span class="generate-summary__label">🎬 Scenes</span>
+                        <span class="generate-summary__value">${this.sceneBuilder.scenes.length}</span>
                     </div>
                     <div class="generate-summary__item">
-                        <span class="generate-summary__label">Visual Source</span>
-                        <span class="generate-summary__value">${this.formData.visualSource === 'ai' ? 'AI Generated' : 'Stock (Pexels)'}</span>
+                        <span class="generate-summary__label">🖼️ Images</span>
+                        <span class="generate-summary__value">${hasImages ? '✅ Generated' : '⏳ Pending'}</span>
+                    </div>
+                    <div class="generate-summary__item">
+                        <span class="generate-summary__label">🔊 Audio</span>
+                        <span class="generate-summary__value">✅ Generated</span>
                     </div>
                 </div>
+                
+                ${hasImages ? `
+                <div class="generate-preview">
+                    <h3>Preview Images</h3>
+                    <div class="generate-preview__images">
+                        ${this.sceneBuilder.scenes.slice(0, 4).map((scene, i) => `
+                            <img src="${scene.imageUrl}" alt="Scene ${i + 1}" class="generate-preview__img">
+                        `).join('')}
+                        ${this.sceneBuilder.scenes.length > 4 ? `<span class="generate-preview__more">+${this.sceneBuilder.scenes.length - 4} more</span>` : ''}
+                    </div>
+                </div>
+                ` : ''}
+                
                 <button id="btn-generate" class="btn btn--primary btn--lg btn--full">
-                    ✨ Generate Video
+                    🎬 Assemble Video
                 </button>
+                
+                <div class="generate-note">
+                    <span>💡</span>
+                    <span>This will combine your images, audio, and captions into the final video.</span>
+                </div>
             </div>
         `;
 
-        document.getElementById('btn-generate')?.addEventListener('click', () => this.startGeneration());
+        document.getElementById('btn-generate')?.addEventListener('click', () => this.executeVideoAssemblyPhase());
     }
 
     updateNavigationButtons() {
@@ -732,18 +782,291 @@ class CreatePageController {
         this.collectAndSaveFormData();
         
         if (this.currentStep < totalSteps) {
-            // For step 1 -> 2, generate content first
-            if (this.currentStep === 1) {
-                await this.generateContent();
+            try {
+                // Execute phase-specific actions BEFORE advancing step
+                const stepId = this.template.steps[this.currentStep - 1]?.id;
+                this.debugLog('nextStep', `Current step: ${this.currentStep} (${stepId}), advancing...`);
+                
+                // Step 1 -> 2: Create job + Generate story + Generate audio
+                if (this.currentStep === 1) {
+                    await this.executeStoryAndAudioPhase();
+                }
+                // Step 2 -> 3: Generate images
+                else if (this.currentStep === 2) {
+                    await this.executeImagesPhase();
+                }
+                // Step 3 -> 4: Just advance, video assembly happens on Generate click
+                
+                this.currentStep++;
+                this.updateStepIndicators();
+                this.renderCurrentStep();
+                
+            } catch (error) {
+                console.error('Phase execution failed:', error);
+                this.addLog(`❌ Failed: ${error.message}`, 'error');
+                this.showError(error.message);
+            }
+        } else {
+            // Last step - start video assembly
+            await this.executeVideoAssemblyPhase();
+        }
+    }
+
+    /**
+     * Phase 1: Create job + Story generation + Audio generation
+     */
+    async executeStoryAndAudioPhase() {
+        const stepContent = document.getElementById('step-content');
+        
+        // Show loading state
+        this.showStepLoading(stepContent, 'Generating story and audio...');
+        
+        try {
+            // === Step 1: Create the job ===
+            this.addLog('📝 Creating job on server...', 'info');
+            this.debugLog('createJob', 'Building payload...');
+            
+            const payload = this.buildJobPayload();
+            this.debugLog('createJob', `Payload: ${JSON.stringify(payload, null, 2)}`);
+            
+            const startCreate = performance.now();
+            const createResponse = await createJob(payload);
+            const createTime = ((performance.now() - startCreate) / 1000).toFixed(2);
+            
+            this.jobId = createResponse.job_id || createResponse.jobId;
+            this.debugLog('createJob', `Job created in ${createTime}s: ${this.jobId}`);
+            this.addLog(`✅ Job created: ${this.jobId.substring(0, 8)}...`, 'success');
+            
+            // === Step 2: Run preview mode (story generation) ===
+            this.addLog('📖 Generating story...', 'info');
+            this.updateStepLoadingMessage(stepContent, 'AI is writing your story...');
+            
+            const startPreview = performance.now();
+            const previewResponse = await runPreviewMode(this.jobId);
+            const previewTime = ((performance.now() - startPreview) / 1000).toFixed(2);
+            
+            this.debugLog('runPreviewMode', `Preview completed in ${previewTime}s`);
+            this.debugLog('runPreviewMode', `Response: ${JSON.stringify(previewResponse, null, 2)}`);
+            
+            // Fetch the updated job to get story and scenes
+            const jobData = await checkJob(this.jobId);
+            this.debugLog('checkJob', `Job data: ${JSON.stringify(jobData, null, 2)}`);
+            
+            // Store story data
+            this.formData.title = jobData.title || previewResponse.title || '';
+            this.formData.content = jobData.story_text || '';
+            
+            // Parse scenes from job assets
+            if (jobData.scenes && jobData.scenes.length > 0) {
+                this.sceneBuilder.setScenes(jobData.scenes.map((s, i) => ({
+                    id: i + 1,
+                    text: s.text || s.scene_text || '',
+                    imagePrompt: s.keywords?.join(', ') || s.image_prompt || '',
+                    mood: 'neutral'
+                })));
+                this.addLog(`✅ Story generated: ${jobData.scenes.length} scenes`, 'success');
             }
             
-            this.currentStep++;
-            this.updateStepIndicators();
-            this.renderCurrentStep();
-        } else {
-            // Last step - start generation
-            await this.startGeneration();
+            // === Step 3: Run audio phase ===
+            this.addLog('🔊 Generating voice audio...', 'info');
+            this.updateStepLoadingMessage(stepContent, 'Creating voice narration...');
+            
+            const startAudio = performance.now();
+            const audioResponse = await runJobPhase(this.jobId, 'audio');
+            const audioTime = ((performance.now() - startAudio) / 1000).toFixed(2);
+            
+            this.debugLog('runJobPhase:audio', `Audio phase completed in ${audioTime}s`);
+            this.debugLog('runJobPhase:audio', `Response: ${JSON.stringify(audioResponse, null, 2)}`);
+            
+            this.addLog(`✅ Audio generated in ${audioTime}s`, 'success');
+            
+            // Update job status
+            this.jobStatus = await checkJob(this.jobId);
+            this.debugLog('checkJob', `Final status: ${this.jobStatus.status}, progress: ${this.jobStatus.progress}%`);
+            
+        } catch (error) {
+            this.debugLog('executeStoryAndAudioPhase', `ERROR: ${error.message}`);
+            throw error;
         }
+    }
+
+    /**
+     * Phase 2: Image generation with real-time updates
+     */
+    async executeImagesPhase() {
+        const stepContent = document.getElementById('step-content');
+        
+        if (!this.jobId) {
+            throw new Error('No job ID - please go back and regenerate the story');
+        }
+        
+        this.addLog('🎨 Starting image generation...', 'info');
+        this.debugLog('executeImagesPhase', `Job ID: ${this.jobId}`);
+        
+        // Show the image grid with loading states
+        this.renderImagesStepWithProgress(stepContent);
+        
+        try {
+            // Start the images phase
+            const startImages = performance.now();
+            
+            // Trigger image generation
+            const imageResponse = await runJobPhase(this.jobId, 'images');
+            this.debugLog('runJobPhase:images', `Initial response: ${JSON.stringify(imageResponse, null, 2)}`);
+            
+            // Poll for image updates
+            await this.pollForImages();
+            
+            const imageTime = ((performance.now() - startImages) / 1000).toFixed(2);
+            this.addLog(`✅ Images generated in ${imageTime}s`, 'success');
+            
+        } catch (error) {
+            this.debugLog('executeImagesPhase', `ERROR: ${error.message}`);
+            throw error;
+        }
+    }
+
+    /**
+     * Poll for images as they generate
+     */
+    async pollForImages() {
+        const maxPolls = 120; // 4 minutes max
+        const pollInterval = 2000;
+        let polls = 0;
+        let lastImageCount = 0;
+        
+        this.debugLog('pollForImages', 'Starting image polling...');
+        
+        while (polls < maxPolls) {
+            const status = await checkJob(this.jobId);
+            
+            // Check for images
+            const images = status.images || [];
+            
+            if (images.length > lastImageCount) {
+                const newImages = images.slice(lastImageCount);
+                this.debugLog('pollForImages', `New images: ${newImages.length} (total: ${images.length})`);
+                
+                // Update UI with new images
+                newImages.forEach((img, idx) => {
+                    const globalIdx = lastImageCount + idx;
+                    this.updateImageCard(globalIdx, img);
+                    this.addLog(`🖼️ Image ${globalIdx + 1} generated`, 'verbose');
+                });
+                
+                lastImageCount = images.length;
+            }
+            
+            // Check if images phase is complete
+            if (status.progress >= 70 || status.status === 'completed' || status.phase === 'assemble') {
+                this.debugLog('pollForImages', `Images complete. Progress: ${status.progress}%, Status: ${status.status}`);
+                break;
+            }
+            
+            // Check for errors
+            if (status.status === 'failed') {
+                throw new Error(status.error || 'Image generation failed');
+            }
+            
+            await new Promise(r => setTimeout(r, pollInterval));
+            polls++;
+            
+            if (polls % 5 === 0) {
+                this.addLog(`⏳ Generating images... (${polls * 2}s)`, 'verbose');
+            }
+        }
+        
+        // Update scene builder with final images
+        const finalStatus = await checkJob(this.jobId);
+        if (finalStatus.images) {
+            finalStatus.images.forEach((img, idx) => {
+                if (this.sceneBuilder.scenes[idx]) {
+                    this.sceneBuilder.updateScene(idx + 1, { imageUrl: img.url });
+                }
+            });
+        }
+    }
+
+    /**
+     * Phase 3: Video assembly
+     */
+    async executeVideoAssemblyPhase() {
+        if (!this.jobId) {
+            throw new Error('No job ID - please start from the beginning');
+        }
+        
+        // Hide create interface, show progress
+        document.getElementById('create-interface').classList.add('hidden');
+        document.getElementById('generation-progress').classList.remove('hidden');
+        
+        // Reset phase indicators
+        this.resetPhaseIndicators();
+        this.updatePhase({ phase: 'video', status: 'active', message: 'Assembling video...' });
+        
+        // Mark previous phases as complete
+        this.updatePhase({ phase: 'story', status: 'completed' });
+        this.updatePhase({ phase: 'audio', status: 'completed' });
+        this.updatePhase({ phase: 'images', status: 'completed' });
+        
+        this.addLog('🎬 Starting video assembly...', 'info');
+        
+        try {
+            const startAssemble = performance.now();
+            
+            // Trigger assemble phase
+            const assembleResponse = await runJobPhase(this.jobId, 'assemble');
+            this.debugLog('runJobPhase:assemble', `Response: ${JSON.stringify(assembleResponse, null, 2)}`);
+            
+            // Poll for completion
+            await this.pollForVideoCompletion();
+            
+            const assembleTime = ((performance.now() - startAssemble) / 1000).toFixed(2);
+            this.addLog(`✅ Video assembled in ${assembleTime}s`, 'success');
+            
+        } catch (error) {
+            this.debugLog('executeVideoAssemblyPhase', `ERROR: ${error.message}`);
+            this.updatePhase({ phase: 'video', status: 'error' });
+            throw error;
+        }
+    }
+
+    /**
+     * Poll for video completion
+     */
+    async pollForVideoCompletion() {
+        const maxPolls = 180; // 6 minutes max
+        const pollInterval = 2000;
+        let polls = 0;
+        
+        while (polls < maxPolls) {
+            const status = await checkJob(this.jobId);
+            
+            // Update progress
+            this.updateProgress({
+                percent: status.progress || 0,
+                label: status.message || 'Assembling...'
+            });
+            
+            if (status.status === 'completed') {
+                this.debugLog('pollForVideoCompletion', 'Video complete!');
+                this.updatePhase({ phase: 'video', status: 'completed' });
+                this.showResult(status);
+                return;
+            }
+            
+            if (status.status === 'failed') {
+                throw new Error(status.error || 'Video assembly failed');
+            }
+            
+            await new Promise(r => setTimeout(r, pollInterval));
+            polls++;
+            
+            if (polls % 10 === 0) {
+                this.addLog(`⏳ Assembling video... (${polls * 2}s)`, 'verbose');
+            }
+        }
+        
+        throw new Error('Video assembly timed out');
     }
 
     collectFormData() {
@@ -784,87 +1107,147 @@ class CreatePageController {
         this.renderCurrentStep();
     }
 
-    // ==================== Generation ====================
+    // ==================== Helper Methods ====================
 
-    async generateContent() {
-        try {
-            console.log('🎬 [Create] Starting content generation...');
-            this.addLog('📝 Starting story generation...', 'info');
-            
-            // Build settings payload
-            const settings = this.generator.buildSettingsPayload(this.formData);
-            console.log('🎬 [Create] Settings payload:', settings);
-            this.addLog(`Template: ${this.template.name}`, 'verbose');
-            this.addLog(`Visual source: ${settings.visualSource || 'ai'}`, 'verbose');
-            
-            // Generate content via API
-            this.addLog('🤖 Calling AI to generate story...', 'info');
-            const response = await this.generator.generateContent();
-            
-            console.log('🎬 [Create] generateContent response:', response);
-            
-            // Set scenes from normalized response
-            if (response.scenes && response.scenes.length > 0) {
-                this.sceneBuilder.setScenes(response.scenes);
-                this.addLog(`✅ Generated ${response.scenes.length} scenes`, 'success');
-            } else if (response.story && typeof response.story === 'string' && response.story.length > 0) {
-                this.sceneBuilder.parseStoryIntoScenes(response.story, settings.sceneCount || 6);
-                this.addLog(`✅ Parsed story into ${this.sceneBuilder.scenes.length} scenes`, 'success');
-            } else {
-                console.warn('[Create] No scenes or story text in response:', response);
-                this.addLog('⚠️ Warning: No valid story/scenes received', 'warning');
-            }
+    /**
+     * Build job payload from form data
+     */
+    buildJobPayload() {
+        const settings = this.formData;
+        
+        return {
+            theme: settings.category || 'general',
+            vibe_preset: settings.style || 'slow_creepy',
+            length_preset: settings.duration || 'medium',
+            visual_preset: settings.visualPreset || 'forest',
+            visual_source: settings.visualSource || 'ai',
+            image_model: settings.imageModel || 'gpt-4o',
+            art_style: settings.artStyle || 'cinematic-dark',
+            scene_count: parseInt(settings.sceneCount) || 6,
+            preview_only: false,
+            // Effects
+            effect_fade_in: settings['effect-fadeIn'] ?? true,
+            effect_fade_out: settings['effect-fadeOut'] ?? true,
+            effect_transitions: settings['effect-transitions'] ?? true,
+            effect_kenburns: settings['effect-kenburns'] ?? true,
+            effect_filter: settings['effect-filter'] ?? true,
+            effect_vignette: settings['effect-vignette'] ?? true,
+            // Caption
+            caption_style: settings.captionStyle || 'bold',
+        };
+    }
 
-            // Store in formData for rendering
-            this.formData.title = response.title || '';
-            
-            // Handle story being array or string
-            if (Array.isArray(response.story)) {
-                this.formData.content = response.story.map(s => typeof s === 'string' ? s : s.text || '').join(' ');
-            } else {
-                this.formData.content = response.story || this.sceneBuilder.scenes.map(s => s.text).join(' ');
-            }
-            
-            console.log('🎬 [Create] Content stored in formData');
-            this.addLog('Story generation complete!', 'success');
-            
-        } catch (error) {
-            console.error('🎬 [Create] Content generation error:', error);
-            this.addLog(`❌ Content generation failed: ${error.message}`, 'error');
-            this.showError('Failed to generate content: ' + error.message);
-            throw error;
+    /**
+     * Show loading state for a step
+     */
+    showStepLoading(container, message) {
+        container.innerHTML = `
+            <div class="step-loading">
+                <div class="step-loading__spinner"></div>
+                <p class="step-loading__message">${message}</p>
+                <div class="step-loading__debug" id="step-debug-panel">
+                    <!-- Debug info appears here -->
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Update loading message
+     */
+    updateStepLoadingMessage(container, message) {
+        const msgEl = container.querySelector('.step-loading__message');
+        if (msgEl) msgEl.textContent = message;
+    }
+
+    /**
+     * Render images step with progress grid
+     */
+    renderImagesStepWithProgress(container) {
+        const sceneCount = this.sceneBuilder.scenes.length || 6;
+        
+        container.innerHTML = `
+            <div class="create-card">
+                <h2 class="create-card__title">🎨 Generating Images</h2>
+                <p class="create-card__subtitle">Watch your scenes come to life!</p>
+                
+                <div class="image-generation-status">
+                    <div class="image-generation-status__progress">
+                        <span id="images-generated-count">0</span> / <span>${sceneCount}</span> images
+                    </div>
+                    <div class="image-generation-status__spinner"></div>
+                </div>
+                
+                <div id="image-preview-grid" class="image-preview-grid image-preview-grid--generating">
+                    ${this.sceneBuilder.scenes.map((scene, i) => `
+                        <div class="image-preview-card image-preview-card--loading" data-scene-id="${scene.id}" data-index="${i}">
+                            <div class="image-preview-card__loader">
+                                <div class="image-preview-card__loader-spinner"></div>
+                                <span>Scene ${i + 1}</span>
+                            </div>
+                            <p class="image-preview-card__text">${scene.text.substring(0, 60)}...</p>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Update a single image card when image is ready
+     */
+    updateImageCard(index, image) {
+        const card = document.querySelector(`.image-preview-card[data-index="${index}"]`);
+        if (!card) return;
+        
+        card.classList.remove('image-preview-card--loading');
+        card.classList.add('image-preview-card--loaded');
+        
+        const loader = card.querySelector('.image-preview-card__loader');
+        if (loader && image.url) {
+            loader.outerHTML = `<img src="${image.url}" class="image-preview-card__img" alt="Scene ${index + 1}">`;
+        }
+        
+        // Update count
+        const countEl = document.getElementById('images-generated-count');
+        if (countEl) {
+            countEl.textContent = parseInt(countEl.textContent) + 1;
         }
     }
 
-    async startGeneration() {
-        this.collectAndSaveFormData();
-        
-        console.log('🎬 [Create] Starting full generation with settings:', this.formData);
-        
-        // Hide create interface, show progress
-        document.getElementById('create-interface').classList.add('hidden');
-        document.getElementById('generation-progress').classList.remove('hidden');
-        
-        // Clear previous log
-        document.getElementById('generation-log').innerHTML = '';
-        
-        // Reset phase indicators
+    /**
+     * Reset phase indicators to waiting state
+     */
+    resetPhaseIndicators() {
         document.querySelectorAll('.generation-phase').forEach(el => {
             el.classList.remove('active', 'completed', 'error');
             const badge = el.querySelector('.generation-phase__badge');
             if (badge) badge.textContent = 'Waiting';
         });
+    }
+
+    /**
+     * Debug logging
+     */
+    debugLog(context, message) {
+        const timestamp = new Date().toISOString().substring(11, 23);
+        const logEntry = `[${timestamp}] [${context}] ${message}`;
         
-        this.addLog('🚀 Starting video generation...', 'info');
-        this.addLog(`Brand: ${brandManager.getActiveBrand()?.name || 'Unknown'}`, 'verbose');
-        this.addLog(`Niche: ${this.template.niche}`, 'verbose');
+        console.log(`🔧 ${logEntry}`);
+        this.apiLogs.push({ timestamp, context, message });
         
-        try {
-            await this.generator.startGeneration();
-        } catch (error) {
-            console.error('🎬 [Create] Generation failed:', error);
-            this.addLog(`❌ Generation failed: ${error.message}`, 'error');
-            this.showError('Generation failed: ' + error.message);
+        // Add to debug panel if visible
+        if (this.debugMode) {
+            this.addLog(`🔧 [${context}] ${message}`, 'debug');
+        }
+        
+        // Update step debug panel if present
+        const stepDebug = document.getElementById('step-debug-panel');
+        if (stepDebug && this.debugMode) {
+            const entry = document.createElement('div');
+            entry.className = 'step-debug-entry';
+            entry.textContent = logEntry;
+            stepDebug.appendChild(entry);
         }
     }
 

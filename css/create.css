@@ -823,6 +823,173 @@
 }
 
 /* ==========================================================================
+   Step Loading State
+   ========================================================================== */
+
+.step-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-8);
+    min-height: 300px;
+    text-align: center;
+}
+
+.step-loading__spinner {
+    width: 48px;
+    height: 48px;
+    border: 3px solid var(--color-border-subtle);
+    border-top-color: var(--template-primary, var(--color-primary));
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: var(--space-4);
+}
+
+.step-loading__message {
+    font-size: var(--text-lg);
+    color: var(--color-text-primary);
+    margin-bottom: var(--space-4);
+}
+
+.step-loading__debug {
+    width: 100%;
+    max-width: 600px;
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    background: var(--color-bg-dark);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    max-height: 200px;
+    overflow-y: auto;
+    display: none;
+}
+
+.step-loading__debug:not(:empty) {
+    display: block;
+}
+
+.step-debug-entry {
+    padding: var(--space-1) 0;
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.step-debug-entry:last-child {
+    border-bottom: none;
+}
+
+/* ==========================================================================
+   Image Generation Status
+   ========================================================================== */
+
+.image-generation-status {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-bg-dark);
+    border-radius: var(--radius-lg);
+    margin-bottom: var(--space-4);
+}
+
+.image-generation-status__progress {
+    font-size: var(--text-lg);
+    font-weight: var(--font-bold);
+    color: var(--color-text-primary);
+}
+
+.image-generation-status__spinner {
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--color-border-subtle);
+    border-top-color: var(--template-primary, var(--color-primary));
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+/* Image card loading state */
+.image-preview-card--loading {
+    position: relative;
+}
+
+.image-preview-card__loader {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    aspect-ratio: 9/16;
+    background: linear-gradient(135deg, var(--color-bg-base), var(--color-bg-dark));
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+}
+
+.image-preview-card__loader-spinner {
+    width: 32px;
+    height: 32px;
+    border: 2px solid var(--color-border-subtle);
+    border-top-color: var(--template-primary, var(--color-primary));
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+.image-preview-card--loaded .image-preview-card__loader {
+    display: none;
+}
+
+.image-preview-grid--generating .image-preview-card--loaded {
+    border-color: var(--color-success, #22c55e);
+}
+
+/* ==========================================================================
+   Generate Step Preview
+   ========================================================================== */
+
+.generate-preview {
+    margin: var(--space-4) 0;
+}
+
+.generate-preview h3 {
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+    margin-bottom: var(--space-2);
+}
+
+.generate-preview__images {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+}
+
+.generate-preview__img {
+    width: 60px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: var(--radius-md);
+    border: 2px solid var(--color-border-subtle);
+}
+
+.generate-preview__more {
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    padding: var(--space-2);
+}
+
+.generate-note {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+    padding: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    text-align: center;
+    justify-content: center;
+}
+
+/* ==========================================================================
    Generation Progress
    ========================================================================== */
 
