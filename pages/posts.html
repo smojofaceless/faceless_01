@@ -1748,7 +1748,7 @@
                             results.instagram = await postToInstagram(post);
                             Toast.success('Posted to Instagram!');
                         } else if (platform === 'facebook') {
-                            results.facebook = await postToFacebook(post, videoFile);
+                            results.facebook = await postToFacebook(post);
                             Toast.success('Posted to Facebook!');
                         }
                     } catch (e) {
@@ -1820,10 +1820,17 @@
             return result;
         }
 
-        async function postToFacebook(post, videoFile) {
+        async function postToFacebook(post) {
             const facebookContent = post.platform_content?.facebook || {};
             
-            const result = await metaService.uploadToFacebook(videoFile, {
+            // Facebook now uses URL-based upload (like Instagram) to avoid CORS
+            const videoUrl = post.video_url;
+            
+            if (!videoUrl || !videoUrl.startsWith('http')) {
+                throw new Error('Facebook requires a public video URL');
+            }
+            
+            const result = await metaService.uploadToFacebook(videoUrl, {
                 title: post.title,
                 description: facebookContent.description || post.description || '',
                 isReel: facebookContent.is_reel !== false
@@ -1957,7 +1964,7 @@
                             Toast.success('Posted to Instagram!');
                         } else if (platform === 'facebook') {
                             console.log('🚀 Calling postToFacebook with file size:', videoFile.size);
-                            newResults.facebook = await postToFacebook(post, videoFile);
+                            newResults.facebook = await postToFacebook(post);
                             console.log('🚀 Facebook result:', newResults.facebook);
                             Toast.success('Posted to Facebook!');
                         }

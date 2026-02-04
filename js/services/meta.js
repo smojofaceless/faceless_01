@@ -730,11 +730,11 @@ class MetaService {
     /**
      * Upload video to Facebook Page (as Reel or regular video)
      * 
-     * @param {File|Blob} videoFile - The video file to upload
+     * @param {string} videoUrl - Public URL of the video (must be accessible by Facebook)
      * @param {object} metadata - Title, description, and settings
      * @param {function} onProgress - Progress callback
      */
-    async uploadToFacebook(videoFile, metadata, onProgress = () => {}) {
+    async uploadToFacebook(videoUrl, metadata, onProgress = () => {}) {
         const connection = this.brandConnections[this.currentBrandId];
         
         console.log('📘 Facebook Upload - Starting');
@@ -742,6 +742,7 @@ class MetaService {
             hasPageToken: !!connection?.facebookPageToken,
             facebookPageId: connection?.facebookPageId 
         });
+        console.log('📘 Video URL:', videoUrl);
 
         if (!connection?.facebookPageId || !connection?.facebookPageToken) {
             throw new Error('Facebook Page not connected');
@@ -758,25 +759,25 @@ class MetaService {
         console.log('📘 Uploading as:', isReel ? 'Reel' : 'Video');
 
         if (isReel) {
-            return await this.uploadFacebookReel(videoFile, { title, description }, pageToken, onProgress);
+            return await this.uploadFacebookReelByUrl(videoUrl, { title, description }, pageToken, onProgress);
         } else {
-            return await this.uploadFacebookVideo(videoFile, { title, description }, pageToken, onProgress);
+            return await this.uploadFacebookVideoByUrl(videoUrl, { title, description }, pageToken, onProgress);
         }
     }
 
     /**
-     * Upload Facebook Reel using resumable upload
+     * Upload Facebook Reel using URL (avoids CORS issues)
      */
-    async uploadFacebookReel(videoFile, metadata, pageToken, onProgress) {
+    async uploadFacebookReelByUrl(videoUrl, metadata, pageToken, onProgress) {
         const connection = this.brandConnections[this.currentBrandId];
         const { description = '' } = metadata;
 
-        console.log('📘 Facebook Reel Upload - Starting');
-        console.log('📘 File size:', videoFile.size, 'bytes');
+        console.log('📘 Facebook Reel Upload (URL method) - Starting');
+        console.log('📘 Video URL:', videoUrl);
         onProgress(10);
 
-        // Step 1: Initialize upload session
-        console.log('📘 Step 1: Initializing upload session...');
+        // Step 1: Initialize upload session with video URL
+        console.log('📘 Step 1: Creating reel with video URL...');
         const initResponse = await fetch(
             `${this.API_BASE}/${connection.facebookPageId}/video_reels`,
             {
@@ -798,42 +799,42 @@ class MetaService {
         }
 
         const videoId = initData.video_id;
-        const uploadUrl = initData.upload_url;
         console.log('📘 Video ID:', videoId);
-        console.log('📘 Upload URL:', uploadUrl);
-
         onProgress(20);
 
-        // Step 2: Upload the video file using the upload URL
-        console.log('📘 Step 2: Uploading video file...');
-        
-        // Convert Blob/File to ArrayBuffer for upload
-        const fileBuffer = await videoFile.arrayBuffer();
-        
-        const uploadResponse = await fetch(uploadUrl, {
-            method: 'POST',
-            headers: {
-                'Authorization': `OAuth ${pageToken}`,
-                'offset': '0',
-                'file_size': videoFile.size.toString(),
-                'Content-Type': 'application/octet-stream'
-            },
-            body: fileBuffer
-        });
+        // Step 2: Upload video by URL (transfer phase)
+        console.log('📘 Step 2: Transferring video from URL...');
+        const transferResponse = await fetch(
+            `${this.API_BASE}/${connection.facebookPageId}/video_reels`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    upload_phase: 'transfer',
+                    video_id: videoId,
+                    file_url: videoUrl,
+                    access_token: pageToken
+                })
+            }
+        );
 
-        const uploadResult = await uploadResponse.text();
-        console.log('📘 Upload response status:', uploadResponse.status);
-        console.log('📘 Upload response:', uploadResult);
+        const transferData = await transferResponse.json();
+        console.log('📘 Transfer response:', transferData);
 
-        if (!uploadResponse.ok) {
-            console.error('📘 Upload failed:', uploadResponse.status, uploadResult);
-            throw new Error(`Failed to upload video file: ${uploadResponse.status}`);
+        if (transferData.error) {
+            console.error('📘 Transfer failed:', transferData.error);
+            throw new Error(transferData.error.message || 'Failed to transfer video');
         }
 
-        onProgress(70);
+        onProgress(60);
 
-        // Step 3: Finish upload and publish
+        // Step 3: Wait for processing and finish
         console.log('📘 Step 3: Finishing and publishing...');
+        
+        // Poll for completion if needed
+        await this.sleep(3000); // Give it a moment to process
+        onProgress(80);
+
         const finishResponse = await fetch(
             `${this.API_BASE}/${connection.facebookPageId}/video_reels`,
             {
@@ -873,32 +874,34 @@ class MetaService {
     }
 
     /**
-     * Upload regular Facebook Video (non-Reel)
+     * Upload regular Facebook Video by URL (avoids CORS)
      */
-    async uploadFacebookVideo(videoFile, metadata, pageToken, onProgress) {
+    async uploadFacebookVideoByUrl(videoUrl, metadata, pageToken, onProgress) {
         const connection = this.brandConnections[this.currentBrandId];
         const { title = '', description = '' } = metadata;
 
-        // Use resumable upload for larger files
-        const formData = new FormData();
-        formData.append('source', videoFile);
-        formData.append('title', title);
-        formData.append('description', description);
-        formData.append('access_token', pageToken);
-
+        console.log('📘 Facebook Video Upload (URL method) - Starting');
         onProgress(10);
 
         const response = await fetch(
             `${this.API_BASE}/${connection.facebookPageId}/videos`,
             {
                 method: 'POST',
-                body: formData
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    file_url: videoUrl,
+                    title: title,
+                    description: description,
+                    access_token: pageToken
+                })
             }
         );
 
         const data = await response.json();
+        console.log('📘 Video upload response:', data);
 
         if (data.error) {
+            console.error('📘 Video upload failed:', data.error);
             throw new Error(data.error.message || 'Failed to upload video');
         }
 
