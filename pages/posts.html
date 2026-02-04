@@ -1910,59 +1910,88 @@
                 return;
             }
 
+            console.log('🚀 Post More - Starting');
+            console.log('🚀 Selected platforms:', selectedPlatforms);
+
             try {
                 const post = await postQueueService.getPost(postMorePostId);
+                console.log('🚀 Post data:', post);
+                console.log('🚀 Video URL:', post.video_url);
+                
                 const brand = brandManager.getActiveBrand();
+                console.log('🚀 Brand:', brand.id, brand.name);
                 
                 await youtubeService.setBrand(brand.id);
                 await metaService.setBrand(brand.id);
 
+                // Check connections
+                console.log('🚀 YouTube connected:', youtubeService.isConnected());
+                console.log('🚀 Instagram connected:', metaService.isInstagramConnected());
+                console.log('🚀 Facebook connected:', metaService.isFacebookConnected());
+
                 Toast.info(`Posting to ${selectedPlatforms.join(', ')}...`);
                 closeModal('post-more-modal');
 
-                // Fetch video file
+                // Fetch video file for platforms that need it
+                console.log('🚀 Fetching video file...');
                 const videoResponse = await fetch(post.video_url);
+                console.log('🚀 Video fetch status:', videoResponse.status);
                 const videoBlob = await videoResponse.blob();
+                console.log('🚀 Video blob size:', videoBlob.size);
                 const videoFile = new File([videoBlob], 'video.mp4', { type: 'video/mp4' });
 
                 const newResults = { ...(post.platform_results || {}) };
                 const errors = [];
 
                 for (const platform of selectedPlatforms) {
+                    console.log(`🚀 Posting to ${platform}...`);
                     try {
                         if (platform === 'youtube') {
                             newResults.youtube = await postToYouTube(post, videoFile);
+                            console.log('🚀 YouTube result:', newResults.youtube);
                             Toast.success('Posted to YouTube!');
                         } else if (platform === 'instagram') {
+                            console.log('🚀 Calling postToInstagram with URL:', post.video_url);
                             newResults.instagram = await postToInstagram(post);
+                            console.log('🚀 Instagram result:', newResults.instagram);
                             Toast.success('Posted to Instagram!');
                         } else if (platform === 'facebook') {
+                            console.log('🚀 Calling postToFacebook with file size:', videoFile.size);
                             newResults.facebook = await postToFacebook(post, videoFile);
+                            console.log('🚀 Facebook result:', newResults.facebook);
                             Toast.success('Posted to Facebook!');
                         }
                     } catch (e) {
-                        console.error(`Failed to post to ${platform}:`, e);
+                        console.error(`🚀 Failed to post to ${platform}:`, e);
                         errors.push(`${platform}: ${e.message}`);
                         Toast.error(`${platform} failed: ${e.message}`);
                     }
                 }
 
                 // Update post with new results
+                console.log('🚀 Final results:', newResults);
+                console.log('🚀 Errors:', errors);
+                
                 const successCount = selectedPlatforms.length - errors.length;
                 if (successCount > 0) {
+                    console.log('🚀 Saving to database...');
                     const { error } = await supabaseClient
                         .from('posts')
                         .update({ platform_results: newResults })
                         .eq('id', postMorePostId);
 
-                    if (error) throw error;
+                    if (error) {
+                        console.error('🚀 Database save failed:', error);
+                        throw error;
+                    }
+                    console.log('🚀 Database save successful');
                     Toast.success(`Posted to ${successCount} additional platform(s)!`);
                 }
 
                 await loadPosts();
 
             } catch (e) {
-                console.error('Post more failed:', e);
+                console.error('🚀 Post more failed:', e);
                 Toast.error(`Failed: ${e.message}`);
             }
         }

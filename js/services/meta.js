@@ -569,8 +569,19 @@ class MetaService {
     async uploadToInstagramReels(videoUrl, metadata, onProgress = () => {}) {
         const connection = this.brandConnections[this.currentBrandId];
         
+        console.log('📸 Instagram Upload - Starting');
+        console.log('📸 Connection:', { 
+            hasToken: !!connection?.accessToken,
+            instagramAccountId: connection?.instagramAccountId 
+        });
+        console.log('📸 Video URL:', videoUrl);
+
         if (!connection?.instagramAccountId) {
             throw new Error('Instagram not connected');
+        }
+
+        if (!connection?.accessToken) {
+            throw new Error('Instagram access token missing');
         }
 
         const { caption = '', hashtags = [], shareToFeed = true } = metadata;
@@ -580,34 +591,44 @@ class MetaService {
             ? `${caption}\n\n${hashtags.map(h => h.startsWith('#') ? h : `#${h}`).join(' ')}`
             : caption;
 
+        console.log('📸 Caption:', fullCaption.substring(0, 100) + '...');
+
         onProgress(10);
 
         // Step 1: Create media container
+        console.log('📸 Step 1: Creating media container...');
+        const containerPayload = {
+            media_type: 'REELS',
+            video_url: videoUrl,
+            caption: fullCaption,
+            share_to_feed: shareToFeed,
+            access_token: connection.accessToken
+        };
+        console.log('📸 Container payload:', { ...containerPayload, access_token: '[REDACTED]' });
+
         const containerResponse = await fetch(
             `${this.API_BASE}/${connection.instagramAccountId}/media`,
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    media_type: 'REELS',
-                    video_url: videoUrl,
-                    caption: fullCaption,
-                    share_to_feed: shareToFeed,
-                    access_token: connection.accessToken
-                })
+                body: JSON.stringify(containerPayload)
             }
         );
 
         const containerData = await containerResponse.json();
+        console.log('📸 Container response:', containerData);
 
         if (containerData.error) {
+            console.error('📸 Container creation failed:', containerData.error);
             throw new Error(containerData.error.message || 'Failed to create media container');
         }
 
         const containerId = containerData.id;
+        console.log('📸 Container ID:', containerId);
         onProgress(30);
 
         // Step 2: Wait for container to be ready (video processing)
+        console.log('📸 Step 2: Waiting for video processing...');
         let status = 'IN_PROGRESS';
         let attempts = 0;
         const maxAttempts = 60; // 5 minutes max
@@ -616,24 +637,34 @@ class MetaService {
             await this.sleep(5000); // Wait 5 seconds
             
             const statusResponse = await fetch(
-                `${this.API_BASE}/${containerId}?fields=status_code&access_token=${connection.accessToken}`
+                `${this.API_BASE}/${containerId}?fields=status_code,status&access_token=${connection.accessToken}`
             );
             const statusData = await statusResponse.json();
             
+            console.log(`📸 Processing status (attempt ${attempts + 1}):`, statusData);
+            
             status = statusData.status_code;
             attempts++;
+            
+            // Check for error status
+            if (statusData.status === 'ERROR' || status === 'ERROR') {
+                throw new Error('Video processing failed on Instagram servers');
+            }
             
             // Update progress (30-80%)
             onProgress(30 + Math.min(attempts * 1.5, 50));
         }
 
         if (status !== 'FINISHED') {
+            console.error('📸 Processing did not finish. Final status:', status);
             throw new Error(`Video processing failed. Status: ${status}`);
         }
 
+        console.log('📸 Video processing complete!');
         onProgress(85);
 
         // Step 3: Publish the container
+        console.log('📸 Step 3: Publishing...');
         const publishResponse = await fetch(
             `${this.API_BASE}/${connection.instagramAccountId}/media_publish`,
             {
@@ -647,15 +678,24 @@ class MetaService {
         );
 
         const publishData = await publishResponse.json();
+        console.log('📸 Publish response:', publishData);
 
         if (publishData.error) {
+            console.error('📸 Publish failed:', publishData.error);
             throw new Error(publishData.error.message || 'Failed to publish Reel');
         }
 
         onProgress(100);
 
         // Get permalink
+        console.log('📸 Getting permalink...');
         const mediaInfo = await this.getMediaInfo(publishData.id);
+        console.log('📸 Media info:', mediaInfo);
+
+        console.log('📸 Instagram upload complete!', {
+            id: publishData.id,
+            permalink: mediaInfo.permalink
+        });
 
         return {
             id: publishData.id,
@@ -697,6 +737,12 @@ class MetaService {
     async uploadToFacebook(videoFile, metadata, onProgress = () => {}) {
         const connection = this.brandConnections[this.currentBrandId];
         
+        console.log('📘 Facebook Upload - Starting');
+        console.log('📘 Connection:', { 
+            hasPageToken: !!connection?.facebookPageToken,
+            facebookPageId: connection?.facebookPageId 
+        });
+
         if (!connection?.facebookPageId || !connection?.facebookPageToken) {
             throw new Error('Facebook Page not connected');
         }
@@ -709,6 +755,7 @@ class MetaService {
 
         // Use Page Access Token for posting
         const pageToken = connection.facebookPageToken;
+        console.log('📘 Uploading as:', isReel ? 'Reel' : 'Video');
 
         if (isReel) {
             return await this.uploadFacebookReel(videoFile, { title, description }, pageToken, onProgress);
@@ -718,15 +765,18 @@ class MetaService {
     }
 
     /**
-     * Upload Facebook Reel
+     * Upload Facebook Reel using resumable upload
      */
     async uploadFacebookReel(videoFile, metadata, pageToken, onProgress) {
         const connection = this.brandConnections[this.currentBrandId];
         const { description = '' } = metadata;
 
+        console.log('📘 Facebook Reel Upload - Starting');
+        console.log('📘 File size:', videoFile.size, 'bytes');
         onProgress(10);
 
         // Step 1: Initialize upload session
+        console.log('📘 Step 1: Initializing upload session...');
         const initResponse = await fetch(
             `${this.API_BASE}/${connection.facebookPageId}/video_reels`,
             {
@@ -740,32 +790,50 @@ class MetaService {
         );
 
         const initData = await initResponse.json();
+        console.log('📘 Init response:', initData);
+
         if (initData.error) {
+            console.error('📘 Init failed:', initData.error);
             throw new Error(initData.error.message || 'Failed to initialize upload');
         }
 
         const videoId = initData.video_id;
         const uploadUrl = initData.upload_url;
+        console.log('📘 Video ID:', videoId);
+        console.log('📘 Upload URL:', uploadUrl);
 
         onProgress(20);
 
-        // Step 2: Upload the video file
+        // Step 2: Upload the video file using the upload URL
+        console.log('📘 Step 2: Uploading video file...');
+        
+        // Convert Blob/File to ArrayBuffer for upload
+        const fileBuffer = await videoFile.arrayBuffer();
+        
         const uploadResponse = await fetch(uploadUrl, {
             method: 'POST',
             headers: {
                 'Authorization': `OAuth ${pageToken}`,
-                'file_url': '' // We'll use binary upload instead
+                'offset': '0',
+                'file_size': videoFile.size.toString(),
+                'Content-Type': 'application/octet-stream'
             },
-            body: videoFile
+            body: fileBuffer
         });
 
+        const uploadResult = await uploadResponse.text();
+        console.log('📘 Upload response status:', uploadResponse.status);
+        console.log('📘 Upload response:', uploadResult);
+
         if (!uploadResponse.ok) {
-            throw new Error('Failed to upload video file');
+            console.error('📘 Upload failed:', uploadResponse.status, uploadResult);
+            throw new Error(`Failed to upload video file: ${uploadResponse.status}`);
         }
 
         onProgress(70);
 
         // Step 3: Finish upload and publish
+        console.log('📘 Step 3: Finishing and publishing...');
         const finishResponse = await fetch(
             `${this.API_BASE}/${connection.facebookPageId}/video_reels`,
             {
@@ -782,11 +850,19 @@ class MetaService {
         );
 
         const finishData = await finishResponse.json();
+        console.log('📘 Finish response:', finishData);
+
         if (finishData.error) {
+            console.error('📘 Finish failed:', finishData.error);
             throw new Error(finishData.error.message || 'Failed to publish Reel');
         }
 
         onProgress(100);
+
+        console.log('📘 Facebook Reel upload complete!', {
+            videoId: videoId,
+            success: finishData.success
+        });
 
         return {
             id: videoId,
