@@ -230,14 +230,16 @@
         const YOUTUBE_CONFIG = {
             clientId: localStorage.getItem('youtube_client_id') || '',
             clientSecret: localStorage.getItem('youtube_client_secret') || '',
-            redirectUri: window.location.origin + '/pages/connections.html'
+            // Use current page URL for redirect (handles GitHub Pages subdirectories)
+            redirectUri: window.location.href.split('?')[0].split('#')[0]
         };
 
         // Meta (Instagram/Facebook) OAuth config
         const META_CONFIG = {
             appId: localStorage.getItem('meta_app_id') || '',
             appSecret: localStorage.getItem('meta_app_secret') || '',
-            redirectUri: window.location.origin + '/pages/connections.html'
+            // Use current page URL for redirect (handles GitHub Pages subdirectories)
+            redirectUri: window.location.href.split('?')[0].split('#')[0]
         };
 
         document.addEventListener('DOMContentLoaded', () => {
