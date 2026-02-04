@@ -741,12 +741,14 @@ export async function runImagesPhase(
           const status = await checkParallelImageStatus(existingImageJobId);
           
           if (status.status === 'processing') {
-            // Still processing - release lock and return
+            // Still processing - release lock but keep parallel_image_in_progress to prevent re-triggers
             console.log(`[IMAGES] Parallel job in progress: ${status.completed}/${status.total} complete`);
             await updateJobMeta(supabase, job_id, (meta) => ({
               ...meta,
               images_phase_running: false,
+              parallel_image_in_progress: true, // Keep this flag to prevent duplicate triggers
               images_phase_lease_until: new Date(0).toISOString(),
+              parallel_last_status: status.completed, // Track progress for UI
               generation_logs: [
                 ...(meta.generation_logs || []),
                 `[${new Date().toISOString()}] Parallel generation: ${status.completed}/${status.total} images complete`
@@ -833,6 +835,7 @@ export async function runImagesPhase(
               images_phase_running: false,
               images_complete: allParallelSucceeded, // Only complete if no failures!
               parallel_image_job_id: null,
+              parallel_image_in_progress: false, // Clear the flag
               parallel_images_completed: status.completed,
               parallel_images_failed: status.failed,
               generation_logs: [
@@ -932,10 +935,11 @@ export async function runImagesPhase(
             storyAnchor
           );
           
-          // Save job ID and release lock
+          // Save job ID - keep lock active to prevent duplicate triggers
           await updateJobMeta(supabase, job_id, (meta) => ({
             ...meta,
             parallel_image_job_id: imageJobId,
+            parallel_image_in_progress: true, // FLAG: Prevents check-job from re-triggering
             images_phase_running: false,
             images_phase_lease_until: new Date(0).toISOString(),
             generation_logs: [

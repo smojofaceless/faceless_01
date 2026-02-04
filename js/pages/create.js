@@ -948,19 +948,33 @@ class CreatePageController {
             try {
                 const status = await checkJob(this.jobId);
                 
-                // check-job returns scenes array with videoUrl/imageUrl for each generated image
-                // Also check images_generated count from meta
+                // check-job returns images_generated count (includes parallel progress)
+                // Also check parallel_in_progress flag for accurate counting
                 const scenes = status.scenes || [];
+                const parallelInProgress = status.parallel_in_progress || false;
+                const parallelProgress = status.parallel_progress || 0;
+                
+                // Use images_generated from response (it already accounts for parallel progress)
                 const imagesGenerated = status.images_generated || scenes.filter(s => s.videoUrl || s.url).length;
                 
-                this.addVisualDebug(`Poll ${polls + 1}: status=${status.status}, progress=${status.progress}%, images=${imagesGenerated}/${totalExpected}`);
+                // Use total_images from response if available
+                const actualTotal = status.total_images || totalExpected;
+                
+                // Update total display if it changed
+                const totalEl = document.getElementById('images-total-count');
+                if (totalEl) totalEl.textContent = actualTotal;
+                
+                const statusMsg = parallelInProgress 
+                    ? `parallel: ${parallelProgress}/${actualTotal}` 
+                    : `${imagesGenerated}/${actualTotal}`;
+                this.addVisualDebug(`Poll ${polls + 1}: status=${status.status}, progress=${status.progress}%, images=${statusMsg}`);
                 
                 // Update the counter
                 const countEl = document.getElementById('images-generated-count');
                 if (countEl) countEl.textContent = imagesGenerated;
                 
                 // Update image cards for any new images
-                if (imagesGenerated > lastImageCount) {
+                if (imagesGenerated > lastImageCount || scenes.length > 0) {
                     this.debugLog('pollForImages', `New images detected: ${imagesGenerated} (was ${lastImageCount})`);
                     
                     // Update each scene that has an image
@@ -975,13 +989,15 @@ class CreatePageController {
                         }
                     });
                     
-                    lastImageCount = imagesGenerated;
-                    this.addLog(`🖼️ ${imagesGenerated}/${totalExpected} images generated`, 'info');
+                    if (imagesGenerated > lastImageCount) {
+                        lastImageCount = imagesGenerated;
+                        this.addLog(`🖼️ ${imagesGenerated}/${actualTotal} images generated`, 'info');
+                    }
                 }
                 
-                // Check if images phase is complete
-                if (imagesGenerated >= totalExpected || status.progress >= 70 || status.status === 'completed') {
-                    this.debugLog('pollForImages', `Images complete! ${imagesGenerated}/${totalExpected}`);
+                // Check if images phase is complete (use actualTotal from response)
+                if (imagesGenerated >= actualTotal || status.progress >= 70 || status.status === 'completed') {
+                    this.debugLog('pollForImages', `Images complete! ${imagesGenerated}/${actualTotal}`);
                     this.addVisualDebug(`✅ All ${imagesGenerated} images generated!`);
                     break;
                 }

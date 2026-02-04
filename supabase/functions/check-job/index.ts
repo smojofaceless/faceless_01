@@ -512,9 +512,40 @@ serve(async (req) => {
     const totalScenes = jobMeta.scene_count || sceneCount || 4;
     const imagesReady = partialAssets?.length || 0;
     
-    console.log(`[CHECK] Job ${job_id}: progress=${progress}, images=${imagesReady}/${totalScenes}, meta.scene_count=${jobMeta.scene_count}`);
+    // Check if parallel image generation is in progress (tracked via parallel_last_status)
+    const parallelInProgress = jobMeta.parallel_image_in_progress === true;
+    const parallelStatus = jobMeta.parallel_last_status || 0;
+    
+    console.log(`[CHECK] Job ${job_id}: progress=${progress}, images=${imagesReady}/${totalScenes}, parallelInProgress=${parallelInProgress}, parallelStatus=${parallelStatus}`);
     
     if (status === "generating") {
+      // CRITICAL: If parallel generation is in progress, DON'T trigger another images phase
+      if (parallelInProgress) {
+        console.log(`[CHECK] Parallel generation in progress (${parallelStatus}/${totalScenes}), skipping trigger`);
+        // Return status with parallel progress info
+        return new Response(
+          JSON.stringify({
+            success: true,
+            job_id: job_id,
+            status: job.status,
+            progress: job.progress || 0,
+            title: job.title,
+            story_text: job.story_text,
+            duration_sec: job.duration_sec,
+            error: job.error,
+            scenes: partialScenes,
+            images_generated: parallelStatus, // Show parallel progress instead of DB count
+            total_images: totalScenes,
+            message: `Generating images: ${parallelStatus}/${totalScenes}`,
+            parallel_in_progress: true,
+          }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 200,
+          }
+        );
+      }
+      
       // Phase 1 complete: Audio ready (progress = 50), trigger images
       // Only trigger if not already running and not already complete
       // CRITICAL: Also check lease to prevent duplicate triggers
@@ -655,11 +686,16 @@ serve(async (req) => {
         error: job.error,
         // Include partial scenes/images generated so far
         scenes: partialScenes,
-        images_generated: partialScenes.length,
+        // Show parallel progress if available, otherwise DB count
+        images_generated: parallelInProgress ? (parallelStatus || 0) : partialScenes.length,
+        total_images: totalScenes,
         // Phase continuation info
         next_phase: nextPhase,
         phase_triggered: phaseTriggered,
         scene_count: sceneCount || 0,
+        // Parallel generation status
+        parallel_in_progress: parallelInProgress,
+        parallel_progress: parallelStatus || 0,
         // Debug info - image model being used
         image_model: jobMeta.image_model || null,
         visual_source: jobMeta.visual_source || null,
@@ -672,6 +708,8 @@ serve(async (req) => {
           images_phase_running: jobMeta.images_phase_running,
           resolved_image_model: jobMeta.resolved_image_model,
           skip_video_assembly: jobMeta.skip_video_assembly,
+          parallel_image_in_progress: jobMeta.parallel_image_in_progress,
+          parallel_last_status: jobMeta.parallel_last_status,
         },
         // Backend logs (if any)
         logs: jobMeta.generation_logs || [],
