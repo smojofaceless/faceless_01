@@ -406,11 +406,15 @@ export async function renderWithFFmpeg(
     console.log(`[FFMPEG] ⚠️ Music enabled but no track selected`);
   }
   
-  // Retry logic for cold start handling (Render.com free tier takes 30-60s to wake)
+  // Retry logic with exponential backoff for 503 "Server busy" errors
+  // Render.com free tier can be slow and busy
   let lastError: Error | null = null;
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  const maxAttempts = 5;
+  const baseDelay = 30000; // 30 seconds base delay
+  
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      console.log(`[FFMPEG] Render attempt ${attempt}/3...`);
+      console.log(`[FFMPEG] Render attempt ${attempt}/${maxAttempts}...`);
       
       const response = await fetch(`${FFMPEG_RENDERER_URL}/render`, {
         method: "POST",
@@ -457,6 +461,16 @@ export async function renderWithFFmpeg(
       
       if (!response.ok) {
         const errorText = await response.text();
+        // Check for 503 "Server busy" error
+        if (response.status === 503) {
+          // Parse retry_after from response if available
+          let retryAfter = 60;
+          try {
+            const errJson = JSON.parse(errorText);
+            retryAfter = errJson.retry_after || 60;
+          } catch {}
+          throw new Error(`SERVER_BUSY:${retryAfter}`);
+        }
         throw new Error(`FFmpeg renderer error: ${response.status} - ${errorText}`);
       }
       
@@ -470,15 +484,29 @@ export async function renderWithFFmpeg(
     } catch (err) {
       lastError = err as Error;
       console.log(`[FFMPEG] Attempt ${attempt} failed: ${lastError.message}`);
-      if (attempt < 3) {
-        // Wait before retry (cold start can take 30-60s)
-        console.log(`[FFMPEG] Waiting 20s before retry...`);
-        await new Promise(r => setTimeout(r, 20000));
+      
+      if (attempt < maxAttempts) {
+        // Check if it's a "Server busy" error
+        let waitTime = baseDelay * attempt; // Exponential backoff
+        
+        if (lastError.message.startsWith('SERVER_BUSY:')) {
+          const retryAfter = parseInt(lastError.message.split(':')[1]) || 60;
+          waitTime = retryAfter * 1000; // Use server's suggested wait time
+          console.log(`[FFMPEG] Server busy, waiting ${retryAfter}s as requested...`);
+        } else {
+          console.log(`[FFMPEG] Waiting ${waitTime/1000}s before retry (attempt ${attempt + 1})...`);
+        }
+        
+        await new Promise(r => setTimeout(r, waitTime));
       }
     }
   }
   
-  throw new Error(`FFmpeg render failed after 3 attempts: ${lastError?.message}`);
+  // Provide clearer error message
+  const errMsg = lastError?.message?.startsWith('SERVER_BUSY:') 
+    ? 'FFmpeg server is busy. Please try again in a few minutes.'
+    : lastError?.message || 'Unknown error';
+  throw new Error(`FFmpeg render failed after ${maxAttempts} attempts: ${errMsg}`);
 }
 
 /**

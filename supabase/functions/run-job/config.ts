@@ -17,6 +17,7 @@ export const LENGTH_CONFIG: Record<string, { minWords: number; maxWords: number;
   "45": { minWords: 95, maxWords: 115, targetSeconds: 45 },
   "60": { minWords: 130, maxWords: 155, targetSeconds: 60 },
   "90": { minWords: 200, maxWords: 230, targetSeconds: 90 },
+  "120": { minWords: 270, maxWords: 310, targetSeconds: 120 },
 };
 
 // Vibe prompts

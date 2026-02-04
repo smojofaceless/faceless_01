@@ -29,8 +29,8 @@ const HorrorTemplate = {
 
     // Default settings
     defaults: {
-        duration: 'medium',
-        sceneCount: 6,
+        duration: 'long',
+        sceneCount: 12,
         captionStyle: 'bold',
         visualSource: 'ai',
         imageModel: 'gpt-4o'
@@ -139,7 +139,9 @@ const HorrorTemplate = {
         durations: [
             { value: 'short', label: 'Short (~30 seconds)', words: [80, 120] },
             { value: 'medium', label: 'Medium (~45 seconds)', words: [120, 180] },
-            { value: 'long', label: 'Long (~60 seconds)', words: [180, 250] }
+            { value: 'long', label: 'Long (~60 seconds)', words: [180, 250] },
+            { value: 'extended', label: 'Extended (~90 seconds)', words: [250, 320] },
+            { value: 'full', label: 'Full (~120 seconds)', words: [320, 400] }
         ],
 
         // Caption styles

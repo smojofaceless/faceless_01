@@ -386,7 +386,7 @@ class CreatePageController {
                 <div class="form-group">
                     <label class="form-label">📷 Number of Scenes</label>
                     <div class="range-input">
-                        <input type="range" id="sceneCount" min="3" max="12" value="${this.template.defaults.sceneCount}">
+                        <input type="range" id="sceneCount" min="3" max="24" value="${this.template.defaults.sceneCount}">
                         <span id="sceneCount-display" class="range-input__value">${this.template.defaults.sceneCount}</span>
                     </div>
                 </div>
@@ -1170,10 +1170,20 @@ class CreatePageController {
     buildJobPayload() {
         const settings = this.formData;
         
+        // Map UI duration values to backend length_preset values
+        const durationMap = {
+            'short': '30',
+            'medium': '45',
+            'long': '60',
+            'extended': '90',
+            'full': '120'
+        };
+        const lengthPreset = durationMap[settings.duration] || '45';
+        
         return {
             theme: settings.category || 'general',
             vibe_preset: settings.style || 'slow_creepy',
-            length_preset: settings.duration || 'medium',
+            length_preset: lengthPreset,
             visual_preset: settings.visualPreset || 'forest',
             visual_source: settings.visualSource || 'ai',
             image_model: settings.imageModel || 'gpt-4o',
