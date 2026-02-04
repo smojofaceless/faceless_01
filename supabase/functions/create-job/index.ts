@@ -94,19 +94,19 @@ serve(async (req) => {
       art_style: body.art_style || "cinematic-dark",
       scene_count: body.scene_count || 4,
       skip_video_assembly: body.skip_video_assembly === true,
-      // Transitions
-      effect_fade_in: body.effect_fade_in !== false,
-      effect_fade_out: body.effect_fade_out !== false,
-      effect_transitions: body.effect_transitions !== false,
+      // Transitions - store explicit boolean values
+      effect_fade_in: body.effect_fade_in === true,
+      effect_fade_out: body.effect_fade_out === true,
+      effect_transitions: body.effect_transitions === true,
       // Disturbance & Glitch
       effect_glitch_flicker: body.effect_glitch_flicker === true,
       effect_vhs_tracking: body.effect_vhs_tracking === true,
       effect_scanlines: body.effect_scanlines === true,
       effect_filmgrain: body.effect_filmgrain === true,
-      // Atmospheric
-      effect_kenburns: body.effect_kenburns !== false,
-      effect_filter: body.effect_filter !== false,
-      effect_vignette: body.effect_vignette !== false,
+      // Atmospheric - store explicit boolean values  
+      effect_kenburns: body.effect_kenburns === true,
+      effect_filter: body.effect_filter === true,
+      effect_vignette: body.effect_vignette === true,
       effect_light_flicker: body.effect_light_flicker === true,
       effect_cold_creep: body.effect_cold_creep === true,
       // Psychological

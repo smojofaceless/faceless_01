@@ -409,6 +409,10 @@ export async function renderWithFFmpeg(
   // Single attempt with short timeout - edge functions have limited time
   // If server is busy (503), we return error and let check-job retry later
   console.log(`[FFMPEG] Sending render request...`);
+  console.log(`[FFMPEG] 🎬 Effect settings being sent:`);
+  console.log(`[FFMPEG]   fadeIn=${options.fadeIn}, fadeOut=${options.fadeOut}, transitions=${options.transitions}`);
+  console.log(`[FFMPEG]   kenburns=${options.kenburns}, filter(horrorGrade)=${options.filter}, vignette=${options.vignette}`);
+  console.log(`[FFMPEG]   glitchFlicker=${options.glitchFlicker}, vhsTracking=${options.vhsTracking}, filmGrain=${options.filmGrain}`);
   
   try {
     const response = await fetch(`${FFMPEG_RENDERER_URL}/render`, {
@@ -420,44 +424,44 @@ export async function renderWithFFmpeg(
         durations: durations,
         captions: captions || [], // Word-by-word captions with timestamps
         effects: {
-          // Transitions
-          fadeIn: options.fadeIn ?? true,
-          fadeOut: options.fadeOut ?? true,
-            fadeTransitions: options.transitions,
-            // Disturbance & Glitch
-            glitchFlicker: options.glitchFlicker ?? false,
-            vhsTracking: options.vhsTracking ?? false,
-            scanlines: options.scanlines ?? false,
-            filmGrain: options.filmGrain ?? false,
-            // Atmospheric
-            kenBurns: options.kenburns,
-            horrorGrade: options.filter,
-            vignette: options.vignette,
-            lightFlicker: options.lightFlicker ?? false,
-            coldColorCreep: options.coldColorCreep ?? false,
-            // Psychological
-            heartbeatZoom: options.heartbeatZoom ?? false,
-            negativeFlash: options.negativeFlash ?? false,
-            edgeDarkeningCreep: options.edgeDarkeningCreep ?? false,
-            // Captions
-            captionStyle: options.captionStyle || "bold",
-            highlightScary: options.highlightScary !== false,
-          },
-          // Per-scene mood intensity for intelligent Ken Burns effect selection
-          // 1-4 = subtle effects, 5-7 = medium, 8-10 = dramatic
-          mood_levels: moodLevels || [],
-          // Background music settings (use pre-built URL)
-          music_url: musicUrl,
-          music_volume: options.musicVolume ?? 15,
-          job_id: jobId, // Pass Supabase job ID for direct upload
-          low_memory: Deno.env.get("FFMPEG_LOW_MEMORY") === "true",
-        }),
-      });
+          // Transitions - respect explicit false values
+          fadeIn: options.fadeIn === true,
+          fadeOut: options.fadeOut === true,
+          fadeTransitions: options.transitions === true,
+          // Disturbance & Glitch
+          glitchFlicker: options.glitchFlicker === true,
+          vhsTracking: options.vhsTracking === true,
+          scanlines: options.scanlines === true,
+          filmGrain: options.filmGrain === true,
+          // Atmospheric - respect explicit false values
+          kenBurns: options.kenburns === true,
+          horrorGrade: options.filter === true,
+          vignette: options.vignette === true,
+          lightFlicker: options.lightFlicker === true,
+          coldColorCreep: options.coldColorCreep === true,
+          // Psychological
+          heartbeatZoom: options.heartbeatZoom === true,
+          negativeFlash: options.negativeFlash === true,
+          edgeDarkeningCreep: options.edgeDarkeningCreep === true,
+          // Captions
+          captionStyle: options.captionStyle || "bold",
+          highlightScary: options.highlightScary !== false,
+        },
+        // Per-scene mood intensity for intelligent Ken Burns effect selection
+        // 1-4 = subtle effects, 5-7 = medium, 8-10 = dramatic
+        mood_levels: moodLevels || [],
+        // Background music settings (use pre-built URL)
+        music_url: musicUrl,
+        music_volume: options.musicVolume ?? 15,
+        job_id: jobId, // Pass Supabase job ID for direct upload
+        low_memory: Deno.env.get("FFMPEG_LOW_MEMORY") === "true",
+      }),
+    });
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        // Check for 503 "Server busy" error - don't retry, just report
-        if (response.status === 503) {
+    if (!response.ok) {
+      const errorText = await response.text();
+      // Check for 503 "Server busy" error - don't retry, just report
+      if (response.status === 503) {
           let retryAfter = 60;
           try {
             const errJson = JSON.parse(errorText);
