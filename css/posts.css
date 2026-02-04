@@ -1282,3 +1282,140 @@ textarea.form-control {
     color: var(--primary);
     font-size: var(--text-xs);
 }
+
+/* ==================== Upload Progress Indicator ==================== */
+
+.upload-progress {
+    position: fixed;
+    bottom: var(--space-6);
+    right: var(--space-6);
+    width: 320px;
+    background: var(--surface-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    z-index: 1000;
+    overflow: hidden;
+    animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.upload-progress__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) var(--space-4);
+    background: var(--surface-secondary);
+    border-bottom: 1px solid var(--border-secondary);
+}
+
+.upload-progress__title {
+    font-weight: 600;
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+}
+
+.upload-progress__close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.25rem;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+
+.upload-progress__close:hover {
+    color: var(--text-primary);
+}
+
+.upload-progress__platforms {
+    padding: var(--space-3) var(--space-4);
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.upload-progress__item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+}
+
+.upload-progress__item + .upload-progress__item {
+    border-top: 1px solid var(--border-subtle);
+}
+
+.upload-progress__icon {
+    font-size: 1.25rem;
+    flex-shrink: 0;
+}
+
+.upload-progress__info {
+    flex: 1;
+    min-width: 0;
+}
+
+.upload-progress__name {
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+
+.upload-progress__status {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+.upload-progress__bar {
+    height: 4px;
+    background: var(--surface-tertiary);
+    border-radius: 2px;
+    margin-top: 4px;
+    overflow: hidden;
+}
+
+.upload-progress__fill {
+    height: 100%;
+    background: var(--primary);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+.upload-progress__item--success .upload-progress__fill {
+    background: var(--success);
+}
+
+.upload-progress__item--error .upload-progress__fill {
+    background: var(--error);
+}
+
+.upload-progress__item--success .upload-progress__status {
+    color: var(--success);
+}
+
+.upload-progress__item--error .upload-progress__status {
+    color: var(--error);
+}
+
+/* Platform icon links */
+.platform-icon--linked {
+    cursor: pointer;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.platform-icon--linked:hover {
+    transform: scale(1.15);
+    opacity: 0.8;
+}

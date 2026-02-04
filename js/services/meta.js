@@ -593,7 +593,7 @@ class MetaService {
 
         console.log('📸 Caption:', fullCaption.substring(0, 100) + '...');
 
-        onProgress(10);
+        onProgress(10, 'Creating media container...');
 
         // Step 1: Create media container
         console.log('📸 Step 1: Creating media container...');
@@ -625,7 +625,7 @@ class MetaService {
 
         const containerId = containerData.id;
         console.log('📸 Container ID:', containerId);
-        onProgress(30);
+        onProgress(30, 'Processing video...');
 
         // Step 2: Wait for container to be ready (video processing)
         console.log('📸 Step 2: Waiting for video processing...');
@@ -652,7 +652,8 @@ class MetaService {
             }
             
             // Update progress (30-80%)
-            onProgress(30 + Math.min(attempts * 1.5, 50));
+            const progress = 30 + Math.min(attempts * 1.5, 50);
+            onProgress(progress, `Processing video... ${Math.round((attempts / maxAttempts) * 100)}%`);
         }
 
         if (status !== 'FINISHED') {
@@ -661,7 +662,7 @@ class MetaService {
         }
 
         console.log('📸 Video processing complete!');
-        onProgress(85);
+        onProgress(85, 'Publishing...');
 
         // Step 3: Publish the container
         console.log('📸 Step 3: Publishing...');
@@ -685,7 +686,7 @@ class MetaService {
             throw new Error(publishData.error.message || 'Failed to publish Reel');
         }
 
-        onProgress(100);
+        onProgress(95, 'Getting permalink...');
 
         // Get permalink
         console.log('📸 Getting permalink...');
@@ -696,6 +697,8 @@ class MetaService {
             id: publishData.id,
             permalink: mediaInfo.permalink
         });
+
+        onProgress(100, 'Complete!');
 
         return {
             id: publishData.id,
@@ -767,6 +770,8 @@ class MetaService {
 
     /**
      * Upload Facebook Reel using URL (avoids CORS issues)
+     * Facebook Reels API only has START and FINISH phases
+     * file_url must be provided in the START phase
      */
     async uploadFacebookReelByUrl(videoUrl, metadata, pageToken, onProgress) {
         const connection = this.brandConnections[this.currentBrandId];
@@ -774,9 +779,9 @@ class MetaService {
 
         console.log('📘 Facebook Reel Upload (URL method) - Starting');
         console.log('📘 Video URL:', videoUrl);
-        onProgress(10);
+        onProgress(10, 'Initializing upload...');
 
-        // Step 1: Initialize upload session with video URL
+        // Step 1: Initialize upload with file_url (Facebook downloads from URL)
         console.log('📘 Step 1: Creating reel with video URL...');
         const initResponse = await fetch(
             `${this.API_BASE}/${connection.facebookPageId}/video_reels`,
@@ -785,6 +790,7 @@ class MetaService {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     upload_phase: 'start',
+                    file_url: videoUrl,
                     access_token: pageToken
                 })
             }
@@ -800,41 +806,15 @@ class MetaService {
 
         const videoId = initData.video_id;
         console.log('📘 Video ID:', videoId);
-        onProgress(20);
+        onProgress(40, 'Processing video...');
 
-        // Step 2: Upload video by URL (transfer phase)
-        console.log('📘 Step 2: Transferring video from URL...');
-        const transferResponse = await fetch(
-            `${this.API_BASE}/${connection.facebookPageId}/video_reels`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    upload_phase: 'transfer',
-                    video_id: videoId,
-                    file_url: videoUrl,
-                    access_token: pageToken
-                })
-            }
-        );
+        // Step 2: Wait for Facebook to download and process the video
+        console.log('📘 Step 2: Waiting for Facebook to process video...');
+        await this.sleep(5000); // Give Facebook time to download and process
+        onProgress(60, 'Publishing...');
 
-        const transferData = await transferResponse.json();
-        console.log('📘 Transfer response:', transferData);
-
-        if (transferData.error) {
-            console.error('📘 Transfer failed:', transferData.error);
-            throw new Error(transferData.error.message || 'Failed to transfer video');
-        }
-
-        onProgress(60);
-
-        // Step 3: Wait for processing and finish
+        // Step 3: Finish and publish
         console.log('📘 Step 3: Finishing and publishing...');
-        
-        // Poll for completion if needed
-        await this.sleep(3000); // Give it a moment to process
-        onProgress(80);
-
         const finishResponse = await fetch(
             `${this.API_BASE}/${connection.facebookPageId}/video_reels`,
             {
@@ -858,7 +838,7 @@ class MetaService {
             throw new Error(finishData.error.message || 'Failed to publish Reel');
         }
 
-        onProgress(100);
+        onProgress(100, 'Complete!');
 
         console.log('📘 Facebook Reel upload complete!', {
             videoId: videoId,
@@ -881,7 +861,7 @@ class MetaService {
         const { title = '', description = '' } = metadata;
 
         console.log('📘 Facebook Video Upload (URL method) - Starting');
-        onProgress(10);
+        onProgress(10, 'Uploading video...');
 
         const response = await fetch(
             `${this.API_BASE}/${connection.facebookPageId}/videos`,
@@ -905,7 +885,7 @@ class MetaService {
             throw new Error(data.error.message || 'Failed to upload video');
         }
 
-        onProgress(100);
+        onProgress(100, 'Complete!');
 
         return {
             id: data.id,
