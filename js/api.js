@@ -118,8 +118,16 @@ async function runJobPhase(jobId, phase, options = {}) {
     const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
     console.log(`[API] runJobPhase completed in ${elapsed}s:`, data);
 
-    if (error) throw new Error(error.message);
-    if (!data.success) throw new Error(data.error);
+    if (error) {
+        console.error(`[API] runJobPhase error (${phase}):`, error);
+        throw new Error(`${phase} phase failed: ${error.message || error}`);
+    }
+    if (!data) {
+        throw new Error(`${phase} phase returned no data`);
+    }
+    if (!data.success && data.error) {
+        throw new Error(`${phase} phase error: ${data.error}`);
+    }
 
     return data;
 }

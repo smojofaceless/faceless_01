@@ -848,23 +848,28 @@ class CreatePageController {
             this.debugLog('runPreviewMode', `Preview completed in ${previewTime}s`);
             this.debugLog('runPreviewMode', `Response: ${JSON.stringify(previewResponse, null, 2)}`);
             
-            // Fetch the updated job to get story and scenes
-            const jobData = await checkJob(this.jobId);
-            this.debugLog('checkJob', `Job data: ${JSON.stringify(jobData, null, 2)}`);
+            // Store story data from preview response (it has the scenes)
+            this.formData.title = previewResponse.title || '';
+            this.formData.content = previewResponse.story_text || '';
+            this.formData.sceneCount = previewResponse.scenes?.length || previewResponse.generation_details?.scene_count || 6;
             
-            // Store story data
-            this.formData.title = jobData.title || previewResponse.title || '';
-            this.formData.content = jobData.story_text || '';
+            this.debugLog('runPreviewMode', `Title: ${this.formData.title}`);
+            this.debugLog('runPreviewMode', `Scenes: ${previewResponse.scenes?.length || 0}`);
             
-            // Parse scenes from job assets
-            if (jobData.scenes && jobData.scenes.length > 0) {
-                this.sceneBuilder.setScenes(jobData.scenes.map((s, i) => ({
+            // Parse scenes from PREVIEW response (not checkJob which doesn't have them yet)
+            if (previewResponse.scenes && previewResponse.scenes.length > 0) {
+                this.sceneBuilder.setScenes(previewResponse.scenes.map((s, i) => ({
                     id: i + 1,
-                    text: s.text || s.scene_text || '',
+                    text: s.text || '',
                     imagePrompt: s.keywords?.join(', ') || s.image_prompt || '',
-                    mood: 'neutral'
+                    mood: 'neutral',
+                    startTime: s.startTime || 0,
+                    endTime: s.endTime || 0
                 })));
-                this.addLog(`✅ Story generated: ${jobData.scenes.length} scenes`, 'success');
+                this.addLog(`✅ Story generated: ${previewResponse.scenes.length} scenes`, 'success');
+                this.debugLog('runPreviewMode', `Stored ${this.sceneBuilder.scenes.length} scenes in sceneBuilder`);
+            } else {
+                this.debugLog('runPreviewMode', 'WARNING: No scenes in preview response!');
             }
             
             // === Step 3: Run audio phase ===
@@ -930,61 +935,102 @@ class CreatePageController {
      * Poll for images as they generate
      */
     async pollForImages() {
-        const maxPolls = 120; // 4 minutes max
-        const pollInterval = 2000;
+        const maxPolls = 180; // 6 minutes max (images can take a while)
+        const pollInterval = 3000; // Check every 3 seconds
         let polls = 0;
         let lastImageCount = 0;
+        const totalExpected = this.formData.sceneCount || this.sceneBuilder.scenes.length || 6;
         
-        this.debugLog('pollForImages', 'Starting image polling...');
+        this.debugLog('pollForImages', `Starting image polling... expecting ${totalExpected} images`);
+        this.addVisualDebug(`Polling for ${totalExpected} images...`);
         
         while (polls < maxPolls) {
-            const status = await checkJob(this.jobId);
-            
-            // Check for images
-            const images = status.images || [];
-            
-            if (images.length > lastImageCount) {
-                const newImages = images.slice(lastImageCount);
-                this.debugLog('pollForImages', `New images: ${newImages.length} (total: ${images.length})`);
+            try {
+                const status = await checkJob(this.jobId);
                 
-                // Update UI with new images
-                newImages.forEach((img, idx) => {
-                    const globalIdx = lastImageCount + idx;
-                    this.updateImageCard(globalIdx, img);
-                    this.addLog(`🖼️ Image ${globalIdx + 1} generated`, 'verbose');
-                });
+                // check-job returns scenes array with videoUrl/imageUrl for each generated image
+                // Also check images_generated count from meta
+                const scenes = status.scenes || [];
+                const imagesGenerated = status.images_generated || scenes.filter(s => s.videoUrl || s.url).length;
                 
-                lastImageCount = images.length;
-            }
-            
-            // Check if images phase is complete
-            if (status.progress >= 70 || status.status === 'completed' || status.phase === 'assemble') {
-                this.debugLog('pollForImages', `Images complete. Progress: ${status.progress}%, Status: ${status.status}`);
-                break;
-            }
-            
-            // Check for errors
-            if (status.status === 'failed') {
-                throw new Error(status.error || 'Image generation failed');
+                this.addVisualDebug(`Poll ${polls + 1}: status=${status.status}, progress=${status.progress}%, images=${imagesGenerated}/${totalExpected}`);
+                
+                // Update the counter
+                const countEl = document.getElementById('images-generated-count');
+                if (countEl) countEl.textContent = imagesGenerated;
+                
+                // Update image cards for any new images
+                if (imagesGenerated > lastImageCount) {
+                    this.debugLog('pollForImages', `New images detected: ${imagesGenerated} (was ${lastImageCount})`);
+                    
+                    // Update each scene that has an image
+                    scenes.forEach((scene, idx) => {
+                        const imageUrl = scene.videoUrl || scene.url || scene.imageUrl;
+                        if (imageUrl) {
+                            this.updateImageCard(scene.index ?? idx, { url: imageUrl });
+                            // Also update sceneBuilder
+                            if (this.sceneBuilder.scenes[idx]) {
+                                this.sceneBuilder.updateScene(idx + 1, { imageUrl: imageUrl });
+                            }
+                        }
+                    });
+                    
+                    lastImageCount = imagesGenerated;
+                    this.addLog(`🖼️ ${imagesGenerated}/${totalExpected} images generated`, 'info');
+                }
+                
+                // Check if images phase is complete
+                if (imagesGenerated >= totalExpected || status.progress >= 70 || status.status === 'completed') {
+                    this.debugLog('pollForImages', `Images complete! ${imagesGenerated}/${totalExpected}`);
+                    this.addVisualDebug(`✅ All ${imagesGenerated} images generated!`);
+                    break;
+                }
+                
+                // Check for errors
+                if (status.status === 'failed') {
+                    this.addVisualDebug(`❌ Error: ${status.error}`);
+                    throw new Error(status.error || 'Image generation failed');
+                }
+                
+            } catch (pollError) {
+                this.addVisualDebug(`⚠️ Poll error: ${pollError.message}`);
+                console.error('Poll error:', pollError);
             }
             
             await new Promise(r => setTimeout(r, pollInterval));
             polls++;
             
-            if (polls % 5 === 0) {
-                this.addLog(`⏳ Generating images... (${polls * 2}s)`, 'verbose');
+            if (polls % 10 === 0) {
+                this.addLog(`⏳ Generating images... (${polls * 3}s elapsed)`, 'info');
             }
         }
         
-        // Update scene builder with final images
+        // Final update
         const finalStatus = await checkJob(this.jobId);
-        if (finalStatus.images) {
-            finalStatus.images.forEach((img, idx) => {
-                if (this.sceneBuilder.scenes[idx]) {
-                    this.sceneBuilder.updateScene(idx + 1, { imageUrl: img.url });
-                }
-            });
-        }
+        const finalScenes = finalStatus.scenes || [];
+        this.debugLog('pollForImages', `Final check: ${finalScenes.length} scenes with images`);
+        
+        finalScenes.forEach((scene, idx) => {
+            const imageUrl = scene.videoUrl || scene.url || scene.imageUrl;
+            if (imageUrl && this.sceneBuilder.scenes[idx]) {
+                this.sceneBuilder.updateScene(idx + 1, { imageUrl: imageUrl });
+            }
+        });
+    }
+    
+    /**
+     * Add message to visual debug panel
+     */
+    addVisualDebug(message) {
+        const panel = document.getElementById('visual-debug-content');
+        if (!panel) return;
+        
+        const timestamp = new Date().toLocaleTimeString();
+        const entry = document.createElement('div');
+        entry.className = 'visual-debug-entry';
+        entry.innerHTML = `<span class="visual-debug-time">[${timestamp}]</span> ${message}`;
+        panel.appendChild(entry);
+        panel.scrollTop = panel.scrollHeight;
     }
 
     /**
@@ -1013,11 +1059,19 @@ class CreatePageController {
         try {
             const startAssemble = performance.now();
             
-            // Trigger assemble phase
-            const assembleResponse = await runJobPhase(this.jobId, 'assemble');
-            this.debugLog('runJobPhase:assemble', `Response: ${JSON.stringify(assembleResponse, null, 2)}`);
+            // Trigger assemble phase - this might timeout but still be working on server
+            try {
+                const assembleResponse = await runJobPhase(this.jobId, 'assemble');
+                this.debugLog('runJobPhase:assemble', `Response: ${JSON.stringify(assembleResponse, null, 2)}`);
+                this.addLog('✅ Assembly phase started', 'success');
+            } catch (phaseError) {
+                // If the edge function times out (500), the job might still be running
+                this.debugLog('runJobPhase:assemble', `Phase call failed: ${phaseError.message}`);
+                this.addLog(`⚠️ Assembly call returned error (may still be processing): ${phaseError.message}`, 'warning');
+                // Continue to polling - job might have started
+            }
             
-            // Poll for completion
+            // Poll for completion regardless of initial response
             await this.pollForVideoCompletion();
             
             const assembleTime = ((performance.now() - startAssemble) / 1000).toFixed(2);
@@ -1025,8 +1079,9 @@ class CreatePageController {
             
         } catch (error) {
             this.debugLog('executeVideoAssemblyPhase', `ERROR: ${error.message}`);
+            this.addLog(`❌ Video assembly failed: ${error.message}`, 'error');
             this.updatePhase({ phase: 'video', status: 'error' });
-            throw error;
+            this.showError(`Video assembly failed: ${error.message}`);
         }
     }
 
@@ -1145,6 +1200,16 @@ class CreatePageController {
             <div class="step-loading">
                 <div class="step-loading__spinner"></div>
                 <p class="step-loading__message">${message}</p>
+                
+                <!-- Visual Debug Panel -->
+                <div id="visual-debug-panel" class="visual-debug-panel">
+                    <div class="visual-debug-panel__header">
+                        <span>🔧 Debug Log</span>
+                        <button type="button" class="btn btn--sm" onclick="document.getElementById('visual-debug-panel').classList.toggle('collapsed')">Toggle</button>
+                    </div>
+                    <div class="visual-debug-panel__content" id="visual-debug-content"></div>
+                </div>
+                
                 <div class="step-loading__debug" id="step-debug-panel">
                     <!-- Debug info appears here -->
                 </div>
@@ -1164,7 +1229,11 @@ class CreatePageController {
      * Render images step with progress grid
      */
     renderImagesStepWithProgress(container) {
-        const sceneCount = this.sceneBuilder.scenes.length || 6;
+        // Use stored sceneCount from form data or sceneBuilder
+        const sceneCount = this.formData.sceneCount || this.sceneBuilder.scenes.length || 6;
+        const hasScenes = this.sceneBuilder.scenes.length > 0;
+        
+        this.debugLog('renderImagesStepWithProgress', `sceneCount: ${sceneCount}, hasScenes: ${hasScenes}`);
         
         container.innerHTML = `
             <div class="create-card">
@@ -1173,19 +1242,36 @@ class CreatePageController {
                 
                 <div class="image-generation-status">
                     <div class="image-generation-status__progress">
-                        <span id="images-generated-count">0</span> / <span>${sceneCount}</span> images
+                        <span id="images-generated-count">0</span> / <span id="images-total-count">${sceneCount}</span> images
                     </div>
                     <div class="image-generation-status__spinner"></div>
                 </div>
                 
+                <!-- Visual Debug Panel -->
+                <div id="visual-debug-panel" class="visual-debug-panel">
+                    <div class="visual-debug-panel__header">
+                        <span>🔧 Debug Log</span>
+                        <button type="button" class="btn btn--sm" onclick="document.getElementById('visual-debug-panel').classList.toggle('collapsed')">Toggle</button>
+                    </div>
+                    <div class="visual-debug-panel__content" id="visual-debug-content"></div>
+                </div>
+                
                 <div id="image-preview-grid" class="image-preview-grid image-preview-grid--generating">
-                    ${this.sceneBuilder.scenes.map((scene, i) => `
+                    ${hasScenes ? this.sceneBuilder.scenes.map((scene, i) => `
                         <div class="image-preview-card image-preview-card--loading" data-scene-id="${scene.id}" data-index="${i}">
                             <div class="image-preview-card__loader">
                                 <div class="image-preview-card__loader-spinner"></div>
                                 <span>Scene ${i + 1}</span>
                             </div>
-                            <p class="image-preview-card__text">${scene.text.substring(0, 60)}...</p>
+                            <p class="image-preview-card__text">${(scene.text || '').substring(0, 60)}...</p>
+                        </div>
+                    `).join('') : Array.from({length: sceneCount}, (_, i) => `
+                        <div class="image-preview-card image-preview-card--loading" data-scene-id="${i+1}" data-index="${i}">
+                            <div class="image-preview-card__loader">
+                                <div class="image-preview-card__loader-spinner"></div>
+                                <span>Scene ${i + 1}</span>
+                            </div>
+                            <p class="image-preview-card__text">Generating...</p>
                         </div>
                     `).join('')}
                 </div>
@@ -1227,7 +1313,7 @@ class CreatePageController {
     }
 
     /**
-     * Debug logging
+     * Debug logging - always shows in visual panel
      */
     debugLog(context, message) {
         const timestamp = new Date().toISOString().substring(11, 23);
@@ -1243,12 +1329,16 @@ class CreatePageController {
         
         // Update step debug panel if present
         const stepDebug = document.getElementById('step-debug-panel');
-        if (stepDebug && this.debugMode) {
+        if (stepDebug) {
             const entry = document.createElement('div');
             entry.className = 'step-debug-entry';
             entry.textContent = logEntry;
             stepDebug.appendChild(entry);
+            stepDebug.scrollTop = stepDebug.scrollHeight;
         }
+        
+        // Also update visual debug panel (always visible)
+        this.addVisualDebug(`[${context}] ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`);
     }
 
     // ==================== UI State Management ====================
