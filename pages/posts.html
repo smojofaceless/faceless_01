@@ -303,6 +303,32 @@
         </div>
     </div>
 
+    <!-- Post to More Platforms Modal -->
+    <div class="modal" id="post-more-modal">
+        <div class="modal__overlay"></div>
+        <div class="modal__content">
+            <div class="modal__header">
+                <h3 class="modal__title">Post to More Platforms</h3>
+                <button class="modal__close">&times;</button>
+            </div>
+            <div class="modal__body">
+                <p class="form-hint" style="margin-bottom: var(--space-4);">
+                    This video has already been posted to some platforms. Select additional platforms to post to:
+                </p>
+                <div id="post-more-platforms">
+                    <!-- Filled dynamically -->
+                </div>
+                <div id="post-more-already" style="margin-top: var(--space-4);">
+                    <!-- Shows already posted platforms -->
+                </div>
+            </div>
+            <div class="modal__footer">
+                <button class="btn btn--secondary" id="post-more-cancel">Cancel</button>
+                <button class="btn btn--primary" id="post-more-confirm">Post to Selected</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="../js/config.js"></script>
     
@@ -433,6 +459,11 @@
             document.getElementById('detail-close').addEventListener('click', () => closeModal('detail-modal'));
             document.getElementById('detail-delete').addEventListener('click', deleteCurrentPost);
             document.getElementById('detail-action').addEventListener('click', actionCurrentPost);
+
+            // Post to more platforms modal
+            setupModalClose('post-more-modal');
+            document.getElementById('post-more-cancel').addEventListener('click', () => closeModal('post-more-modal'));
+            document.getElementById('post-more-confirm').addEventListener('click', confirmPostMore);
         }
 
         function setupModalClose(modalId) {
@@ -878,6 +909,13 @@
                 });
             });
 
+            container.querySelectorAll('.post-action-post-more').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    await openPostMoreModal(btn.dataset.id);
+                });
+            });
+
             // Load stats for posted videos
             if (currentTab === 'posted') {
                 loadPostedVideoStats();
@@ -1009,8 +1047,22 @@
                 case STATUS.POSTED:
                     const ytResult = post.platform_results?.youtube;
                     const ytVideoId = ytResult?.videoId || ytResult?.id;
+                    const postedPlatforms = Object.keys(post.platform_results || {});
+                    const allPlatforms = ['youtube', 'instagram', 'facebook'];
+                    const unpostedPlatforms = allPlatforms.filter(p => !postedPlatforms.includes(p));
+                    
                     return `
                         ${ytResult?.url ? `<a href="${ytResult.url}" target="_blank" class="btn btn--sm btn--secondary">View</a>` : ''}
+                        ${unpostedPlatforms.length > 0 ? `
+                            <button class="btn btn--sm btn--primary post-action-post-more" data-id="${post.id}" title="Post to more platforms">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <line x1="12" y1="8" x2="12" y2="16"/>
+                                    <line x1="8" y1="12" x2="16" y2="12"/>
+                                </svg>
+                                More
+                            </button>
+                        ` : ''}
                         ${ytVideoId ? `
                             <button class="btn btn--sm btn--ghost post-action-analytics" data-id="${post.id}" data-video-id="${ytVideoId}" title="View Analytics">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
@@ -1780,6 +1832,139 @@
             });
 
             return result;
+        }
+
+        // ==================== Post to More Platforms ====================
+
+        let postMorePostId = null;
+
+        async function openPostMoreModal(postId) {
+            const post = await postQueueService.getPost(postId);
+            if (!post) {
+                Toast.error('Post not found');
+                return;
+            }
+
+            postMorePostId = postId;
+            const brand = brandManager.getActiveBrand();
+            
+            // Set up services to check connections
+            await youtubeService.setBrand(brand.id);
+            await metaService.setBrand(brand.id);
+
+            const postedPlatforms = Object.keys(post.platform_results || {});
+            const allPlatforms = [
+                { id: 'youtube', name: 'YouTube', icon: '📺', color: '#FF0000', connected: youtubeService.isConnected() },
+                { id: 'instagram', name: 'Instagram Reels', icon: '📷', color: '#E4405F', connected: metaService.isInstagramConnected() },
+                { id: 'facebook', name: 'Facebook Reels', icon: '📘', color: '#1877F2', connected: metaService.isFacebookConnected() }
+            ];
+
+            // Generate unposted platforms checkboxes
+            const unpostedHtml = allPlatforms
+                .filter(p => !postedPlatforms.includes(p.id))
+                .map(p => `
+                    <label class="platform-checkbox" style="--platform-color: ${p.color}">
+                        <input type="checkbox" name="post-more-platform" value="${p.id}" ${p.connected ? '' : 'disabled'}>
+                        <span class="platform-checkbox__box">
+                            <span class="platform-checkbox__icon">${p.icon}</span>
+                            <span class="platform-checkbox__name">${p.name}</span>
+                            ${!p.connected ? '<span class="platform-checkbox__status">Not Connected</span>' : ''}
+                        </span>
+                    </label>
+                `).join('');
+
+            // Generate already posted list
+            const postedHtml = postedPlatforms.length > 0 ? `
+                <p class="text-muted text-sm">Already posted to:</p>
+                <div class="already-posted-list">
+                    ${postedPlatforms.map(pId => {
+                        const p = allPlatforms.find(ap => ap.id === pId);
+                        const result = post.platform_results[pId];
+                        const url = result?.url || result?.permalink;
+                        return `
+                            <span class="already-posted-item">
+                                ${p?.icon || '📱'} ${p?.name || pId}
+                                ${url ? `<a href="${url}" target="_blank" class="text-link">View</a>` : ''}
+                            </span>
+                        `;
+                    }).join('')}
+                </div>
+            ` : '';
+
+            document.getElementById('post-more-platforms').innerHTML = unpostedHtml || '<p class="text-muted">Already posted to all platforms!</p>';
+            document.getElementById('post-more-already').innerHTML = postedHtml;
+            
+            // Disable confirm button if nothing to post
+            const hasUnposted = allPlatforms.some(p => !postedPlatforms.includes(p.id) && p.connected);
+            document.getElementById('post-more-confirm').disabled = !hasUnposted;
+
+            document.getElementById('post-more-modal').classList.add('active');
+        }
+
+        async function confirmPostMore() {
+            const checkboxes = document.querySelectorAll('input[name="post-more-platform"]:checked');
+            const selectedPlatforms = Array.from(checkboxes).map(cb => cb.value);
+
+            if (selectedPlatforms.length === 0) {
+                Toast.error('Please select at least one platform');
+                return;
+            }
+
+            try {
+                const post = await postQueueService.getPost(postMorePostId);
+                const brand = brandManager.getActiveBrand();
+                
+                await youtubeService.setBrand(brand.id);
+                await metaService.setBrand(brand.id);
+
+                Toast.info(`Posting to ${selectedPlatforms.join(', ')}...`);
+                closeModal('post-more-modal');
+
+                // Fetch video file
+                const videoResponse = await fetch(post.video_url);
+                const videoBlob = await videoResponse.blob();
+                const videoFile = new File([videoBlob], 'video.mp4', { type: 'video/mp4' });
+
+                const newResults = { ...(post.platform_results || {}) };
+                const errors = [];
+
+                for (const platform of selectedPlatforms) {
+                    try {
+                        if (platform === 'youtube') {
+                            newResults.youtube = await postToYouTube(post, videoFile);
+                            Toast.success('Posted to YouTube!');
+                        } else if (platform === 'instagram') {
+                            newResults.instagram = await postToInstagram(post);
+                            Toast.success('Posted to Instagram!');
+                        } else if (platform === 'facebook') {
+                            newResults.facebook = await postToFacebook(post, videoFile);
+                            Toast.success('Posted to Facebook!');
+                        }
+                    } catch (e) {
+                        console.error(`Failed to post to ${platform}:`, e);
+                        errors.push(`${platform}: ${e.message}`);
+                        Toast.error(`${platform} failed: ${e.message}`);
+                    }
+                }
+
+                // Update post with new results
+                const successCount = selectedPlatforms.length - errors.length;
+                if (successCount > 0) {
+                    const { error } = await supabaseClient
+                        .from('posts')
+                        .update({ platform_results: newResults })
+                        .eq('id', postMorePostId);
+
+                    if (error) throw error;
+                    Toast.success(`Posted to ${successCount} additional platform(s)!`);
+                }
+
+                await loadPosts();
+
+            } catch (e) {
+                console.error('Post more failed:', e);
+                Toast.error(`Failed: ${e.message}`);
+            }
         }
 
         // ==================== Modals ====================

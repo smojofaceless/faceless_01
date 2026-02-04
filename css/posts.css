@@ -1197,3 +1197,88 @@ textarea.form-control {
         order: 3;
     }
 }
+
+/* ==================== Post to More Platforms Modal ==================== */
+
+.platform-checkbox {
+    display: block;
+    margin-bottom: var(--space-2);
+    cursor: pointer;
+}
+
+.platform-checkbox input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.platform-checkbox__box {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    border: 2px solid var(--border-secondary);
+    background: var(--surface-secondary);
+    transition: all 0.15s ease;
+}
+
+.platform-checkbox input[type="checkbox"]:checked + .platform-checkbox__box {
+    border-color: var(--platform-color, var(--primary));
+    background: color-mix(in srgb, var(--platform-color, var(--primary)) 10%, var(--surface-secondary));
+}
+
+.platform-checkbox input[type="checkbox"]:disabled + .platform-checkbox__box {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.platform-checkbox__icon {
+    font-size: 1.25rem;
+}
+
+.platform-checkbox__name {
+    flex: 1;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.platform-checkbox__status {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    padding: 2px 8px;
+    background: var(--surface-primary);
+    border-radius: var(--radius-sm);
+}
+
+.platform-checkbox:hover .platform-checkbox__box {
+    border-color: var(--border-primary);
+}
+
+.platform-checkbox input[type="checkbox"]:disabled:hover + .platform-checkbox__box {
+    border-color: var(--border-secondary);
+}
+
+/* Already posted list */
+.already-posted-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+}
+
+.already-posted-item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    background: var(--surface-tertiary);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+}
+
+.already-posted-item .text-link {
+    color: var(--primary);
+    font-size: var(--text-xs);
+}
