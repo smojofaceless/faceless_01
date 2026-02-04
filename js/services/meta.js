@@ -370,16 +370,18 @@ class MetaService {
         }
 
         // Exchange short-lived token for long-lived token (60 days)
-        const longLivedToken = await this.exchangeForLongLivedToken(tokenData.access_token);
+        const longLivedTokenData = await this.exchangeForLongLivedToken(tokenData.access_token);
+        const accessToken = longLivedTokenData.access_token;
+        const expiresIn = longLivedTokenData.expires_in || 5184000; // Default 60 days
 
         // Get user info and connected pages
-        const userInfo = await this.fetchUserInfo(longLivedToken);
-        const pages = await this.fetchPages(longLivedToken);
+        const userInfo = await this.fetchUserInfo(accessToken);
+        const pages = await this.fetchPages(accessToken);
 
         // Store connection
         this.brandConnections[this.currentBrandId] = {
-            accessToken: longLivedToken.access_token,
-            tokenExpiry: Date.now() + (longLivedToken.expires_in * 1000),
+            accessToken: accessToken,
+            tokenExpiry: Date.now() + (expiresIn * 1000),
             userId: userInfo.id,
             userName: userInfo.name,
             pages: pages,
