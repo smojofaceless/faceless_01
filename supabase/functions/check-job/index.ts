@@ -202,11 +202,138 @@ serve(async (req) => {
       );
     }
 
-    // If job is still rendering, check Creatomate status
+    // If job is still rendering, check render status (FFmpeg or Creatomate)
     // Note: run-job sets status to 'rendering', but we also check 'assembling' for backwards compatibility
     if ((job.status === "rendering" || job.status === "assembling") && job.meta?.render_id) {
       const renderId = job.meta.render_id;
+      const renderer = job.meta?.renderer || "creatomate"; // Default to creatomate for backwards compat
+      const ffmpegRendererUrl = Deno.env.get("FFMPEG_RENDERER_URL");
       
+      console.log(`[CHECK] Checking ${renderer} render status for ${renderId}`);
+      
+      // ========== FFMPEG RENDERER ==========
+      if (renderer === "ffmpeg") {
+        if (!ffmpegRendererUrl) {
+          console.warn("[CHECK] FFMPEG_RENDERER_URL not set, cannot check render status");
+          return new Response(
+            JSON.stringify({
+              success: true,
+              job_id: job_id,
+              status: job.status,
+              progress: job.progress || 85,
+              title: job.title,
+              story_text: job.story_text,
+              error: null,
+              message: "Render in progress (FFmpeg URL not configured)"
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+          );
+        }
+        
+        try {
+          const ffmpegResponse = await fetch(`${ffmpegRendererUrl}/status/${renderId}`);
+          
+          if (ffmpegResponse.ok) {
+            const renderData = await ffmpegResponse.json();
+            console.log(`[CHECK] FFmpeg status: ${renderData.status}, progress: ${renderData.progress || 0}%`);
+            
+            if (renderData.status === "complete") {
+              // Prefer supabase_url if available (permanent), otherwise use local URL
+              const videoUrl = renderData.supabase_url || (renderData.url ? `${ffmpegRendererUrl}${renderData.url}` : null);
+              
+              // Update job as complete
+              await supabase.from("jobs").update({
+                status: "complete",
+                progress: 100,
+              }).eq("id", job_id);
+
+              // Save final video (delete existing then insert to avoid constraint issues)
+              await supabase.from("job_assets")
+                .delete()
+                .eq("job_id", job_id)
+                .eq("type", "final_mp4");
+              
+              const { error: assetError } = await supabase.from("job_assets").insert({
+                job_id: job_id,
+                type: "final_mp4",
+                storage_path: videoUrl,
+                public_url: videoUrl,
+                meta: { render_id: renderId, status: "complete", renderer: "ffmpeg" }
+              });
+              
+              if (assetError) {
+                console.error("[CHECK] Failed to save final_mp4 asset:", assetError);
+              } else {
+                console.log(`[CHECK] ✅ FFmpeg video complete: ${videoUrl}`);
+              }
+
+              return new Response(
+                JSON.stringify({
+                  success: true,
+                  job_id: job_id,
+                  status: "complete",
+                  progress: 100,
+                  title: job.title,
+                  story_text: job.story_text,
+                  duration_sec: job.duration_sec,
+                  video_url: videoUrl,
+                }),
+                { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+              );
+            } else if (renderData.status === "failed") {
+              // Update job as failed
+              await supabase.from("jobs").update({
+                status: "failed",
+                error: renderData.error || "FFmpeg render failed",
+              }).eq("id", job_id);
+
+              return new Response(
+                JSON.stringify({
+                  success: false,
+                  job_id: job_id,
+                  status: "failed",
+                  error: renderData.error || "FFmpeg render failed",
+                }),
+                { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+              );
+            }
+            
+            // Still rendering - return progress
+            const renderProgress = renderData.progress || 0;
+            const overallProgress = 75 + Math.floor(renderProgress * 0.25); // 75-100%
+            
+            return new Response(
+              JSON.stringify({
+                success: true,
+                job_id: job_id,
+                status: "rendering",
+                progress: overallProgress,
+                title: job.title,
+                render_progress: renderProgress,
+                message: `FFmpeg rendering: ${renderProgress}%`
+              }),
+              { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+            );
+          }
+        } catch (fetchErr) {
+          console.error("[CHECK] Failed to fetch FFmpeg status:", fetchErr);
+          return new Response(
+            JSON.stringify({
+              success: true,
+              job_id: job_id,
+              status: job.status,
+              progress: job.progress || 85,
+              title: job.title,
+              story_text: job.story_text,
+              error: null,
+              message: "FFmpeg render in progress (status check failed temporarily)"
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+          );
+        }
+      }
+      
+      // ========== CREATOMATE RENDERER ==========
       // Guard: skip Creatomate check if API key is missing
       if (!creatomateKey) {
         console.warn("[CHECK] CREATOMATE_API_KEY not set, cannot check render status");

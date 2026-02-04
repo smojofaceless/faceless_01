@@ -1463,7 +1463,14 @@ export async function runAssemblePhase(
     meta: { ...jobMeta, render_id: renderId, renderer: useFFmpeg ? "ffmpeg" : "creatomate" }
   });
 
-  // Poll for completion (shorter timeout since we can be called again)
+  // For FFmpeg renders: return immediately and let check-job poll for completion
+  // This avoids edge function timeout issues for long renders
+  if (useFFmpeg) {
+    console.log(`[ASSEMBLE] FFmpeg render started (${renderId}), returning to let check-job poll`);
+    return { status: "rendering", nextPhase: "assemble", message: "FFmpeg render started, polling for completion..." };
+  }
+
+  // For Creatomate: still do short polling (it's usually faster)
   const maxWaitTime = 2 * 60 * 1000; // 2 minutes
   const startTime = Date.now();
 
