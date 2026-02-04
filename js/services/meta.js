@@ -806,12 +806,63 @@ class MetaService {
 
         const videoId = initData.video_id;
         console.log('📘 Video ID:', videoId);
-        onProgress(40, 'Processing video...');
+        onProgress(30, 'Uploading to Facebook...');
 
-        // Step 2: Wait for Facebook to download and process the video
-        console.log('📘 Step 2: Waiting for Facebook to process video...');
-        await this.sleep(5000); // Give Facebook time to download and process
-        onProgress(60, 'Publishing...');
+        // Step 2: Poll for video upload status until ready
+        console.log('📘 Step 2: Polling for video upload status...');
+        let uploadReady = false;
+        let attempts = 0;
+        const maxAttempts = 60; // 5 minutes max (5 sec intervals)
+
+        while (!uploadReady && attempts < maxAttempts) {
+            await this.sleep(5000); // Wait 5 seconds between polls
+            attempts++;
+            
+            // Check video status
+            const statusResponse = await fetch(
+                `${this.API_BASE}/${videoId}?fields=status&access_token=${pageToken}`
+            );
+            const statusData = await statusResponse.json();
+            console.log(`📘 Video status (attempt ${attempts}):`, statusData);
+
+            if (statusData.error) {
+                // If we get "Object does not exist" it might still be processing
+                if (statusData.error.code === 100) {
+                    console.log('📘 Video not yet available, continuing to wait...');
+                } else {
+                    throw new Error(statusData.error.message || 'Failed to check video status');
+                }
+            } else if (statusData.status) {
+                const videoStatus = statusData.status.video_status;
+                console.log(`📘 Video status: ${videoStatus}`);
+                
+                // Update progress based on status
+                const progress = Math.min(30 + (attempts * 1.5), 80);
+                onProgress(progress, `Processing... ${videoStatus || 'uploading'}`);
+                
+                // Check if ready for publishing
+                if (videoStatus === 'ready' || videoStatus === 'complete' || videoStatus === 'processing') {
+                    // Even "processing" might be enough to attempt finish
+                    if (attempts >= 3) { // Give it at least 15 seconds
+                        uploadReady = true;
+                    }
+                } else if (videoStatus === 'error') {
+                    throw new Error('Video processing failed on Facebook servers');
+                }
+            } else {
+                // No status field - try to proceed after minimum wait
+                if (attempts >= 6) { // 30 seconds minimum
+                    console.log('📘 No status returned, attempting to finish...');
+                    uploadReady = true;
+                }
+            }
+        }
+
+        if (!uploadReady && attempts >= maxAttempts) {
+            throw new Error('Video upload timed out');
+        }
+
+        onProgress(85, 'Publishing...');
 
         // Step 3: Finish and publish
         console.log('📘 Step 3: Finishing and publishing...');
