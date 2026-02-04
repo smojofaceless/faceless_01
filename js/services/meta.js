@@ -478,6 +478,9 @@ class MetaService {
             throw new Error('Page not found');
         }
 
+        console.log('📸 Selected page:', page);
+        console.log('📸 Instagram linked:', page.instagram);
+
         // Update connection with selected page
         connection.selectedPageId = page.id;
         connection.facebookPageId = page.id;
@@ -487,6 +490,9 @@ class MetaService {
         if (page.instagram) {
             connection.instagramAccountId = page.instagram.id;
             connection.instagramUsername = page.instagram.username;
+            console.log('📸 Instagram account ID set:', connection.instagramAccountId);
+        } else {
+            console.log('📸 No Instagram Business account linked to this page');
         }
 
         this.saveToLocalStorage();

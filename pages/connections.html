@@ -434,23 +434,32 @@
         async function finalizeMetaConnection(brandId, connectionInfo) {
             const brand = brandManager.get(brandId);
             
+            console.log('📸 Finalizing Meta connection:', connectionInfo);
+            
             // Connect Instagram if available
-            if (connectionInfo.instagram) {
+            if (connectionInfo.instagram && connectionInfo.instagram.accountId) {
                 if (!brand.hasPlatform('instagram')) {
                     brand.connectPlatform('instagram');
                 }
-                Toast.success(`Instagram connected: @${connectionInfo.instagram.username || connectionInfo.instagram}`);
+                Toast.success(`Instagram connected: @${connectionInfo.instagram.username || connectionInfo.instagram.accountId}`);
+            } else {
+                console.log('📸 No Instagram account linked to this Facebook Page');
+                Toast.warning('No Instagram Business account linked to this Facebook Page. You can still post to Facebook.');
             }
             
             // Connect Facebook
-            if (connectionInfo.facebook) {
+            if (connectionInfo.facebook && connectionInfo.facebook.pageId) {
                 if (!brand.hasPlatform('facebook')) {
                     brand.connectPlatform('facebook');
                 }
-                Toast.success(`Facebook Page connected: ${connectionInfo.facebook.pageName || connectionInfo.facebook}`);
+                Toast.success(`Facebook Page connected: ${connectionInfo.facebook.pageName || connectionInfo.facebook.pageId}`);
             }
             
             await brandManager.update(brandId, { connectedPlatforms: brand.connectedPlatforms });
+            
+            // Reload Meta context to refresh connection status
+            await metaService.setBrand(brandId);
+            
             loadPlatforms();
         }
 
