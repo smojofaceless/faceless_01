@@ -29,15 +29,36 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  // Get API keys from environment
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const openaiKey = Deno.env.get("OPENAI_API_KEY")!;
-  const elevenLabsKey = Deno.env.get("ELEVENLABS_API_KEY")!;
-  const creatomateKey = Deno.env.get("CREATOMATE_API_KEY")!;
-  const pexelsKey = Deno.env.get("PEXELS_API_KEY")!;
+  // Get API keys from environment with validation
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const openaiKey = Deno.env.get("OPENAI_API_KEY");
+  const elevenLabsKey = Deno.env.get("ELEVENLABS_API_KEY");
+  const creatomateKey = Deno.env.get("CREATOMATE_API_KEY");
+  const pexelsKey = Deno.env.get("PEXELS_API_KEY");
 
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  // Check for missing required environment variables
+  const missingVars: string[] = [];
+  if (!supabaseUrl) missingVars.push("SUPABASE_URL");
+  if (!supabaseServiceKey) missingVars.push("SUPABASE_SERVICE_ROLE_KEY");
+  if (!openaiKey) missingVars.push("OPENAI_API_KEY");
+  if (!elevenLabsKey) missingVars.push("ELEVENLABS_API_KEY");
+  
+  if (missingVars.length > 0) {
+    console.error(`[RUN-JOB] Missing environment variables: ${missingVars.join(", ")}`);
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: `Server configuration error: missing ${missingVars.join(", ")}`,
+      }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 500,
+      }
+    );
+  }
+
+  const supabase = createClient(supabaseUrl!, supabaseServiceKey!);
 
   let job_id: string | null = null;
 
@@ -166,7 +187,21 @@ serve(async (req) => {
     let result;
 
     if (currentPhase === "audio") {
-      result = await runAudioPhase(supabase, openaiKey, elevenLabsKey, job, job_id, jobMeta);
+      // Re-fetch job to ensure we have latest data (preview might have just updated it)
+      console.log(`[RUN-JOB] Re-fetching job for audio phase to get latest story data...`);
+      const { data: freshJob, error: freshError } = await supabase
+        .from("jobs")
+        .select("*")
+        .eq("id", job_id)
+        .single();
+      
+      if (freshError || !freshJob) {
+        console.error(`[RUN-JOB] Failed to re-fetch job:`, freshError);
+        throw new Error(`Failed to fetch job for audio phase: ${freshError?.message || "Unknown error"}`);
+      }
+      
+      console.log(`[RUN-JOB] Fresh job data: story_text=${!!freshJob.story_text}, title=${freshJob.title}`);
+      result = await runAudioPhase(supabase, openaiKey, elevenLabsKey, freshJob, job_id, freshJob.meta || jobMeta);
     } else if (currentPhase === "images") {
       result = await runImagesPhase(
         supabase,
