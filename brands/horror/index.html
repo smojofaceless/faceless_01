@@ -586,62 +586,62 @@
                         <textarea id="story-text" rows="4" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 focus:border-primary focus:outline-none resize-none"></textarea>
                     </div>
                     
-                    <!-- Generation Details (Expandable) -->
+                    <!-- Generation Settings Summary (always visible) -->
+                    <div class="mb-4 grid grid-cols-3 md:grid-cols-6 gap-2">
+                        <div class="bg-gray-800/50 rounded-lg p-2 text-center">
+                            <p class="text-xs text-gray-500">Theme</p>
+                            <p id="detail-vibe" class="text-xs font-semibold text-purple-400 truncate">-</p>
+                        </div>
+                        <div class="bg-gray-800/50 rounded-lg p-2 text-center">
+                            <p class="text-xs text-gray-500">Duration</p>
+                            <p id="detail-duration" class="text-xs font-semibold text-blue-400">-</p>
+                        </div>
+                        <div class="bg-gray-800/50 rounded-lg p-2 text-center">
+                            <p class="text-xs text-gray-500">Words</p>
+                            <p id="detail-words" class="text-xs font-semibold text-green-400">-</p>
+                        </div>
+                        <div class="bg-gray-800/50 rounded-lg p-2 text-center">
+                            <p class="text-xs text-gray-500">Visual</p>
+                            <p id="detail-visual" class="text-xs font-semibold text-amber-400 truncate">-</p>
+                        </div>
+                        <div class="bg-gray-800/50 rounded-lg p-2 text-center">
+                            <p class="text-xs text-gray-500">Art Style</p>
+                            <p id="detail-art-style" class="text-xs font-semibold text-pink-400 truncate">-</p>
+                        </div>
+                        <div class="bg-gray-800/50 rounded-lg p-2 text-center">
+                            <p class="text-xs text-gray-500">Model</p>
+                            <p id="detail-model" class="text-xs font-semibold text-cyan-400">-</p>
+                        </div>
+                    </div>
+
+                    <!-- Full Prompt Section (Expandable) -->
                     <div class="mb-6">
-                        <button onclick="toggleGenerationDetails()" class="flex items-center justify-between w-full bg-gray-800/50 rounded-xl p-4 border border-gray-700 hover:border-gray-600 transition-all">
+                        <button onclick="toggleGenerationDetails()" class="flex items-center justify-between w-full bg-gray-800/50 rounded-xl p-3 border border-gray-700 hover:border-gray-600 transition-all">
                             <div class="flex items-center gap-2">
-                                <span class="text-lg">⚙️</span>
-                                <span class="font-semibold">Generation Details</span>
-                                <span class="text-xs text-gray-500">(what went into creating this story)</span>
+                                <span class="text-lg">📝</span>
+                                <span class="font-semibold">View Full Prompt</span>
+                                <span class="text-xs text-gray-500">(the complete prompt used to generate this story)</span>
                             </div>
                             <span id="gen-details-arrow" class="text-gray-400 transition-transform">▼</span>
                         </button>
                         <div id="generation-details" class="hidden mt-2 bg-gray-800/30 rounded-xl p-4 border border-gray-700 space-y-4">
-                            <!-- Settings Summary -->
-                            <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                <div class="bg-gray-900/50 rounded-lg p-3">
-                                    <p class="text-xs text-gray-500 mb-1">Horror Theme</p>
-                                    <p id="detail-vibe" class="text-sm font-semibold text-purple-400">-</p>
-                                </div>
-                                <div class="bg-gray-900/50 rounded-lg p-3">
-                                    <p class="text-xs text-gray-500 mb-1">Video Duration</p>
-                                    <p id="detail-duration" class="text-sm font-semibold text-blue-400">-</p>
-                                </div>
-                                <div class="bg-gray-900/50 rounded-lg p-3">
-                                    <p class="text-xs text-gray-500 mb-1">Word Range</p>
-                                    <p id="detail-words" class="text-sm font-semibold text-green-400">-</p>
-                                </div>
-                                <div class="bg-gray-900/50 rounded-lg p-3">
-                                    <p class="text-xs text-gray-500 mb-1">Visual Environment</p>
-                                    <p id="detail-visual" class="text-sm font-semibold text-amber-400">-</p>
-                                </div>
-                                <div class="bg-gray-900/50 rounded-lg p-3">
-                                    <p class="text-xs text-gray-500 mb-1">Art Style</p>
-                                    <p id="detail-art-style" class="text-sm font-semibold text-pink-400">-</p>
-                                </div>
-                                <div class="bg-gray-900/50 rounded-lg p-3">
-                                    <p class="text-xs text-gray-500 mb-1">Image Model</p>
-                                    <p id="detail-model" class="text-sm font-semibold text-cyan-400">-</p>
-                                </div>
-                            </div>
-                            
                             <!-- Vibe Description -->
                             <div class="bg-gray-900/50 rounded-lg p-3">
-                                <p class="text-xs text-gray-500 mb-1">Theme Description (how it affects the story)</p>
+                                <p class="text-xs text-gray-500 mb-1">Theme Description</p>
                                 <p id="detail-vibe-desc" class="text-sm text-gray-300 italic">-</p>
                             </div>
                             
                             <!-- Story Prompt -->
                             <div>
                                 <div class="flex items-center justify-between mb-2">
-                                    <p class="text-xs text-gray-500">📝 Prompt Used to Generate Story</p>
+                                    <p class="text-xs text-gray-500 font-semibold">📝 Complete Story Generation Prompt</p>
                                     <button onclick="copyStoryPrompt()" class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">📋 Copy</button>
                                 </div>
-                                <pre id="detail-prompt" class="text-xs text-gray-400 bg-gray-900 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap font-mono max-h-48 overflow-y-auto">-</pre>
+                                <pre id="detail-prompt" class="text-xs text-gray-400 bg-gray-900 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap font-mono max-h-64 overflow-y-auto">-</pre>
                             </div>
                             
                             <!-- Technical Details -->
-                            <div class="flex gap-4 text-xs text-gray-500">
+                            <div class="flex gap-4 text-xs text-gray-500 pt-2 border-t border-gray-700">
                                 <span>Model: <span id="detail-story-model" class="text-gray-400">gpt-4o-mini</span></span>
                                 <span>Temperature: <span id="detail-temp" class="text-gray-400">0.9</span></span>
                                 <span>Scenes: <span id="detail-scenes" class="text-gray-400">-</span></span>

@@ -5,30 +5,46 @@
 
 class Calendar {
     constructor(options = {}) {
-        this.container = null;
-        this.selector = options.selector || '#calendar';
+        // Support both container element and selector
+        this.container = options.container || null;
+        this.selector = options.selector || '#calendar-container';
         this.view = options.view || 'month'; // 'month' or 'week'
         this.currentDate = new Date();
         this.selectedDate = null;
         this.filters = {
             brandId: null,
-            platformId: null
+            platformId: null,
+            status: null
         };
+        
+        // Callbacks
+        this.onDateClick = options.onDateClick || null;
         this.onDateSelect = options.onDateSelect || null;
+        this.onPostClick = options.onPostClick || null;
         this.onSlotClick = options.onSlotClick || null;
+        this.onNavigate = options.onNavigate || null;
+        
+        // State
+        this.isLoading = false;
+        this.posts = [];
     }
 
     /**
      * Initialize the calendar
      */
     init() {
-        this.container = document.querySelector(this.selector);
+        // Use provided container or find by selector
         if (!this.container) {
-            console.warn('Calendar container not found');
+            this.container = document.querySelector(this.selector);
+        }
+        
+        if (!this.container) {
+            console.warn('Calendar container not found:', this.selector);
             return;
         }
 
         this.render();
+        return this; // Allow chaining
     }
 
     /**
@@ -41,6 +57,14 @@ class Calendar {
     }
 
     /**
+     * Get current filters
+     * @returns {Object} Current filter state
+     */
+    getFilters() {
+        return { ...this.filters };
+    }
+
+    /**
      * Navigate to previous period
      */
     prev() {
@@ -50,6 +74,7 @@ class Calendar {
             this.currentDate.setDate(this.currentDate.getDate() - 7);
         }
         this.render();
+        this.notifyNavigation();
     }
 
     /**
@@ -62,6 +87,7 @@ class Calendar {
             this.currentDate.setDate(this.currentDate.getDate() + 7);
         }
         this.render();
+        this.notifyNavigation();
     }
 
     /**
@@ -70,6 +96,30 @@ class Calendar {
     today() {
         this.currentDate = new Date();
         this.render();
+        this.notifyNavigation();
+    }
+
+    /**
+     * Go to specific date
+     * @param {Date} date - Date to navigate to
+     */
+    goToDate(date) {
+        this.currentDate = new Date(date);
+        this.render();
+        this.notifyNavigation();
+    }
+
+    /**
+     * Notify navigation callback
+     */
+    notifyNavigation() {
+        if (this.onNavigate) {
+            this.onNavigate({
+                view: this.view,
+                date: new Date(this.currentDate),
+                title: this.getCurrentTitle()
+            });
+        }
     }
 
     /**
@@ -77,62 +127,66 @@ class Calendar {
      * @param {string} view - 'month' or 'week'
      */
     setView(view) {
-        this.view = view;
-        this.render();
+        if (this.view !== view) {
+            this.view = view;
+            this.render();
+            this.notifyNavigation();
+        }
+    }
+
+    /**
+     * Get current view mode
+     * @returns {string} 'month' or 'week'
+     */
+    getView() {
+        return this.view;
+    }
+
+    /**
+     * Get current title string
+     * @returns {string} Formatted title
+     */
+    getCurrentTitle() {
+        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                          'July', 'August', 'September', 'October', 'November', 'December'];
+        
+        if (this.view === 'month') {
+            return `${monthNames[this.currentDate.getMonth()]} ${this.currentDate.getFullYear()}`;
+        } else {
+            return this.getWeekRangeString();
+        }
     }
 
     /**
      * Render the calendar
      */
     render() {
-        const header = this.renderHeader();
+        // Show loading indicator
+        if (this.isLoading) {
+            this.container.innerHTML = `
+                <div class="calendar calendar--loading">
+                    <div class="calendar__loading">
+                        <div class="spinner"></div>
+                        <span>Loading calendar...</span>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+
+        // Render appropriate view (no header - controlled by page)
         const body = this.view === 'month' ? this.renderMonth() : this.renderWeek();
 
         this.container.innerHTML = `
-            <div class="calendar">
-                ${header}
+            <div class="calendar calendar--${this.view}">
                 ${body}
             </div>
         `;
 
         this.setupEventListeners();
-    }
-
-    /**
-     * Render calendar header
-     */
-    renderHeader() {
-        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
-                          'July', 'August', 'September', 'October', 'November', 'December'];
         
-        const title = this.view === 'month'
-            ? `${monthNames[this.currentDate.getMonth()]} ${this.currentDate.getFullYear()}`
-            : this.getWeekRangeString();
-
-        return `
-            <div class="calendar__header">
-                <div class="calendar__nav">
-                    <button class="calendar__nav-btn" data-action="prev" title="Previous">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M15 18l-6-6 6-6"/>
-                        </svg>
-                    </button>
-                    <button class="calendar__nav-btn" data-action="today">Today</button>
-                    <button class="calendar__nav-btn" data-action="next" title="Next">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M9 18l6-6-6-6"/>
-                        </svg>
-                    </button>
-                </div>
-                <h3 class="calendar__title">${title}</h3>
-                <div class="calendar__view-toggle">
-                    <button class="calendar__view-btn ${this.view === 'month' ? 'calendar__view-btn--active' : ''}" 
-                            data-view="month">Month</button>
-                    <button class="calendar__view-btn ${this.view === 'week' ? 'calendar__view-btn--active' : ''}" 
-                            data-view="week">Week</button>
-                </div>
-            </div>
-        `;
+        // Notify navigation after render
+        this.notifyNavigation();
     }
 
     /**
@@ -145,11 +199,13 @@ class Calendar {
         const startDate = new Date(firstDay);
         startDate.setDate(startDate.getDate() - firstDay.getDay());
 
-        // Get posts for this month
-        const monthStart = new Date(firstDay);
-        const monthEnd = new Date(lastDay);
+        // Get posts for this month (include padding days)
+        const monthStart = new Date(startDate);
+        const monthEnd = new Date(startDate);
+        monthEnd.setDate(monthEnd.getDate() + 42); // 6 weeks
         monthEnd.setHours(23, 59, 59, 999);
-        const posts = postManager.getScheduledInRange(monthStart, monthEnd, this.filters);
+        
+        const posts = this.getFilteredPosts(monthStart, monthEnd);
         const postsByDate = this.groupPostsByDate(posts);
 
         let html = `
@@ -180,12 +236,19 @@ class Calendar {
                     ${dayPosts.length > 0 ? `
                         <div class="calendar__day-posts">
                             ${dayPosts.slice(0, 3).map(post => `
-                                <div class="calendar__post-indicator" 
-                                     style="background: ${this.getPlatformColor(post.platformId)}"
-                                     title="${post.content.title || 'Scheduled post'} - ${this.formatTime(post.scheduledAt)}">
+                                <div class="calendar__post calendar__post--${post.status}" 
+                                     data-post-id="${post.id}"
+                                     style="--platform-color: ${this.getPlatformColor(post.platformId)}"
+                                     title="${this.escapeHtml(post.content?.title || 'Untitled')} - ${this.formatTime(post.scheduledAt)}">
+                                    <span class="calendar__post-dot"></span>
+                                    <span class="calendar__post-title">${this.escapeHtml(post.content?.title || 'Untitled')}</span>
                                 </div>
                             `).join('')}
-                            ${dayPosts.length > 3 ? `<span class="calendar__more">+${dayPosts.length - 3}</span>` : ''}
+                            ${dayPosts.length > 3 ? `
+                                <button class="calendar__more" data-date="${dateKey}">
+                                    +${dayPosts.length - 3} more
+                                </button>
+                            ` : ''}
                         </div>
                     ` : ''}
                 </div>
@@ -208,11 +271,20 @@ class Calendar {
         // Get posts for this week
         const weekEnd = new Date(weekStart);
         weekEnd.setDate(weekEnd.getDate() + 7);
-        const posts = postManager.getScheduledInRange(weekStart, weekEnd, this.filters);
+        weekEnd.setHours(23, 59, 59, 999);
+        
+        const posts = this.getFilteredPosts(weekStart, weekEnd);
         const postsByDate = this.groupPostsByDate(posts);
 
-        // Get scheduled slots
-        const slots = scheduler.getSlotsInRange(weekStart, weekEnd, this.filters);
+        // Get scheduled slots (if scheduler is available)
+        let slots = [];
+        if (typeof scheduler !== 'undefined') {
+            try {
+                slots = scheduler.getSlotsInRange(weekStart, weekEnd, this.filters);
+            } catch (e) {
+                console.warn('Could not get scheduled slots:', e);
+            }
+        }
 
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -236,24 +308,36 @@ class Calendar {
                         <span class="calendar__week-day-date">${currentDate.getDate()}</span>
                     </div>
                     <div class="calendar__week-day-content">
-                        ${dayPosts.map(post => `
-                            <div class="calendar__post-card" data-post-id="${post.id}">
-                                <div class="calendar__post-time">${this.formatTime(post.scheduledAt)}</div>
-                                <div class="calendar__post-platform" style="color: ${this.getPlatformColor(post.platformId)}">
-                                    ${post.platformId}
+                        ${dayPosts.length > 0 ? dayPosts.map(post => `
+                            <div class="calendar__post-card calendar__post-card--${post.status}" 
+                                 data-post-id="${post.id}"
+                                 style="--platform-color: ${this.getPlatformColor(post.platformId)}">
+                                <div class="calendar__post-card-header">
+                                    <span class="calendar__post-time">${this.formatTime(post.scheduledAt)}</span>
+                                    <span class="calendar__post-status">${post.status}</span>
                                 </div>
-                                <div class="calendar__post-title">${post.content.title || 'Untitled'}</div>
-                                <span class="calendar__post-status calendar__post-status--${post.status}">${post.status}</span>
+                                <div class="calendar__post-platform">
+                                    <span class="calendar__platform-dot"></span>
+                                    ${this.escapeHtml(post.platformId)}
+                                </div>
+                                <div class="calendar__post-title">${this.escapeHtml(post.content?.title || 'Untitled')}</div>
                             </div>
-                        `).join('')}
+                        `).join('') : ''}
                         ${daySlots.filter(slot => !dayPosts.some(p => 
-                            p.scheduledAt.getTime() === slot.time.getTime()
+                            p.scheduledAt && p.scheduledAt.getTime() === slot.time.getTime()
                         )).map(slot => `
-                            <div class="calendar__slot calendar__slot--empty" data-slot-time="${slot.time.toISOString()}">
+                            <div class="calendar__slot calendar__slot--empty" 
+                                 data-slot-time="${slot.time.toISOString()}"
+                                 data-date="${dateKey}">
                                 <span class="calendar__slot-time">${this.formatTime(slot.time)}</span>
                                 <span class="calendar__slot-label">Available slot</span>
                             </div>
                         `).join('')}
+                        ${dayPosts.length === 0 && daySlots.length === 0 ? `
+                            <div class="calendar__empty-day">
+                                <span>No posts</span>
+                            </div>
+                        ` : ''}
                     </div>
                 </div>
             `;
@@ -269,31 +353,28 @@ class Calendar {
      * Set up event listeners
      */
     setupEventListeners() {
-        // Navigation
+        // Single delegated click handler
         this.container.addEventListener('click', (e) => {
-            const navBtn = e.target.closest('[data-action]');
-            if (navBtn) {
-                const action = navBtn.dataset.action;
-                if (action === 'prev') this.prev();
-                if (action === 'next') this.next();
-                if (action === 'today') this.today();
+            // Post click (both month indicators and week cards)
+            const postElement = e.target.closest('[data-post-id]');
+            if (postElement) {
+                const postId = postElement.dataset.postId;
+                const post = this.findPostById(postId);
+                if (post && this.onPostClick) {
+                    this.onPostClick(post);
+                }
                 return;
             }
 
-            const viewBtn = e.target.closest('[data-view]');
-            if (viewBtn) {
-                this.setView(viewBtn.dataset.view);
+            // "More" button click
+            const moreBtn = e.target.closest('.calendar__more');
+            if (moreBtn && moreBtn.dataset.date) {
+                const date = new Date(moreBtn.dataset.date);
+                this.handleMoreClick(date);
                 return;
             }
 
-            const day = e.target.closest('[data-date]');
-            if (day && this.onDateSelect) {
-                const date = new Date(day.dataset.date);
-                this.selectedDate = date;
-                this.onDateSelect(date);
-                return;
-            }
-
+            // Slot click (available time slots)
             const slot = e.target.closest('[data-slot-time]');
             if (slot && this.onSlotClick) {
                 const time = new Date(slot.dataset.slotTime);
@@ -301,14 +382,94 @@ class Calendar {
                 return;
             }
 
-            const postCard = e.target.closest('[data-post-id]');
-            if (postCard) {
-                const postId = postCard.dataset.postId;
-                // Could emit event or navigate to post details
-                console.log('Post clicked:', postId);
+            // Day click (for creating new posts)
+            const day = e.target.closest('[data-date]');
+            if (day) {
+                // Don't trigger day click if clicking on a post or more button
+                if (!e.target.closest('[data-post-id]') && !e.target.closest('.calendar__more')) {
+                    const date = new Date(day.dataset.date);
+                    this.selectedDate = date;
+                    
+                    // Support both callback names
+                    if (this.onDateClick) {
+                        this.onDateClick(date);
+                    } else if (this.onDateSelect) {
+                        this.onDateSelect(date);
+                    }
+                }
                 return;
             }
         });
+    }
+
+    /**
+     * Handle "more posts" button click
+     * @param {Date} date - Date to show all posts for
+     */
+    handleMoreClick(date) {
+        const dateKey = this.getDateKey(date);
+        const posts = this.getFilteredPosts(date, new Date(date.getTime() + 86400000))
+            .filter(p => this.getDateKey(p.scheduledAt) === dateKey);
+        
+        // If there's an onDateClick handler, use it to show the day detail
+        if (this.onDateClick) {
+            this.onDateClick(date, posts);
+        }
+    }
+
+    /**
+     * Find a post by ID from postManager
+     * @param {string} postId - Post ID to find
+     * @returns {Object|null} Post object or null
+     */
+    findPostById(postId) {
+        if (typeof postManager !== 'undefined') {
+            return postManager.get(postId);
+        }
+        return null;
+    }
+
+    /**
+     * Get filtered posts from postManager
+     * @param {Date} start - Start date
+     * @param {Date} end - End date
+     * @returns {Array} Filtered posts
+     */
+    getFilteredPosts(start, end) {
+        if (typeof postManager === 'undefined') {
+            console.warn('postManager not available');
+            return [];
+        }
+
+        try {
+            // Get posts from postManager
+            let posts = postManager.getScheduledInRange(start, end, {
+                brandId: this.filters.brandId,
+                platformId: this.filters.platformId
+            });
+
+            // Apply status filter if set
+            if (this.filters.status) {
+                posts = posts.filter(p => p.status === this.filters.status);
+            }
+
+            return posts;
+        } catch (e) {
+            console.warn('Error getting posts:', e);
+            return [];
+        }
+    }
+
+    /**
+     * Escape HTML to prevent XSS
+     * @param {string} text - Text to escape
+     * @returns {string} Escaped text
+     */
+    escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     // ==================== Helper Methods ====================

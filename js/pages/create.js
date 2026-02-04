@@ -546,6 +546,10 @@ class CreatePageController {
             content = content.map(s => typeof s === 'string' ? s : s.text || '').join(' ');
         }
         
+        // Get generation details for display
+        const genDetails = this.formData.generationDetails || {};
+        const storyPrompt = genDetails.story_prompt || 'No prompt available';
+        
         container.innerHTML = `
             <div class="create-card">
                 <h2 class="create-card__title">📖 Review & Edit Content</h2>
@@ -553,6 +557,63 @@ class CreatePageController {
                 <div class="form-group">
                     <label class="form-label">📝 Title</label>
                     <input type="text" id="content-title" class="form-control" value="${title}" placeholder="Enter a title for your video...">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">📜 Full Story <span class="form-label__hint">(editable)</span></label>
+                    <textarea id="story-full-text" class="form-control" rows="4" placeholder="Your full story text...">${this.escapeHtml(content)}</textarea>
+                </div>
+                
+                <!-- Generation Settings Summary -->
+                <div class="generation-summary">
+                    <div class="generation-summary__grid">
+                        <div class="generation-summary__item">
+                            <span class="generation-summary__label">Theme</span>
+                            <span class="generation-summary__value generation-summary__value--purple">${genDetails.vibe_preset || '-'}</span>
+                        </div>
+                        <div class="generation-summary__item">
+                            <span class="generation-summary__label">Duration</span>
+                            <span class="generation-summary__value generation-summary__value--blue">${genDetails.length_preset ? genDetails.length_preset + 's' : '-'}</span>
+                        </div>
+                        <div class="generation-summary__item">
+                            <span class="generation-summary__label">Words</span>
+                            <span class="generation-summary__value generation-summary__value--green">${genDetails.word_range || '-'}</span>
+                        </div>
+                        <div class="generation-summary__item">
+                            <span class="generation-summary__label">Visual</span>
+                            <span class="generation-summary__value generation-summary__value--amber">${genDetails.visual_preset || '-'}</span>
+                        </div>
+                        <div class="generation-summary__item">
+                            <span class="generation-summary__label">Art Style</span>
+                            <span class="generation-summary__value generation-summary__value--pink">${genDetails.art_style_name || '-'}</span>
+                        </div>
+                        <div class="generation-summary__item">
+                            <span class="generation-summary__label">Model</span>
+                            <span class="generation-summary__value generation-summary__value--cyan">${genDetails.image_model || '-'}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Full Prompt Section -->
+                <div class="form-group">
+                    <button type="button" id="toggle-prompt-btn" class="prompt-toggle-btn" onclick="window.createController?.togglePromptSection()">
+                        <span class="prompt-toggle-btn__icon">📝</span>
+                        <span class="prompt-toggle-btn__text">View Full Prompt</span>
+                        <span class="prompt-toggle-btn__hint">(the complete prompt used to generate this story)</span>
+                        <span class="prompt-toggle-btn__arrow" id="prompt-arrow">▼</span>
+                    </button>
+                    <div id="prompt-section" class="prompt-section prompt-section--hidden">
+                        <div class="prompt-section__header">
+                            <span class="form-label">📝 Complete Story Generation Prompt</span>
+                            <button type="button" class="btn btn--small" onclick="window.createController?.copyPrompt()">📋 Copy</button>
+                        </div>
+                        <pre id="story-prompt-display" class="prompt-display">${this.escapeHtml(storyPrompt)}</pre>
+                        <div class="prompt-section__meta">
+                            <span>Model: <strong>${genDetails.story_model || 'gpt-4o-mini'}</strong></span>
+                            <span>Temperature: <strong>${genDetails.story_temperature || '0.9'}</strong></span>
+                            <span>Scenes: <strong>${genDetails.scene_count || this.sceneBuilder.scenes.length}</strong></span>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="form-group">
@@ -853,8 +914,12 @@ class CreatePageController {
             this.formData.content = previewResponse.story_text || '';
             this.formData.sceneCount = previewResponse.scenes?.length || previewResponse.generation_details?.scene_count || 6;
             
+            // Store generation details including the prompt for display
+            this.formData.generationDetails = previewResponse.generation_details || {};
+            
             this.debugLog('runPreviewMode', `Title: ${this.formData.title}`);
             this.debugLog('runPreviewMode', `Scenes: ${previewResponse.scenes?.length || 0}`);
+            this.debugLog('runPreviewMode', `Generation details stored: ${Object.keys(this.formData.generationDetails).join(', ')}`);
             
             // Parse scenes from PREVIEW response (not checkJob which doesn't have them yet)
             if (previewResponse.scenes && previewResponse.scenes.length > 0) {
@@ -1622,6 +1687,45 @@ class CreatePageController {
         } catch (e) {
             console.error('Failed to add to post queue:', e);
             // Non-blocking - don't fail the UI if queue fails
+        }
+    }
+
+    /**
+     * Escape HTML to prevent XSS
+     */
+    escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    /**
+     * Toggle the prompt section visibility
+     */
+    togglePromptSection() {
+        const section = document.getElementById('prompt-section');
+        const arrow = document.getElementById('prompt-arrow');
+        if (section) {
+            section.classList.toggle('prompt-section--hidden');
+            if (arrow) {
+                arrow.textContent = section.classList.contains('prompt-section--hidden') ? '▼' : '▲';
+            }
+        }
+    }
+
+    /**
+     * Copy the story prompt to clipboard
+     */
+    async copyPrompt() {
+        const promptEl = document.getElementById('story-prompt-display');
+        if (promptEl) {
+            try {
+                await navigator.clipboard.writeText(promptEl.textContent);
+                this.addLog('📋 Prompt copied to clipboard', 'success');
+            } catch (e) {
+                console.error('Failed to copy prompt:', e);
+            }
         }
     }
 

@@ -1343,16 +1343,26 @@ async function generateImages() {
     }
 }
 
+// Track poll count for logging
+let pollCount = 0;
+
 function pollForCompletion() {
     if (pollInterval) clearInterval(pollInterval);
     
     let consecutiveErrors = 0;
     const MAX_CONSECUTIVE_ERRORS = 5; // Allow up to 5 consecutive poll errors before giving up
+    pollCount = 0;
     
     pollInterval = setInterval(async () => {
         try {
+            pollCount++;
             const status = await checkJob(currentJobId);
-            console.log('Poll result:', status);
+            
+            // Build detailed log for debugging
+            const imagesInfo = status.parallel_in_progress 
+                ? `parallel: ${status.parallel_progress || 0}/${status.total_images || '?'}`
+                : `${status.images_generated || status.scenes?.length || 0}/${status.total_images || '?'}`;
+            console.log(`[Poll ${pollCount}] status=${status.status}, progress=${status.progress}%, images=${imagesInfo}`);
             
             // Reset error counter on successful poll
             consecutiveErrors = 0;
@@ -1360,22 +1370,33 @@ function pollForCompletion() {
             // Update debug panel with backend info
             updateDebugInfo(status);
             
-            // Update progress
+            // Update progress with image count info
             const progress = status.progress || 0;
-            updateProgress(progress, getProgressLabel(progress, status.status));
+            let progressLabel = getProgressLabel(progress, status.status);
             
-            // Log image model info when in images phase
-            if (progress >= 55 && progress < 70 && status.image_model) {
+            // Enhanced progress label for image generation phase
+            if (progress >= 55 && progress < 75) {
+                const imgCount = status.parallel_in_progress 
+                    ? (status.parallel_progress || 0)
+                    : (status.images_generated || status.scenes?.length || 0);
+                const imgTotal = status.total_images || '?';
+                progressLabel = `Generating images (${imgCount}/${imgTotal})...`;
+            }
+            
+            updateProgress(progress, progressLabel);
+            
+            // Log image model info when in images phase (only once)
+            if (progress >= 55 && progress < 70 && status.image_model && pollCount === 1) {
                 addLog(`🔧 Backend using: ${status.image_model}`);
             }
             
-            // Update scenes if available
+            // Update scenes if available (even during generation)
             if (status.scenes && status.scenes.length > 0) {
                 updateSceneImages(status.scenes);
             }
             
-            // Check completion
-            if (status.status === 'complete') {
+            // Check completion - also check for 'completed' status (for skip_video_assembly)
+            if (status.status === 'complete' || status.status === 'completed') {
                 clearInterval(pollInterval);
                 addLog('✓ Video generation complete!');
                 displayFinalResult(status);
