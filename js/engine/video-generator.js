@@ -222,13 +222,17 @@ class VideoGenerator {
      */
     async startGeneration() {
         this.emit('generationStart');
-        this.emit('log', { message: 'Creating job...', type: 'info' });
+        this.emit('log', { message: '🚀 Starting video generation pipeline...', type: 'info' });
+        this.emit('log', { message: `Template: ${this.template.name} (${this.template.niche})`, type: 'verbose' });
 
         try {
             // Build complete payload
             const payload = this.buildJobPayload();
+            this.emit('log', { message: `Scenes: ${payload.scenes?.length || 0}`, type: 'verbose' });
+            this.emit('log', { message: `Visual Source: ${payload.settings?.visualSource || 'ai'}`, type: 'verbose' });
             
             // Create job
+            this.emit('log', { message: '📝 Creating job on server...', type: 'info' });
             const createResponse = await API.createJob(payload);
             
             // Handle both job_id (from API) and jobId (camelCase)
@@ -239,12 +243,14 @@ class VideoGenerator {
             }
             
             this.emit('jobCreated', { jobId: this.jobId });
-            this.emit('log', { message: `Job created: ${this.jobId}`, type: 'success' });
+            this.emit('log', { message: `✅ Job created: ${this.jobId.substring(0, 8)}...`, type: 'success' });
+            this.emit('log', { message: `Full Job ID: ${this.jobId}`, type: 'debug' });
 
             // Start the job
             await this.runJob();
             
         } catch (error) {
+            this.emit('log', { message: `❌ Job creation failed: ${error.message}`, type: 'error' });
             this.emit('error', { message: error.message, phase: 'creation' });
             throw error;
         }
@@ -300,16 +306,20 @@ class VideoGenerator {
      * Run the job and poll for status
      */
     async runJob() {
-        this.emit('log', { message: 'Starting job execution...', type: 'info' });
+        this.emit('log', { message: '▶️ Starting job execution...', type: 'info' });
+        this.emit('phaseChange', { phase: 'story', status: 'active', message: 'Initializing...' });
         
         try {
             // Trigger job run
+            this.emit('log', { message: 'Sending run request to edge function...', type: 'verbose' });
             await API.runJob(this.jobId);
+            this.emit('log', { message: 'Job started successfully', type: 'verbose' });
             
             // Poll for status
             await this.pollJobStatus();
             
         } catch (error) {
+            this.emit('log', { message: `❌ Execution failed: ${error.message}`, type: 'error' });
             this.emit('error', { message: error.message, phase: 'execution' });
             throw error;
         }
@@ -322,16 +332,27 @@ class VideoGenerator {
         const pollInterval = 2000; // 2 seconds
         const maxPolls = 300; // 10 minutes max
         let polls = 0;
+        let lastPhase = '';
+
+        this.emit('log', { message: '🔄 Starting status polling...', type: 'verbose' });
 
         while (polls < maxPolls) {
             try {
                 const status = await API.checkJob(this.jobId);
                 
                 this.emit('statusUpdate', status);
+                
+                // Log phase changes
+                if (status.phase && status.phase !== lastPhase) {
+                    this.emit('log', { message: `Phase changed: ${lastPhase || 'init'} → ${status.phase}`, type: 'debug' });
+                    lastPhase = status.phase;
+                }
+                
                 this.updateProgress(status);
 
                 if (status.status === 'completed') {
-                    this.emit('log', { message: 'Job completed!', type: 'success' });
+                    this.emit('log', { message: '🎉 Video generation complete!', type: 'success' });
+                    this.emit('phaseChange', { phase: 'video', status: 'completed' });
                     this.state.video = status.result;
                     this.emit('generationComplete', status.result);
                     return;
@@ -343,6 +364,8 @@ class VideoGenerator {
 
                 // Update images as they come in
                 if (status.images && status.images.length > this.state.images.length) {
+                    const newCount = status.images.length - this.state.images.length;
+                    this.emit('log', { message: `🖼️ ${newCount} new image(s) generated (${status.images.length} total)`, type: 'info' });
                     this.state.images = status.images;
                     this.emit('imagesUpdate', status.images);
                 }
@@ -350,13 +373,19 @@ class VideoGenerator {
                 await this.sleep(pollInterval);
                 polls++;
                 
+                // Log poll count periodically
+                if (polls % 10 === 0) {
+                    this.emit('log', { message: `Still processing... (${polls * 2}s elapsed)`, type: 'verbose' });
+                }
+                
             } catch (error) {
+                this.emit('log', { message: `Polling error: ${error.message}`, type: 'debug' });
                 this.emit('error', { message: error.message, phase: 'polling' });
                 throw error;
             }
         }
 
-        throw new Error('Job timed out');
+        throw new Error('Job timed out after 10 minutes');
     }
 
     /**
@@ -367,26 +396,49 @@ class VideoGenerator {
         const progress = status.progress || 0;
         
         let label = 'Processing...';
+        let phaseMessage = '';
         
         switch (phase) {
             case 'story':
-                label = 'Generating story...';
+                label = '📖 Generating story script...';
+                phaseMessage = 'Creating your narrative...';
+                this.emit('phaseChange', { phase: 'story', status: 'active', message: phaseMessage });
                 break;
             case 'images':
-                label = `Generating images (${status.imagesComplete || 0}/${status.imagesTotal || 0})...`;
+                const imgComplete = status.imagesComplete || 0;
+                const imgTotal = status.imagesTotal || 0;
+                label = `🎨 Generating images (${imgComplete}/${imgTotal})...`;
+                phaseMessage = `Creating scene ${imgComplete + 1} of ${imgTotal}`;
+                this.emit('phaseChange', { phase: 'images', status: 'active', message: phaseMessage });
+                // Mark story as complete when images start
+                if (imgComplete === 0) {
+                    this.emit('phaseChange', { phase: 'story', status: 'completed' });
+                }
                 break;
             case 'audio':
-                label = 'Generating audio...';
+                label = '🔊 Generating voice narration...';
+                phaseMessage = 'Creating audio track...';
+                this.emit('phaseChange', { phase: 'images', status: 'completed' });
+                this.emit('phaseChange', { phase: 'audio', status: 'active', message: phaseMessage });
                 break;
             case 'video':
-                label = 'Assembling video...';
+                label = '🎬 Assembling final video...';
+                phaseMessage = 'Rendering video frames...';
+                this.emit('phaseChange', { phase: 'audio', status: 'completed' });
+                this.emit('phaseChange', { phase: 'video', status: 'active', message: phaseMessage });
                 break;
             case 'upload':
-                label = 'Uploading...';
+                label = '☁️ Uploading video...';
+                phaseMessage = 'Saving to cloud storage...';
+                break;
+            case 'complete':
+                label = '✅ Generation complete!';
+                this.emit('phaseChange', { phase: 'video', status: 'completed' });
                 break;
         }
 
         this.emit('progress', { percent: progress, label, phase });
+        this.emit('log', { message: label, type: 'info' });
     }
 
     /**

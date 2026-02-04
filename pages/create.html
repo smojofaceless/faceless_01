@@ -163,10 +163,55 @@
                 <!-- Generation Progress -->
                 <div id="generation-progress" class="generation-progress hidden">
                     <div class="generation-progress__header">
-                        <h2 id="progress-title">Generating Your Content</h2>
+                        <h2 id="progress-title">🎬 Generating Your Video</h2>
                         <span id="progress-status" class="generation-progress__status">Preparing...</span>
                     </div>
 
+                    <!-- Phase Progress Steps -->
+                    <div class="generation-phases" id="generation-phases">
+                        <div class="generation-phase" data-phase="story">
+                            <div class="generation-phase__icon">📖</div>
+                            <div class="generation-phase__info">
+                                <div class="generation-phase__name">Story Generation</div>
+                                <div class="generation-phase__desc">AI creates your script</div>
+                            </div>
+                            <div class="generation-phase__status">
+                                <span class="generation-phase__badge">Waiting</span>
+                            </div>
+                        </div>
+                        <div class="generation-phase" data-phase="images">
+                            <div class="generation-phase__icon">🎨</div>
+                            <div class="generation-phase__info">
+                                <div class="generation-phase__name">Image Generation</div>
+                                <div class="generation-phase__desc" id="images-desc">Creating visuals for each scene</div>
+                            </div>
+                            <div class="generation-phase__status">
+                                <span class="generation-phase__badge">Waiting</span>
+                            </div>
+                        </div>
+                        <div class="generation-phase" data-phase="audio">
+                            <div class="generation-phase__icon">🔊</div>
+                            <div class="generation-phase__info">
+                                <div class="generation-phase__name">Audio Generation</div>
+                                <div class="generation-phase__desc">Voice narration & music</div>
+                            </div>
+                            <div class="generation-phase__status">
+                                <span class="generation-phase__badge">Waiting</span>
+                            </div>
+                        </div>
+                        <div class="generation-phase" data-phase="video">
+                            <div class="generation-phase__icon">🎬</div>
+                            <div class="generation-phase__info">
+                                <div class="generation-phase__name">Video Assembly</div>
+                                <div class="generation-phase__desc">Combining everything together</div>
+                            </div>
+                            <div class="generation-phase__status">
+                                <span class="generation-phase__badge">Waiting</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Overall Progress Bar -->
                     <div class="generation-progress__bar-container">
                         <div class="generation-progress__bar">
                             <div id="progress-bar" class="generation-progress__fill" style="width: 0%"></div>
@@ -181,14 +226,17 @@
                         <!-- Rendered as images are generated -->
                     </div>
 
-                    <!-- Log -->
+                    <!-- Detailed Log Panel -->
                     <div class="generation-progress__log">
                         <div class="generation-progress__log-header">
                             <span>📋 Generation Log</span>
-                            <button id="btn-toggle-debug" class="btn btn--sm btn--ghost">🔧 Debug</button>
+                            <div class="log-controls">
+                                <button id="btn-toggle-verbose" class="btn btn--sm btn--ghost">📝 Verbose</button>
+                                <button id="btn-toggle-debug" class="btn btn--sm btn--ghost">🔧 Debug</button>
+                            </div>
                         </div>
                         <div id="generation-log" class="generation-progress__log-content">
-                            <p>Waiting to start...</p>
+                            <p class="log-entry log-entry--info">[--:--:--] Waiting to start...</p>
                         </div>
                     </div>
 

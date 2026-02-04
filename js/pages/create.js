@@ -54,6 +54,9 @@ class CreatePageController {
         // Debug toggle
         document.getElementById('btn-toggle-debug')?.addEventListener('click', () => this.toggleDebug());
         
+        // Verbose toggle
+        document.getElementById('btn-toggle-verbose')?.addEventListener('click', () => this.toggleVerbose());
+        
         // Error modal
         document.getElementById('btn-close-error')?.addEventListener('click', () => this.closeErrorModal());
         document.querySelector('#error-modal .modal__close')?.addEventListener('click', () => this.closeErrorModal());
@@ -183,9 +186,10 @@ class CreatePageController {
     setupGeneratorEvents() {
         this.generator.on('log', (data) => this.addLog(data.message, data.type));
         this.generator.on('progress', (data) => this.updateProgress(data));
+        this.generator.on('phaseChange', (data) => this.updatePhase(data));
         this.generator.on('imagesUpdate', (images) => this.updateImageGrid(images));
         this.generator.on('generationComplete', (result) => this.showResult(result));
-        this.generator.on('error', (error) => this.showError(error.message));
+        this.generator.on('error', (error) => this.handleGenerationError(error));
         this.generator.on('stepChange', (data) => this.onStepChange(data));
     }
 
@@ -685,30 +689,40 @@ class CreatePageController {
 
     async generateContent() {
         try {
-            this.addLog('Generating content...', 'info');
+            console.log('🎬 [Create] Starting content generation...');
+            this.addLog('📝 Starting story generation...', 'info');
             
             // Build settings payload
             const settings = this.generator.buildSettingsPayload(this.formData);
+            console.log('🎬 [Create] Settings payload:', settings);
+            this.addLog(`Template: ${this.template.name}`, 'verbose');
+            this.addLog(`Visual source: ${settings.visualSource || 'ai'}`, 'verbose');
             
             // Generate content via API
+            this.addLog('🤖 Calling AI to generate story...', 'info');
             const response = await this.generator.generateContent();
             
-            console.log('generateContent response:', response);
+            console.log('🎬 [Create] generateContent response:', response);
             
             // Set scenes from normalized response
             if (response.scenes && response.scenes.length > 0) {
                 this.sceneBuilder.setScenes(response.scenes);
+                this.addLog(`✅ Generated ${response.scenes.length} scenes`, 'success');
             } else if (response.story) {
                 this.sceneBuilder.parseStoryIntoScenes(response.story, settings.sceneCount || 6);
+                this.addLog(`✅ Parsed story into ${this.sceneBuilder.scenes.length} scenes`, 'success');
             }
 
             // Store in formData for rendering
             this.formData.title = response.title || '';
             this.formData.content = response.story || '';
             
-            this.addLog('Content generated successfully!', 'success');
+            console.log('🎬 [Create] Content stored in formData');
+            this.addLog('Story generation complete!', 'success');
             
         } catch (error) {
+            console.error('🎬 [Create] Content generation error:', error);
+            this.addLog(`❌ Content generation failed: ${error.message}`, 'error');
             this.showError('Failed to generate content: ' + error.message);
             throw error;
         }
@@ -717,13 +731,31 @@ class CreatePageController {
     async startGeneration() {
         this.collectAndSaveFormData();
         
+        console.log('🎬 [Create] Starting full generation with settings:', this.formData);
+        
         // Hide create interface, show progress
         document.getElementById('create-interface').classList.add('hidden');
         document.getElementById('generation-progress').classList.remove('hidden');
         
+        // Clear previous log
+        document.getElementById('generation-log').innerHTML = '';
+        
+        // Reset phase indicators
+        document.querySelectorAll('.generation-phase').forEach(el => {
+            el.classList.remove('active', 'completed', 'error');
+            const badge = el.querySelector('.generation-phase__badge');
+            if (badge) badge.textContent = 'Waiting';
+        });
+        
+        this.addLog('🚀 Starting video generation...', 'info');
+        this.addLog(`Brand: ${brandManager.getActiveBrand()?.name || 'Unknown'}`, 'verbose');
+        this.addLog(`Niche: ${this.template.niche}`, 'verbose');
+        
         try {
             await this.generator.startGeneration();
         } catch (error) {
+            console.error('🎬 [Create] Generation failed:', error);
+            this.addLog(`❌ Generation failed: ${error.message}`, 'error');
             this.showError('Generation failed: ' + error.message);
         }
     }
@@ -768,11 +800,92 @@ class CreatePageController {
         document.getElementById('progress-bar').style.width = `${data.percent}%`;
         document.getElementById('progress-percent').textContent = `${Math.round(data.percent)}%`;
         document.getElementById('progress-label').textContent = data.label;
+        
+        // Update phase if provided
+        if (data.phase) {
+            this.updatePhase({ phase: data.phase, status: 'active' });
+        }
+    }
+
+    /**
+     * Update phase indicator status
+     */
+    updatePhase(data) {
+        const { phase, status, message } = data;
+        
+        // Reset all phases first if starting a new phase
+        if (status === 'active') {
+            document.querySelectorAll('.generation-phase').forEach(el => {
+                if (el.dataset.phase !== phase && !el.classList.contains('completed')) {
+                    el.classList.remove('active');
+                }
+            });
+        }
+        
+        const phaseEl = document.querySelector(`.generation-phase[data-phase="${phase}"]`);
+        if (!phaseEl) return;
+        
+        // Remove previous status classes
+        phaseEl.classList.remove('active', 'completed', 'error');
+        
+        // Apply new status
+        if (status === 'active' || status === 'in-progress') {
+            phaseEl.classList.add('active');
+            const badge = phaseEl.querySelector('.generation-phase__badge');
+            if (badge) badge.textContent = message || 'In Progress...';
+        } else if (status === 'completed' || status === 'complete') {
+            phaseEl.classList.add('completed');
+            const badge = phaseEl.querySelector('.generation-phase__badge');
+            if (badge) badge.textContent = '✓ Complete';
+        } else if (status === 'error') {
+            phaseEl.classList.add('error');
+            const badge = phaseEl.querySelector('.generation-phase__badge');
+            if (badge) badge.textContent = '✗ Failed';
+        }
+        
+        // Update description if provided
+        if (message && status === 'active') {
+            const desc = phaseEl.querySelector('.generation-phase__desc');
+            if (desc) desc.textContent = message;
+        }
+        
+        // Add phase change to log
+        if (status === 'active') {
+            this.addPhaseLog(phase);
+        }
+    }
+
+    /**
+     * Add a phase separator to the log
+     */
+    addPhaseLog(phase) {
+        const phaseNames = {
+            story: '📖 STORY GENERATION',
+            images: '🎨 IMAGE GENERATION',
+            audio: '🔊 AUDIO GENERATION',
+            video: '🎬 VIDEO ASSEMBLY'
+        };
+        
+        const log = document.getElementById('generation-log');
+        if (!log) return;
+        
+        const separator = document.createElement('div');
+        separator.className = 'log-phase-separator';
+        separator.textContent = phaseNames[phase] || phase.toUpperCase();
+        log.appendChild(separator);
+        log.scrollTop = log.scrollHeight;
     }
 
     updateImageGrid(images) {
         const container = document.getElementById('image-grid');
         if (!container) return;
+
+        // Update image count in phase
+        const imagesDesc = document.getElementById('images-desc');
+        if (imagesDesc) {
+            const completed = images.filter(img => img.url).length;
+            imagesDesc.textContent = `Generated ${completed}/${images.length} images`;
+        }
 
         container.innerHTML = images.map((img, i) => `
             <div class="image-grid__item ${img.url ? 'loaded' : 'loading'}">
@@ -790,9 +903,44 @@ class CreatePageController {
 
         const entry = document.createElement('p');
         entry.className = `log-entry log-entry--${type}`;
-        entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+        
+        const timestamp = new Date().toLocaleTimeString();
+        const icon = {
+            info: 'ℹ️',
+            success: '✅',
+            error: '❌',
+            warning: '⚠️',
+            debug: '🔧',
+            verbose: '📝'
+        }[type] || 'ℹ️';
+        
+        entry.innerHTML = `<span class="log-time">[${timestamp}]</span> ${icon} ${message}`;
         log.appendChild(entry);
         log.scrollTop = log.scrollHeight;
+        
+        // Also update the status text
+        if (type !== 'debug' && type !== 'verbose') {
+            document.getElementById('progress-status').textContent = message.substring(0, 30) + (message.length > 30 ? '...' : '');
+        }
+    }
+
+    /**
+     * Handle generation errors with better UI feedback
+     */
+    handleGenerationError(error) {
+        console.error('Generation error:', error);
+        
+        // Update current phase to error state
+        const phases = ['story', 'images', 'audio', 'video'];
+        phases.forEach(phase => {
+            const phaseEl = document.querySelector(`.generation-phase[data-phase="${phase}"]`);
+            if (phaseEl?.classList.contains('active')) {
+                this.updatePhase({ phase, status: 'error' });
+            }
+        });
+        
+        this.addLog(`Error: ${error.message}`, 'error');
+        this.showError(error.message);
     }
 
     showResult(result) {
@@ -881,6 +1029,13 @@ class CreatePageController {
 
     toggleDebug() {
         document.getElementById('debug-panel')?.classList.toggle('hidden');
+        document.getElementById('generation-log')?.classList.toggle('show-debug');
+        document.getElementById('btn-toggle-debug')?.classList.toggle('active');
+    }
+
+    toggleVerbose() {
+        document.getElementById('generation-log')?.classList.toggle('show-verbose');
+        document.getElementById('btn-toggle-verbose')?.classList.toggle('active');
     }
 
     reset() {
@@ -894,7 +1049,31 @@ class CreatePageController {
 
         document.getElementById('result-view').classList.add('hidden');
         document.getElementById('generation-progress').classList.add('hidden');
-        document.getElementById('generation-log').innerHTML = '<p>Waiting to start...</p>';
+        document.getElementById('generation-log').innerHTML = '<p class="log-entry log-entry--info">[--:--:--] Waiting to start...</p>';
+        
+        // Reset phase indicators
+        document.querySelectorAll('.generation-phase').forEach(el => {
+            el.classList.remove('active', 'completed', 'error');
+            const badge = el.querySelector('.generation-phase__badge');
+            if (badge) badge.textContent = 'Waiting';
+            const desc = el.querySelector('.generation-phase__desc');
+            if (desc) {
+                const phase = el.dataset.phase;
+                const defaultDescs = {
+                    story: 'AI creates your script',
+                    images: 'Creating visuals for each scene',
+                    audio: 'Voice narration & music',
+                    video: 'Combining everything together'
+                };
+                desc.textContent = defaultDescs[phase] || '';
+            }
+        });
+        
+        // Reset progress
+        document.getElementById('progress-bar').style.width = '0%';
+        document.getElementById('progress-percent').textContent = '0%';
+        document.getElementById('progress-label').textContent = 'Starting...';
+        document.getElementById('progress-status').textContent = 'Preparing...';
         
         this.showCreateInterface();
         this.renderStepIndicators();
