@@ -3,7 +3,33 @@
 // =====================================================
 
 /**
+ * Default effects profile values (used when effects_mode is 'auto')
+ * These match the SYSTEM_DEFAULTS in effects_profile.ts
+ */
+const DEFAULT_EFFECTS_PROFILE = {
+    version: '1.0',
+    transitions: { enabled: true, type: 'crossfade', duration: 0.5, intensity: 0.8 },
+    kenburns: { enabled: true, zoom_amount: 1.15, speed: 0.5, direction: 'random' },
+    color_grade: { enabled: true, preset: 'auto', intensity: 0.7, contrast: 1.0, saturation: 1.0, brightness: 1.0, temperature: 0 },
+    vignette: { enabled: true, intensity: 0.4, radius: 0.8, softness: 0.5 },
+    film_grain: { enabled: false, intensity: 0.2, size: 1.0, color_noise: false },
+    scanlines: { enabled: false, intensity: 0.3, spacing: 2, thickness: 1 },
+    vhs: { enabled: false, tracking_noise: 0.3, color_bleed: 0.4, tape_crinkle: 0.2, jitter: 0.1, intensity: 0.5 },
+    glitch: { enabled: false, frequency: 0.1, intensity: 0.5, rgb_shift: 0.3 },
+    light_flicker: { enabled: false, intensity: 0.3, frequency: 0.2, randomness: 0.5 },
+    edge_darken: { enabled: false, intensity: 0.3, spread: 0.5 },
+    fade: { fade_in: true, fade_out: true, duration: 0.5 }
+};
+
+/**
  * Create a new video generation job
+ * 
+ * @param {object} options - Job configuration
+ * @param {string} options.theme - Content theme
+ * @param {string} options.vibe_preset - Vibe preset (slow_creepy, analog_horror, etc.)
+ * @param {string} options.effects_mode - 'auto' (preset-based) or 'custom' (user-defined)
+ * @param {object} options.effects_profile - Custom effects profile (when effects_mode='custom')
+ * @param {object} options.effects - Legacy boolean effects (backwards compatibility)
  */
 async function createJob(options) {
     const client = getSupabaseClient();
@@ -11,6 +37,9 @@ async function createJob(options) {
     if (!client) {
         throw new Error('Supabase is not configured. Please check your config.js has valid SUPABASE_URL and SUPABASE_ANON_KEY, or ensure the Supabase SDK is loaded.');
     }
+    
+    // Determine effects mode: 'auto' (preset-based) or 'custom' (user-defined)
+    const effectsMode = options.effects_mode || 'auto';
     
     // Build the request body
     const requestBody = {
@@ -27,6 +56,16 @@ async function createJob(options) {
         preview_only: options.preview_only || false,
         // Debug mode - skip video assembly
         skip_video_assembly: options.skip_video_assembly || false,
+        
+        // === NEW: Effects profile system ===
+        effects_mode: effectsMode,  // 'auto' or 'custom'
+        // If custom mode with profile provided, pass it through
+        ...(effectsMode === 'custom' && options.effects_profile ? {
+            effects_profile: options.effects_profile
+        } : {}),
+        
+        // === LEGACY: Boolean effects (backwards compatibility) ===
+        // These are used as fallback when effects_profile is not provided
         // Video effects - Transitions
         effect_fade_in: options.effects?.fadeIn ?? true,
         effect_fade_out: options.effects?.fadeOut ?? true,
@@ -46,6 +85,7 @@ async function createJob(options) {
         effect_heartbeat_zoom: options.effects?.heartbeatZoom ?? false,
         effect_negative_flash: options.effects?.negativeFlash ?? false,
         effect_edge_darkening: options.effects?.edgeDarkeningCreep ?? false,
+        
         // Audio settings
         audio_music: options.audio?.music ?? false,
         audio_track: options.audio?.track || '',
@@ -61,6 +101,8 @@ async function createJob(options) {
         requestBody.custom_style = options.custom_style;
     }
     
+    console.log(`[API] createJob: effects_mode=${effectsMode}, has_profile=${!!options.effects_profile}`);
+    
     const { data, error } = await client.functions.invoke('create-job', {
         body: requestBody,
     });
@@ -69,6 +111,60 @@ async function createJob(options) {
     if (!data.success) throw new Error(data.error);
 
     return data;
+}
+
+/**
+ * Build an effects profile from UI slider values
+ * Helper function for custom effects mode
+ * 
+ * @param {object} sliders - Object with slider values (0-1 scale)
+ * @returns {object} Effects profile ready to pass to createJob
+ */
+function buildEffectsProfile(sliders = {}) {
+    // Start with defaults
+    const profile = JSON.parse(JSON.stringify(DEFAULT_EFFECTS_PROFILE));
+    
+    // Apply user overrides from sliders
+    if (sliders.transitions !== undefined) {
+        profile.transitions.enabled = sliders.transitions > 0;
+        profile.transitions.intensity = sliders.transitions;
+    }
+    if (sliders.kenburns !== undefined) {
+        profile.kenburns.enabled = sliders.kenburns > 0;
+        profile.kenburns.speed = sliders.kenburns;
+    }
+    if (sliders.color_intensity !== undefined) {
+        profile.color_grade.intensity = sliders.color_intensity;
+    }
+    if (sliders.vignette !== undefined) {
+        profile.vignette.enabled = sliders.vignette > 0;
+        profile.vignette.intensity = sliders.vignette;
+    }
+    if (sliders.film_grain !== undefined) {
+        profile.film_grain.enabled = sliders.film_grain > 0;
+        profile.film_grain.intensity = sliders.film_grain;
+    }
+    if (sliders.scanlines !== undefined) {
+        profile.scanlines.enabled = sliders.scanlines > 0;
+        profile.scanlines.intensity = sliders.scanlines;
+    }
+    if (sliders.vhs !== undefined) {
+        profile.vhs.enabled = sliders.vhs > 0;
+        profile.vhs.intensity = sliders.vhs;
+        profile.vhs.tracking_noise = sliders.vhs * 0.6;
+        profile.vhs.color_bleed = sliders.vhs * 0.8;
+    }
+    if (sliders.glitch !== undefined) {
+        profile.glitch.enabled = sliders.glitch > 0;
+        profile.glitch.intensity = sliders.glitch;
+        profile.glitch.frequency = sliders.glitch * 0.3;
+    }
+    if (sliders.light_flicker !== undefined) {
+        profile.light_flicker.enabled = sliders.light_flicker > 0;
+        profile.light_flicker.intensity = sliders.light_flicker;
+    }
+    
+    return profile;
 }
 
 /**
@@ -468,7 +564,11 @@ const API = {
     listAudioTracks,
     uploadAudioTrack,
     removeAudioTrack,
-    getAudioTrackUrl
+    getAudioTrackUrl,
+    
+    // Effects profile helpers
+    buildEffectsProfile,
+    DEFAULT_EFFECTS_PROFILE
 };
 
 // Also expose individual functions for direct access
@@ -477,6 +577,8 @@ window.runJob = runJob;
 window.runJobPhase = runJobPhase;
 window.runPreviewMode = runPreviewMode;
 window.checkJob = checkJob;
+window.buildEffectsProfile = buildEffectsProfile;
+window.DEFAULT_EFFECTS_PROFILE = DEFAULT_EFFECTS_PROFILE;
 
 // Export to global scope
 window.API = API;

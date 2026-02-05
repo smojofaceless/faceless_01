@@ -1,7 +1,8 @@
 /**
- * FFmpeg Video Renderer Service v2.0
+ * FFmpeg Video Renderer Service v3.0
  * 
  * Replaces Creatomate with local FFmpeg rendering.
+ * Now with Visual DNA → FFmpeg filter binding!
  * Deploy to Render.com, Railway, or Fly.io.
  * 
  * Endpoints:
@@ -9,6 +10,11 @@
  *   GET /status/:id - Check render status
  *   GET /video/:id - Download finished video
  *   GET /health - Health check
+ * 
+ * v3.0 Changes:
+ *   - Visual DNA integration for deterministic aesthetics
+ *   - FFmpeg preset binding from visual_dna.ts mappings
+ *   - Reproducible visual fingerprints
  */
 
 const express = require('express');
@@ -20,6 +26,14 @@ const fsSync = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { createClient } = require('@supabase/supabase-js');
+
+// Import FFmpeg presets for Visual DNA binding
+const {
+  buildFFmpegFiltersFromVisualDNA,
+  buildKenBurnsWithMotionProfile,
+  getEffectFlagsFromVisualDNA,
+  buildCombinedFilterGraph,
+} = require('./ffmpeg_presets');
 
 const app = express();
 app.use(cors());
@@ -1082,6 +1096,98 @@ async function addScanlines(inputPath, outputPath, lowMemory = false) {
   });
 }
 
+// =====================================================
+// VISUAL DNA FILTER APPLICATION v3.0
+// =====================================================
+
+/**
+ * Apply Visual DNA filter chain in a single pass
+ * This applies all DNA-derived filters efficiently
+ * 
+ * @param {string} inputPath - Input video
+ * @param {string} outputPath - Output video
+ * @param {string[]} filters - Array of FFmpeg filter strings
+ * @param {boolean} lowMemory - Low memory mode
+ */
+async function applyVisualDNAFilters(inputPath, outputPath, filters, lowMemory = false) {
+  const TIMEOUT_MS = 5 * 60 * 1000; // 5 min timeout
+  
+  return new Promise((resolve, reject) => {
+    if (!filters || filters.length === 0) {
+      // No filters, just copy
+      ffmpeg(inputPath)
+        .outputOptions(['-c:v', 'copy', '-c:a', 'copy'])
+        .output(outputPath)
+        .on('end', resolve)
+        .on('error', reject)
+        .run();
+      return;
+    }
+    
+    let timedOut = false;
+    const timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      console.error('⚠️ Visual DNA filters timed out, using simplified filter...');
+      ffmpegCommand.kill('SIGKILL');
+    }, TIMEOUT_MS);
+    
+    const outputOptions = lowMemory ? [
+      '-c:v', 'libx264', '-preset', 'superfast', '-crf', '24', '-c:a', 'copy', '-threads', '2',
+    ] : [
+      '-c:v', 'libx264', '-preset', 'medium', '-crf', '23', '-c:a', 'copy',
+    ];
+    
+    // Combine all filters into single chain
+    const filterChain = filters.join(',');
+    console.log(`  → Applying filter chain: ${filterChain.substring(0, 100)}${filterChain.length > 100 ? '...' : ''}`);
+    
+    const ffmpegCommand = ffmpeg(inputPath)
+      .videoFilter(filterChain)
+      .outputOptions(outputOptions)
+      .output(outputPath)
+      .on('end', () => {
+        clearTimeout(timeoutHandle);
+        resolve();
+      })
+      .on('error', (err) => {
+        clearTimeout(timeoutHandle);
+        if (timedOut) {
+          // Fallback: simplified filter (just color grade)
+          const simplifiedFilter = filters.find(f => f.startsWith('eq=')) || 'eq=contrast=1.05';
+          console.log(`  → Timeout fallback: ${simplifiedFilter}`);
+          ffmpeg(inputPath)
+            .videoFilter(simplifiedFilter)
+            .outputOptions(['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26', '-c:a', 'copy'])
+            .output(outputPath)
+            .on('end', resolve)
+            .on('error', (fallbackErr) => {
+              // Ultimate fallback: just copy
+              console.error('  → Filter fallback failed, copying raw');
+              ffmpeg(inputPath)
+                .outputOptions(['-c:v', 'copy', '-c:a', 'copy'])
+                .output(outputPath)
+                .on('end', resolve)
+                .on('error', reject)
+                .run();
+            })
+            .run();
+        } else {
+          console.error('Visual DNA filter error:', err.message);
+          // Try simplified version
+          const simplifiedFilter = 'eq=saturation=0.8:contrast=1.1';
+          ffmpeg(inputPath)
+            .videoFilter(simplifiedFilter)
+            .outputOptions(outputOptions)
+            .output(outputPath)
+            .on('end', resolve)
+            .on('error', reject)
+            .run();
+        }
+      })
+      .run();
+  });
+}
+
 // Scary/horror words to highlight in red (synced with config.ts)
 const SCARY_WORDS = new Set([
   'death', 'dead', 'die', 'dying', 'died', 'kill', 'killed', 'killing', 'murder', 'murdered',
@@ -1308,6 +1414,8 @@ async function burnSubtitles(inputPath, assPath, outputPath, lowMemory = false) 
 
 /**
  * POST /render - Start a new render job
+ * 
+ * v3.0: Now accepts visual_dna for deterministic aesthetics
  */
 app.post('/render', async (req, res) => {
   // Check capacity
@@ -1333,6 +1441,8 @@ app.post('/render', async (req, res) => {
       webhook_url,      // Optional callback URL when done
       job_id: supabaseJobId, // Original Supabase job ID for updating
       low_memory = false, // Enable low memory mode for free tier hosting
+      visual_dna = null,  // v3.0: Visual DNA for deterministic aesthetic binding
+      effects_profile = null, // v3.1: Effects profile with intensity controls (0-1)
     } = req.body;
     
     if (!images || images.length === 0) {
@@ -1343,6 +1453,41 @@ app.post('/render', async (req, res) => {
     console.log(`[${jobId}] Effects:`, effects);
     console.log(`[${jobId}] Mood levels: ${mood_levels.length > 0 ? mood_levels.join(', ') : 'not provided (using defaults)'}`);
     console.log(`[${jobId}] Supabase job: ${supabaseJobId || 'none'}`);
+    
+    // v3.1: Log effects profile if provided (with fail-soft on invalid data)
+    let safeEffectsProfile = null;
+    if (effects_profile) {
+      try {
+        // Validate it's an object with expected structure
+        if (typeof effects_profile === 'object' && !Array.isArray(effects_profile)) {
+          safeEffectsProfile = effects_profile;
+          console.log(`[${jobId}] 🎛️ Effects Profile v1.0 provided (schema_version: ${effects_profile.schema_version || 'unknown'}):`);
+          const activeEffects = [];
+          if (effects_profile.kenburns?.enabled) activeEffects.push(`kenburns(${((effects_profile.kenburns.intensity || 0) * 100).toFixed(0)}%)`);
+          if (effects_profile.vignette?.enabled) activeEffects.push(`vignette(${((effects_profile.vignette.intensity || 0) * 100).toFixed(0)}%)`);
+          if (effects_profile.film_grain?.enabled) activeEffects.push(`grain(${((effects_profile.film_grain.intensity || 0) * 100).toFixed(0)}%)`);
+          if (effects_profile.scanlines?.enabled) activeEffects.push(`scanlines(${((effects_profile.scanlines.intensity || 0) * 100).toFixed(0)}%)`);
+          if (effects_profile.vhs?.enabled) activeEffects.push(`vhs(${((effects_profile.vhs.intensity || 0) * 100).toFixed(0)}%)`);
+          if (effects_profile.glitch?.enabled) activeEffects.push(`glitch(${((effects_profile.glitch.intensity || 0) * 100).toFixed(0)}%)`);
+          console.log(`[${jobId}]   Active: ${activeEffects.join(', ') || 'none'}`);
+        } else {
+          console.warn(`[${jobId}] ⚠️ Invalid effects_profile format (not an object), ignoring`);
+        }
+      } catch (err) {
+        console.warn(`[${jobId}] ⚠️ Failed to process effects_profile, continuing without:`, err.message);
+        safeEffectsProfile = null;
+      }
+    }
+    
+    // v3.0: Log Visual DNA if provided
+    if (visual_dna) {
+      console.log(`[${jobId}] 🎨 Visual DNA provided:`);
+      console.log(`[${jobId}]   Style: ${visual_dna.visual_style}`);
+      console.log(`[${jobId}]   Palette: ${visual_dna.color_palette}`);
+      console.log(`[${jobId}]   Motion: ${visual_dna.motion_profile}`);
+      console.log(`[${jobId}]   Platform: ${visual_dna.platform}`);
+    }
+    
     if (music_url) {
       console.log(`[${jobId}] Background music at ${music_volume}% volume`);
     }
@@ -1365,8 +1510,8 @@ app.post('/render', async (req, res) => {
       status_url: `/status/${jobId}`,
     });
     
-    // Process asynchronously
-    processRender(jobId, images, audio_url, durations, captions, effects, webhook_url, supabaseJobId, low_memory, music_url, music_volume, mood_levels);
+    // Process asynchronously (now with visual_dna and effects_profile)
+    processRender(jobId, images, audio_url, durations, captions, effects, webhook_url, supabaseJobId, low_memory, music_url, music_volume, mood_levels, visual_dna, safeEffectsProfile);
     
   } catch (error) {
     console.error('[RENDER] Error:', error);
@@ -1376,9 +1521,14 @@ app.post('/render', async (req, res) => {
 
 /**
  * Async render processing
+ * v3.0: Now accepts visualDNA for deterministic aesthetic binding
+ * v3.1: Now accepts effectsProfile for intensity-based effect controls
+ * 
  * @param moodLevels - Array of mood intensities (1-10) for each scene, for intelligent Ken Burns selection
+ * @param visualDNA - Visual DNA object for FFmpeg filter binding
+ * @param effectsProfile - Effects profile with intensity controls (0-1 scale)
  */
-async function processRender(jobId, imageUrls, audioUrl, durations, captions, effects, webhookUrl, supabaseJobId, lowMemory, musicUrl = null, musicVolume = 15, moodLevels = []) {
+async function processRender(jobId, imageUrls, audioUrl, durations, captions, effects, webhookUrl, supabaseJobId, lowMemory, musicUrl = null, musicVolume = 15, moodLevels = [], visualDNA = null, effectsProfile = null) {
   activeRenders++;
   const jobDir = path.join(TEMP_DIR, jobId);
   await fs.mkdir(jobDir, { recursive: true });
@@ -1388,6 +1538,26 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
   if (useLowMemory) {
     console.log(`[${jobId}] ⚠️ Low memory mode ENABLED (Cloud: ${IS_RENDER ? 'Render.com' : IS_RAILWAY ? 'Railway' : 'env'})`);
   }
+  
+  // v3.0: Build FFmpeg filter chain from Visual DNA
+  let dnaFilters = null;
+  let dnaEffectFlags = {};
+  let dnaMotionOverride = null;
+  
+  if (visualDNA) {
+    console.log(`[${jobId}] 🎨 Building FFmpeg filters from Visual DNA...`);
+    const dnaConfig = buildFFmpegFiltersFromVisualDNA(visualDNA, { lowMemory: useLowMemory });
+    dnaFilters = dnaConfig.filters;
+    dnaMotionOverride = dnaConfig.kenBurnsOverride;
+    dnaEffectFlags = getEffectFlagsFromVisualDNA(visualDNA);
+    
+    console.log(`[${jobId}]   DNA filters: ${dnaFilters.length}`);
+    console.log(`[${jobId}]   DNA motion override: ${dnaMotionOverride?.profile || 'none'}`);
+    console.log(`[${jobId}]   DNA effect flags: vignette=${dnaEffectFlags.vignette}, horrorGrade=${dnaEffectFlags.horrorGrade}, filmGrain=${dnaEffectFlags.filmGrain}`);
+  }
+  
+  // Merge DNA effect flags with explicit effects (explicit wins)
+  const mergedEffects = { ...dnaEffectFlags, ...effects };
   
   const startTime = Date.now();
   const timings = {};
@@ -1427,13 +1597,14 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     
     // Step 3: Create video from images
     const videoStart = Date.now();
-    const useKenBurns = effects.kenBurns !== false && !DISABLE_KEN_BURNS;
+    const useKenBurns = mergedEffects.kenBurns !== false && !DISABLE_KEN_BURNS;
     console.log(`[${jobId}] Creating video from images (lowMemory: ${useLowMemory}, kenBurns: ${useKenBurns})...`);
     const rawVideoPath = path.join(jobDir, 'raw.mp4');
     await createVideoFromImages(jobId, imagePaths, durations, rawVideoPath, {
       kenBurns: useKenBurns,
       lowMemory: useLowMemory,
       moodLevels: moodLevels, // Pass mood levels for intelligent Ken Burns
+      motionOverride: dnaMotionOverride, // v3.0: Pass Visual DNA motion override
     });
     timings.createVideo = Date.now() - videoStart;
     job.progress = 50;
@@ -1480,8 +1651,8 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
       console.log(`[${jobId}] Burning ${captions.length} words as captions...`);
       const assPath = path.join(jobDir, 'captions.ass');
       await createASSSubtitles(captions, assPath, {
-        captionStyle: effects.captionStyle || 'bold',
-        highlightScary: effects.highlightScary !== false,
+        captionStyle: mergedEffects.captionStyle || 'bold',
+        highlightScary: mergedEffects.highlightScary !== false,
       });
       
       const withCaptionsPath = path.join(jobDir, 'with_captions.mp4');
@@ -1493,6 +1664,26 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
       console.log(`[${jobId}] ✓ Captions added (${Math.round(timings.captions/1000)}s)`);
     }
     job.progress = 75;
+    
+    // v3.0: Apply Visual DNA combined filter graph
+    if (dnaFilters && dnaFilters.length > 0) {
+      const dnaStart = Date.now();
+      console.log(`[${jobId}] 🎨 Applying Visual DNA filters (${dnaFilters.length} filters)...`);
+      const dnaGradedPath = path.join(jobDir, 'dna_graded.mp4');
+      await applyVisualDNAFilters(currentVideo, dnaGradedPath, dnaFilters, useLowMemory);
+      await fs.unlink(currentVideo).catch(() => {});
+      currentVideo = dnaGradedPath;
+      const dnaTime = Date.now() - dnaStart;
+      appliedEffects.push({ 
+        name: 'Visual DNA Grade', 
+        category: 'DNA', 
+        timeline: 'Full video', 
+        duration: `0:00 - ${formatTime(durations.reduce((s, d) => s + d, 0))}`, 
+        processTime: dnaTime,
+        filters: dnaFilters.slice(0, 5).join(', ') + (dnaFilters.length > 5 ? '...' : ''),
+      });
+      console.log(`[${jobId}] ✓ Visual DNA filters applied (${Math.round(dnaTime/1000)}s)`);
+    }
     
     // Get total video duration for timeline tracking
     const totalDuration = durations.reduce((sum, d) => sum + d, 0);
@@ -1515,7 +1706,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     // Track Ken Burns if enabled (useKenBurns already declared above)
     if (useKenBurns) {
       appliedEffects.push({ 
-        name: 'Ken Burns', 
+        name: dnaMotionOverride ? `Ken Burns (${dnaMotionOverride.profile})` : 'Ken Burns', 
         category: 'Animation', 
         timeline: sceneTimeline.map(s => `Scene ${s.scene}: ${s.start}-${s.end}`).join(', '),
         duration: `0:00 - ${formatTime(totalDuration)}`,
@@ -1534,8 +1725,10 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
       });
     }
     
-    // Step 6: Apply vignette (if enabled)
-    if (effects.vignette) {
+    // Step 6: Apply vignette (if enabled - skip if DNA already applied vignette)
+    // v3.0: Skip individual effects if DNA filters already include them
+    const skipVignette = dnaFilters && dnaFilters.some(f => f.includes('vignette'));
+    if (mergedEffects.vignette && !skipVignette) {
       const effectStart = Date.now();
       console.log(`[${jobId}] Adding vignette...`);
       const vignettePath = path.join(jobDir, 'vignette.mp4');
@@ -1548,8 +1741,9 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     }
     job.progress = 85;
     
-    // Step 7: Apply horror color grade (if enabled)
-    if (effects.horrorGrade) {
+    // Step 7: Apply horror color grade (if enabled - skip if DNA already applied color grade)
+    const skipHorrorGrade = dnaFilters && dnaFilters.some(f => f.startsWith('eq=') || f.startsWith('colorbalance='));
+    if (mergedEffects.horrorGrade && !skipHorrorGrade) {
       const effectStart = Date.now();
       console.log(`[${jobId}] Adding horror color grade...`);
       const gradedPath = path.join(jobDir, 'graded.mp4');
@@ -1562,8 +1756,9 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     }
     job.progress = 90;
     
-    // Step 8: Apply film grain effect (if enabled)
-    if (effects.filmGrain) {
+    // Step 8: Apply film grain effect (if enabled - skip if DNA already applied noise)
+    const skipFilmGrain = dnaFilters && dnaFilters.some(f => f.startsWith('noise='));
+    if (mergedEffects.filmGrain && !skipFilmGrain) {
       const effectStart = Date.now();
       console.log(`[${jobId}] Adding film grain/old film effect...`);
       const grainPath = path.join(jobDir, 'grain.mp4');
@@ -1581,7 +1776,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     // =====================================================
     
     // Glitch flicker (disturbance category)
-    if (effects.glitchFlicker) {
+    if (mergedEffects.glitchFlicker) {
       const effectStart = Date.now();
       console.log(`[${jobId}] Adding glitch flicker effect...`);
       const glitchPath = path.join(jobDir, 'glitch.mp4');
@@ -1594,7 +1789,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     }
     
     // VHS tracking wobble (disturbance category)
-    if (effects.vhsTracking) {
+    if (mergedEffects.vhsTracking) {
       const effectStart = Date.now();
       console.log(`[${jobId}] Adding VHS tracking wobble...`);
       const vhsPath = path.join(jobDir, 'vhs.mp4');
@@ -1607,7 +1802,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     }
     
     // Scanlines (disturbance category)
-    if (effects.scanlines) {
+    if (mergedEffects.scanlines) {
       const effectStart = Date.now();
       console.log(`[${jobId}] Adding scanline overlay...`);
       const scanPath = path.join(jobDir, 'scanlines.mp4');
@@ -1620,7 +1815,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     }
     
     // Light flicker (atmospheric category)
-    if (effects.lightFlicker) {
+    if (mergedEffects.lightFlicker) {
       const effectStart = Date.now();
       console.log(`[${jobId}] Adding light flicker effect...`);
       const flickerPath = path.join(jobDir, 'flicker.mp4');
@@ -1633,7 +1828,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     }
     
     // Cold color creep (atmospheric category)
-    if (effects.coldColorCreep) {
+    if (mergedEffects.coldColorCreep) {
       const effectStart = Date.now();
       console.log(`[${jobId}] Adding cold color creep effect...`);
       const coldPath = path.join(jobDir, 'cold.mp4');
@@ -1646,7 +1841,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     }
     
     // Heartbeat zoom (psychological category)
-    if (effects.heartbeatZoom) {
+    if (mergedEffects.heartbeatZoom) {
       const effectStart = Date.now();
       console.log(`[${jobId}] Adding heartbeat zoom effect...`);
       const heartPath = path.join(jobDir, 'heartbeat.mp4');
@@ -1659,7 +1854,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     }
     
     // Negative flash (psychological category)
-    if (effects.negativeFlash) {
+    if (mergedEffects.negativeFlash) {
       const effectStart = Date.now();
       console.log(`[${jobId}] Adding negative flash effect...`);
       const negPath = path.join(jobDir, 'negative.mp4');
@@ -1672,7 +1867,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     }
     
     // Edge darkening creep (psychological category)
-    if (effects.edgeDarkeningCreep) {
+    if (mergedEffects.edgeDarkeningCreep) {
       const effectStart = Date.now();
       console.log(`[${jobId}] Adding edge darkening creep effect...`);
       const edgePath = path.join(jobDir, 'edge.mp4');
@@ -1685,14 +1880,14 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     }
     
     // Fade in/out (transition category) - ALWAYS LAST
-    const fadeDuration = effects.fadeDuration || 1.5;
-    if (effects.fadeIn || effects.fadeOut) {
+    const fadeDuration = mergedEffects.fadeDuration || 1.5;
+    if (mergedEffects.fadeIn || mergedEffects.fadeOut) {
       const effectStart = Date.now();
-      console.log(`[${jobId}] Adding fade transitions (in: ${effects.fadeIn}, out: ${effects.fadeOut})...`);
+      console.log(`[${jobId}] Adding fade transitions (in: ${mergedEffects.fadeIn}, out: ${mergedEffects.fadeOut})...`);
       const fadePath = path.join(jobDir, 'faded.mp4');
       await addFadeEffect(currentVideo, fadePath, {
-        fadeIn: effects.fadeIn,
-        fadeOut: effects.fadeOut,
+        fadeIn: mergedEffects.fadeIn,
+        fadeOut: mergedEffects.fadeOut,
         fadeDuration: fadeDuration,
       }, useLowMemory);
       await fs.unlink(currentVideo).catch(() => {});
@@ -1701,8 +1896,8 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
       
       // Build fade timeline description
       let fadeTimeline = [];
-      if (effects.fadeIn) fadeTimeline.push(`Fade in: 0:00 - ${formatTime(fadeDuration)}`);
-      if (effects.fadeOut) fadeTimeline.push(`Fade out: ${formatTime(totalDuration - fadeDuration)} - ${formatTime(totalDuration)}`);
+      if (mergedEffects.fadeIn) fadeTimeline.push(`Fade in: 0:00 - ${formatTime(fadeDuration)}`);
+      if (mergedEffects.fadeOut) fadeTimeline.push(`Fade out: ${formatTime(totalDuration - fadeDuration)} - ${formatTime(totalDuration)}`);
       appliedEffects.push({ name: 'Fade Transitions', category: 'Transition', timeline: fadeTimeline.join(', '), duration: `${fadeDuration}s each`, processTime: effectTime });
       console.log(`[${jobId}] ✓ Fade transitions added (${Math.round(effectTime/1000)}s)`);
     }
@@ -2130,6 +2325,42 @@ app.post('/generate-images', async (req, res) => {
   console.log(`[IMG-${imageJobId}]   Model: ${model}`);
   console.log(`[IMG-${imageJobId}]   Parallelism: ${MAX_PARALLEL_IMAGES}`);
   
+  // =====================================================
+  // GROUND-TRUTH LOGGING: What the server RECEIVED
+  // =====================================================
+  console.log(`\n========== GROUND TRUTH: SERVER RECEIVED (${scenes.length} scenes) ==========`);
+  console.log(`[GROUND-TRUTH] image_job_id: ${imageJobId}`);
+  console.log(`[GROUND-TRUTH] supabase_job_id: ${job_id}`);
+  console.log(`[GROUND-TRUTH] model: ${model}`);
+  console.log(`[GROUND-TRUTH] art_style: ${art_style}`);
+  
+  // Log first and last scene prompts to verify full prompts are received
+  if (scenes.length > 0) {
+    const first = scenes[0];
+    const firstPromptLen = first.prompt?.length || 0;
+    console.log(`[GROUND-TRUTH] Scene 1 prompt_len: ${firstPromptLen}`);
+    console.log(`[GROUND-TRUTH] Scene 1 prompt_mode: ${first.prompt_mode || 'unknown'}`);
+    console.log(`[GROUND-TRUTH] Scene 1 prompt_start: "${(first.prompt || '').substring(0, 200).replace(/\n/g, '↵')}..."`);
+    console.log(`[GROUND-TRUTH] Scene 1 has_contract: ${!!first.visual_contract}`);
+    console.log(`[GROUND-TRUTH] Scene 1 has_dna: ${!!first.visual_dna}`);
+  }
+  if (scenes.length > 1) {
+    const last = scenes[scenes.length - 1];
+    const lastPromptLen = last.prompt?.length || 0;
+    console.log(`[GROUND-TRUTH] Scene ${scenes.length} prompt_len: ${lastPromptLen}`);
+    console.log(`[GROUND-TRUTH] Scene ${scenes.length} prompt_mode: ${last.prompt_mode || 'unknown'}`);
+    console.log(`[GROUND-TRUTH] Scene ${scenes.length} prompt_start: "${(last.prompt || '').substring(0, 200).replace(/\n/g, '↵')}..."`);
+  }
+  
+  // ALERT if prompts look like keywords (too short)
+  const avgPromptLen = scenes.reduce((sum, s) => sum + (s.prompt?.length || 0), 0) / scenes.length;
+  if (avgPromptLen < 200) {
+    console.log(`[GROUND-TRUTH] ⚠️ WARNING: Average prompt length (${avgPromptLen.toFixed(0)}) is suspiciously short - may be keywords not full prompts!`);
+  } else {
+    console.log(`[GROUND-TRUTH] ✓ Average prompt length: ${avgPromptLen.toFixed(0)} chars (looks like full prompts)`);
+  }
+  console.log(`==========================================================\n`);
+  
   // Initialize job tracking
   imageJobs.set(imageJobId, {
     status: 'processing',
@@ -2170,6 +2401,27 @@ async function processImageGeneration(imageJobId, supabaseJobId, scenes, model, 
     
     console.log(`[IMG-${imageJobId}] Using batch size ${batchSize}, delay ${batchDelayMs}ms (model: ${model})`);
     
+    // PROOF BUNDLE: Log Scene 1 and Scene last prompt details (v5.1)
+    if (scenes.length > 0) {
+      const scene1 = scenes[0];
+      console.log(`\n========== PROOF BUNDLE: SERVER.JS SCENE 1 ==========`);
+      console.log(`[PROOF] prompt_hash: ${scene1.prompt_hash || 'N/A'}`);
+      console.log(`[PROOF] prompt_mode: ${scene1.prompt_mode}`);
+      console.log(`[PROOF] prompt_len: ${scene1.prompt?.length || 0}`);
+      console.log(`[PROOF] PROMPT_PREVIEW: "${scene1.prompt?.substring(0, 200)}..."`);
+      console.log(`==========================================================\n`);
+      
+      if (scenes.length > 1) {
+        const sceneLast = scenes[scenes.length - 1];
+        console.log(`\n========== PROOF BUNDLE: SERVER.JS SCENE ${scenes.length} (LAST) ==========`);
+        console.log(`[PROOF] prompt_hash: ${sceneLast.prompt_hash || 'N/A'}`);
+        console.log(`[PROOF] prompt_mode: ${sceneLast.prompt_mode}`);
+        console.log(`[PROOF] prompt_len: ${sceneLast.prompt?.length || 0}`);
+        console.log(`[PROOF] PROMPT_PREVIEW: "${sceneLast.prompt?.substring(0, 200)}..."`);
+        console.log(`==========================================================\n`);
+      }
+    }
+    
     const results = new Array(scenes.length).fill(null);
     
     for (let batchStart = 0; batchStart < scenes.length; batchStart += batchSize) {
@@ -2184,6 +2436,27 @@ async function processImageGeneration(imageJobId, supabaseJobId, scenes, model, 
         
         try {
           let imageUrl;
+          
+          // GROUND-TRUTH: Log exact prompt being sent to model (v5.1)
+          const promptLen = scene.prompt?.length || 0;
+          const promptMode = scene.prompt_mode || 'unknown';
+          const promptHash = scene.prompt_hash || 'NO_HASH';
+          
+          console.log(`[IMG-${imageJobId}] Scene ${sceneIndex + 1} SENDING TO ${model.toUpperCase()}: hash=${promptHash}, len=${promptLen}, mode=${promptMode}`);
+          console.log(`[IMG-${imageJobId}] Scene ${sceneIndex + 1} PROMPT_PREVIEW: "${scene.prompt?.substring(0, 200)}..."`);
+          
+          // PROMPT QUALITY GATE: Block weak prompts (warn but don't block - let run-job handle repair)
+          const isFallbackMode = ['keywords_fallback', 'text_fallback', 'anchor_only'].includes(promptMode);
+          if (promptLen < 200 || isFallbackMode) {
+            console.log(`[IMG-${imageJobId}] ⚠️ Scene ${sceneIndex + 1} WEAK PROMPT DETECTED:`);
+            console.log(`  - Length: ${promptLen} (min: 200)`);
+            console.log(`  - Mode: ${promptMode} (fallback modes: ${isFallbackMode})`);
+            if (promptLen < 200) {
+              console.log(`  - Full short prompt: "${scene.prompt}"`);
+            }
+            // NOTE: We proceed anyway - the contract/prompt should have been fixed upstream in run-job
+            // This warning helps diagnose if the fix isn't working
+          }
           
           // Generate image based on model
           if (model === 'gpt-4o') {
@@ -2220,7 +2493,12 @@ async function processImageGeneration(imageJobId, supabaseJobId, scenes, model, 
               image_model: model,
               art_style: artStyle,
               dalle_prompt: scene.prompt,
+              prompt_len: promptLen,
+              prompt_hash: scene.prompt_hash || null,  // v5.1: Ground-truth hash
+              prompt_mode: scene.prompt_mode || null,
               visual_beat: scene.visual_beat || null,
+              visual_contract: scene.visual_contract || null,
+              visual_dna: scene.visual_dna || null,
               mood_level: scene.mood_level || null,
               camera_angle: scene.camera_angle || null,
               generated_at: new Date().toISOString(),
