@@ -1557,7 +1557,64 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
   }
   
   // Merge DNA effect flags with explicit effects (explicit wins)
-  const mergedEffects = { ...dnaEffectFlags, ...effects };
+  // BUT if effectsProfile is provided with all disabled, it takes precedence
+  let mergedEffects = { ...dnaEffectFlags, ...effects };
+  
+  // v3.2: If effectsProfile is provided, use it to override legacy flags
+  // This ensures custom mode with disabled effects actually disables them
+  if (effectsProfile && typeof effectsProfile === 'object') {
+    // Override kenBurns
+    if (effectsProfile.kenburns && effectsProfile.kenburns.enabled === false) {
+      mergedEffects.kenBurns = false;
+      console.log(`[${jobId}] 🎛️ effectsProfile: kenBurns DISABLED (intensity=${effectsProfile.kenburns.intensity})`);
+    }
+    // Override vignette
+    if (effectsProfile.vignette && effectsProfile.vignette.enabled === false) {
+      mergedEffects.vignette = false;
+      console.log(`[${jobId}] 🎛️ effectsProfile: vignette DISABLED`);
+    }
+    // Override film grain
+    if (effectsProfile.film_grain && effectsProfile.film_grain.enabled === false) {
+      mergedEffects.filmGrain = false;
+      console.log(`[${jobId}] 🎛️ effectsProfile: filmGrain DISABLED`);
+    }
+    // Override color grade / horror grade
+    if (effectsProfile.color_grade && effectsProfile.color_grade.enabled === false) {
+      mergedEffects.horrorGrade = false;
+      console.log(`[${jobId}] 🎛️ effectsProfile: horrorGrade/colorGrade DISABLED`);
+    }
+    // Override scanlines
+    if (effectsProfile.scanlines && effectsProfile.scanlines.enabled === false) {
+      mergedEffects.scanlines = false;
+      console.log(`[${jobId}] 🎛️ effectsProfile: scanlines DISABLED`);
+    }
+    // Override VHS
+    if (effectsProfile.vhs && effectsProfile.vhs.enabled === false) {
+      mergedEffects.vhsTracking = false;
+      console.log(`[${jobId}] 🎛️ effectsProfile: vhsTracking DISABLED`);
+    }
+    // Override glitch
+    if (effectsProfile.glitch && effectsProfile.glitch.enabled === false) {
+      mergedEffects.glitchFlicker = false;
+      console.log(`[${jobId}] 🎛️ effectsProfile: glitchFlicker DISABLED`);
+    }
+    // Override light flicker
+    if (effectsProfile.light_flicker && effectsProfile.light_flicker.enabled === false) {
+      mergedEffects.lightFlicker = false;
+      console.log(`[${jobId}] 🎛️ effectsProfile: lightFlicker DISABLED`);
+    }
+    // Override fade
+    if (effectsProfile.fade) {
+      if (effectsProfile.fade.fade_in === false) {
+        mergedEffects.fadeIn = false;
+        console.log(`[${jobId}] 🎛️ effectsProfile: fadeIn DISABLED`);
+      }
+      if (effectsProfile.fade.fade_out === false) {
+        mergedEffects.fadeOut = false;
+        console.log(`[${jobId}] 🎛️ effectsProfile: fadeOut DISABLED`);
+      }
+    }
+  }
   
   const startTime = Date.now();
   const timings = {};

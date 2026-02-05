@@ -1,10 +1,11 @@
 // =====================================================
 // RUN-JOB EDGE FUNCTION - MAIN HANDLER (Slim)
 // All heavy logic is in separate modules
+// v77.4 - 2026-02-05 (check-job: clear parallel flag when complete, trigger images phase to save to DB)
 // =====================================================
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.39.3";
 
 // Import from modules
 import { corsHeaders, updateJob, getImageModel } from "./config.ts";
@@ -23,53 +24,94 @@ declare const EdgeRuntime: {
 // =====================================================
 // MAIN HTTP HANDLER
 // =====================================================
+
+// Define CORS headers locally to ensure they're always available
+// (in case config.ts import fails for some reason)
+const localCorsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform",
+};
+
 serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
-
-  // Get API keys from environment with validation
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const openaiKey = Deno.env.get("OPENAI_API_KEY");
-  const elevenLabsKey = Deno.env.get("ELEVENLABS_API_KEY");
-  const creatomateKey = Deno.env.get("CREATOMATE_API_KEY");
-  const pexelsKey = Deno.env.get("PEXELS_API_KEY");
-
-  // Check for missing required environment variables
-  const missingVars: string[] = [];
-  if (!supabaseUrl) missingVars.push("SUPABASE_URL");
-  if (!supabaseServiceKey) missingVars.push("SUPABASE_SERVICE_ROLE_KEY");
-  if (!openaiKey) missingVars.push("OPENAI_API_KEY");
-  if (!elevenLabsKey) missingVars.push("ELEVENLABS_API_KEY");
+  // DEBUG: Log every request for CORS troubleshooting
+  console.log(`[CORS] method: ${req.method}, origin: ${req.headers.get("origin")}`);
   
-  if (missingVars.length > 0) {
-    console.error(`[RUN-JOB] Missing environment variables: ${missingVars.join(", ")}`);
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: `Server configuration error: missing ${missingVars.join(", ")}`,
-      }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 500,
-      }
-    );
+  // Handle CORS preflight - MUST be first, before ANY other logic
+  if (req.method === "OPTIONS") {
+    console.log(`[CORS] Returning preflight response with headers:`, localCorsHeaders);
+    return new Response("ok", { 
+      status: 200,
+      headers: localCorsHeaders 
+    });
   }
 
-  const supabase = createClient(supabaseUrl!, supabaseServiceKey!);
-
-  let job_id: string | null = null;
-
+  // Wrap EVERYTHING in try-catch to ensure CORS headers on all responses
   try {
-    const body = await req.json();
-    job_id = body.job_id;
+    // Get API keys from environment with validation
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const openaiKey = Deno.env.get("OPENAI_API_KEY");
+    const elevenLabsKey = Deno.env.get("ELEVENLABS_API_KEY");
+    const creatomateKey = Deno.env.get("CREATOMATE_API_KEY");
+    const pexelsKey = Deno.env.get("PEXELS_API_KEY");
+
+    // Check for missing required environment variables
+    const missingVars: string[] = [];
+    if (!supabaseUrl) missingVars.push("SUPABASE_URL");
+    if (!supabaseServiceKey) missingVars.push("SUPABASE_SERVICE_ROLE_KEY");
+    if (!openaiKey) missingVars.push("OPENAI_API_KEY");
+    if (!elevenLabsKey) missingVars.push("ELEVENLABS_API_KEY");
+    
+    if (missingVars.length > 0) {
+      console.error(`[RUN-JOB] Missing environment variables: ${missingVars.join(", ")}`);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Server configuration error: missing ${missingVars.join(", ")}`,
+        }),
+        {
+          headers: { ...localCorsHeaders, "Content-Type": "application/json" },
+          status: 500,
+        }
+      );
+    }
+
+    const supabase = createClient(supabaseUrl!, supabaseServiceKey!);
+
+    // Parse request body
+    let body: any;
+    try {
+      body = await req.json();
+    } catch (parseError) {
+      console.error(`[RUN-JOB] JSON parse error:`, parseError);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Invalid JSON body",
+        }),
+        {
+          headers: { ...localCorsHeaders, "Content-Type": "application/json" },
+          status: 400,
+        }
+      );
+    }
+
+    const job_id = body.job_id;
     const previewOnly = body.preview_only === true;
     const phase = body.phase || null; // "audio", "images", "assemble", or null for auto
 
     if (!job_id) {
-      throw new Error("job_id is required");
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "job_id is required",
+        }),
+        {
+          headers: { ...localCorsHeaders, "Content-Type": "application/json" },
+          status: 400,
+        }
+      );
     }
 
     // Fetch job with retry (database can have transient failures)
@@ -96,7 +138,16 @@ serve(async (req) => {
     }
 
     if (fetchError || !job) {
-      throw new Error(`Job not found: ${job_id}`);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Job not found: ${job_id}`,
+        }),
+        {
+          headers: { ...localCorsHeaders, "Content-Type": "application/json" },
+          status: 404,
+        }
+      );
     }
 
     // Get effect options (with defaults from job meta or request)
@@ -161,7 +212,28 @@ serve(async (req) => {
     // PREVIEW MODE: Run synchronously (quick)
     // =====================================================
     if (previewOnly) {
-      return await runPreviewMode(supabase, openaiKey, job, job_id, jobMeta);
+      try {
+        return await runPreviewMode(supabase, openaiKey, job, job_id, jobMeta);
+      } catch (previewError: any) {
+        console.error("[RUN-JOB] Preview mode fatal error:", {
+          job_id,
+          message: previewError?.message,
+          stack: previewError?.stack,
+        });
+        return new Response(
+          JSON.stringify({
+            success: false,
+            job_id,
+            phase: "preview",
+            error: String(previewError?.message ?? previewError),
+            stack: previewError?.stack?.split('\n').slice(0, 5).join('\n'),
+          }),
+          {
+            headers: { ...localCorsHeaders, "Content-Type": "application/json" },
+            status: 500,
+          }
+        );
+      }
     }
 
     // =====================================================
@@ -197,7 +269,16 @@ serve(async (req) => {
       
       if (freshError || !freshJob) {
         console.error(`[RUN-JOB] Failed to re-fetch job:`, freshError);
-        throw new Error(`Failed to fetch job for audio phase: ${freshError?.message || "Unknown error"}`);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: `Failed to fetch job for audio phase: ${freshError?.message || "Unknown error"}`,
+          }),
+          {
+            headers: { ...localCorsHeaders, "Content-Type": "application/json" },
+            status: 500,
+          }
+        );
       }
       
       console.log(`[RUN-JOB] Fresh job data: story_text=${!!freshJob.story_text}, title=${freshJob.title}`);
@@ -218,7 +299,16 @@ serve(async (req) => {
     } else if (currentPhase === "assemble") {
       result = await runAssemblePhase(supabase, creatomateKey, job, job_id, jobMeta, effectOptions);
     } else {
-      throw new Error(`Unknown phase: ${currentPhase}`);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Unknown phase: ${currentPhase}`,
+        }),
+        {
+          headers: { ...localCorsHeaders, "Content-Type": "application/json" },
+          status: 400,
+        }
+      );
     }
 
     return new Response(
@@ -231,35 +321,29 @@ serve(async (req) => {
         message: result?.message || "Phase complete",
       }),
       {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...localCorsHeaders, "Content-Type": "application/json" },
         status: 200,
       }
     );
-  } catch (error) {
-    console.error("Job failed:", error);
 
-    // Try to update job as failed
-    if (job_id) {
-      try {
-        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-        const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-        const supabase = createClient(supabaseUrl, supabaseServiceKey);
-        await updateJob(supabase, job_id, {
-          status: "failed",
-          error: error.message,
-        });
-      } catch (updateError) {
-        console.error("Failed to update job status:", updateError);
-      }
-    }
+  } catch (error: any) {
+    // Catch-all error handler - MUST include CORS headers
+    console.error("[RUN-JOB] fatal", {
+      message: error?.message,
+      stack: error?.stack,
+    });
+    
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error?.stack?.split('\n').slice(0, 8).join('\n');
 
     return new Response(
       JSON.stringify({
         success: false,
-        error: error.message,
+        error: errorMessage,
+        stack: errorStack,
       }),
       {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...localCorsHeaders, "Content-Type": "application/json" },
         status: 500,
       }
     );

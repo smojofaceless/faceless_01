@@ -4,6 +4,7 @@
 
 export const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform",
 };
 
@@ -206,6 +207,14 @@ export interface SceneVisualContract {
   continuityFromPrev: string;    // "same bedroom as scene 1", "same outfit" - link to previous
   evidenceRule: string;          // "shadows must be visible on bedroom wall" - proof the scene is correct
   continuityLock?: string;       // Legacy field for compatibility
+  // NEW: Continuity Carryover Fields (v5.1)
+  continuity?: {
+    location: string;            // Carries forward unless narration explicitly changes
+    threat_manifestation: string; // The horror element's current form
+    main_character: string | null; // Character description if present
+    time_of_day: string;         // "night", "twilight", "dawn" - carries forward
+    camera_language: string;     // Consistent visual style ("handheld", "static", "surveillance")
+  };
 }
 
 export interface VideoOptions {

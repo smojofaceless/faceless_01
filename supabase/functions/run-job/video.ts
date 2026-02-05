@@ -347,6 +347,9 @@ export async function waitForCreatomateRender(
 /**
  * Render video using FFmpeg service (self-hosted)
  * Deploy video-renderer service to Render.com/Railway/Fly.io
+ * 
+ * v3.0: Now accepts visualDNA for deterministic aesthetic binding
+ * v3.1: Now accepts effectsProfile for intensity-based effects control
  */
 export async function renderWithFFmpeg(
   audioUrl: string,
@@ -355,7 +358,9 @@ export async function renderWithFFmpeg(
   options: VideoOptions,
   jobId?: string, // Supabase job ID for direct upload
   captions?: Array<{ word: string; start: number; end: number }>, // Word-by-word captions
-  moodLevels?: number[] // Per-scene mood intensity (1-10) for intelligent Ken Burns
+  moodLevels?: number[], // Per-scene mood intensity (1-10) for intelligent Ken Burns
+  visualDNA?: any, // v3.0: Visual DNA for FFmpeg filter binding
+  effectsProfile?: any // v3.1: Effects profile with intensity controls
 ): Promise<{ renderId: string; status: string }> {
   const FFMPEG_RENDERER_URL = Deno.env.get("FFMPEG_RENDERER_URL");
   
@@ -394,6 +399,16 @@ export async function renderWithFFmpeg(
   console.log(`[FFMPEG] Total video duration: ${cumulativeTime.toFixed(2)}s (audio: ${durationSec}s + buffer)`);
   console.log(`[FFMPEG] Captions: ${captions?.length || 0} words`);
   console.log(`[FFMPEG] 🎵 Music settings: enabled=${options.music}, track="${options.musicTrack}", volume=${options.musicVolume}%`);
+  
+  // v3.0: Log Visual DNA if provided
+  if (visualDNA) {
+    console.log(`[FFMPEG] 🎨 Visual DNA detected - deterministic aesthetics enabled:`);
+    console.log(`[FFMPEG]   Style: ${visualDNA.visual_style}`);
+    console.log(`[FFMPEG]   Palette: ${visualDNA.color_palette}`);
+    console.log(`[FFMPEG]   Motion: ${visualDNA.motion_profile}`);
+    console.log(`[FFMPEG]   Lighting: ${visualDNA.lighting_profile}`);
+    console.log(`[FFMPEG]   Textures: ${visualDNA.texture_artifacts?.join(', ') || 'none'}`);
+  }
   
   // Build music URL if enabled
   const musicUrl = options.music && options.musicTrack 
@@ -455,6 +470,11 @@ export async function renderWithFFmpeg(
         music_volume: options.musicVolume ?? 15,
         job_id: jobId, // Pass Supabase job ID for direct upload
         low_memory: Deno.env.get("FFMPEG_LOW_MEMORY") === "true",
+        // v3.0: Pass Visual DNA for deterministic aesthetic binding
+        visual_dna: visualDNA || null,
+        // v3.1: Pass effects profile with intensity controls
+        // When provided, this takes precedence over boolean effects flags
+        effects_profile: effectsProfile || null,
       }),
     });
       
@@ -547,6 +567,22 @@ export interface ParallelImageScene {
   visual_beat?: string | null;
   mood_level?: number | null;
   camera_angle?: string | null;
+  // Verification fields for ground-truth logging (v5.1)
+  prompt_len?: number;
+  prompt_hash?: string;  // v5.1: SHA-256 hash for ground-truth tracing
+  prompt_preview_start?: string;
+  prompt_preview_end?: string;
+  prompt_mode?: string; // "final_prompt", "anchor_only", "keywords_fallback", "text_fallback"
+  visual_contract?: {
+    location?: string;
+    characterPose?: string;
+    actionFrozen?: string;
+  } | null;
+  visual_dna?: {
+    style?: string;
+    palette?: string;
+    lighting?: string;
+  } | null;
 }
 
 export interface ParallelImageResult {
@@ -567,6 +603,21 @@ export interface ParallelImageResult {
     mood_level?: number | null;
     camera_angle?: string | null;
     generated_at: string;
+    // Verification fields from server (v5.1)
+    prompt_len?: number;
+    prompt_hash?: string;  // v5.1: SHA-256 hash for ground-truth tracing
+    prompt_preview_start?: string;
+    prompt_preview_end?: string;
+    prompt_mode?: string;
+    visual_contract?: object | null;
+    visual_dna?: object | null;
+    // Relevance scoring fields (v5.1)
+    relevance_score?: number | null;
+    relevance_missing?: string[] | null;
+    relevance_reason?: string | null;
+    relevance_repaired?: boolean;
+    relevance_failure_type?: string | null;
+    relevance_matched_objects?: string[] | null;
   };
 }
 

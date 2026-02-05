@@ -1,6 +1,6 @@
 // =====================================================
 // OPENAI MODULE - Story Generation, Scene Analysis, Anchors
-// VERSION: 3.0.1 - 2026-01-29T21:10 - Fixed sentence splitting for ellipses
+// VERSION: 5.1.0 - 2026-02-05 - Added prompt_hash + hardened relevance
 // =====================================================
 
 import {
@@ -19,6 +19,41 @@ import {
 } from "./config.ts";
 
 import { type ThemeGuidance } from "./stories.ts";
+import { 
+  type StoryDNA, 
+  generateStoryDNA, 
+  storeDNA, 
+  buildPromptFromDNA,
+  buildDNADisplaySummary,
+  getRecentlyUsedConcepts,
+  buildNegativeMemoryInjection,
+} from "./story_dna.ts";
+
+import {
+  type VisualDNA,
+  type Platform,
+  deriveVisualDNA,
+  storeVisualDNA,
+  buildVisualStylePrompt,
+  buildImagePromptWithVisualDNA,
+  formatVisualDNADisplay,
+} from "./visual_dna.ts";
+
+// =====================================================
+// PROMPT HASH UTILITY (SHA-256 for ground-truth tracing)
+// =====================================================
+async function computePromptHash(prompt: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(prompt);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  // Return first 16 chars for readability
+  return hashHex.substring(0, 16);
+}
+
+// Export for use in phases.ts
+export { computePromptHash };
 
 // =====================================================
 // STORY GENERATION (Enhanced Viral System v2.0)
@@ -308,6 +343,145 @@ Return ONLY valid JSON:
   console.log(`[STORY] Generated: "${content.title}" (${wordCount} words)`);
   
   return content;
+}
+
+// =====================================================
+// DNA-BASED STORY GENERATION (v4.0)
+// The AI is a RENDERER - DNA defines uniqueness
+// =====================================================
+
+/**
+ * Generate a story using the DNA system
+ * This is the NEW primary method for story generation
+ * 
+ * 1. Generate unique Story DNA (parameters)
+ * 2. Derive Visual DNA from Story DNA (deterministic)
+ * 3. Build strict prompt from DNA
+ * 4. Let AI render the story
+ * 5. Store both DNAs for tracking
+ * 
+ * @param genre - Genre profile to use (urban_legend, cosmic_horror, true_crime, analog_horror, neutral)
+ * @param platform - Target platform for Visual DNA tuning (reels, tiktok, shorts, default)
+ */
+export async function generateStoryWithDNA(
+  supabase: any,
+  openaiKey: string,
+  lengthPreset: string,
+  visualPreset?: string,
+  genre?: string,
+  platform?: string,
+  jobId?: string
+): Promise<{ 
+  title: string; 
+  story: string; 
+  hook: string;
+  dna: StoryDNA;
+  visual_dna: VisualDNA;
+  dna_display: string;
+  visual_dna_display: string;
+}> {
+  console.log(`[STORY-DNA] Starting DNA-based story generation (genre: ${genre || 'urban_legend'}, platform: ${platform || 'default'})...`);
+  
+  const config = LENGTH_CONFIG[lengthPreset as keyof typeof LENGTH_CONFIG] || LENGTH_CONFIG["60"];
+  const visualEnv = VISUAL_ENVIRONMENT_DESCRIPTIONS[visualPreset || "forest"] || VISUAL_ENVIRONMENT_DESCRIPTIONS["forest"];
+  
+  // Step 1: Generate unique Story DNA with genre profile
+  console.log(`[STORY-DNA] Generating unique Story DNA...`);
+  const dna = await generateStoryDNA(supabase, genre || 'urban_legend', 10);
+  
+  console.log(`[STORY-DNA] Story DNA generated:`);
+  console.log(`[STORY-DNA]   Genre: ${dna.genre}`);
+  console.log(`[STORY-DNA]   Era: ${dna.era.label}`);
+  console.log(`[STORY-DNA]   Location: ${dna.location.label} (${dna.specific_states.join(', ')})`);
+  console.log(`[STORY-DNA]   Threat: ${dna.threat_behavior.label} + ${dna.threat_manifestation.label}`);
+  console.log(`[STORY-DNA]   Weird Axis: ${dna.weird_axis.id}`);
+  console.log(`[STORY-DNA]   Concept Hash: ${dna.concept_hash}`);
+  
+  // Step 2: Derive Visual DNA from Story DNA (DETERMINISTIC - not random!)
+  console.log(`[VISUAL-DNA] Deriving Visual DNA from Story DNA...`);
+  const targetPlatform = (platform || 'default') as Platform;
+  const visualDNA = deriveVisualDNA(dna, targetPlatform);
+  
+  console.log(`[VISUAL-DNA] Visual DNA derived:`);
+  console.log(`[VISUAL-DNA]   Style: ${visualDNA.visual_style}`);
+  console.log(`[VISUAL-DNA]   Palette: ${visualDNA.color_palette}`);
+  console.log(`[VISUAL-DNA]   Camera: ${visualDNA.camera_language}`);
+  console.log(`[VISUAL-DNA]   Lighting: ${visualDNA.lighting_profile}`);
+  
+  // Step 3: Build prompt from DNA
+  const prompt = buildPromptFromDNA(dna, { min: config.minWords, max: config.maxWords }, visualEnv);
+  
+  // Step 4: Get negative memory injection (optional enhancement)
+  const recentConcepts = await getRecentlyUsedConcepts(supabase, 7, 10);
+  const negativeMemory = buildNegativeMemoryInjection(recentConcepts);
+  
+  const fullPrompt = negativeMemory ? prompt + '\n' + negativeMemory : prompt;
+  
+  // Step 5: Generate story via OpenAI
+  const systemPrompt = "You are a horror story writer. You MUST follow the DNA specifications exactly. The DNA defines WHAT the story is about - you render it into compelling prose. Do not deviate from the DNA. Always respond with valid JSON.";
+  
+  console.log(`[STORY-DNA] Calling OpenAI with DNA-based prompt...`);
+  
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${openaiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: fullPrompt },
+      ],
+      temperature: 0.75, // Lower temperature for DNA adherence
+      response_format: { type: "json_object" },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`[STORY-DNA] OpenAI error: ${response.status}`, errorText);
+    throw new Error(`OpenAI API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const content = JSON.parse(data.choices[0].message.content);
+  
+  // Log word count for debugging
+  const wordCount = content.story?.split(/\s+/).length || 0;
+  console.log(`[STORY-DNA] Generated: "${content.title}" (${wordCount} words)`);
+  
+  // Step 6: Store both DNAs for tracking
+  try {
+    await storeDNA(supabase, dna, undefined, jobId);
+    console.log(`[STORY-DNA] Story DNA stored successfully`);
+  } catch (e) {
+    console.error(`[STORY-DNA] Failed to store Story DNA:`, e);
+    // Don't fail the story generation if DNA storage fails
+  }
+  
+  try {
+    await storeVisualDNA(supabase, visualDNA);
+    console.log(`[VISUAL-DNA] Visual DNA stored successfully`);
+  } catch (e) {
+    console.error(`[VISUAL-DNA] Failed to store Visual DNA:`, e);
+    // Don't fail if visual DNA storage fails (table might not exist yet)
+  }
+  
+  // Build display summaries for UI
+  const dnaDisplay = buildDNADisplaySummary(dna);
+  const visualDNADisplay = formatVisualDNADisplay(visualDNA);
+  
+  return {
+    title: content.title,
+    story: content.story,
+    hook: content.hook,
+    dna,
+    visual_dna: visualDNA,
+    dna_display: dnaDisplay,
+    visual_dna_display: visualDNADisplay,
+  };
 }
 
 /**
@@ -783,6 +957,197 @@ Return JSON:
       keywords: VISUAL_KEYWORDS[visualPreset] || ["dark atmospheric"],
     }];
   }
+}
+
+// =====================================================
+// SCENE COHERENCE / FUSION LAYER
+// =====================================================
+// Prevents micro-scenes by enforcing minimum word counts
+// and merging adjacent scenes until constraints are satisfied
+
+export interface CoherentScene extends StoryScene {
+  word_count: number;
+  source_scene_indices: number[];  // Traceability back to original scenes
+  fusion_reason?: string;          // Why scenes were merged (if applicable)
+}
+
+/**
+ * Scene Coherence Configuration
+ */
+const SCENE_COHERENCE_CONFIG = {
+  MIN_WORDS_PER_SCENE: 12,      // Absolute minimum - below this is a fragment
+  TARGET_WORDS_PER_SCENE: 18,   // Ideal minimum for visual coherence
+  CRITICAL_AVG_WORDS: 8,        // If avg < this, something is seriously wrong
+  MAX_SCENES_PER_100_WORDS: 7,  // ~14 words/scene minimum implied
+};
+
+/**
+ * Fuse micro-scenes into coherent visual units
+ * 
+ * Rules:
+ * 1. Each scene must have >= MIN_WORDS_PER_SCENE (12)
+ * 2. Prefer scenes with >= TARGET_WORDS_PER_SCENE (18)
+ * 3. Merge adjacent scenes if below threshold
+ * 4. Never exceed platform clamps (handled by caller)
+ * 5. Preserve keyword relevance by concatenating or re-extracting
+ * 
+ * @param scenes - Original scenes (potentially micro-fragmented)
+ * @param totalWords - Total words in story (for ratio validation)
+ * @returns CoherentScene[] - Fused scenes with traceability
+ */
+export function fuseIntoCoherentScenes(
+  scenes: StoryScene[],
+  totalWords: number
+): CoherentScene[] {
+  console.log(`\n[SCENE-FUSION] ========== COHERENCE LAYER ==========`);
+  console.log(`[SCENE-FUSION] Input: ${scenes.length} scenes, ${totalWords} total words`);
+  
+  const avgWordsOriginal = totalWords / scenes.length;
+  console.log(`[SCENE-FUSION] Original avg: ${avgWordsOriginal.toFixed(1)} words/scene`);
+  
+  // Check if fusion is needed
+  if (avgWordsOriginal >= SCENE_COHERENCE_CONFIG.TARGET_WORDS_PER_SCENE) {
+    console.log(`[SCENE-FUSION] ✓ No fusion needed - avg already >= ${SCENE_COHERENCE_CONFIG.TARGET_WORDS_PER_SCENE}`);
+    return scenes.map((s, i) => ({
+      ...s,
+      word_count: s.text.split(/\s+/).filter(w => w.length > 0).length,
+      source_scene_indices: [i],
+    }));
+  }
+  
+  // Calculate recommended max scenes based on word count
+  const maxRecommendedScenes = Math.floor(totalWords / SCENE_COHERENCE_CONFIG.MIN_WORDS_PER_SCENE);
+  console.log(`[SCENE-FUSION] Recommended max scenes: ${maxRecommendedScenes} (for ${SCENE_COHERENCE_CONFIG.MIN_WORDS_PER_SCENE}+ words each)`);
+  
+  // Greedy fusion: merge adjacent scenes until all meet minimum
+  const coherentScenes: CoherentScene[] = [];
+  let currentGroup: { 
+    texts: string[]; 
+    keywords: string[];
+    startTime: number; 
+    endTime: number;
+    sourceIndices: number[];
+  } | null = null;
+  
+  for (let i = 0; i < scenes.length; i++) {
+    const scene = scenes[i];
+    const sceneWordCount = scene.text.split(/\s+/).filter(w => w.length > 0).length;
+    
+    if (currentGroup === null) {
+      // Start new group
+      currentGroup = {
+        texts: [scene.text],
+        keywords: [...(scene.keywords || [])],
+        startTime: scene.startTime,
+        endTime: scene.endTime,
+        sourceIndices: [i],
+      };
+    } else {
+      // Add to current group
+      currentGroup.texts.push(scene.text);
+      currentGroup.keywords.push(...(scene.keywords || []));
+      currentGroup.endTime = scene.endTime;
+      currentGroup.sourceIndices.push(i);
+    }
+    
+    // Calculate current group's word count
+    const groupText = currentGroup.texts.join(' ').trim();
+    const groupWordCount = groupText.split(/\s+/).filter(w => w.length > 0).length;
+    
+    // Check if we should finalize this group
+    const isLastScene = i === scenes.length - 1;
+    const meetsMinimum = groupWordCount >= SCENE_COHERENCE_CONFIG.MIN_WORDS_PER_SCENE;
+    const meetsTarget = groupWordCount >= SCENE_COHERENCE_CONFIG.TARGET_WORDS_PER_SCENE;
+    const nextSceneSmall = i + 1 < scenes.length && 
+      scenes[i + 1].text.split(/\s+/).filter(w => w.length > 0).length < SCENE_COHERENCE_CONFIG.MIN_WORDS_PER_SCENE;
+    
+    // Finalize if: meets target, OR (meets minimum AND next scene is also substantial), OR last scene
+    const shouldFinalize = isLastScene || meetsTarget || (meetsMinimum && !nextSceneSmall);
+    
+    if (shouldFinalize && currentGroup) {
+      // Deduplicate keywords while preserving order
+      const uniqueKeywords = [...new Set(currentGroup.keywords)].slice(0, 4);
+      
+      const fusionReason = currentGroup.sourceIndices.length > 1 
+        ? `Merged ${currentGroup.sourceIndices.length} micro-scenes (${currentGroup.sourceIndices.map(x => x + 1).join('+')})`
+        : undefined;
+      
+      coherentScenes.push({
+        text: groupText,
+        startTime: currentGroup.startTime,
+        endTime: currentGroup.endTime,
+        keywords: uniqueKeywords,
+        word_count: groupWordCount,
+        source_scene_indices: currentGroup.sourceIndices,
+        fusion_reason: fusionReason,
+      });
+      
+      if (fusionReason) {
+        console.log(`[SCENE-FUSION] Scene ${coherentScenes.length}: ${fusionReason} → ${groupWordCount} words`);
+      }
+      
+      currentGroup = null;
+    }
+  }
+  
+  // Calculate new average
+  const avgWordsNew = totalWords / coherentScenes.length;
+  
+  console.log(`[SCENE-FUSION] Output: ${coherentScenes.length} coherent scenes`);
+  console.log(`[SCENE-FUSION] New avg: ${avgWordsNew.toFixed(1)} words/scene`);
+  
+  // Warn if still below critical threshold
+  if (avgWordsNew < SCENE_COHERENCE_CONFIG.CRITICAL_AVG_WORDS) {
+    console.warn(`[SCENE-FUSION] ⚠️ CRITICAL: Avg still < ${SCENE_COHERENCE_CONFIG.CRITICAL_AVG_WORDS} words/scene!`);
+  }
+  
+  console.log(`[SCENE-FUSION] ==========================================\n`);
+  
+  return coherentScenes;
+}
+
+/**
+ * Calculate recommended scene count based on story word count
+ * Returns a sane range that avoids micro-fragmentation
+ */
+export function calculateRecommendedSceneCount(
+  totalWords: number,
+  durationSec: number,
+  platform: string = 'reels'
+): { min: number; max: number; recommended: number; warning?: string } {
+  // Platform-specific clamps
+  const platformClamps: Record<string, { min: number; max: number }> = {
+    reels: { min: 4, max: 15 },
+    tiktok: { min: 4, max: 15 },
+    youtube_shorts: { min: 4, max: 20 },
+    youtube: { min: 6, max: 40 },
+  };
+  
+  const clamp = platformClamps[platform] || platformClamps.reels;
+  
+  // Calculate based on word count (primary constraint)
+  const maxByWords = Math.floor(totalWords / SCENE_COHERENCE_CONFIG.MIN_WORDS_PER_SCENE);
+  const recommendedByWords = Math.floor(totalWords / SCENE_COHERENCE_CONFIG.TARGET_WORDS_PER_SCENE);
+  
+  // Calculate based on duration (secondary constraint)
+  const minSceneDuration = 2.5; // seconds - faster than this is jarring
+  const maxSceneDuration = 8.0; // seconds - slower than this is boring
+  const maxByDuration = Math.floor(durationSec / minSceneDuration);
+  const minByDuration = Math.ceil(durationSec / maxSceneDuration);
+  
+  // Intersect constraints
+  const min = Math.max(clamp.min, minByDuration);
+  const max = Math.min(clamp.max, maxByWords, maxByDuration);
+  const recommended = Math.min(max, Math.max(min, recommendedByWords));
+  
+  let warning: string | undefined;
+  if (max < min) {
+    warning = `Story too short for platform: ${totalWords} words can't fill ${durationSec}s without micro-scenes`;
+  } else if (recommendedByWords < min) {
+    warning = `Story density low: ${totalWords} words for ${durationSec}s = recommend ${recommended} scenes max`;
+  }
+  
+  return { min, max, recommended, warning };
 }
 
 // =====================================================
@@ -1300,6 +1665,9 @@ EVERY visualBeat must be a cinematic description (15+ words), NOT story text.`,
  * 
  * BATCHED to avoid output token truncation - GPT-4o-mini has limited output tokens
  * Processing 6 scenes at a time ensures we get complete contracts for all scenes
+ * 
+ * v5.1: Now includes CONTINUITY CARRYOVER - location, threat, character, time_of_day
+ *       carry forward unless narration explicitly changes them
  */
 export async function createSceneVisualContracts(
   openaiKey: string,
@@ -1310,6 +1678,9 @@ export async function createSceneVisualContracts(
   // Pre-initialize ALL contracts with fallbacks first
   // This ensures every scene gets a contract even if API fails
   const baseLocation = storyAnchor.environment.split(",")[0] || "dark setting";
+  const baseTimeOfDay = storyAnchor.timeOfDay || "night";
+  const baseCharacter = storyAnchor.characterDescription || null;
+  
   const allContracts: SceneVisualContract[] = scenes.map((scene, i) => ({
     sceneIndex: i,
     location: baseLocation,
@@ -1323,6 +1694,14 @@ export async function createSceneVisualContracts(
     forbiddenElements: ["stairs", "extra people", "text", "words"],
     continuityFromPrev: i === 0 ? "establishing shot" : `same environment as previous`,
     evidenceRule: `scene must clearly show ${baseLocation}`,
+    // Initialize continuity with story anchor defaults
+    continuity: {
+      location: baseLocation,
+      threat_manifestation: "unnatural presence",
+      main_character: baseCharacter,
+      time_of_day: baseTimeOfDay,
+      camera_language: "cinematic",
+    },
   }));
   
   // Process in batches of 6 (smaller batches = more reliable)
@@ -1336,7 +1715,17 @@ export async function createSceneVisualContracts(
     const endIdx = Math.min(startIdx + BATCH_SIZE, scenes.length);
     const batchScenes = scenes.slice(startIdx, endIdx);
     
+    // Get previous scene's continuity to pass to this batch
+    const previousContinuity = startIdx > 0 ? allContracts[startIdx - 1].continuity : {
+      location: baseLocation,
+      threat_manifestation: "unnatural presence forming",
+      main_character: baseCharacter,
+      time_of_day: baseTimeOfDay,
+      camera_language: "cinematic horror",
+    };
+    
     console.log(`[VISUAL CONTRACTS] Batch ${batchIndex + 1}/${totalBatches}: scenes ${startIdx + 1}-${endIdx}`);
+    console.log(`[VISUAL CONTRACTS] Continuity from prev: loc="${previousContinuity?.location}", time="${previousContinuity?.time_of_day}"`);
     
     try {
       const batchContracts = await createVisualContractsBatch(
@@ -1346,7 +1735,8 @@ export async function createSceneVisualContracts(
         visualBeats.slice(startIdx, endIdx),
         startIdx,
         scenes.length,
-        scenes // Pass ALL scenes for context
+        scenes, // Pass ALL scenes for context
+        previousContinuity // NEW: Pass previous continuity
       );
       
       // Store contracts by MATCHING sceneIndex, not by array position
@@ -1384,6 +1774,63 @@ export async function createSceneVisualContracts(
     }
   }
   
+  // ========== CONTINUITY CARRYOVER POST-PROCESSING ==========
+  // Apply continuity rules: carry forward unless narration explicitly changes
+  console.log(`[VISUAL CONTRACTS] Applying continuity carryover...`);
+  
+  for (let i = 1; i < allContracts.length; i++) {
+    const prev = allContracts[i - 1];
+    const curr = allContracts[i];
+    const sceneText = scenes[i].text.toLowerCase();
+    
+    // Initialize continuity if missing
+    if (!curr.continuity) {
+      curr.continuity = {
+        location: curr.location,
+        threat_manifestation: curr.supernaturalElement || "unnatural presence",
+        main_character: baseCharacter,
+        time_of_day: baseTimeOfDay,
+        camera_language: "cinematic",
+      };
+    }
+    
+    // LOCATION: Carry forward unless scene explicitly mentions a new place
+    const locationChangeKeywords = ["moved to", "entered", "walked into", "arrived at", "found themselves in", "stepped into", "went to", "inside the", "outside the"];
+    const hasLocationChange = locationChangeKeywords.some(kw => sceneText.includes(kw)) || 
+                              (curr.location !== prev.location && curr.location !== baseLocation);
+    
+    if (!hasLocationChange && prev.continuity?.location) {
+      curr.continuity.location = prev.continuity.location;
+      // Also update the main location field for consistency
+      if (curr.location === baseLocation) {
+        curr.location = prev.location;
+      }
+    }
+    
+    // THREAT: Carry forward the threat manifestation (shadow, figure, presence)
+    if (prev.continuity?.threat_manifestation && !curr.continuity.threat_manifestation) {
+      curr.continuity.threat_manifestation = prev.continuity.threat_manifestation;
+    }
+    
+    // TIME OF DAY: Carry forward unless narration mentions time change
+    const timeChangeKeywords = ["dawn", "sunrise", "morning", "noon", "afternoon", "dusk", "sunset", "evening", "night", "midnight", "hours later", "next day"];
+    const hasTimeChange = timeChangeKeywords.some(kw => sceneText.includes(kw));
+    
+    if (!hasTimeChange && prev.continuity?.time_of_day) {
+      curr.continuity.time_of_day = prev.continuity.time_of_day;
+    }
+    
+    // CHARACTER: Always carry forward (character doesn't change)
+    if (prev.continuity?.main_character) {
+      curr.continuity.main_character = prev.continuity.main_character;
+    }
+    
+    // CAMERA LANGUAGE: Carry forward for visual consistency
+    if (prev.continuity?.camera_language) {
+      curr.continuity.camera_language = prev.continuity.camera_language;
+    }
+  }
+  
   // Final validation - count how many have real contracts vs fallbacks
   let realContracts = 0;
   let fallbackContracts = 0;
@@ -1397,6 +1844,7 @@ export async function createSceneVisualContracts(
   });
   
   console.log(`[VISUAL CONTRACTS] Final: ${realContracts} detailed contracts, ${fallbackContracts} fallbacks`);
+  console.log(`[VISUAL CONTRACTS] Continuity: location="${allContracts[0]?.continuity?.location}", time="${allContracts[0]?.continuity?.time_of_day}"`);
   
   return allContracts;
 }
@@ -1405,6 +1853,7 @@ export async function createSceneVisualContracts(
  * Create visual contracts for a batch of scenes
  * Uses enhanced prompt to prevent abstraction/compression on later scenes
  * NOW includes surrounding context so AI understands split sentences
+ * v5.1: Includes continuity carryover context from previous batch
  */
 async function createVisualContractsBatch(
   openaiKey: string,
@@ -1413,7 +1862,14 @@ async function createVisualContractsBatch(
   visualBeats: VisualBeat[],
   startIndex: number,
   totalScenes: number,
-  allScenes?: StoryScene[] // Pass all scenes for context
+  allScenes?: StoryScene[], // Pass all scenes for context
+  previousContinuity?: {     // v5.1: Continuity from previous batch
+    location?: string;
+    threat_manifestation?: string;
+    main_character?: string | null;
+    time_of_day?: string;
+    camera_language?: string;
+  }
 ): Promise<SceneVisualContract[]> {
   // Helper: detect if text contains specific content types
   const detectContentType = (text: string, fullContext: string): string[] => {
@@ -1624,6 +2080,7 @@ RULES:
 2. actionFrozen MUST be at least 20 words
 3. BE CREATIVE - vary camera angles, object choices, and visual approaches
 4. Don't always show landscapes - show SPECIFIC objects, details, perspectives
+5. CONTINUITY: Unless narration explicitly changes it, maintain the same location/time/threat
 
 Return JSON: {"contracts": [...]}`,
         },
@@ -1631,6 +2088,20 @@ Return JSON: {"contracts": [...]}`,
           role: "user",
           content: `Convert these ${scenes.length} scenes to DETAILED visual contracts.
 USE THE EXACT GLOBAL SCENE INDICES I PROVIDE:
+
+${previousContinuity ? `
+═══════════════════════════════════════
+🔗 CONTINUITY FROM PREVIOUS SCENES (carry forward unless narration changes!):
+═══════════════════════════════════════
+Location: ${previousContinuity.location || "not established"}
+Time of Day: ${previousContinuity.time_of_day || "night"}
+Threat Manifestation: ${previousContinuity.threat_manifestation || "unnatural presence"}
+${previousContinuity.main_character ? `Main Character: ${previousContinuity.main_character}` : ""}
+Camera Language: ${previousContinuity.camera_language || "cinematic"}
+
+⚠️ CRITICAL: Do NOT reset to generic "dark room / fog / shadow" unless narration EXPLICITLY moves to a new location!
+═══════════════════════════════════════
+` : ""}
 
 ${sceneData.map(s => {
   const hintsBlock = s.contentHints.length > 0 
@@ -1654,7 +2125,8 @@ Remember: sceneIndex values must be ${sceneData.map(s => s.globalIndex).join(", 
 1. If DATE/YEAR is mentioned → Show calendar, newspaper date, or era-appropriate item - NOT just atmosphere!
 2. If LOCATION/STATE is mentioned → Show welcome sign, map, or regional identifier - NOT just landscape!
 3. If DISAPPEARANCE is mentioned → Show empty chair, abandoned items, or missing poster - NOT just fog!
-4. BE SPECIFIC and CREATIVE - avoid defaulting to "atmospheric fog" for everything!`,
+4. BE SPECIFIC and CREATIVE - avoid defaulting to "atmospheric fog" for everything!
+5. MAINTAIN CONTINUITY: Keep the same location/threat/character unless the narration explicitly says otherwise!`,
         },
       ],
       temperature: 0.7, // Higher for more creative visual variety
@@ -1741,12 +2213,14 @@ function buildCharacterLockBlock(anchor: StoryAnchor): string {
  * 
  * PROMPT STRUCTURE (in order of DALL-E priority):
  * 1. ORIENTATION + COMPOSITION LOCK (fixed)
- * 2. STYLE LOCK (fixed per job)
+ * 2. STYLE LOCK (fixed per job) - or Visual DNA style if available
  * 3. CHARACTER LOCK (fixed per job)
  * 4. SCENE VISUAL CONTRACT (literal frame requirements)
  * 5. AVOID LIST (fixed)
  * 
  * MAX LENGTH: ~2500 chars for stability
+ * 
+ * v5.0: Now accepts Visual DNA for deterministic style mapping
  */
 export function buildFinalDallePrompt(
   storyAnchor: StoryAnchor,
@@ -1755,15 +2229,75 @@ export function buildFinalDallePrompt(
   totalScenes: number,
   styleConfig: { name: string; negativePrompt?: string; basePrompt?: string; colorOverride?: string; technicalStyle?: string },
   isCustomStyle: boolean = false,
-  visualPreset: string = "forest"
+  visualPreset: string = "forest",
+  visualDNA?: VisualDNA | null
 ): string {
   const moodLevel = Math.max(1, Math.min(10, Math.round(beat.moodLevel)));
   const sanitizedCameraAngle = sanitizeCameraAngleForPortrait(beat.cameraAngle);
   const contract = beat.visualContract;
   
+  // ========== BUILD VISUAL DNA STYLE (if available) ==========
+  let visualDNAStyleBlock = "";
+  if (visualDNA) {
+    const styleMap: Record<string, string> = {
+      "VHS_degraded": "grainy VHS aesthetic with analog video distortion and worn tape quality",
+      "cinematic_dark": "cinematic dark photography with film noir lighting and professional cinematography",
+      "cinematic_minimal": "minimalist cinematography with clean compositions and subtle lighting",
+      "documentary_archival": "documentary archival style with authentic period look",
+      "surveillance_footage": "security camera surveillance footage aesthetic with fixed angle",
+      "found_footage": "found footage style with amateur video quality",
+      "polaroid_faded": "faded polaroid aesthetic with vintage photograph quality",
+    };
+    
+    const paletteMap: Record<string, string> = {
+      "cold_desaturated": "cold desaturated colors with muted tones",
+      "sickly_green": "sickly green color cast with nauseous grading",
+      "muted_gray": "muted gray tones with washed out colors",
+      "deep_shadow_contrast": "deep rich shadows with high contrast blacks",
+      "monochrome_harsh": "harsh stark monochrome black and white",
+      "amber_decay": "amber decay tones with aged sepia hints",
+      "blue_black_void": "blue-black void colors with deep indigo shadows",
+    };
+    
+    const lightingMap: Record<string, string> = {
+      "moonlit_fog": "moonlit foggy atmosphere with diffused silver light",
+      "fluorescent_flat": "harsh fluorescent institutional lighting",
+      "low_key_shadow": "low-key dramatic lighting with deep shadows",
+      "blown_highlights": "blown out highlights with harsh contrast",
+      "single_source_harsh": "single harsh light source creating dramatic shadows",
+      "twilight_amber": "twilight amber glow fading into darkness",
+      "deep_darkness": "deep overwhelming darkness with minimal light",
+    };
+    
+    const compositionMap: Record<string, string> = {
+      "centered_void": "centered composition surrounded by empty void",
+      "rule_of_thirds": "classic rule of thirds balanced composition",
+      "off_balance": "deliberately off-balance unsettling framing",
+      "deep_space": "deep space composition with layered depth",
+      "claustrophobic": "claustrophobic tight framing with no escape",
+      "negative_space_heavy": "heavy negative space with isolated subject",
+    };
+    
+    visualDNAStyleBlock = [
+      "VISUAL DNA STYLE:",
+      styleMap[visualDNA.visual_style] || visualDNA.visual_style,
+      paletteMap[visualDNA.color_palette] || visualDNA.color_palette,
+      lightingMap[visualDNA.lighting_profile] || visualDNA.lighting_profile,
+      compositionMap[visualDNA.frame_composition] || visualDNA.frame_composition,
+      visualDNA.texture_artifacts.length > 0 
+        ? `Textures: ${visualDNA.texture_artifacts.map(a => a.replace(/_/g, ' ')).join(', ')}`
+        : "",
+    ].filter(Boolean).join("\n");
+    
+    console.log(`[DALLE-PROMPT] Using Visual DNA: ${visualDNA.visual_style} / ${visualDNA.color_palette}`);
+  }
+  
   // ========== BUILD STYLE BLOCK ==========
   let styleBlock: string;
-  if (isCustomStyle && styleConfig.basePrompt) {
+  if (visualDNAStyleBlock) {
+    // Visual DNA takes priority
+    styleBlock = visualDNAStyleBlock;
+  } else if (isCustomStyle && styleConfig.basePrompt) {
     styleBlock = [
       styleConfig.basePrompt,
       styleConfig.colorOverride ? `Colors: ${styleConfig.colorOverride}` : "",
@@ -1822,6 +2356,11 @@ export function buildFinalDallePrompt(
     
     const compositionHint = beat.compositionHint || "";
     
+    // Use Visual DNA lighting if available
+    const lightingSource = visualDNA?.lighting_profile 
+      ? visualDNA.lighting_profile.replace(/_/g, ' ')
+      : (contract.lightingSource || "dim ambient light");
+    
     sceneBlock = [
       `SCENE ${sceneIndex + 1}/${totalScenes} CONTRACT (MUST FOLLOW):`,
       ``,
@@ -1834,10 +2373,12 @@ export function buildFinalDallePrompt(
       `EVIDENCE:`,
       `- ${contract.evidenceRule || `Scene must clearly show ${contract.location}`}`,
       ``,
-      `Lighting: ${contract.lightingSource || "dim ambient light"}`,
+      `Lighting: ${lightingSource}`,
       `Camera: ${contract.cameraDistance || "medium"} shot`,
       compositionHint ? `Composition: ${compositionHint}` : "",
-      contract.continuityFromPrev ? `Continuity: ${contract.continuityFromPrev}` : "",
+      // Use continuity field if available, otherwise fall back to continuityFromPrev
+      contract.continuity ? `Continuity: location=${contract.continuity.location}, time=${contract.continuity.time_of_day}` : 
+        (contract.continuityFromPrev ? `Continuity: ${contract.continuityFromPrev}` : ""),
       `Mood: ${moodLevel}/10`,
     ].filter(Boolean).join("\n");
     
@@ -1935,6 +2476,8 @@ export function buildFinalDallePrompt(
  * 
  * FLUX IGNORES long "rule" prompts and tends toward photorealism.
  * For cartoon/webcomic styles, DALL-E 3 or GPT-4o are better choices.
+ * 
+ * v5.0: Now accepts Visual DNA for deterministic style mapping
  */
 export function buildFluxPrompt(
   storyAnchor: StoryAnchor,
@@ -1942,16 +2485,80 @@ export function buildFluxPrompt(
   sceneIndex: number,
   totalScenes: number,
   styleConfig: { name: string; negativePrompt?: string; basePrompt?: string; colorOverride?: string; technicalStyle?: string },
-  isCustomStyle: boolean = false
+  isCustomStyle: boolean = false,
+  visualDNA?: VisualDNA | null
 ): string {
   const contract = beat.visualContract;
   const moodLevel = Math.max(1, Math.min(10, Math.round(beat.moodLevel)));
+  
+  // ========== VISUAL DNA STYLE (if available) ==========
+  // When Visual DNA is present, it takes priority for style decisions
+  let visualDNAStyle = "";
+  if (visualDNA) {
+    const styleMap: Record<string, string> = {
+      "VHS_degraded": "grainy VHS aesthetic, analog video distortion, worn tape quality",
+      "cinematic_dark": "cinematic dark photography, film noir lighting, professional cinematography",
+      "cinematic_minimal": "minimalist cinematography, clean compositions, subtle lighting",
+      "documentary_archival": "documentary style, archival footage quality, authentic period look",
+      "surveillance_footage": "security camera footage, surveillance aesthetic, fixed angle",
+      "found_footage": "found footage style, amateur video quality, authentic discovered recording",
+      "polaroid_faded": "faded polaroid aesthetic, vintage photograph quality, aged colors",
+    };
+    
+    const paletteMap: Record<string, string> = {
+      "cold_desaturated": "cold desaturated colors, muted tones",
+      "sickly_green": "sickly green cast, nauseous color grading",
+      "muted_gray": "muted grays, washed out tones",
+      "deep_shadow_contrast": "deep shadows, high contrast, rich blacks",
+      "monochrome_harsh": "harsh monochrome, stark black and white",
+      "amber_decay": "amber decay tones, aged sepia hints",
+      "blue_black_void": "blue-black void, deep indigo shadows",
+    };
+    
+    const lightingMap: Record<string, string> = {
+      "moonlit_fog": "moonlit foggy atmosphere, diffused silver light",
+      "fluorescent_flat": "harsh fluorescent lighting, flat institutional light",
+      "low_key_shadow": "low-key dramatic lighting, deep shadows",
+      "blown_highlights": "blown out highlights, harsh contrast",
+      "single_source_harsh": "single harsh light source, dramatic shadows",
+      "twilight_amber": "twilight amber glow, fading golden hour",
+      "deep_darkness": "deep darkness, minimal light, overwhelming shadow",
+    };
+    
+    const compositionMap: Record<string, string> = {
+      "centered_void": "centered composition with empty void",
+      "rule_of_thirds": "classic rule of thirds composition",
+      "off_balance": "deliberately off-balance framing, unsettling",
+      "deep_space": "deep space composition, layered depth",
+      "claustrophobic": "claustrophobic tight framing",
+      "negative_space_heavy": "heavy negative space, isolated subject",
+    };
+    
+    const parts = [
+      styleMap[visualDNA.visual_style] || "",
+      paletteMap[visualDNA.color_palette] || "",
+      lightingMap[visualDNA.lighting_profile] || "",
+      compositionMap[visualDNA.frame_composition] || "",
+    ].filter(Boolean);
+    
+    // Add texture artifacts
+    if (visualDNA.texture_artifacts.length > 0) {
+      const artifactTerms = visualDNA.texture_artifacts.map(a => a.replace(/_/g, ' ')).slice(0, 3);
+      parts.push(artifactTerms.join(', '));
+    }
+    
+    visualDNAStyle = parts.join(", ");
+    console.log(`[FLUX-PROMPT] Using Visual DNA style: ${visualDNA.visual_style} / ${visualDNA.color_palette}`);
+  }
   
   // ========== STYLE (SHORT!) ==========
   // FLUX bias: if style mentions "cartoon/webcomic/vector", it often ignores it
   // Best for: cinematic, photorealistic, dark atmospheric
   let styleShort: string;
-  if (isCustomStyle && styleConfig.basePrompt) {
+  // If Visual DNA is present, use it as the primary style
+  if (visualDNAStyle) {
+    styleShort = visualDNAStyle;
+  } else if (isCustomStyle && styleConfig.basePrompt) {
     // Custom style: extract the core concept (first 100 chars)
     styleShort = styleConfig.basePrompt.substring(0, 100).trim();
     if (styleConfig.colorOverride) {
@@ -1978,7 +2585,10 @@ export function buildFluxPrompt(
     const location = contract.location || "interior scene";
     const pose = contract.characterPose || "standing";
     const supernatural = contract.supernaturalElement || "";
-    const lighting = contract.lightingSource || "dim light";
+    // Use Visual DNA lighting if available, otherwise contract lighting
+    const lighting = visualDNA?.lighting_profile 
+      ? visualDNA.lighting_profile.replace(/_/g, ' ')
+      : (contract.lightingSource || "dim light");
     
     sceneShort = [
       location,
@@ -2026,4 +2636,626 @@ export function buildFluxPrompt(
   console.log(`[FLUX-PROMPT] Preview: ${finalPrompt.substring(0, 200)}...`);
   
   return finalPrompt;
+}
+
+// =====================================================
+// ALIGNMENT SELF-CHECK: Verify contracts match narration
+// Returns alignment scores and flags scenes needing repair
+// =====================================================
+
+export interface AlignmentResult {
+  sceneIndex: number;
+  score: number; // 0.0 - 1.0
+  issues: string[];
+  needsRepair: boolean;
+}
+
+/**
+ * Check alignment between scene narration and visual contract
+ * Score components:
+ * - Key entity overlap (0.4): Do the contract's subjects appear in narration?
+ * - Setting match (0.3): Is the location relevant to what's described?
+ * - Action relevance (0.3): Does the frozen action reflect the narration?
+ */
+export function checkContractAlignment(
+  scene: StoryScene,
+  contract: SceneVisualContract
+): AlignmentResult {
+  const text = scene.text.toLowerCase();
+  const issues: string[] = [];
+  let score = 0;
+  
+  // ========== KEY ENTITY OVERLAP (0.4) ==========
+  // Extract key nouns from contract's actionFrozen and check if they appear in narration
+  const actionWords = (contract.actionFrozen || "").toLowerCase().split(/\s+/);
+  const significantWords = actionWords.filter(w => 
+    w.length > 3 && 
+    !["the", "and", "with", "from", "into", "their", "this", "that", "they", "what", "when", "where", "being", "having"].includes(w)
+  );
+  
+  if (significantWords.length > 0) {
+    const matchingWords = significantWords.filter(w => text.includes(w));
+    const entityOverlap = matchingWords.length / Math.min(significantWords.length, 5); // Cap at 5 for normalization
+    score += Math.min(entityOverlap, 1) * 0.4;
+    
+    if (entityOverlap < 0.3) {
+      issues.push(`Low entity overlap: contract mentions "${significantWords.slice(0, 3).join(', ')}" not in narration`);
+    }
+  } else {
+    score += 0.2; // Partial credit if no significant words to check
+  }
+  
+  // ========== SETTING MATCH (0.3) ==========
+  // Check if contract location appears in or relates to narration
+  const location = (contract.location || "").toLowerCase();
+  const locationWords = location.split(/\s+/).filter(w => w.length > 3);
+  
+  if (locationWords.length > 0) {
+    const locationMatch = locationWords.some(w => text.includes(w));
+    if (locationMatch) {
+      score += 0.3;
+    } else {
+      // Check for semantic synonyms
+      const synonyms: Record<string, string[]> = {
+        "forest": ["trees", "woods", "woodland", "grove"],
+        "house": ["home", "building", "room", "door", "floor", "wall", "hallway"],
+        "road": ["path", "street", "highway", "driveway"],
+        "night": ["dark", "darkness", "midnight", "evening"],
+        "water": ["lake", "river", "pond", "stream", "ocean", "sea"],
+      };
+      
+      const hasSynonym = locationWords.some(w => 
+        synonyms[w]?.some(syn => text.includes(syn))
+      );
+      
+      if (hasSynonym) {
+        score += 0.25;
+      } else {
+        issues.push(`Setting mismatch: "${location}" not reflected in narration`);
+        score += 0.1; // Small credit - might be carrying forward location
+      }
+    }
+  } else {
+    score += 0.15; // Partial credit
+  }
+  
+  // ========== ACTION RELEVANCE (0.3) ==========
+  // Check if the action verbs in contract relate to narration
+  const actionVerbs = ["standing", "walking", "running", "looking", "turning", "falling", "rising", "moving", "reaching", "watching", "hiding", "emerging", "approaching"];
+  const contractAction = (contract.actionFrozen || "").toLowerCase();
+  
+  const usedVerbs = actionVerbs.filter(v => contractAction.includes(v));
+  if (usedVerbs.length > 0) {
+    const verbMatch = usedVerbs.some(v => {
+      // Check for verb root in narration
+      const root = v.replace(/ing$/, "");
+      return text.includes(v) || text.includes(root) || text.includes(root + "ed") || text.includes(root + "s");
+    });
+    
+    if (verbMatch) {
+      score += 0.3;
+    } else {
+      // Check if narration at least implies similar action type
+      const hasMotion = /walked?|ran?|moved?|went|came|stepped|rushed/i.test(text);
+      const hasObservation = /saw|looked?|watched?|noticed|observed|stared?/i.test(text);
+      const hasFear = /feared?|scared?|terrified|frozen|paralyzed/i.test(text);
+      
+      if ((hasMotion && usedVerbs.some(v => ["walking", "running", "moving"].includes(v))) ||
+          (hasObservation && usedVerbs.some(v => ["looking", "watching"].includes(v))) ||
+          (hasFear && usedVerbs.some(v => ["standing", "hiding"].includes(v)))) {
+        score += 0.25;
+      } else {
+        issues.push(`Action may not match: contract shows "${usedVerbs.join(', ')}" but narration differs`);
+        score += 0.1;
+      }
+    }
+  } else {
+    score += 0.15; // Partial credit
+  }
+  
+  return {
+    sceneIndex: contract.sceneIndex,
+    score: Math.min(score, 1),
+    issues,
+    needsRepair: score < 0.5, // Flag for repair if below 50%
+  };
+}
+
+/**
+ * Run alignment check on all contracts
+ * Returns overall stats and list of scenes needing repair
+ */
+export function runAlignmentCheck(
+  scenes: StoryScene[],
+  contracts: SceneVisualContract[]
+): {
+  overallScore: number;
+  sceneResults: AlignmentResult[];
+  needsRepair: number[];
+  summary: string;
+} {
+  const results: AlignmentResult[] = [];
+  
+  for (let i = 0; i < Math.min(scenes.length, contracts.length); i++) {
+    const result = checkContractAlignment(scenes[i], contracts[i]);
+    results.push(result);
+  }
+  
+  const avgScore = results.reduce((sum, r) => sum + r.score, 0) / results.length;
+  const needsRepair = results.filter(r => r.needsRepair).map(r => r.sceneIndex);
+  
+  // Log summary
+  const distribution = {
+    excellent: results.filter(r => r.score >= 0.8).length,
+    good: results.filter(r => r.score >= 0.6 && r.score < 0.8).length,
+    fair: results.filter(r => r.score >= 0.4 && r.score < 0.6).length,
+    poor: results.filter(r => r.score < 0.4).length,
+  };
+  
+  const summary = `Alignment: avg=${(avgScore * 100).toFixed(0)}%, excellent=${distribution.excellent}, good=${distribution.good}, fair=${distribution.fair}, poor=${distribution.poor}, repairs=${needsRepair.length}`;
+  console.log(`[ALIGNMENT] ${summary}`);
+  
+  // Log any issues found
+  for (const result of results) {
+    if (result.issues.length > 0) {
+      console.log(`[ALIGNMENT] Scene ${result.sceneIndex + 1} (${(result.score * 100).toFixed(0)}%): ${result.issues.join("; ")}`);
+    }
+  }
+  
+  return {
+    overallScore: avgScore,
+    sceneResults: results,
+    needsRepair,
+    summary,
+  };
+}
+
+// =====================================================
+// RELEVANCE SCORING + AUTO-REPAIR (v5.2)
+// =====================================================
+
+export interface RelevanceResult {
+  relevance_score: number;       // 0-1 
+  missing_elements: string[];    // Elements that should be in prompt but aren't
+  reason: string;               // Short explanation
+  needs_repair: boolean;        // true if score < 0.65
+  // NEW: Hard evidence fields (v5.1)
+  failure_type: "missing_objects" | "wrong_location" | "wrong_threat" | "too_generic" | "continuity_break" | "ok";
+  matched_objects: string[];    // Objects from contract found in prompt
+  mismatched_fields: string[];  // Fields that don't align
+}
+
+// Generic horror terms that should NOT count toward relevance unless narration supports
+const GENERIC_HORROR_TERMS = [
+  "fog", "mist", "shadow", "shadows", "darkness", "dark room", "dim light",
+  "eerie", "ominous", "sinister", "creepy", "scary", "horror", "terror",
+  "dread", "fear", "unease", "tension", "suspense"
+];
+
+/**
+ * Score how well the image prompt captures the scene's visual contract
+ * HARDENED RUBRIC (v5.1):
+ * - Require ≥2 concrete objects from visibleObjects in prompt
+ * - Require location alignment with contract
+ * - Require threat_manifestation alignment if present
+ * - Penalize generic horror signatures unless narration supports
+ */
+export async function scorePromptRelevance(
+  openaiKey: string,
+  sceneIndex: number,
+  narration: string,
+  visualContract: {
+    location?: string;
+    actionFrozen?: string;
+    visibleObjects?: string[];
+    characterPose?: string;
+    supernaturalElement?: string | null;
+    continuity?: {
+      location?: string;
+      threat_manifestation?: string;
+      time_of_day?: string;
+    };
+  } | null,
+  prompt: string
+): Promise<RelevanceResult> {
+  const THRESHOLD = 0.65;
+  const MIN_OBJECTS_REQUIRED = 2;
+  
+  // Default result for early returns
+  const defaultResult: RelevanceResult = {
+    relevance_score: 0.5,
+    missing_elements: [],
+    reason: "",
+    needs_repair: false,
+    failure_type: "ok",
+    matched_objects: [],
+    mismatched_fields: [],
+  };
+  
+  // If no contract, can't score - return neutral
+  if (!visualContract) {
+    console.log(`[RELEVANCE] Scene ${sceneIndex + 1}: No visual contract, skipping score`);
+    return {
+      ...defaultResult,
+      missing_elements: ["no_contract"],
+      reason: "No visual contract available for comparison",
+    };
+  }
+  
+  // Extract key elements from contract
+  const mustShow = visualContract.visibleObjects || [];
+  const location = visualContract.location || "";
+  const actionFrozen = visualContract.actionFrozen || "";
+  const characterPose = visualContract.characterPose || "";
+  const supernatural = visualContract.supernaturalElement || "";
+  const threatManifestation = visualContract.continuity?.threat_manifestation || "";
+  const timeOfDay = visualContract.continuity?.time_of_day || "";
+  
+  const promptLower = prompt.toLowerCase();
+  const narrationLower = narration.toLowerCase();
+  
+  // ========== HARD EVIDENCE CHECK (before LLM) ==========
+  // Check how many concrete objects appear in prompt
+  const matchedObjects: string[] = [];
+  const missingObjects: string[] = [];
+  
+  for (const obj of mustShow) {
+    const objLower = obj.toLowerCase();
+    // Check if object (or partial match) appears in prompt
+    const objWords = objLower.split(/\s+/);
+    const found = objWords.some(word => word.length > 3 && promptLower.includes(word));
+    if (found) {
+      matchedObjects.push(obj);
+    } else {
+      missingObjects.push(obj);
+    }
+  }
+  
+  // Check location alignment
+  const locationWords = location.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+  const locationInPrompt = locationWords.some(word => promptLower.includes(word));
+  
+  // Check for generic horror drift (penalize if not supported by narration)
+  const genericTermsInPrompt = GENERIC_HORROR_TERMS.filter(term => promptLower.includes(term));
+  const genericTermsInNarration = GENERIC_HORROR_TERMS.filter(term => narrationLower.includes(term));
+  const unsupportedGenericTerms = genericTermsInPrompt.filter(term => !genericTermsInNarration.includes(term));
+  
+  // Check threat alignment if present
+  const threatWords = threatManifestation.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+  const threatInPrompt = threatWords.length === 0 || threatWords.some(word => promptLower.includes(word));
+  
+  // ========== COMPUTE HARD EVIDENCE SCORE ==========
+  let hardScore = 0;
+  const mismatched: string[] = [];
+  let failureType: RelevanceResult["failure_type"] = "ok";
+  
+  // Object coverage: 40% weight (require ≥2 objects)
+  const objectScore = mustShow.length > 0 
+    ? Math.min(1, matchedObjects.length / Math.max(MIN_OBJECTS_REQUIRED, mustShow.length * 0.6))
+    : 0.8; // No objects specified = partial credit
+  hardScore += objectScore * 0.4;
+  
+  if (matchedObjects.length < MIN_OBJECTS_REQUIRED && mustShow.length >= MIN_OBJECTS_REQUIRED) {
+    mismatched.push(`objects (${matchedObjects.length}/${mustShow.length})`);
+    failureType = "missing_objects";
+  }
+  
+  // Location alignment: 25% weight
+  if (locationInPrompt) {
+    hardScore += 0.25;
+  } else if (location) {
+    mismatched.push(`location ("${location}" not found)`);
+    if (failureType === "ok") failureType = "wrong_location";
+    hardScore += 0.05; // Minimal credit
+  } else {
+    hardScore += 0.15; // No location specified = partial credit
+  }
+  
+  // Threat alignment: 20% weight
+  if (threatInPrompt) {
+    hardScore += 0.2;
+  } else if (threatManifestation) {
+    mismatched.push(`threat ("${threatManifestation}" missing)`);
+    if (failureType === "ok") failureType = "wrong_threat";
+    hardScore += 0.05;
+  } else {
+    hardScore += 0.15;
+  }
+  
+  // Generic penalty: -15% if too many unsupported generic terms
+  if (unsupportedGenericTerms.length >= 3) {
+    hardScore -= 0.15;
+    mismatched.push(`too_generic (${unsupportedGenericTerms.length} unsupported horror terms)`);
+    if (failureType === "ok") failureType = "too_generic";
+  }
+  
+  // Action/pose alignment: 15% weight
+  const actionWords = actionFrozen.toLowerCase().split(/\s+/).filter(w => w.length > 4);
+  const actionInPrompt = actionWords.length === 0 || actionWords.some(word => promptLower.includes(word));
+  if (actionInPrompt) {
+    hardScore += 0.15;
+  } else {
+    mismatched.push("action");
+    hardScore += 0.05;
+  }
+  
+  hardScore = Math.max(0, Math.min(1, hardScore));
+  
+  // ========== LLM VALIDATION (for nuanced check) ==========
+  let llmScore = hardScore; // Default to hard score if LLM fails
+  let llmReason = "";
+  
+  try {
+    const openai = new OpenAI({ apiKey: openaiKey });
+    
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.1,
+      max_tokens: 400,
+      messages: [
+        {
+          role: "system",
+          content: `You are a strict visual relevance checker. Score prompts harshly for missing concrete elements.
+
+HARD REQUIREMENTS:
+1. At least 2 concrete objects from visibleObjects MUST appear in prompt (not generic synonyms)
+2. Location MUST match contract (same room/place name)
+3. If threat_manifestation exists, prompt must reflect it
+4. Generic horror terms (fog, shadow, darkness) without narration support = penalty
+
+Return JSON:
+{
+  "relevance_score": 0.0-1.0,
+  "missing_elements": ["specific missing items"],
+  "reason": "Brief harsh assessment",
+  "failure_type": "missing_objects|wrong_location|wrong_threat|too_generic|continuity_break|ok"
+}
+
+Score STRICTLY:
+- 0.9-1.0: All contract elements present verbatim
+- 0.65-0.89: Most elements present, acceptable
+- 0.4-0.64: FAIL - Missing required objects/location
+- 0.0-0.39: FAIL - Prompt doesn't match scene`
+        },
+        {
+          role: "user",
+          content: `SCENE ${sceneIndex + 1} STRICT RELEVANCE CHECK:
+
+NARRATION: "${narration.substring(0, 250)}"
+
+VISUAL CONTRACT:
+- Location: ${location || "not specified"}
+- Must show objects: [${mustShow.join(", ")}] (REQUIRE ≥2 IN PROMPT)
+- Action frozen: ${actionFrozen || "not specified"}
+- Threat: ${threatManifestation || supernatural || "none"}
+- Time of day: ${timeOfDay || "not specified"}
+
+PROMPT (first 600 chars):
+"${prompt.substring(0, 600)}"
+
+HARD EVIDENCE (pre-computed):
+- Objects found in prompt: [${matchedObjects.join(", ")}] (${matchedObjects.length}/${mustShow.length})
+- Location in prompt: ${locationInPrompt ? "YES" : "NO"}
+- Unsupported generic terms: [${unsupportedGenericTerms.join(", ")}]
+
+Score strictly. If <2 required objects found, score MUST be <0.65.`
+        }
+      ],
+      response_format: { type: "json_object" }
+    });
+    
+    const content = response.choices[0]?.message?.content || "{}";
+    const parsed = JSON.parse(content);
+    
+    llmScore = Math.max(0, Math.min(1, parseFloat(parsed.relevance_score) || hardScore));
+    llmReason = parsed.reason || "LLM assessment";
+    
+    // Override failure_type if LLM provides one
+    if (parsed.failure_type && parsed.failure_type !== "ok") {
+      failureType = parsed.failure_type;
+    }
+    
+    // Merge missing elements
+    if (Array.isArray(parsed.missing_elements)) {
+      missingObjects.push(...parsed.missing_elements.filter((e: string) => !missingObjects.includes(e)));
+    }
+    
+  } catch (error) {
+    console.error(`[RELEVANCE] Scene ${sceneIndex + 1} LLM error:`, error);
+    llmReason = `Hard evidence only: ${mismatched.join(", ") || "ok"}`;
+  }
+  
+  // Final score: average of hard evidence and LLM (hard evidence weighted 60%)
+  const finalScore = hardScore * 0.6 + llmScore * 0.4;
+  const needsRepair = finalScore < THRESHOLD || matchedObjects.length < MIN_OBJECTS_REQUIRED;
+  
+  console.log(`[RELEVANCE] Scene ${sceneIndex + 1}: hard=${(hardScore * 100).toFixed(0)}% llm=${(llmScore * 100).toFixed(0)}% final=${(finalScore * 100).toFixed(0)}%`);
+  console.log(`[RELEVANCE] Scene ${sceneIndex + 1}: objects=${matchedObjects.length}/${mustShow.length}, location=${locationInPrompt}, failure=${failureType}`);
+  
+  return {
+    relevance_score: finalScore,
+    missing_elements: missingObjects,
+    reason: llmReason,
+    needs_repair: needsRepair,
+    failure_type: failureType,
+    matched_objects: matchedObjects,
+    mismatched_fields: mismatched,
+  };
+}
+
+/**
+ * Repair a weak visual contract with STRICT requirements (v5.1)
+ * - Rewrite actionFrozen as filmable: subject + verb + object
+ * - Inject 1 distinct evidence item tied to story (compass, tilted-head figure, etc.)
+ * - Tighten MUST NOT to avoid common drift (bedroom/modern unless narration says so)
+ * - Add 3-5 SPECIFIC visible objects
+ */
+export async function repairVisualContract(
+  openaiKey: string,
+  sceneIndex: number,
+  narration: string,
+  originalContract: SceneVisualContract,
+  missingElements: string[],
+  storyDNAHints?: { vibe?: string; location_type?: string; threat_type?: string }
+): Promise<SceneVisualContract> {
+  console.log(`[REPAIR] Scene ${sceneIndex + 1}: STRICT repair starting, missing: ${missingElements.join(", ")}`);
+  
+  // Build story-specific evidence items based on DNA hints
+  const evidenceItemSuggestions = [
+    "compass pointing wrong direction",
+    "clock with hands moving backward", 
+    "photograph with scratched-out face",
+    "sealed file cabinet with broken lock",
+    "figure standing unnaturally still in background",
+    "mirror showing reflection that doesn't match",
+    "window with condensation forming words",
+    "door slightly ajar when it was closed",
+    "journal with pages torn out",
+    "radio playing static",
+  ];
+  
+  // Pick evidence based on vibe if available
+  let evidenceHint = evidenceItemSuggestions[sceneIndex % evidenceItemSuggestions.length];
+  if (storyDNAHints?.vibe?.includes("paranormal")) {
+    evidenceHint = "figure with tilted head watching from shadows";
+  } else if (storyDNAHints?.vibe?.includes("psychological")) {
+    evidenceHint = "pills scattered across surface";
+  } else if (storyDNAHints?.vibe?.includes("cosmic")) {
+    evidenceHint = "geometry that shouldn't exist";
+  }
+  
+  try {
+    const openai = new OpenAI({ apiKey: openaiKey });
+    
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.4,
+      max_tokens: 600,
+      messages: [
+        {
+          role: "system",
+          content: `You are a visual contract repair specialist. Fix weak scene descriptions with STRICT, FILMABLE requirements.
+
+REPAIR RULES:
+1. actionFrozen MUST be filmable: [SUBJECT] [VERB] [OBJECT] format
+   BAD: "tension builds" / "fear grows" / "something approaches"
+   GOOD: "woman's hand reaches toward brass doorknob" / "man's flashlight beam illuminates wet footprints"
+
+2. visibleObjects MUST have 4-5 SPECIFIC, CONCRETE items:
+   BAD: "furniture", "shadows", "darkness"
+   GOOD: "wooden chair", "brass lamp", "cracked window pane", "wet footprints on floor"
+
+3. Add 1 EVIDENCE ITEM that proves this exact scene (unique identifier):
+   Examples: "${evidenceHint}"
+
+4. forbiddenElements MUST block common drift:
+   - ALWAYS forbid: "bedroom", "modern interior", "bright lighting", "daylight" (unless narration explicitly mentions them)
+   - Add scene-specific blocks based on what the NARRATION does NOT mention
+
+5. evidenceRule MUST be a checkable statement:
+   BAD: "scene must be scary"
+   GOOD: "image must show flashlight beam hitting wet footprints on wooden floor"
+
+Return JSON only:
+{
+  "location": "specific place from narration",
+  "characterPose": "exact filmable body position with limb details",
+  "visibleObjects": ["object1", "object2", "object3", "object4", "EVIDENCE_ITEM"],
+  "actionFrozen": "[SUBJECT] [VERB] [OBJECT] - exact frozen moment",
+  "supernaturalElement": "what horror element is visually present (or null)",
+  "forbiddenElements": ["thing1", "thing2", "thing3"],
+  "evidenceRule": "The image MUST show [specific checkable detail]"
+}`
+        },
+        {
+          role: "user",
+          content: `STRICT REPAIR for Scene ${sceneIndex + 1}:
+
+NARRATION (source of truth):
+"${narration}"
+
+ORIGINAL CONTRACT (FAILED):
+- Location: ${originalContract.location}
+- Pose: ${originalContract.characterPose}
+- Objects: [${originalContract.visibleObjects?.join(", ")}]
+- Action: ${originalContract.actionFrozen}
+
+FAILURE REASONS: ${missingElements.join(", ")}
+
+EVIDENCE ITEM SUGGESTION: ${evidenceHint}
+
+REQUIREMENTS:
+1. actionFrozen = [SUBJECT] [VERB] [OBJECT] from narration
+2. 4-5 SPECIFIC objects that appear in narration (no generic "shadows")
+3. 1 evidence item (can use suggestion or invent from narration)
+4. forbiddenElements = things NOT in narration + ["bedroom", "modern furniture", "bright light"]
+5. evidenceRule = checkable visual proof`
+        }
+      ],
+      response_format: { type: "json_object" }
+    });
+    
+    const content = response.choices[0]?.message?.content || "{}";
+    const repair = JSON.parse(content);
+    
+    // Validate repair has required fields
+    if (!repair.actionFrozen || repair.actionFrozen.length < 20) {
+      throw new Error("Repair produced weak actionFrozen");
+    }
+    if (!repair.visibleObjects || repair.visibleObjects.length < 4) {
+      throw new Error("Repair produced too few objects");
+    }
+    
+    // Merge repair into original contract
+    const repairedContract: SceneVisualContract = {
+      ...originalContract,
+      location: repair.location || originalContract.location,
+      characterPose: repair.characterPose || originalContract.characterPose,
+      visibleObjects: repair.visibleObjects,
+      actionFrozen: repair.actionFrozen,
+      supernaturalElement: repair.supernaturalElement ?? originalContract.supernaturalElement,
+      forbiddenElements: repair.forbiddenElements || originalContract.forbiddenElements || [],
+      evidenceRule: repair.evidenceRule || `Scene ${sceneIndex + 1} must match narration`,
+    };
+    
+    console.log(`[REPAIR] Scene ${sceneIndex + 1}: SUCCESS`);
+    console.log(`[REPAIR]   actionFrozen: "${repairedContract.actionFrozen?.substring(0, 60)}..."`);
+    console.log(`[REPAIR]   objects: [${repairedContract.visibleObjects?.join(", ")}]`);
+    console.log(`[REPAIR]   forbidden: [${repairedContract.forbiddenElements?.join(", ")}]`);
+    console.log(`[REPAIR]   evidence: "${repairedContract.evidenceRule?.substring(0, 60)}..."`);
+    
+    return repairedContract;
+    
+  } catch (error) {
+    console.error(`[REPAIR] Scene ${sceneIndex + 1} LLM failed:`, error);
+    
+    // STRICT FALLBACK: Extract nouns from narration as objects
+    const narrationWords = narration.toLowerCase().split(/\s+/);
+    const concreteNouns = narrationWords.filter(w => 
+      w.length > 4 && 
+      !["which", "where", "their", "there", "would", "could", "should", "about", "through"].includes(w)
+    ).slice(0, 4);
+    
+    const fallbackObjects = [
+      ...concreteNouns,
+      evidenceHint, // Add the evidence item
+    ];
+    
+    // Build filmable action from first sentence
+    const firstSentence = narration.split(/[.!?]/)[0] || narration.substring(0, 100);
+    const filmableAction = firstSentence.length > 20 
+      ? firstSentence.substring(0, 80)
+      : `character in ${originalContract.location || "scene"} - ${firstSentence}`;
+    
+    return {
+      ...originalContract,
+      visibleObjects: fallbackObjects,
+      actionFrozen: filmableAction,
+      forbiddenElements: [
+        ...(originalContract.forbiddenElements || []),
+        "bedroom", "modern interior", "bright daylight", "text", "words"
+      ],
+      evidenceRule: `Image must show: ${fallbackObjects[0]} and ${evidenceHint}`,
+    };
+  }
 }

@@ -7,6 +7,8 @@
 let currentJobId = null;
 let currentScenes = [];
 let pollInterval = null;
+let fusionApplied = false;  // Track if scene fusion was applied
+let originalSceneCount = 0; // Track original scene count before fusion
 
 // =====================================================
 // INITIALIZATION
@@ -82,6 +84,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Initialize effect render time tracking
     initEffectTimeTracking();
+    
+    // Initialize effects intensity controls
+    initEffectsIntensityControls();
     
     // Initialize cost
     updateCostEstimate();
@@ -616,10 +621,16 @@ function goToStep(step) {
 function resetGenerator() {
     currentJobId = null;
     currentScenes = [];
+    fusionApplied = false;
+    originalSceneCount = 0;
     if (pollInterval) clearInterval(pollInterval);
     
     // Clear the rendered scene cache to allow fresh renders
     Object.keys(renderedSceneUrls).forEach(key => delete renderedSceneUrls[key]);
+    
+    // Clear fusion banner if present
+    const fusionBanner = document.getElementById('fusion-banner');
+    if (fusionBanner) fusionBanner.remove();
     
     document.getElementById('story-title').value = '';
     document.getElementById('story-text').value = '';
@@ -711,6 +722,37 @@ function displayStoryPreview(data) {
     
     // Parse scenes from the response
     currentScenes = data.scenes || [];
+    
+    // Display scene analysis warnings if present (fusion warnings, etc.)
+    if (data.scene_analysis) {
+        const analysis = data.scene_analysis;
+        console.log('[PREVIEW] Scene analysis:', analysis);
+        
+        // Show fusion warning if applicable
+        if (analysis.fusion_will_apply) {
+            const warningContainer = document.getElementById('scene-breakdown')?.parentElement;
+            if (warningContainer) {
+                const existingWarning = document.getElementById('preview-fusion-warning');
+                if (existingWarning) existingWarning.remove();
+                
+                const warning = document.createElement('div');
+                warning.id = 'preview-fusion-warning';
+                warning.className = 'bg-blue-900/30 border border-blue-600 rounded-lg p-3 mb-4';
+                warning.innerHTML = `
+                    <p class="text-blue-300 font-semibold flex items-center gap-2">
+                        <span class="text-xl">🔗</span>
+                        Scene Fusion Preview
+                    </p>
+                    <p class="text-blue-400/80 text-sm mt-1">
+                        You requested ${currentScenes.length} scenes for ~${analysis.total_words} words.
+                        After audio processing, scenes will be fused to ~<strong>${analysis.expected_after_fusion}</strong> for visual coherence.
+                    </p>
+                    ${analysis.warnings?.length > 0 ? `<p class="text-yellow-400/80 text-xs mt-2">${analysis.warnings.join('<br>')}</p>` : ''}
+                `;
+                warningContainer.insertBefore(warning, warningContainer.firstChild);
+            }
+        }
+    }
     
     // If no scenes, create placeholder scenes based on story
     if (currentScenes.length === 0 && data.story_text) {
@@ -1288,6 +1330,14 @@ async function generateImages() {
     
     goToStep(3);
     
+    // Reset fusion tracking state for new generation
+    fusionApplied = false;
+    originalSceneCount = currentScenes.length;  // Track original count before potential fusion
+    
+    // Clear any existing fusion banner
+    const existingBanner = document.getElementById('fusion-banner');
+    if (existingBanner) existingBanner.remove();
+    
     // Setup image generation grid
     const sceneCount = currentScenes.length;
     const visualSource = document.querySelector('input[name="visual-source"]:checked')?.value || 'ai';
@@ -1297,6 +1347,7 @@ async function generateImages() {
     updateDebugInfo(null);
     addLog(`🎯 Selected model: ${AI_MODEL_NAMES[aiModel]} (${aiModel})`);
     addLog(`🎯 Visual source: ${visualSource}`);
+    addLog(`🎯 Requested scenes: ${sceneCount}`);
     
     const grid = document.getElementById('image-generation-grid');
     grid.innerHTML = currentScenes.map((scene, i) => `
@@ -1346,23 +1397,87 @@ async function generateImages() {
 // Track poll count for logging
 let pollCount = 0;
 
+// v3.2: Assembly timeout handling constants
+const ASSEMBLE_POLL_INTERVAL_MS = 5000; // Poll every 5 seconds during assembly
+const ASSEMBLE_MAX_WAIT_MS = 10 * 60 * 1000; // 10 minutes max wait for assembly
+let assemblyStartTime = null; // Track when assembly started for timeout
+
 function pollForCompletion() {
     if (pollInterval) clearInterval(pollInterval);
     
     let consecutiveErrors = 0;
     const MAX_CONSECUTIVE_ERRORS = 5; // Allow up to 5 consecutive poll errors before giving up
     pollCount = 0;
+    assemblyStartTime = null; // Reset assembly timer
     
     pollInterval = setInterval(async () => {
         try {
             pollCount++;
             const status = await checkJob(currentJobId);
             
-            // Build detailed log for debugging
+            // =====================================================
+            // v3.2: ASSEMBLY TIMEOUT HANDLING
+            // If we're in assemble/rendering phase, track timing
+            // =====================================================
+            if (status.progress >= 70 && status.progress < 100 && status.status !== 'complete') {
+                if (!assemblyStartTime) {
+                    assemblyStartTime = Date.now();
+                    console.log(`[Poll] Assembly phase started, will wait up to ${ASSEMBLE_MAX_WAIT_MS / 60000} minutes`);
+                }
+                
+                const assemblyElapsed = Date.now() - assemblyStartTime;
+                if (assemblyElapsed > ASSEMBLE_MAX_WAIT_MS) {
+                    console.error(`[Poll] Assembly timeout after ${assemblyElapsed / 60000} minutes`);
+                    clearInterval(pollInterval);
+                    addLog(`⚠️ Assembly timed out after ${Math.round(assemblyElapsed / 60000)} minutes`);
+                    showError('Video assembly timed out. The render may still be processing - check back later or try again.');
+                    return;
+                }
+                
+                // Update UI with render progress if available
+                if (status.render_progress !== undefined && status.render_progress > 0) {
+                    const assemblyTimeRemaining = Math.max(0, ASSEMBLE_MAX_WAIT_MS - assemblyElapsed);
+                    console.log(`[Poll ${pollCount}] Render progress: ${status.render_progress}%, ~${Math.round(assemblyTimeRemaining / 60000)}m remaining before timeout`);
+                }
+            }
+            
+            // =====================================================
+            // FUSION DETECTION: Check if backend applied scene fusion
+            // This happens when requested scene count > optimal for story length
+            // =====================================================
+            const meta = status.meta || {};
+            const sceneCountFinal = meta.scene_count_final || status.total_images || currentScenes.length;
+            const backendFusionApplied = meta.fusion_applied === true;
+            
+            // Use backend's original request count if available (more reliable than frontend state)
+            const backendOriginalCount = meta.scene_count_original_request || meta.scene_count || originalSceneCount;
+            if (backendOriginalCount > originalSceneCount) {
+                originalSceneCount = backendOriginalCount;
+            }
+            
+            // Log expected count resolution for debugging
+            console.log(`[Poll ${pollCount}] Expected count resolution: meta.scene_count_final=${meta.scene_count_final}, total_images=${status.total_images}, original=${originalSceneCount}, resolved=${sceneCountFinal}`);
+            
+            // Detect if fusion was just applied (first detection)
+            if (backendFusionApplied && !fusionApplied && sceneCountFinal < originalSceneCount) {
+                fusionApplied = true;
+                console.log(`[FUSION] Scene fusion detected: ${originalSceneCount} → ${sceneCountFinal} scenes`);
+                addLog(`🔗 Scenes fused from ${originalSceneCount} → ${sceneCountFinal} for coherence`);
+                
+                // Show fusion banner
+                showFusionBanner(originalSceneCount, sceneCountFinal);
+                
+                // Update image generation grid to match fused scene count
+                if (status.scenes && status.scenes.length > 0) {
+                    rebuildImageGridForFusion(status.scenes, sceneCountFinal);
+                }
+            }
+            
+            // Build detailed log for debugging  
             const imagesInfo = status.parallel_in_progress 
-                ? `parallel: ${status.parallel_progress || 0}/${status.total_images || '?'}`
-                : `${status.images_generated || status.scenes?.length || 0}/${status.total_images || '?'}`;
-            console.log(`[Poll ${pollCount}] status=${status.status}, progress=${status.progress}%, images=${imagesInfo}`);
+                ? `parallel: ${status.parallel_progress || 0}/${sceneCountFinal}`
+                : `${status.images_generated || status.scenes?.length || 0}/${sceneCountFinal}`;
+            console.log(`[Poll ${pollCount}] status=${status.status}, progress=${status.progress}%, images=${imagesInfo}, fusion=${fusionApplied}`);
             
             // Reset error counter on successful poll
             consecutiveErrors = 0;
@@ -1374,13 +1489,22 @@ function pollForCompletion() {
             const progress = status.progress || 0;
             let progressLabel = getProgressLabel(progress, status.status);
             
-            // Enhanced progress label for image generation phase
+            // Enhanced progress label for image generation phase - USE FUSED COUNT
             if (progress >= 55 && progress < 75) {
                 const imgCount = status.parallel_in_progress 
                     ? (status.parallel_progress || 0)
                     : (status.images_generated || status.scenes?.length || 0);
-                const imgTotal = status.total_images || '?';
-                progressLabel = `Generating images (${imgCount}/${imgTotal})...`;
+                progressLabel = `Generating images (${imgCount}/${sceneCountFinal})...`;
+            }
+            
+            // v3.2: Enhanced progress label for assembly/rendering phase
+            if (progress >= 75 && progress < 100 && (status.status === 'rendering' || status.status === 'assembling')) {
+                const renderPct = status.render_progress || 0;
+                if (renderPct > 0) {
+                    progressLabel = `Rendering video (${renderPct}%)...`;
+                } else {
+                    progressLabel = `Assembling video...`;
+                }
             }
             
             updateProgress(progress, progressLabel);
@@ -1391,7 +1515,12 @@ function pollForCompletion() {
             }
             
             // Update scenes if available (even during generation)
+            // Also update currentScenes if backend returned fused scenes
             if (status.scenes && status.scenes.length > 0) {
+                // If fusion was applied, update currentScenes to match backend
+                if (fusionApplied && status.scenes.length <= sceneCountFinal) {
+                    currentScenes = status.scenes.slice(0, sceneCountFinal);
+                }
                 updateSceneImages(status.scenes);
             }
             
@@ -1410,15 +1539,27 @@ function pollForCompletion() {
             console.error('Poll error:', error);
             consecutiveErrors++;
             
+            // v3.2: Be MORE lenient during assembly phase - render may still be running
+            const isInAssemblyPhase = assemblyStartTime !== null;
+            const maxErrorsAllowed = isInAssemblyPhase ? 10 : MAX_CONSECUTIVE_ERRORS; // More retries during assembly
+            
             // Only give up after multiple consecutive errors
-            if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            if (consecutiveErrors >= maxErrorsAllowed) {
                 clearInterval(pollInterval);
-                addLog(`Error after ${MAX_CONSECUTIVE_ERRORS} retries: ${error.message}`);
-                showError(`Connection lost after ${MAX_CONSECUTIVE_ERRORS} retries. Please check your connection and try refreshing.`);
+                
+                // v3.2: If we're in assembly phase and hit max errors, don't treat as failure
+                // The render may still be running - just tell user to check back
+                if (isInAssemblyPhase) {
+                    addLog(`⚠️ Lost connection during assembly after ${maxErrorsAllowed} retries`);
+                    showError('Lost connection during video assembly. The render may still be processing in the background. Please refresh and check your recent jobs.');
+                } else {
+                    addLog(`Error after ${maxErrorsAllowed} retries: ${error.message}`);
+                    showError(`Connection lost after ${maxErrorsAllowed} retries. Please check your connection and try refreshing.`);
+                }
             } else {
                 // Log but continue polling - transient errors are common
-                console.log(`Poll error (attempt ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}), will retry...`);
-                addLog(`⚠️ Connection hiccup, retrying... (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})`);
+                console.log(`Poll error (attempt ${consecutiveErrors}/${maxErrorsAllowed}), will retry...`);
+                addLog(`⚠️ Connection hiccup, retrying... (${consecutiveErrors}/${maxErrorsAllowed})`);
             }
         }
     }, 3000);
@@ -1562,6 +1703,88 @@ function copyPrompt(sceneIndex) {
     }
 }
 
+// =====================================================
+// FUSION HANDLING: When backend fuses scenes for coherence
+// =====================================================
+
+// Show fusion banner to inform user that scenes were combined
+function showFusionBanner(originalCount, fusedCount) {
+    const logContainer = document.getElementById('generation-log')?.parentElement;
+    if (!logContainer) return;
+    
+    // Check if banner already exists
+    if (document.getElementById('fusion-banner')) return;
+    
+    const banner = document.createElement('div');
+    banner.id = 'fusion-banner';
+    banner.className = 'bg-blue-900/50 border border-blue-500 rounded-lg p-3 mb-3 flex items-center gap-2';
+    banner.innerHTML = `
+        <span class="text-blue-400 text-xl">🔗</span>
+        <div>
+            <p class="text-blue-300 font-semibold">Scenes Fused for Coherence</p>
+            <p class="text-blue-400/80 text-sm">${originalCount} → ${fusedCount} scenes. Short stories work better with fewer, longer scenes.</p>
+        </div>
+    `;
+    
+    // Insert at the top of the log container
+    logContainer.insertBefore(banner, logContainer.firstChild);
+}
+
+// Rebuild the image generation grid when fusion reduces scene count
+function rebuildImageGridForFusion(scenes, targetCount) {
+    const grid = document.getElementById('image-generation-grid');
+    if (!grid) return;
+    
+    // Clear the existing grid
+    grid.innerHTML = '';
+    
+    // Clear the rendered scene cache
+    Object.keys(renderedSceneUrls).forEach(key => delete renderedSceneUrls[key]);
+    
+    // Build new grid with the correct (fused) scene count
+    const visualSource = document.querySelector('input[name="visual-source"]:checked')?.value || 'ai';
+    const aiModel = document.getElementById('ai-model')?.value || 'gpt-4o';
+    const modelName = AI_MODEL_NAMES[aiModel] || 'AI';
+    
+    for (let i = 0; i < targetCount; i++) {
+        const scene = scenes[i] || {};
+        const hasImage = scene.imageUrl || scene.videoUrl;
+        
+        const card = document.createElement('div');
+        card.id = `scene-image-${i}`;
+        card.className = 'bg-gray-800/50 rounded-xl overflow-hidden border border-gray-700';
+        
+        if (hasImage) {
+            // Scene already has an image - show it
+            const imageUrl = scene.imageUrl || scene.videoUrl;
+            card.innerHTML = `
+                <div class="aspect-[9/16] bg-gray-900">
+                    <img src="${escapeHtml(imageUrl)}" class="w-full h-full object-cover" loading="lazy">
+                </div>
+                <div class="p-2">
+                    <p class="text-xs text-green-400">✓ Scene ${i + 1}</p>
+                </div>
+            `;
+            renderedSceneUrls[i] = imageUrl;
+        } else {
+            // Placeholder for pending scene
+            card.innerHTML = `
+                <div class="aspect-[9/16] image-placeholder flex items-center justify-center">
+                    <span class="text-gray-500">⏳</span>
+                </div>
+                <div class="p-2">
+                    <p class="text-xs text-gray-400 truncate">Scene ${i + 1}</p>
+                    <p class="text-xs text-gray-600 truncate">Waiting...</p>
+                </div>
+            `;
+        }
+        
+        grid.appendChild(card);
+    }
+    
+    console.log(`[FUSION] Rebuilt image grid for ${targetCount} scenes`);
+}
+
 function addLog(message) {
     const log = document.getElementById('generation-log');
     const time = new Date().toLocaleTimeString();
@@ -1578,7 +1801,16 @@ function displayFinalResult(data) {
     document.getElementById('download-btn').href = data.video_url;
     document.getElementById('result-title').textContent = data.title || 'Untitled';
     document.getElementById('result-duration').textContent = data.duration_sec || 0;
-    document.getElementById('result-scenes').textContent = data.scenes?.length || 0;
+    
+    // Show scene count with fusion info if applicable
+    const sceneCountEl = document.getElementById('result-scenes');
+    const finalSceneCount = data.scenes?.length || 0;
+    if (fusionApplied && originalSceneCount > finalSceneCount) {
+        sceneCountEl.innerHTML = `${finalSceneCount} <span class="text-blue-400 text-xs">(fused from ${originalSceneCount})</span>`;
+    } else {
+        sceneCountEl.textContent = finalSceneCount;
+    }
+    
     document.getElementById('result-story').textContent = data.story_text || '';
     
     // Scene gallery - improved detection (consistent with updateSceneImages)
@@ -1884,9 +2116,24 @@ function initEffectTimeTracking() {
 }
 
 function getSettings() {
+    const vibePreset = document.getElementById('vibe-preset')?.value || 'slow_creepy';
+    const effectsMode = document.getElementById('effects-mode')?.value || 'auto';
+    
+    // Build effects profile based on mode
+    let effectsProfile = null;
+    if (effectsMode === 'custom' && typeof buildEffectsProfileFromSliders === 'function') {
+        effectsProfile = buildEffectsProfileFromSliders();
+        console.log('[Effects] Using custom slider profile:', effectsProfile);
+    } else if (typeof getSlidersFromPreset === 'function') {
+        // Auto mode - get profile from preset
+        const sliderValues = getSlidersFromPreset(vibePreset);
+        effectsProfile = buildEffectsProfileFromSliders ? buildEffectsProfileFromSliders() : null;
+        console.log('[Effects] Using auto preset profile for:', vibePreset);
+    }
+    
     return {
         theme: document.getElementById('theme')?.value || 'general',
-        vibe_preset: document.getElementById('vibe-preset')?.value || 'slow_creepy',
+        vibe_preset: vibePreset,
         visual_source: document.querySelector('input[name="visual-source"]:checked')?.value || 'ai',
         image_model: document.getElementById('ai-model')?.value || 'gpt-4o',
         art_style: document.getElementById('art-style')?.value || 'cinematic-dark',
@@ -1895,6 +2142,8 @@ function getSettings() {
         caption_style: document.getElementById('caption-style')?.value || 'bold',
         scene_count: parseInt(document.getElementById('scene-count')?.value || 4),
         skip_video_assembly: document.getElementById('skip-video-assembly')?.checked || false,
+        effects_mode: effectsMode,
+        effects_profile: effectsProfile,
         effects: {
             filter: document.getElementById('effect-filter')?.checked ?? true,
             kenburns: document.getElementById('effect-kenburns')?.checked ?? true,
@@ -1947,6 +2196,178 @@ function initCaptionStyleSelector() {
         console.log('[UI] Caption style selected:', btn.dataset.style);
     });
 }
+
+// =====================================================
+// EFFECTS INTENSITY CONTROLS
+// =====================================================
+
+let currentEffectsMode = 'auto';
+
+function initEffectsIntensityControls() {
+    console.log('[Effects UI] Initializing effects intensity controls');
+    
+    // Listen for vibe preset changes to update auto summary
+    const vibeSelect = document.getElementById('vibe-preset');
+    if (vibeSelect) {
+        vibeSelect.addEventListener('change', () => {
+            updateEffectsPresetSummary();
+            if (currentEffectsMode === 'auto') {
+                syncSlidersFromPreset();
+            }
+        });
+    }
+    
+    // Initialize summary and sliders
+    updateEffectsPresetSummary();
+    syncSlidersFromPreset();
+}
+
+// Toggle between Auto and Custom mode
+function setEffectsMode(mode) {
+    currentEffectsMode = mode;
+    
+    const modeInput = document.getElementById('effects-mode');
+    const autoBtn = document.getElementById('effects-mode-auto');
+    const customBtn = document.getElementById('effects-mode-custom');
+    const autoSummary = document.getElementById('effects-auto-summary');
+    const customSliders = document.getElementById('effects-custom-sliders');
+    
+    if (modeInput) modeInput.value = mode;
+    
+    if (mode === 'auto') {
+        // Style buttons
+        autoBtn?.classList.add('bg-primary', 'text-white');
+        autoBtn?.classList.remove('text-gray-400');
+        customBtn?.classList.remove('bg-primary', 'text-white');
+        customBtn?.classList.add('text-gray-400');
+        
+        // Show auto summary, hide sliders
+        autoSummary?.classList.remove('hidden');
+        customSliders?.classList.add('hidden');
+        
+        // Sync sliders from preset
+        syncSlidersFromPreset();
+        
+        console.log('[Effects UI] Switched to Auto mode');
+    } else {
+        // Style buttons
+        customBtn?.classList.add('bg-primary', 'text-white');
+        customBtn?.classList.remove('text-gray-400');
+        autoBtn?.classList.remove('bg-primary', 'text-white');
+        autoBtn?.classList.add('text-gray-400');
+        
+        // Hide auto summary, show sliders
+        autoSummary?.classList.add('hidden');
+        customSliders?.classList.remove('hidden');
+        
+        console.log('[Effects UI] Switched to Custom mode');
+    }
+}
+window.setEffectsMode = setEffectsMode;
+
+// Update the preset summary display
+function updateEffectsPresetSummary() {
+    const vibePreset = document.getElementById('vibe-preset')?.value || 'slow_creepy';
+    
+    // Get preset info from effects-presets.js
+    const summary = typeof PRESET_EFFECT_SUMMARY !== 'undefined' ? PRESET_EFFECT_SUMMARY[vibePreset] : null;
+    
+    const presetNames = {
+        'slow_creepy': { icon: '🐢', name: 'Slow Creepy' },
+        'punchy_shock': { icon: '⚡', name: 'Punchy Shock' },
+        'atmospheric': { icon: '🌫️', name: 'Atmospheric' },
+        'urban_legend': { icon: '📰', name: 'Urban Legend' }
+    };
+    
+    const preset = presetNames[vibePreset] || { icon: '🎬', name: vibePreset };
+    
+    // Update display
+    const iconEl = document.getElementById('effects-preset-icon');
+    const nameEl = document.getElementById('effects-preset-name');
+    const tagsEl = document.getElementById('effects-preset-tags');
+    
+    if (iconEl) iconEl.textContent = preset.icon;
+    if (nameEl) nameEl.textContent = preset.name;
+    
+    if (tagsEl && summary) {
+        // Build tags HTML
+        let tagsHtml = '';
+        
+        // Active effects as green tags
+        summary.activeEffects.forEach(effect => {
+            tagsHtml += `<span class="inline-block px-2 py-0.5 bg-green-900/50 text-green-400 rounded text-xs">${effect}</span>`;
+        });
+        
+        // Color preset if set
+        if (summary.colorPreset && summary.colorPreset !== 'none') {
+            tagsHtml += `<span class="inline-block px-2 py-0.5 bg-blue-900/50 text-blue-400 rounded text-xs">🎨 ${summary.colorPreset}</span>`;
+        }
+        
+        // Mood indicator
+        tagsHtml += `<span class="inline-block px-2 py-0.5 bg-purple-900/50 text-purple-400 rounded text-xs">${summary.mood}</span>`;
+        
+        tagsEl.innerHTML = tagsHtml;
+    } else if (tagsEl) {
+        tagsEl.innerHTML = '<span class="text-xs text-gray-500">Standard effects</span>';
+    }
+}
+
+// Sync sliders from the current preset
+function syncSlidersFromPreset() {
+    const vibePreset = document.getElementById('vibe-preset')?.value || 'slow_creepy';
+    
+    if (typeof getSlidersFromPreset !== 'function') {
+        console.warn('[Effects UI] getSlidersFromPreset not available');
+        return;
+    }
+    
+    const sliderValues = getSlidersFromPreset(vibePreset);
+    console.log('[Effects UI] Syncing sliders from preset:', vibePreset, sliderValues);
+    
+    // Update each slider
+    Object.entries(sliderValues).forEach(([key, value]) => {
+        const slider = document.getElementById(`slider-${key}`);
+        if (slider) {
+            if (slider.tagName === 'SELECT') {
+                slider.value = value;
+            } else {
+                slider.value = value;
+            }
+            updateSliderLabel(key);
+        }
+    });
+}
+
+// Update slider label with intensity description
+function updateSliderLabel(effectKey) {
+    const slider = document.getElementById(`slider-${effectKey}`);
+    const label = document.getElementById(`label-${effectKey}`);
+    
+    if (!slider || !label) return;
+    
+    // Skip for select elements
+    if (slider.tagName === 'SELECT') return;
+    
+    const value = parseInt(slider.value);
+    
+    if (typeof getIntensityLabel === 'function') {
+        label.textContent = getIntensityLabel(effectKey, value);
+    } else {
+        // Fallback
+        if (value === 0) label.textContent = 'Off';
+        else if (value < 30) label.textContent = 'Low';
+        else if (value < 70) label.textContent = 'Medium';
+        else label.textContent = 'High';
+    }
+    
+    // Update label color based on intensity
+    label.classList.remove('text-gray-400', 'text-yellow-400', 'text-orange-400', 'text-red-400');
+    if (value === 0) label.classList.add('text-gray-400');
+    else if (value < 30) label.classList.add('text-gray-400');
+    else if (value < 70) label.classList.add('text-yellow-400');
+    else label.classList.add('text-orange-400');
+}
+window.updateSliderLabel = updateSliderLabel;
 
 // =====================================================
 // BACKGROUND AUDIO MANAGEMENT

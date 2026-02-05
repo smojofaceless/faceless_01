@@ -118,6 +118,25 @@
                     </div>
                 </div>
                 <div class="header__right">
+                    <!-- Platform Selector -->
+                    <div class="platform-selector">
+                        <select id="platform-select" class="platform-selector__select">
+                            <option value="reels">📱 Reels</option>
+                            <option value="tiktok">🎵 TikTok</option>
+                            <option value="shorts">▶️ Shorts</option>
+                        </select>
+                    </div>
+                    <!-- Advanced Mode Toggle -->
+                    <label class="advanced-mode-toggle" title="Unlock power-user controls for fine-tuning DNA and render settings">
+                        <input type="checkbox" id="advanced-mode-checkbox">
+                        <span class="advanced-mode-toggle__label">Advanced</span>
+                        <span class="advanced-mode-toggle__icon">⚙️</span>
+                    </label>
+                    <!-- System Confidence Badge -->
+                    <div id="system-confidence" class="system-confidence system-confidence--high" title="System health indicator">
+                        <span class="system-confidence__icon">●</span>
+                        <span class="system-confidence__label">High</span>
+                    </div>
                     <div id="brand-switcher"></div>
                 </div>
             </header>
@@ -139,9 +158,15 @@
 
                 <!-- Create Interface (populated by JS) -->
                 <div id="create-interface" class="create-interface hidden">
-                    <!-- Step Indicators -->
+                    <!-- Step Indicators (0-5 flow) -->
                     <div id="step-indicators" class="step-indicators">
                         <!-- Rendered by JS based on template -->
+                    </div>
+
+                    <!-- Step Header with Status -->
+                    <div id="step-header" class="step-header">
+                        <h2 id="step-title" class="step-header__title">Step Title</h2>
+                        <p id="step-subtitle" class="step-header__subtitle">Step description</p>
                     </div>
 
                     <!-- Step Content Container -->
@@ -158,6 +183,21 @@
                             Continue →
                         </button>
                     </div>
+
+                    <!-- Bottom Console (Collapsible Logs) -->
+                    <div id="bottom-console" class="bottom-console bottom-console--collapsed">
+                        <div id="toggle-console" class="console-header">
+                            <div class="console-header__left">
+                                <span class="console-header__title">📟 Console</span>
+                                <span id="console-badge" class="console-badge">0</span>
+                            </div>
+                            <span id="console-arrow" class="console-header__arrow">▲</span>
+                        </div>
+                        <div id="console-content" class="console-content">
+                            <!-- Log entries rendered dynamically -->
+                        </div>
+                    </div>
+                    </div>
                 </div>
 
                 <!-- Generation Progress -->
@@ -167,7 +207,7 @@
                         <span id="progress-status" class="generation-progress__status">Preparing...</span>
                     </div>
 
-                    <!-- Phase Progress Steps -->
+                    <!-- Phase Progress Steps (order matches actual execution) -->
                     <div class="generation-phases" id="generation-phases">
                         <div class="generation-phase" data-phase="story">
                             <div class="generation-phase__icon">📖</div>
@@ -179,21 +219,31 @@
                                 <span class="generation-phase__badge">Waiting</span>
                             </div>
                         </div>
-                        <div class="generation-phase" data-phase="images">
-                            <div class="generation-phase__icon">🎨</div>
-                            <div class="generation-phase__info">
-                                <div class="generation-phase__name">Image Generation</div>
-                                <div class="generation-phase__desc" id="images-desc">Creating visuals for each scene</div>
-                            </div>
-                            <div class="generation-phase__status">
-                                <span class="generation-phase__badge">Waiting</span>
-                            </div>
-                        </div>
                         <div class="generation-phase" data-phase="audio">
                             <div class="generation-phase__icon">🔊</div>
                             <div class="generation-phase__info">
                                 <div class="generation-phase__name">Audio Generation</div>
                                 <div class="generation-phase__desc">Voice narration & music</div>
+                            </div>
+                            <div class="generation-phase__status">
+                                <span class="generation-phase__badge">Waiting</span>
+                            </div>
+                        </div>
+                        <div class="generation-phase" data-phase="dna">
+                            <div class="generation-phase__icon">🧬</div>
+                            <div class="generation-phase__info">
+                                <div class="generation-phase__name">Visual DNA Analysis</div>
+                                <div class="generation-phase__desc" id="dna-desc">Fingerprinting visual uniqueness</div>
+                            </div>
+                            <div class="generation-phase__status">
+                                <span class="generation-phase__badge">Waiting</span>
+                            </div>
+                        </div>
+                        <div class="generation-phase" data-phase="images">
+                            <div class="generation-phase__icon">🎨</div>
+                            <div class="generation-phase__info">
+                                <div class="generation-phase__name">Image Generation</div>
+                                <div class="generation-phase__desc" id="images-desc">Creating visuals for each scene</div>
                             </div>
                             <div class="generation-phase__status">
                                 <span class="generation-phase__badge">Waiting</span>
@@ -285,6 +335,11 @@
                                 <h4>💰 Cost Breakdown</h4>
                                 <div id="result-cost-breakdown" class="result-card__costs"></div>
                             </div>
+
+                            <div class="result-card result-card--dna" id="result-visual-dna" style="display: none;">
+                                <h4>🧬 Visual DNA Fingerprint</h4>
+                                <div id="result-dna-content" class="result-card__dna-grid"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -317,6 +372,7 @@
     
     <script src="../js/supabase.js"></script>
     <script src="../js/api.js"></script>
+    <script src="../js/effects-presets.js"></script>
     
     <!-- Core Utils -->
     <script src="../js/core/utils.js"></script>

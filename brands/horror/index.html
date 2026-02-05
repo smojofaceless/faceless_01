@@ -463,6 +463,93 @@
                                         <span id="effect-render-time" class="text-primary font-semibold">+12s</span>
                                     </div>
                                 </div>
+                                
+                                <!-- Effects Intensity Controls -->
+                                <div class="mt-4 p-4 bg-gradient-to-b from-gray-800/50 to-gray-900/50 rounded-xl border border-gray-700">
+                                    <div class="flex items-center justify-between mb-4">
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-lg">🎚️</span>
+                                            <span class="text-sm font-semibold">Effect Intensity</span>
+                                        </div>
+                                        <!-- Auto/Custom Toggle -->
+                                        <div class="flex items-center gap-2 bg-gray-800 rounded-lg p-1">
+                                            <button type="button" id="effects-mode-auto" onclick="setEffectsMode('auto')" class="effects-mode-btn px-3 py-1 rounded-md text-xs font-medium transition-all bg-primary text-white">
+                                                Auto
+                                            </button>
+                                            <button type="button" id="effects-mode-custom" onclick="setEffectsMode('custom')" class="effects-mode-btn px-3 py-1 rounded-md text-xs font-medium transition-all text-gray-400 hover:text-white">
+                                                Custom
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Auto Mode: Preset Summary -->
+                                    <div id="effects-auto-summary" class="mb-3">
+                                        <div class="text-xs text-gray-400 mb-2">Intensity based on Story Style preset:</div>
+                                        <div id="effects-preset-summary" class="bg-gray-900/50 rounded-lg p-3 border border-gray-700">
+                                            <div class="flex items-center gap-2 mb-2">
+                                                <span id="effects-preset-icon">🐢</span>
+                                                <span id="effects-preset-name" class="font-semibold text-sm">Slow Creepy</span>
+                                            </div>
+                                            <div class="flex flex-wrap gap-1" id="effects-preset-tags">
+                                                <!-- Tags populated by JS -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Custom Mode: Sliders -->
+                                    <div id="effects-custom-sliders" class="hidden space-y-3">
+                                        <!-- Vignette -->
+                                        <div class="flex items-center gap-3">
+                                            <label class="text-xs text-gray-400 w-24">Vignette</label>
+                                            <input type="range" id="slider-vignette" min="0" max="100" value="50" class="flex-1 accent-primary h-1.5" oninput="updateSliderLabel('vignette')">
+                                            <span id="label-vignette" class="text-xs text-gray-400 w-16 text-right">Medium</span>
+                                        </div>
+                                        <!-- Film Grain -->
+                                        <div class="flex items-center gap-3">
+                                            <label class="text-xs text-gray-400 w-24">Film Grain</label>
+                                            <input type="range" id="slider-film_grain" min="0" max="100" value="0" class="flex-1 accent-primary h-1.5" oninput="updateSliderLabel('film_grain')">
+                                            <span id="label-film_grain" class="text-xs text-gray-400 w-16 text-right">Off</span>
+                                        </div>
+                                        <!-- VHS -->
+                                        <div class="flex items-center gap-3">
+                                            <label class="text-xs text-gray-400 w-24">VHS Effect</label>
+                                            <input type="range" id="slider-vhs" min="0" max="100" value="0" class="flex-1 accent-red-500 h-1.5" oninput="updateSliderLabel('vhs')">
+                                            <span id="label-vhs" class="text-xs text-gray-400 w-16 text-right">Off</span>
+                                        </div>
+                                        <!-- Glitch -->
+                                        <div class="flex items-center gap-3">
+                                            <label class="text-xs text-gray-400 w-24">Glitch</label>
+                                            <input type="range" id="slider-glitch" min="0" max="100" value="0" class="flex-1 accent-red-500 h-1.5" oninput="updateSliderLabel('glitch')">
+                                            <span id="label-glitch" class="text-xs text-gray-400 w-16 text-right">Off</span>
+                                        </div>
+                                        <!-- Scanlines -->
+                                        <div class="flex items-center gap-3">
+                                            <label class="text-xs text-gray-400 w-24">Scanlines</label>
+                                            <input type="range" id="slider-scanlines" min="0" max="100" value="0" class="flex-1 accent-red-500 h-1.5" oninput="updateSliderLabel('scanlines')">
+                                            <span id="label-scanlines" class="text-xs text-gray-400 w-16 text-right">Off</span>
+                                        </div>
+                                        <!-- Color Grade -->
+                                        <div class="flex items-center gap-3">
+                                            <label class="text-xs text-gray-400 w-24">Color Grade</label>
+                                            <select id="slider-color_grade" class="flex-1 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs">
+                                                <option value="none">None</option>
+                                                <option value="cold">Cold Blue</option>
+                                                <option value="warm">Warm Sepia</option>
+                                                <option value="desaturated">Desaturated</option>
+                                                <option value="high_contrast">High Contrast</option>
+                                            </select>
+                                        </div>
+                                        <!-- Ken Burns -->
+                                        <div class="flex items-center gap-3">
+                                            <label class="text-xs text-gray-400 w-24">Ken Burns</label>
+                                            <input type="range" id="slider-kenburns" min="0" max="100" value="60" class="flex-1 accent-blue-500 h-1.5" oninput="updateSliderLabel('kenburns')">
+                                            <span id="label-kenburns" class="text-xs text-gray-400 w-16 text-right">Medium</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Mode indicator -->
+                                    <input type="hidden" id="effects-mode" value="auto">
+                                </div>
                             </div>
                             
                             <!-- Background Audio -->
@@ -1009,6 +1096,7 @@
     <script src="../../js/config.js"></script>
     <script src="../../js/supabase.js"></script>
     <script src="../../js/api.js"></script>
+    <script src="../../js/effects-presets.js"></script>
     <script src="../../js/ui.js"></script>
     <script src="../../js/app.js"></script>
     

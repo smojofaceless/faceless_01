@@ -3,7 +3,7 @@
 // runPreviewMode, runAudioPhase, runImagesPhase, runAssemblePhase, runFullGeneration
 // =====================================================
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.39.3";
 
 import {
   corsHeaders,
@@ -19,7 +19,7 @@ import {
   type VideoOptions,
 } from "./config.ts";
 
-import { generateStory, buildStoryPromptForDisplay, extractSceneKeywordsForPreview, extractSceneKeywords, createStoryAnchor, createVisualBeats, createSceneVisualContracts, buildFinalDallePrompt, buildFluxPrompt } from "./openai.ts";
+import { generateStory, generateStoryWithDNA, buildStoryPromptForDisplay, extractSceneKeywordsForPreview, extractSceneKeywords, createStoryAnchor, createVisualBeats, createSceneVisualContracts, buildFinalDallePrompt, buildFluxPrompt, fuseIntoCoherentScenes, calculateRecommendedSceneCount, runAlignmentCheck, scorePromptRelevance, repairVisualContract, computePromptHash } from "./openai.ts";
 import { generateAudio } from "./audio.ts";
 import {
   getThemeGuidance,
@@ -40,6 +40,14 @@ import {
   checkParallelImageStatus,
   type ParallelImageScene,
 } from "./video.ts";
+import {
+  resolveEffectsProfile,
+  legacyEffectsToProfile,
+  profileToSummary,
+  sanitizeEffectsProfile,
+  SCHEMA_VERSION,
+  type EffectsProfile,
+} from "./effects_profile.ts";
 
 // =====================================================
 // PREVIEW MODE (Synchronous - returns story quickly)
@@ -61,46 +69,96 @@ export async function runPreviewMode(
   console.log(`[PREVIEW] Job vibe_preset: "${job.vibe_preset}"`);
   console.log(`Generating story (${job.length_preset}s preset, ${sceneCount} scenes, ${visualPreset} environment, vibe: ${job.vibe_preset})...`);
   
-  // Get theme guidance for diversity (NO retries, NO extra API cost)
-  const uniquenessConfig = await getUniquenessConfig(supabase);
-  let themeGuidance: ThemeGuidance | undefined;
+  // Check if DNA-based generation is enabled (always use for urban_legend, optional for others)
+  const useDNA = job.vibe_preset === "urban_legend" || jobMeta.use_dna === true;
   
-  if (uniquenessConfig.uniqueness_enabled) {
-    console.log(`[PREVIEW] Theme guidance enabled - fetching recent themes...`);
-    themeGuidance = await getThemeGuidance(supabase, visualPreset);
-    console.log(`[PREVIEW] Theme direction: ${themeGuidance.bucket} / ${themeGuidance.suggestedTheme}`);
-  }
+  // Map vibe_preset to genre profile (v3.1)
+  // Genre can also be specified explicitly in jobMeta
+  const genreProfile = jobMeta.genre || job.vibe_preset || 'urban_legend';
   
-  // Generate story with theme guidance (SINGLE API call)
-  const storyData = await generateStory(
-    openaiKey,
-    job.vibe_preset,
-    job.length_preset,
-    visualPreset,
-    artStyle,
-    themeGuidance // Pass theme guidance to influence the prompt
-  );
+  // Platform for Visual DNA tuning (v5.0)
+  // Can be specified in jobMeta or defaults based on job settings
+  const targetPlatform = jobMeta.platform || 'default';
   
-  // Store and analyze the story (for tracking, not rejection)
+  let storyData: { title: string; story: string; hook: string };
+  let dnaInfo: { dna: any; visual_dna: any; dna_display: string; visual_dna_display: string } | null = null;
   let storyId: string | null = null;
   let similarityInfo: { similarityScore: number; mostSimilarTitle: string | null; isLikelyUnique: boolean } | null = null;
+  let themeGuidance: ThemeGuidance | undefined;
   
-  if (uniquenessConfig.store_all_stories) {
-    const result = await storeAndAnalyzeStory(supabase, storyData, {
-      vibe_preset: job.vibe_preset,
-      length_preset: job.length_preset,
-      visual_preset: visualPreset,
-      art_style: artStyle,
-      job_id: job_id,
-    }, themeGuidance);
+  if (useDNA) {
+    // === DNA-BASED GENERATION (v5.0 - with Visual DNA sync) ===
+    console.log(`[PREVIEW] Using DNA-based generation for guaranteed uniqueness...`);
+    console.log(`[PREVIEW] Genre profile: ${genreProfile}`);
+    console.log(`[PREVIEW] Target platform: ${targetPlatform}`);
     
-    storyId = result.storyId;
-    similarityInfo = {
-      similarityScore: result.similarityScore,
-      mostSimilarTitle: result.mostSimilarTitle,
-      isLikelyUnique: result.isLikelyUnique,
+    const dnaResult = await generateStoryWithDNA(
+      supabase,
+      openaiKey,
+      job.length_preset,
+      visualPreset,
+      genreProfile,
+      targetPlatform,
+      job_id
+    );
+    
+    storyData = {
+      title: dnaResult.title,
+      story: dnaResult.story,
+      hook: dnaResult.hook,
     };
-    console.log(`[PREVIEW] Story stored: ${storyId}, similarity: ${(result.similarityScore * 100).toFixed(1)}%`);
+    
+    dnaInfo = {
+      dna: dnaResult.dna,
+      visual_dna: dnaResult.visual_dna,
+      dna_display: dnaResult.dna_display,
+      visual_dna_display: dnaResult.visual_dna_display,
+    };
+    
+    console.log(`[PREVIEW] DNA story generated: "${storyData.title}"`);
+    console.log(`[PREVIEW] Story DNA concept hash: ${dnaResult.dna.concept_hash}`);
+    console.log(`[PREVIEW] Visual DNA: ${dnaResult.visual_dna.visual_style} / ${dnaResult.visual_dna.color_palette}`);
+    
+  } else {
+    // === LEGACY GENERATION (with theme guidance) ===
+    console.log(`[PREVIEW] Using legacy generation with theme guidance...`);
+    
+    const uniquenessConfig = await getUniquenessConfig(supabase);
+    
+    if (uniquenessConfig.uniqueness_enabled) {
+      console.log(`[PREVIEW] Theme guidance enabled - fetching recent themes...`);
+      themeGuidance = await getThemeGuidance(supabase, visualPreset);
+      console.log(`[PREVIEW] Theme direction: ${themeGuidance.bucket} / ${themeGuidance.suggestedTheme}`);
+    }
+    
+    // Generate story with theme guidance (SINGLE API call)
+    storyData = await generateStory(
+      openaiKey,
+      job.vibe_preset,
+      job.length_preset,
+      visualPreset,
+      artStyle,
+      themeGuidance // Pass theme guidance to influence the prompt
+    );
+    
+    // Store and analyze the story (for tracking, not rejection)
+    if (uniquenessConfig.store_all_stories) {
+      const result = await storeAndAnalyzeStory(supabase, storyData, {
+        vibe_preset: job.vibe_preset,
+        length_preset: job.length_preset,
+        visual_preset: visualPreset,
+        art_style: artStyle,
+        job_id: job_id,
+      }, themeGuidance);
+      
+      storyId = result.storyId;
+      similarityInfo = {
+        similarityScore: result.similarityScore,
+        mostSimilarTitle: result.mostSimilarTitle,
+        isLikelyUnique: result.isLikelyUnique,
+      };
+      console.log(`[PREVIEW] Story stored: ${storyId}, similarity: ${(result.similarityScore * 100).toFixed(1)}%`);
+    }
   }
 
   const wordCount = storyData.story.split(/\s+/).length;
@@ -112,6 +170,12 @@ export async function runPreviewMode(
     story_text: storyData.story,
     story_word_count: wordCount,
     duration_sec: estimatedDuration,
+    // Store Visual DNA in job meta for use in image generation phase
+    meta: {
+      ...jobMeta,
+      visual_dna: dnaInfo?.visual_dna || null,
+      story_dna: dnaInfo?.dna || null,
+    },
   });
 
   // Save story JSON
@@ -156,7 +220,7 @@ export async function runPreviewMode(
   const sentences = storyNormalized.match(/[^.!?…]+[.!?…]+/g) || [];
   
   // FORCE version marker directly in response (bypass any module caching)
-  const BUILD_VERSION = "2026-01-29T22:00:00Z";
+  const BUILD_VERSION = "2026-02-04T12:00:00Z";
   
   // Get configuration details for transparency
   const lengthConfig = LENGTH_CONFIG[job.length_preset as keyof typeof LENGTH_CONFIG] || LENGTH_CONFIG["60"];
@@ -164,12 +228,10 @@ export async function runPreviewMode(
   const artStyleConfig = ART_STYLE_CONFIG[artStyle as keyof typeof ART_STYLE_CONFIG] || ART_STYLE_CONFIG["cinematic-dark"];
   
   // Build the enhanced prompt for display (human-readable version)
-  const storyPrompt = buildStoryPromptForDisplay(
-    job.vibe_preset,
-    job.length_preset,
-    visualPreset,
-    artStyle
-  );
+  // Use DNA display if available, otherwise build from legacy system
+  const storyPrompt = dnaInfo 
+    ? dnaInfo.dna_display 
+    : buildStoryPromptForDisplay(job.vibe_preset, job.length_preset, visualPreset, artStyle);
   
   return new Response(
     JSON.stringify({
@@ -182,6 +244,8 @@ export async function runPreviewMode(
       duration_sec: estimatedDuration,
       // GENERATION DETAILS - What went into creating this story
       generation_details: {
+        // Generation method
+        generation_method: useDNA ? "dna" : "legacy",
         // User's selections
         vibe_preset: job.vibe_preset,
         vibe_description: vibeConfig,
@@ -193,14 +257,42 @@ export async function runPreviewMode(
         art_style_name: artStyleConfig.name,
         scene_count: sceneCount,
         image_model: jobMeta.image_model || "gpt-4o",
-        // The actual prompt used
+        // The actual prompt/DNA used
         story_prompt: storyPrompt,
         // Model info
         story_model: "gpt-4o-mini",
-        story_temperature: 0.9,
-        // Story tracking info (NO retries - cost-effective!)
+        story_temperature: useDNA ? 0.75 : 0.9,
+        // Story tracking info
         story_id: storyId,
-        // Theme guidance for diversity
+        // DNA info (if using DNA generation)
+        dna: dnaInfo ? {
+          genre: dnaInfo.dna.genre,
+          concept_hash: dnaInfo.dna.concept_hash,
+          era: dnaInfo.dna.era.label,
+          location: dnaInfo.dna.location.label,
+          states: dnaInfo.dna.specific_states,
+          threat_behavior: dnaInfo.dna.threat_behavior.label,
+          threat_manifestation: dnaInfo.dna.threat_manifestation.label,
+          narrative_artifact: dnaInfo.dna.narrative_artifact.label,
+          weird_axis: dnaInfo.dna.weird_axis.id,
+          escalation: dnaInfo.dna.escalation.label,
+          ending_knowledge: dnaInfo.dna.ending_knowledge.label,
+          ending_imagery: dnaInfo.dna.ending_imagery.label,
+          generation_attempt: dnaInfo.dna.generation_attempt,
+        } : null,
+        // Visual DNA info (derived from Story DNA - v5.0)
+        visual_dna: dnaInfo?.visual_dna ? {
+          visual_style: dnaInfo.visual_dna.visual_style,
+          color_palette: dnaInfo.visual_dna.color_palette,
+          camera_language: dnaInfo.visual_dna.camera_language,
+          motion_profile: dnaInfo.visual_dna.motion_profile,
+          lighting_profile: dnaInfo.visual_dna.lighting_profile,
+          subject_scale: dnaInfo.visual_dna.subject_scale,
+          frame_composition: dnaInfo.visual_dna.frame_composition,
+          texture_artifacts: dnaInfo.visual_dna.texture_artifacts,
+          platform: dnaInfo.visual_dna.platform,
+        } : null,
+        // Theme guidance for diversity (legacy)
         theme_guidance: themeGuidance ? {
           bucket: themeGuidance.bucket,
           suggested_theme: themeGuidance.suggestedTheme,
@@ -220,12 +312,38 @@ export async function runPreviewMode(
         total_words: wordCount,
         avg_words_per_scene: Math.round(wordCount / estimatedScenes.length),
         recommended_max_scenes: Math.floor(wordCount / 15),
+        // Scene count mode determines if fusion is applied
+        scene_count_mode: jobMeta.scene_count_mode || 'strict',
+        // Fusion estimate: scenes will be merged in audio phase if mode is 'auto' AND avg words < 12
+        expected_after_fusion: (() => {
+          const mode = jobMeta.scene_count_mode || 'strict';
+          if (mode === 'strict') {
+            return estimatedScenes.length; // Strict mode: no fusion
+          }
+          const avgWords = wordCount / estimatedScenes.length;
+          if (avgWords < 12) {
+            // Estimate fusion: target ~18 words/scene (midpoint of 12-24 range)
+            const fusedCount = Math.max(Math.round(wordCount / 18), 1);
+            return fusedCount;
+          }
+          return estimatedScenes.length; // No fusion expected
+        })(),
+        fusion_will_apply: (jobMeta.scene_count_mode || 'strict') === 'auto' && (wordCount / estimatedScenes.length) < 12,
         sentence_count: sentences.length,
         distribution_mode: sentences.length >= estimatedScenes.length ? "sentence-group" : "sentence-stretch",
         warnings: (() => {
           const warnings: string[] = [];
+          const mode = jobMeta.scene_count_mode || 'strict';
           const avgWords = wordCount / estimatedScenes.length;
-          if (avgWords < 8) warnings.push(`⚠️ ${estimatedScenes.length} scenes have < 8 words avg (word-level fragments)`);
+          if (mode === 'strict') {
+            // In strict mode, warn but don't promise fusion
+            if (avgWords < 8) warnings.push(`⚠️ ${estimatedScenes.length} scenes have < 8 words avg - consider reducing scene count`);
+            else if (avgWords < 12) warnings.push(`ℹ️ Low words/scene (${Math.round(avgWords)}). Consider scene_count_mode: 'auto' for fusion.`);
+          } else {
+            // Auto mode warnings about fusion
+            if (avgWords < 8) warnings.push(`⚠️ ${estimatedScenes.length} scenes have < 8 words avg - will be fused to ~${Math.max(Math.round(wordCount / 18), 1)} scenes after audio phase`);
+            else if (avgWords < 12) warnings.push(`ℹ️ Scenes will be fused to ~${Math.max(Math.round(wordCount / 18), 1)} for better visual coherence (${Math.round(avgWords)} words/scene → ~18)`);
+          }
           if (estimatedScenes.length > Math.floor(wordCount / 15)) warnings.push(`⚠️ Too many scenes (${estimatedScenes.length}) for story length (~${wordCount} words). Recommend ≤ ${Math.floor(wordCount / 15)} scenes.`);
           return warnings;
         })(),
@@ -363,23 +481,84 @@ export async function runAudioPhase(
     });
 
   // Extract scene keywords with actual timestamps
-  const sceneCount = jobMeta.scene_count || 4;
-  console.log(`[AUDIO] Extracting scene keywords (target: ${sceneCount} scenes from jobMeta.scene_count=${jobMeta.scene_count})...`);
-  const scenes = await extractSceneKeywords(
+  const userRequestedSceneCount = jobMeta.scene_count || 4;
+  const storyWordCount = storyData.story.split(/\s+/).filter((w: string) => w.length > 0).length;
+  const durationSec = jobMeta.duration || 60;
+  const sceneCountMode = jobMeta.scene_count_mode || 'strict';  // Check mode BEFORE any scene count decisions
+  
+  console.log(`[AUDIO] Story analysis: ${storyWordCount} words, ${durationSec}s duration`);
+  console.log(`[AUDIO] 🎯 scene_count_mode: ${sceneCountMode}`);
+  console.log(`[AUDIO] 🎯 User requested scene count: ${userRequestedSceneCount}`);
+  
+  // Calculate recommended scene count to avoid micro-fragmentation
+  const recommendation = calculateRecommendedSceneCount(storyWordCount, durationSec, 'reels');
+  console.log(`[AUDIO] Recommended scenes: ${recommendation.min}-${recommendation.max}, optimal: ${recommendation.recommended}`);
+  if (recommendation.warning) {
+    console.warn(`[AUDIO] ⚠️ ${recommendation.warning}`);
+  }
+  
+  // CRITICAL FIX: In STRICT mode, use user's exact request - NO CLAMPING
+  // In AUTO mode, clamp to recommended range to avoid micro-fragmentation
+  let targetSceneCount: number;
+  if (sceneCountMode === 'strict') {
+    targetSceneCount = userRequestedSceneCount;
+    console.log(`[AUDIO] 🔒 STRICT mode: Using exact user request: ${targetSceneCount} scenes (ignoring recommendation)`);
+    if (userRequestedSceneCount > recommendation.max) {
+      console.warn(`[AUDIO] ⚠️ Warning: ${userRequestedSceneCount} scenes may result in micro-scenes (avg ${(storyWordCount / userRequestedSceneCount).toFixed(1)} words/scene)`);
+    }
+  } else {
+    targetSceneCount = Math.min(Math.max(userRequestedSceneCount, recommendation.min), recommendation.max);
+    if (targetSceneCount !== userRequestedSceneCount) {
+      console.log(`[AUDIO] 🔄 AUTO mode: Adjusted scene count: ${userRequestedSceneCount} → ${targetSceneCount} (clamped to avoid micro-scenes)`);
+    } else {
+      console.log(`[AUDIO] 🔄 AUTO mode: Using ${targetSceneCount} scenes (within recommended range)`);
+    }
+  }
+  
+  console.log(`[AUDIO] Extracting scene keywords (target: ${targetSceneCount} scenes)...`);
+  const rawScenes = await extractSceneKeywords(
     openaiKey,
     storyData.story,
     audioResult.wordTimestamps,
     job.visual_preset || "forest",
-    sceneCount
+    targetSceneCount
   );
   
-  // Warn if GPT returned wrong number of scenes
-  if (scenes.length !== sceneCount) {
-    console.warn(`[AUDIO] ⚠️ GPT returned ${scenes.length} scenes but we requested ${sceneCount}!`);
+  // Apply Scene Coherence Layer - fuse micro-scenes (ONLY if mode is 'auto')
+  // sceneCountMode already checked above, no need to re-read
+  let coherentScenes: typeof rawScenes & { word_count: number; source_scene_indices: number[]; fusion_reason?: string }[];
+  
+  if (sceneCountMode === 'strict') {
+    // STRICT MODE: No fusion, keep exact scene count
+    console.log(`[AUDIO] 🔒 Strict mode: keeping ${rawScenes.length} scenes (fusion disabled)`);
+    coherentScenes = rawScenes.map((s, i) => ({
+      ...s,
+      word_count: s.text.split(/\s+/).filter((w: string) => w.length > 0).length,
+      source_scene_indices: [i],
+    }));
+  } else {
+    // AUTO MODE: Apply fusion for coherence
+    console.log(`[AUDIO] 🔄 Auto mode: applying scene fusion for coherence`);
+    coherentScenes = fuseIntoCoherentScenes(rawScenes, storyWordCount);
+  }
+  const scenes = coherentScenes; // Use scenes going forward
+  
+  // Log fusion results (only relevant for auto mode)
+  const fusedCount = coherentScenes.filter(s => s.source_scene_indices.length > 1).length;
+  if (fusedCount > 0 && sceneCountMode === 'auto') {
+    console.log(`[AUDIO] ✨ Scene fusion: ${rawScenes.length} → ${coherentScenes.length} scenes (${fusedCount} merges)`);
+  }
+  
+  // Warn if still problematic
+  const avgWords = storyWordCount / scenes.length;
+  if (avgWords < 8) {
+    console.warn(`[AUDIO] ⚠️ CRITICAL: Average ${avgWords.toFixed(1)} words/scene is too low for visual coherence!`);
+  } else if (avgWords < 12) {
+    console.warn(`[AUDIO] ⚠️ Average ${avgWords.toFixed(1)} words/scene is below optimal (12+)`);
   }
 
   // Save scenes to job_assets
-  console.log(`[AUDIO] Saving ${scenes.length} scenes to database...`);
+  console.log(`[AUDIO] Saving ${scenes.length} coherent scenes to database...`);
   for (let i = 0; i < scenes.length; i++) {
     // Delete existing scene_data for this index first (in case of retry)
     await supabase.from("job_assets")
@@ -397,35 +576,42 @@ export async function runAudioPhase(
         scene_text: scenes[i].text,
         keywords: scenes[i].keywords,
         start_time: scenes[i].startTime,
-        end_time: scenes[i].endTime
+        end_time: scenes[i].endTime,
+        word_count: coherentScenes[i].word_count,
+        source_scene_indices: coherentScenes[i].source_scene_indices,
+        fusion_reason: coherentScenes[i].fusion_reason || null,
       },
     });
     
     if (sceneError) {
       console.error(`[AUDIO] Failed to save scene ${i}:`, sceneError);
     } else {
-      console.log(`[AUDIO] ✓ Scene ${i} saved`);
+      console.log(`[AUDIO] ✓ Scene ${i} saved (${coherentScenes[i].word_count} words)`);
     }
   }
 
-  // Keep the original scene_count from user settings, mark audio as ready
-  // NOTE: Visual prep (story anchor, beats, contracts) is done incrementally in images phase
-  // to avoid timeout - each step is one function call
+  // Update job meta with coherent scene count (may differ from user request in auto mode)
+  const fusionApplied = scenes.length !== userRequestedSceneCount;
   await updateJob(supabase, job_id, { 
     progress: 50,
     meta: { 
       ...jobMeta, 
       audio_ready: true, 
       scenes_created: scenes.length,
+      scene_count_original_request: userRequestedSceneCount,
+      scene_count_after_fusion: scenes.length,
+      // CANONICAL: Use scene_count_final for all downstream consumers
+      scene_count_final: scenes.length,
+      scene_count_mode: sceneCountMode,
+      fusion_applied: fusionApplied && sceneCountMode === 'auto',
+      story_word_count: storyWordCount,
+      avg_words_per_scene: avgWords,
     }
   });
 
-  console.log(`[AUDIO] Audio phase complete, ${scenes.length} scenes ready (user requested: ${sceneCount})`);
+  console.log(`[AUDIO] Audio phase complete, ${scenes.length} coherent scenes ready`);
+  console.log(`[AUDIO] Scene stats: ${storyWordCount} words / ${scenes.length} scenes = ${avgWords.toFixed(1)} words/scene`);
   
-  // Verify we created the right number of scenes
-  if (scenes.length !== sceneCount) {
-    console.warn(`[AUDIO] WARNING: Created ${scenes.length} scenes but user requested ${sceneCount}`);
-  }
   return { status: "generating", nextPhase: "images", message: "Audio ready, starting images" };
 }
 
@@ -592,22 +778,29 @@ export async function runImagesPhase(
     console.log(`[IMAGES] Loaded ${scenes.length} scenes from database`);
   }
 
-  // Get the target scene count - use what was actually created in audio phase
-  // This ensures we generate all scenes even if there's a mismatch with user request
+  // Get the target scene count - PRIORITIZE fused count from audio phase
+  // This ensures we generate all scenes that fusion created, not the original request
+  const fusedSceneCount = jobMeta.scene_count_final || jobMeta.scene_count_after_fusion || jobMeta.scenes_created;
   const requestedSceneCount = jobMeta.scene_count || 4;
   const actualSceneCount = scenes.length;
   
-  // Only limit if we have MORE scenes than requested (shouldn't normally happen)
-  // But NEVER reduce below what was created - always generate all existing scenes
-  if (actualSceneCount > requestedSceneCount) {
-    console.log(`[IMAGES] WARNING: Found ${actualSceneCount} scenes but user requested ${requestedSceneCount}. Limiting to requested count.`);
-    scenes = scenes.slice(0, requestedSceneCount);
-  } else if (actualSceneCount < requestedSceneCount) {
-    console.log(`[IMAGES] NOTE: Only ${actualSceneCount} scenes exist (user requested ${requestedSceneCount}). Will generate all ${actualSceneCount}.`);
+  // If fusion was applied, use fused count. Otherwise fall back to original request
+  const targetSceneCount = fusedSceneCount || requestedSceneCount;
+  
+  console.log(`[IMAGES] Scene count check: db=${actualSceneCount}, fused=${fusedSceneCount}, requested=${requestedSceneCount}, target=${targetSceneCount}`);
+  
+  // Only limit if we have MORE scenes than expected (rare - usually from retry/race condition)
+  // But NEVER reduce below fused count - that's our single source of truth
+  if (actualSceneCount > targetSceneCount) {
+    console.log(`[IMAGES] WARNING: Found ${actualSceneCount} scenes but target is ${targetSceneCount}. Limiting to target count.`);
+    scenes = scenes.slice(0, targetSceneCount);
+  } else if (actualSceneCount < targetSceneCount) {
+    console.log(`[IMAGES] NOTE: Only ${actualSceneCount} scenes exist (target: ${targetSceneCount}). Will generate all ${actualSceneCount}.`);
   }
   
-  const targetSceneCount = scenes.length;
-  console.log(`[IMAGES] Target: ${targetSceneCount} images`);
+  // After potential trimming, scenes.length is our actual target
+  const finalSceneCount = scenes.length;
+  console.log(`[IMAGES] Target: ${finalSceneCount} images`);
 
   // Check how many images already generated
   const { data: existingImages } = await supabase
@@ -690,6 +883,20 @@ export async function runImagesPhase(
       console.log("[IMAGES] PREP STEP 3/3: Creating visual contracts (prose → literal frames)...");
       visualContracts = await createSceneVisualContracts(openaiKey, scenes, storyAnchor, visualBeats);
       
+      // ========== ALIGNMENT SELF-CHECK ==========
+      // Verify contracts align with narration before proceeding
+      const alignmentCheck = runAlignmentCheck(scenes, visualContracts);
+      console.log(`[IMAGES] ${alignmentCheck.summary}`);
+      
+      // Save alignment stats to job meta for debugging
+      const alignmentStats = {
+        overall_score: alignmentCheck.overallScore,
+        scenes_needing_repair: alignmentCheck.needsRepair,
+        excellent_count: alignmentCheck.sceneResults.filter(r => r.score >= 0.8).length,
+        poor_count: alignmentCheck.sceneResults.filter(r => r.score < 0.4).length,
+        checked_at: new Date().toISOString(),
+      };
+      
       // Attach contracts to beats
       for (let i = 0; i < visualBeats.length; i++) {
         if (visualContracts[i]) {
@@ -704,6 +911,7 @@ export async function runImagesPhase(
           story_anchor: storyAnchor, 
           visual_beats: visualBeats, 
           visual_contracts: visualContracts,
+          alignment_stats: alignmentStats,
           images_phase_lease_until: null // Release lock
         }
       });
@@ -814,7 +1022,16 @@ export async function runImagesPhase(
                       image_model: img.meta?.image_model || resolvedImageModel || "unknown",
                       art_style: img.meta?.art_style || styleConfig.name || "Unknown",
                       dalle_prompt: savedPrompt,
+                      // PROMPT VERIFICATION FIELDS (Ground Truth from parallel server)
+                      prompt_final: savedPrompt,
+                      prompt_len: img.meta?.prompt_len || savedPrompt.length || 0,
+                      prompt_preview_start: img.meta?.prompt_preview_start || savedPrompt.substring(0, 300),
+                      prompt_preview_end: img.meta?.prompt_preview_end || savedPrompt.substring(Math.max(0, savedPrompt.length - 200)),
+                      prompt_mode: img.meta?.prompt_mode || null,
+                      // Visual components
                       visual_beat: img.meta?.visual_beat || beat.visualBeat || null,
+                      visual_contract: img.meta?.visual_contract || null,
+                      visual_dna: img.meta?.visual_dna || null,
                       mood_level: img.meta?.mood_level || beat.moodLevel || null,
                       camera_angle: img.meta?.camera_angle || beat.cameraAngle || null,
                       continuity_rules: storyAnchor.continuityRules || null,
@@ -830,12 +1047,21 @@ export async function runImagesPhase(
             
             // Mark parallel complete - only set images_complete if ALL succeeded
             const allParallelSucceeded = status.failed === 0;
+            
+            // Release the atomic lock on completion
+            const lockToken = jobMeta.parallel_lock_token;
+            if (lockToken) {
+              await supabase.rpc('release_parallel_lock', { p_job_id: job_id, p_lock_token: lockToken }).catch(() => {});
+              console.log(`[IMAGES] Released parallel lock: ${lockToken}`);
+            }
+            
             await updateJobMeta(supabase, job_id, (meta) => ({
               ...meta,
               images_phase_running: false,
               images_complete: allParallelSucceeded, // Only complete if no failures!
               parallel_image_job_id: null,
               parallel_image_in_progress: false, // Clear the flag
+              parallel_lock_token: null, // Clear lock token
               parallel_images_completed: status.completed,
               parallel_images_failed: status.failed,
               generation_logs: [
@@ -861,10 +1087,15 @@ export async function runImagesPhase(
           
           if (status.status === 'failed') {
             console.error(`[IMAGES] ❌ Parallel job failed: ${status.error}`);
-            // Clear the failed job ID so we can retry
+            // Release lock on failure and clear the failed job ID so we can retry
+            const lockToken = jobMeta.parallel_lock_token;
+            if (lockToken) {
+              await supabase.rpc('release_parallel_lock', { p_job_id: job_id, p_lock_token: lockToken }).catch(() => {});
+            }
             await updateJobMeta(supabase, job_id, (meta) => ({
               ...meta,
               parallel_image_job_id: null,
+              parallel_lock_token: null,
               generation_logs: [
                 ...(meta.generation_logs || []),
                 `[${new Date().toISOString()}] [ERROR] Parallel generation failed: ${status.error}`
@@ -877,11 +1108,55 @@ export async function runImagesPhase(
           // Fall through to one-at-a-time generation
         }
       } else {
+        // ATOMIC LOCK ACQUISITION: Use DB function to prevent race conditions
+        // Generate unique lock token for this request
+        const lockToken = crypto.randomUUID();
+        
+        // Try to acquire lock atomically (returns true if acquired)
+        const { data: lockResult, error: lockError } = await supabase
+          .rpc('acquire_parallel_lock', {
+            p_job_id: job_id,
+            p_lock_token: lockToken,
+            p_lock_duration_seconds: 300 // 5 minute lock
+          });
+        
+        if (lockError) {
+          console.error(`[IMAGES] Lock acquisition error:`, lockError);
+          // Fallback to simple check if RPC fails (DB migration not yet applied)
+          const { data: freshJob } = await supabase
+            .from("jobs")
+            .select("meta")
+            .eq("id", job_id)
+            .single();
+          
+          const freshMeta = freshJob?.meta || {};
+          if (freshMeta.parallel_image_in_progress || freshMeta.parallel_image_job_id) {
+            console.log(`[IMAGES] ⚠️ Another request already started parallel generation, skipping`);
+            return { 
+              status: "generating", 
+              nextPhase: "images", 
+              message: "Parallel generation already in progress (fallback check)" 
+            };
+          }
+        } else if (!lockResult) {
+          console.log(`[IMAGES] ⚠️ Failed to acquire parallel lock - another request owns it`);
+          return { 
+            status: "generating", 
+            nextPhase: "images", 
+            message: "Parallel generation already in progress (atomic lock)" 
+          };
+        }
+        
+        console.log(`[IMAGES] ✅ Acquired parallel lock: ${lockToken}`);
+        
         // Start new parallel job
         console.log(`[IMAGES] Starting new parallel image generation job...`);
         
-        // Build scene prompts for parallel generation
-        const parallelScenes: ParallelImageScene[] = scenes.map((scene, i) => {
+        // Get Visual DNA from job meta (v5.0) - outside the map for logging
+        const visualDNA = jobMeta.visual_dna || null;
+        
+        // Build scene prompts for parallel generation (with hash computation)
+        const parallelScenes: ParallelImageScene[] = await Promise.all(scenes.map(async (scene, i) => {
           const beat = visualBeats[i] || {
             sceneIndex: i,
             visualBeat: scene.text.substring(0, 100),
@@ -899,7 +1174,8 @@ export async function runImagesPhase(
               i,
               scenes.length,
               styleConfig,
-              artStyle.startsWith('custom-')
+              artStyle.startsWith('custom-'),
+              visualDNA
             );
           } else {
             prompt = buildFinalDallePrompt(
@@ -909,22 +1185,89 @@ export async function runImagesPhase(
               scenes.length,
               styleConfig,
               artStyle.startsWith('custom-'),
-              job.visual_preset || "forest"
+              job.visual_preset || "forest",
+              visualDNA
             );
           }
+          
+          // Determine prompt_mode for this scene
+          const promptMode = beat.visualContract ? "final_prompt" : 
+                           (storyAnchor.fullAnchorPrompt ? "anchor_only" : 
+                           (scene.keywords?.length > 0 ? "keywords_fallback" : "text_fallback"));
+          
+          // Compute prompt hash for ground-truth tracing (v5.1)
+          const promptHash = await computePromptHash(prompt);
           
           return {
             index: i,
             prompt: prompt,
+            prompt_len: prompt.length,
+            prompt_hash: promptHash,  // v5.1: Ground-truth hash
+            prompt_preview_start: prompt.substring(0, 300),
+            prompt_preview_end: prompt.substring(Math.max(0, prompt.length - 200)),
+            prompt_mode: promptMode,
             text: scene.text,
             keywords: scene.keywords || [],
             start_time: scene.startTime,
             end_time: scene.endTime,
             visual_beat: beat.visualBeat || null,
+            visual_contract: beat.visualContract ? {
+              location: beat.visualContract.location,
+              characterPose: beat.visualContract.characterPose,
+              actionFrozen: beat.visualContract.actionFrozen,
+            } : null,
+            visual_dna: visualDNA ? {
+              style: visualDNA.visual_style,
+              palette: visualDNA.color_palette,
+              lighting: visualDNA.lighting_profile,
+            } : null,
             mood_level: beat.moodLevel || null,
             camera_angle: beat.cameraAngle || null,
           };
-        });
+        }));
+        
+        // =====================================================
+        // GROUND-TRUTH LOGGING FOR PARALLEL MODE (v5.1)
+        // =====================================================
+        console.log(`\n========== GROUND TRUTH: PARALLEL BATCH (${parallelScenes.length} scenes) ==========`);
+        console.log(`[GROUND-TRUTH] job_id: ${job_id}`);
+        console.log(`[GROUND-TRUTH] model: ${resolvedImageModel}`);
+        console.log(`[GROUND-TRUTH] visual_dna: ${visualDNA ? `style=${visualDNA.visual_style}, palette=${visualDNA.color_palette}` : 'NONE'}`);
+        console.log(`[GROUND-TRUTH] art_style: ${styleConfig.name}`);
+        
+        // Log first and last scene prompts for verification
+        if (parallelScenes.length > 0) {
+          const first = parallelScenes[0];
+          console.log(`[GROUND-TRUTH] Scene 1 prompt_hash: ${first.prompt_hash}`);
+          console.log(`[GROUND-TRUTH] Scene 1 prompt_len: ${first.prompt_len}`);
+          console.log(`[GROUND-TRUTH] Scene 1 prompt_mode: ${first.prompt_mode}`);
+          console.log(`[GROUND-TRUTH] Scene 1 prompt_start: "${first.prompt_preview_start?.substring(0, 200).replace(/\\n/g, '↵')}..."`);
+          console.log(`[GROUND-TRUTH] Scene 1 has_contract: ${!!first.visual_contract}`);
+        }
+        if (parallelScenes.length > 1) {
+          const last = parallelScenes[parallelScenes.length - 1];
+          console.log(`[GROUND-TRUTH] Scene ${parallelScenes.length} prompt_hash: ${last.prompt_hash}`);
+          console.log(`[GROUND-TRUTH] Scene ${parallelScenes.length} prompt_len: ${last.prompt_len}`);
+          console.log(`[GROUND-TRUTH] Scene ${parallelScenes.length} prompt_mode: ${last.prompt_mode}`);
+          console.log(`[GROUND-TRUTH] Scene ${parallelScenes.length} prompt_start: "${last.prompt_preview_start?.substring(0, 200).replace(/\\n/g, '↵')}..."`);
+        }
+        console.log(`==========================================================\n`);
+        
+        // =====================================================
+        // SCENE COUNT DIAGNOSTIC LOG (v5.2 - strict mode fix)
+        // =====================================================
+        console.log(`\n========== SCENE COUNT DIAGNOSTIC ==========`);
+        console.log(`[DIAGNOSTIC] requested_scene_count: ${jobMeta.scene_count}`);
+        console.log(`[DIAGNOSTIC] scene_count_mode: ${jobMeta.scene_count_mode || 'strict'}`);
+        console.log(`[DIAGNOSTIC] scene_count_final: ${jobMeta.scene_count_final}`);
+        console.log(`[DIAGNOSTIC] scenes.length being sent to FFmpeg: ${scenes.length}`);
+        console.log(`[DIAGNOSTIC] parallelScenes.length: ${parallelScenes.length}`);
+        if (jobMeta.scene_count !== scenes.length) {
+          console.error(`[DIAGNOSTIC] ⚠️ MISMATCH: User requested ${jobMeta.scene_count} but sending ${scenes.length}!`);
+        } else {
+          console.log(`[DIAGNOSTIC] ✅ Scene count matches user request`);
+        }
+        console.log(`============================================\n`);
         
         try {
           const { imageJobId } = await startParallelImageGeneration(
@@ -935,11 +1278,12 @@ export async function runImagesPhase(
             storyAnchor
           );
           
-          // Save job ID - keep lock active to prevent duplicate triggers
+          // Save job ID and lock token - prevents duplicate triggers
           await updateJobMeta(supabase, job_id, (meta) => ({
             ...meta,
             parallel_image_job_id: imageJobId,
             parallel_image_in_progress: true, // FLAG: Prevents check-job from re-triggering
+            parallel_lock_token: lockToken, // Store our lock token
             images_phase_running: false,
             images_phase_lease_until: new Date(0).toISOString(),
             generation_logs: [
@@ -948,7 +1292,7 @@ export async function runImagesPhase(
             ]
           }));
           
-          console.log(`[IMAGES] Parallel job started: ${imageJobId}. Releasing lock.`);
+          console.log(`[IMAGES] Parallel job started: ${imageJobId}. Lock token: ${lockToken}`);
           return { 
             status: "generating", 
             nextPhase: "images", 
@@ -956,6 +1300,8 @@ export async function runImagesPhase(
           };
         } catch (startError) {
           console.error(`[IMAGES] Failed to start parallel job:`, startError);
+          // Release lock on failure
+          await supabase.rpc('release_parallel_lock', { p_job_id: job_id, p_lock_token: lockToken }).catch(() => {});
           // Fall through to one-at-a-time generation
           await updateJobMeta(supabase, job_id, (meta) => ({
             ...meta,
@@ -1016,13 +1362,19 @@ export async function runImagesPhase(
       
       const isCustomStyle = artStyle.startsWith('custom-');
       const visualPreset = job.visual_preset || "forest";
+      const visualDNA = jobMeta.visual_dna || null;
+      
+      // Log Visual DNA if present
+      if (visualDNA) {
+        console.log(`[VISUAL-DNA] Using style: ${visualDNA.visual_style} / ${visualDNA.color_palette}`);
+      }
       
       // Refresh lease for each image (heartbeat) - use fresh meta to avoid stale overwrites
       await updateJobMeta(supabase, job_id, (currentMeta) => ({
         ...currentMeta,
         generation_logs: [
           ...(currentMeta.generation_logs || []),
-          `[${new Date().toISOString()}] Generating scene ${i + 1}/${scenes.length} with ${resolvedImageModel}`
+          `[${new Date().toISOString()}] Generating scene ${i + 1}/${scenes.length} with ${resolvedImageModel}${visualDNA ? ` (Visual DNA: ${visualDNA.visual_style})` : ''}`
         ],
         images_phase_lease_until: new Date(Date.now() + leaseMs).toISOString() // Refresh lease
       }));
@@ -1036,7 +1388,8 @@ export async function runImagesPhase(
           i,
           scenes.length,
           styleConfig,
-          isCustomStyle
+          isCustomStyle,
+          visualDNA
         );
       } else {
         // DALL-E 3 / GPT-4o use the full detailed prompt
@@ -1047,17 +1400,214 @@ export async function runImagesPhase(
           scenes.length,
           styleConfig,
           isCustomStyle,
-          visualPreset
+          visualPreset,
+          visualDNA
         );
       }
       
-      console.log(`[IMAGES] Scene ${i + 1} prompt built (${imagePrompt.length} chars, model: ${resolvedImageModel})`);
+      // =====================================================
+      // GROUND-TRUTH PROMPT LOGGING (Right before generation)
+      // =====================================================
+      const promptMode = beat.visualContract ? "final_prompt" : 
+                         (storyAnchor.fullAnchorPrompt ? "anchor_only" : 
+                         (scene.keywords?.length > 0 ? "keywords_fallback" : "text_fallback"));
       
-      // Debug: log contract details to verify uniqueness per scene
+      console.log(`\n========== GROUND TRUTH: SCENE ${i + 1}/${scenes.length} ==========`);
+      console.log(`[GROUND-TRUTH] job_id: ${job_id}`);
+      console.log(`[GROUND-TRUTH] scene_index: ${i}`);
+      console.log(`[GROUND-TRUTH] prompt_mode: ${promptMode}`);
+      console.log(`[GROUND-TRUTH] prompt_len: ${imagePrompt.length} chars`);
+      console.log(`[GROUND-TRUTH] prompt_preview_start: "${imagePrompt.substring(0, 300).replace(/\n/g, '↵')}..."`);
+      console.log(`[GROUND-TRUTH] prompt_preview_end: "...${imagePrompt.substring(Math.max(0, imagePrompt.length - 200)).replace(/\n/g, '↵')}"`);
+      console.log(`[GROUND-TRUTH] narration: "${scene.text.substring(0, 120)}..."`);
+      console.log(`[GROUND-TRUTH] has_visual_beat: ${!!beat.visualBeat}`);
+      console.log(`[GROUND-TRUTH] has_visual_contract: ${!!beat.visualContract}`);
+      console.log(`[GROUND-TRUTH] visual_dna: ${visualDNA ? `style=${visualDNA.visual_style}, palette=${visualDNA.color_palette}, lighting=${visualDNA.lighting_profile}` : 'NONE'}`);
+      console.log(`[GROUND-TRUTH] model: ${resolvedImageModel}`);
+      console.log(`[GROUND-TRUTH] source: sequential`);
       if (beat.visualContract) {
-        console.log(`[IMAGES] Scene ${i + 1} contract: location="${beat.visualContract.location}", pose="${beat.visualContract.characterPose}"`);
-      } else {
-        console.log(`[IMAGES] Scene ${i + 1} has NO contract - using fallback prompt`);
+        console.log(`[GROUND-TRUTH] contract_location: "${beat.visualContract.location}"`);
+        console.log(`[GROUND-TRUTH] contract_pose: "${beat.visualContract.characterPose}"`);
+        console.log(`[GROUND-TRUTH] contract_action: "${beat.visualContract.actionFrozen?.substring(0, 80)}..."`);
+      }
+      console.log(`==========================================================\n`);
+      
+      // =====================================================
+      // PROMPT MODE GATE (v5.1) - Block fallback prompts
+      // Force repair until final_prompt or fail with error
+      // =====================================================
+      const MAX_REPAIR_ATTEMPTS = 2;
+      let repairAttempts = 0;
+      let currentPromptMode = promptMode;
+      
+      // If not final_prompt, we MUST repair before proceeding
+      while (["keywords_fallback", "text_fallback", "anchor_only"].includes(currentPromptMode) && repairAttempts < MAX_REPAIR_ATTEMPTS) {
+        console.log(`[PROMPT-GATE] Scene ${i + 1}: BLOCKED - prompt_mode="${currentPromptMode}" (attempt ${repairAttempts + 1}/${MAX_REPAIR_ATTEMPTS})`);
+        repairAttempts++;
+        
+        try {
+          // Create a minimal contract if none exists
+          if (!beat.visualContract) {
+            beat.visualContract = {
+              sceneIndex: i,
+              location: storyAnchor.environment?.split(",")[0] || "dark setting",
+              characterPose: "tense posture",
+              facialExpression: "fear",
+              visibleObjects: [],
+              supernaturalElement: null,
+              cameraDistance: "medium",
+              lightingSource: "dim light",
+              actionFrozen: scene.text.substring(0, 80),
+              forbiddenElements: ["text", "words", "watermarks"],
+              continuityFromPrev: i === 0 ? "establishing shot" : "same as previous",
+              evidenceRule: `Scene ${i + 1} must match narration`,
+            };
+          }
+          
+          // Force repair
+          const repairedContract = await repairVisualContract(
+            openaiKey,
+            i,
+            scene.text,
+            beat.visualContract,
+            ["forced_repair_from_fallback_mode"],
+            { vibe: jobMeta.vibe }
+          );
+          
+          beat.visualContract = repairedContract;
+          
+          // Rebuild prompt
+          if (resolvedImageModel === "flux") {
+            imagePrompt = buildFluxPrompt(storyAnchor, beat, i, scenes.length, styleConfig, isCustomStyle, visualDNA);
+          } else {
+            imagePrompt = buildFinalDallePrompt(storyAnchor, beat, i, scenes.length, styleConfig, isCustomStyle, visualPreset, visualDNA);
+          }
+          
+          // Re-check mode
+          currentPromptMode = beat.visualContract ? "final_prompt" : currentPromptMode;
+          
+          console.log(`[PROMPT-GATE] Scene ${i + 1}: Repaired, new prompt_len=${imagePrompt.length}, mode=${currentPromptMode}`);
+          
+        } catch (gateRepairError) {
+          console.error(`[PROMPT-GATE] Scene ${i + 1}: Repair attempt ${repairAttempts} failed:`, gateRepairError);
+        }
+      }
+      
+      // If still not final_prompt after max attempts, log error but proceed (graceful degradation)
+      if (["keywords_fallback", "text_fallback", "anchor_only"].includes(currentPromptMode)) {
+        console.error(`[PROMPT-GATE] Scene ${i + 1}: FAILED to achieve final_prompt after ${MAX_REPAIR_ATTEMPTS} attempts. Proceeding with ${currentPromptMode}`);
+      }
+      
+      // =====================================================
+      // COMPUTE PROMPT HASH (v5.1) - Ground truth tracing
+      // =====================================================
+      const promptHash = await computePromptHash(imagePrompt);
+      console.log(`[PROMPT-HASH] Scene ${i + 1}: hash=${promptHash} (len=${imagePrompt.length})`);
+      
+      // =====================================================
+      // RELEVANCE SCORING + AUTO-REPAIR (v5.1 - hardened)
+      // Check if prompt properly captures the visual contract
+      // Require ≥2 objects, location match, threat match
+      // =====================================================
+      let relevanceResult: any = { 
+        relevance_score: 1.0, 
+        missing_elements: [] as string[], 
+        reason: "No scoring needed", 
+        needs_repair: false,
+        failure_type: "ok",
+        matched_objects: [],
+        mismatched_fields: [],
+      };
+      let repairAttempted = repairAttempts > 0; // Track if we already repaired in gate
+      
+      if (beat.visualContract && currentPromptMode === "final_prompt") {
+        relevanceResult = await scorePromptRelevance(
+          openaiKey,
+          i,
+          scene.text,
+          {
+            ...beat.visualContract,
+            continuity: beat.visualContract.continuity,
+          },
+          imagePrompt
+        );
+        
+        console.log(`[RELEVANCE] Scene ${i + 1}: score=${(relevanceResult.relevance_score * 100).toFixed(0)}%, failure=${relevanceResult.failure_type}`);
+        console.log(`[RELEVANCE] Scene ${i + 1}: matched=[${relevanceResult.matched_objects?.join(", ")}], mismatched=[${relevanceResult.mismatched_fields?.join(", ")}]`);
+        
+        // AUTO-REPAIR: If score < 0.65 or missing required objects
+        if (relevanceResult.needs_repair && !repairAttempted) {
+          console.log(`[RELEVANCE] Scene ${i + 1}: REPAIRING - ${relevanceResult.failure_type}`);
+          repairAttempted = true;
+          
+          try {
+            // Repair the visual contract with stricter constraints
+            const repairedContract = await repairVisualContract(
+              openaiKey,
+              i,
+              scene.text,
+              beat.visualContract,
+              relevanceResult.missing_elements,
+              { vibe: jobMeta.vibe }
+            );
+            
+            // Update the beat with repaired contract
+            beat.visualContract = repairedContract;
+            
+            // Rebuild prompt with repaired contract
+            if (resolvedImageModel === "flux") {
+              imagePrompt = buildFluxPrompt(
+                storyAnchor,
+                beat,
+                i,
+                scenes.length,
+                styleConfig,
+                isCustomStyle,
+                visualDNA
+              );
+            } else {
+              imagePrompt = buildFinalDallePrompt(
+                storyAnchor,
+                beat,
+                i,
+                scenes.length,
+                styleConfig,
+                isCustomStyle,
+                visualPreset,
+                visualDNA
+              );
+            }
+            
+            // Recompute hash after repair
+            const newPromptHash = await computePromptHash(imagePrompt);
+            console.log(`[PROMPT-HASH] Scene ${i + 1}: AFTER REPAIR hash=${newPromptHash} (was ${promptHash})`);
+            
+            // Re-score after repair
+            const reScored = await scorePromptRelevance(
+              openaiKey,
+              i,
+              scene.text,
+              {
+                ...beat.visualContract,
+                continuity: beat.visualContract.continuity,
+              },
+              imagePrompt
+            );
+            
+            console.log(`[RELEVANCE] Scene ${i + 1}: AFTER REPAIR - score=${(reScored.relevance_score * 100).toFixed(0)}% (was ${(relevanceResult.relevance_score * 100).toFixed(0)}%)`);
+            console.log(`[RELEVANCE] Scene ${i + 1}: NEW matched=[${reScored.matched_objects?.join(", ")}]`);
+            
+            // Update relevance result for meta storage
+            relevanceResult = {
+              ...reScored,
+              missing_elements: [...relevanceResult.missing_elements, ...reScored.missing_elements],
+              reason: `Repaired (${relevanceResult.failure_type}): ${reScored.reason}`,
+            };
+            
+          } catch (repairError) {
+            console.error(`[RELEVANCE] Scene ${i + 1}: Repair failed, using original prompt:`, repairError);
+          }
+        }
       }
       
       // CRITICAL: Check if this scene's image already exists BEFORE generating
@@ -1186,29 +1736,66 @@ export async function runImagesPhase(
       // Check if URL is from Supabase Storage (permanent) vs temporary
       const isSupabaseUrl = imageUrl?.includes('supabase.co');
       
+      // Build comprehensive meta with prompt verification fields
+      // Compute final hash for ground-truth verification
+      const finalPromptHash = await computePromptHash(imagePrompt);
+      
+      const promptMeta = {
+        scene_index: i, 
+        scene_text: scene.text,
+        keywords: scene.keywords,
+        start_time: scene.startTime,
+        end_time: scene.endTime,
+        source: "sequential",
+        image_model: resolvedImageModel,
+        art_style: styleConfig.name,
+        // PROMPT VERIFICATION FIELDS (Ground Truth v5.1)
+        prompt_final: imagePrompt,  // FULL PROMPT - this is what was actually sent
+        prompt_len: imagePrompt.length,
+        prompt_hash: finalPromptHash,  // SHA-256 hash for end-to-end tracing
+        prompt_preview_start: imagePrompt.substring(0, 300),
+        prompt_preview_end: imagePrompt.substring(Math.max(0, imagePrompt.length - 200)),
+        prompt_mode: currentPromptMode,  // Use the final mode after any repairs
+        // Visual components used
+        visual_beat: beat.visualBeat || null,
+        visual_contract: beat.visualContract ? {
+          location: beat.visualContract.location,
+          characterPose: beat.visualContract.characterPose,
+          actionFrozen: beat.visualContract.actionFrozen,
+          visibleObjects: beat.visualContract.visibleObjects,
+          forbiddenElements: beat.visualContract.forbiddenElements,
+          evidenceRule: beat.visualContract.evidenceRule,
+        } : null,
+        visual_dna: visualDNA ? {
+          style: visualDNA.visual_style,
+          palette: visualDNA.color_palette,
+          lighting: visualDNA.lighting_profile,
+          composition: visualDNA.frame_composition,
+        } : null,
+        mood_level: beat.moodLevel,
+        camera_angle: beat.cameraAngle,
+        continuity_rules: storyAnchor.continuityRules || null,
+        character_description: storyAnchor.characterDescription || null,
+        generated_at: new Date().toISOString(),
+        is_permanent: isSupabaseUrl,
+        // RELEVANCE SCORING (v5.1 - hardened)
+        relevance_score: relevanceResult.relevance_score,
+        relevance_missing: relevanceResult.missing_elements,
+        relevance_reason: relevanceResult.reason,
+        relevance_repaired: repairAttempted,
+        relevance_failure_type: relevanceResult.failure_type || "ok",
+        relevance_matched_objects: relevanceResult.matched_objects || [],
+        relevance_mismatched_fields: relevanceResult.mismatched_fields || [],
+      };
+      
+      console.log(`[GROUND-TRUTH] Scene ${i + 1} FINAL: hash=${finalPromptHash}, mode=${currentPromptMode}, relevance=${(relevanceResult.relevance_score * 100).toFixed(0)}%`);
+      
       const { error: insertError } = await supabase.from("job_assets").insert({
         job_id: job_id,
-        type: "dalle_image",  // Keep type for backward compatibility with queries
+        type: "dalle_image",
         storage_path: imageUrl,
-        public_url: isSupabaseUrl ? imageUrl : null,  // Only set if permanent URL
-        meta: { 
-          scene_index: i, 
-          scene_text: scene.text,
-          keywords: scene.keywords,
-          start_time: scene.startTime,
-          end_time: scene.endTime,
-          source: assetSource,
-          image_model: resolvedImageModel,  // ✅ Actual model used
-          art_style: styleConfig.name,
-          dalle_prompt: imagePrompt,
-          visual_beat: beat.visualBeat,
-          mood_level: beat.moodLevel,
-          camera_angle: beat.cameraAngle,
-          continuity_rules: storyAnchor.continuityRules || null,
-          character_description: storyAnchor.characterDescription || null,
-          generated_at: new Date().toISOString(),
-          is_permanent: isSupabaseUrl,  // Flag for UI to know if URL will expire
-        },
+        public_url: isSupabaseUrl ? imageUrl : null,
+        meta: promptMeta,
       });
       
       if (insertError) {
@@ -1313,52 +1900,126 @@ export async function runAssemblePhase(
   console.log(`[ASSEMBLE] Using ${useFFmpeg ? "FFmpeg" : "Creatomate"} renderer`);
 
   // Check if assemble phase is already running
+  // BUT: Also check if render_id exists - if not, the previous attempt crashed before starting render
   if (jobMeta.assemble_phase_running) {
     const startedAt = new Date(jobMeta.assemble_phase_started_at || 0).getTime();
     const elapsed = Date.now() - startedAt;
-    if (elapsed < 3 * 60 * 1000) {
-      console.log(`[ASSEMBLE] Phase already running (started ${elapsed/1000}s ago), skipping`);
+    const hasRenderId = !!jobMeta.render_id;
+    
+    if (elapsed < 3 * 60 * 1000 && hasRenderId) {
+      // Phase is running AND render was started - skip
+      console.log(`[ASSEMBLE] Phase already running (started ${elapsed/1000}s ago) with render_id=${jobMeta.render_id}, skipping`);
       return { status: "rendering", nextPhase: "assemble", message: "Assemble phase already in progress" };
+    } else if (elapsed < 3 * 60 * 1000 && !hasRenderId) {
+      // Phase marked as running but no render_id - previous attempt crashed before render started
+      console.log(`[ASSEMBLE] ⚠️ Stale lock detected (no render_id after ${elapsed/1000}s). Clearing and retrying...`);
+      // Continue to retry
+    } else {
+      // Lock expired - proceed with retry
+      console.log(`[ASSEMBLE] Lock expired (${elapsed/1000}s ago). Proceeding with retry...`);
     }
   }
   
-  // Mark phase as running
+  // Mark phase as running with assembly tracking timestamps (v3.2)
+  const assembleStartedAt = new Date().toISOString();
+  const assembleTimeoutAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // +10 minutes
+  
   await updateJob(supabase, job_id, {
     progress: 72,
     meta: { 
       ...jobMeta, 
       assemble_phase_running: true,
-      assemble_phase_started_at: new Date().toISOString(),
-      renderer: useFFmpeg ? "ffmpeg" : "creatomate"
+      assemble_phase_started_at: assembleStartedAt,
+      assemble_started_at: assembleStartedAt, // Canonical field for UI
+      assemble_timeout_at: assembleTimeoutAt, // When UI should consider it timed out
+      renderer: useFFmpeg ? "ffmpeg" : "creatomate",
+      render_status: "preparing",
+      render_progress: 0,
     }
   });
 
-  // Get audio URL
-  const { data: audioUrlData } = supabase.storage
-    .from("story-videos")
-    .getPublicUrl(`${job_id}/audio.mp3`);
-
-  // Get captions
-  const { data: captionsBlob } = await supabase.storage
-    .from("story-videos")
-    .download(`${job_id}/captions.json`);
+  // =====================================================
+  // WRAP ENTIRE DATA FETCH IN TRY-CATCH TO RELEASE LOCK ON FAILURE
+  // =====================================================
+  let audioUrlData: { publicUrl: string };
+  let captionsData: { captions: Array<{ word: string; start: number; end: number }> };
+  let imageAssets: any[];
+  let sceneAssets: any[];
   
-  const captionsText = await captionsBlob.text();
-  const captionsData = JSON.parse(captionsText);
+  try {
+    // Get audio URL
+    const audioResult = supabase.storage
+      .from("story-videos")
+      .getPublicUrl(`${job_id}/audio.mp3`);
+    audioUrlData = audioResult.data;
+    console.log(`[ASSEMBLE] Audio URL: ${audioUrlData.publicUrl.substring(0, 80)}...`);
 
-  // Get images/videos
-  const { data: imageAssets } = await supabase
-    .from("job_assets")
-    .select("*")
-    .eq("job_id", job_id)
-    .in("type", ["dalle_image", "bg_video"]);
+    // Get captions
+    console.log(`[ASSEMBLE] Downloading captions...`);
+    const { data: captionsBlob, error: captionsError } = await supabase.storage
+      .from("story-videos")
+      .download(`${job_id}/captions.json`);
+    
+    if (captionsError) {
+      throw new Error(`Captions download error: ${captionsError.message}`);
+    }
+    if (!captionsBlob) {
+      throw new Error(`Captions file not found for job ${job_id}`);
+    }
+    
+    console.log(`[ASSEMBLE] Parsing captions blob (size: ${captionsBlob.size} bytes)...`);
+    const captionsText = await captionsBlob.text();
+    captionsData = JSON.parse(captionsText);
+    console.log(`[ASSEMBLE] ✓ Loaded ${captionsData.captions?.length || 0} caption words`);
 
-  // Get scene data
-  const { data: sceneAssets } = await supabase
-    .from("job_assets")
-    .select("*")
-    .eq("job_id", job_id)
-    .eq("type", "scene_data");
+    // Get images/videos
+    console.log(`[ASSEMBLE] Fetching image assets...`);
+    const { data: imgAssets, error: imageError } = await supabase
+      .from("job_assets")
+      .select("*")
+      .eq("job_id", job_id)
+      .in("type", ["dalle_image", "bg_video"]);
+    
+    if (imageError) {
+      throw new Error(`Image assets query failed: ${imageError.message}`);
+    }
+    imageAssets = imgAssets || [];
+    console.log(`[ASSEMBLE] ✓ Found ${imageAssets.length} image assets`);
+
+    // Get scene data
+    console.log(`[ASSEMBLE] Fetching scene data...`);
+    const { data: scnAssets, error: sceneError } = await supabase
+      .from("job_assets")
+      .select("*")
+      .eq("job_id", job_id)
+      .eq("type", "scene_data");
+    
+    if (sceneError) {
+      throw new Error(`Scene assets query failed: ${sceneError.message}`);
+    }
+    sceneAssets = scnAssets || [];
+    console.log(`[ASSEMBLE] ✓ Found ${sceneAssets.length} scene assets`);
+
+    if (!imageAssets.length || !sceneAssets.length) {
+      throw new Error(`Missing assets: ${imageAssets.length} images, ${sceneAssets.length} scenes`);
+    }
+  } catch (dataFetchError) {
+    // Release lock on failure so retry can work
+    console.error(`[ASSEMBLE] ❌ Data fetch failed:`, (dataFetchError as Error).message);
+    console.error(`[ASSEMBLE] Stack:`, (dataFetchError as Error).stack);
+    
+    await updateJob(supabase, job_id, {
+      progress: 71,
+      meta: { 
+        ...jobMeta, 
+        assemble_phase_running: false,
+        assemble_error: (dataFetchError as Error).message,
+        assemble_retry_count: (jobMeta.assemble_retry_count || 0) + 1
+      }
+    });
+    
+    throw dataFetchError; // Re-throw to return 500 with error message
+  }
 
   if (!imageAssets?.length || !sceneAssets?.length) {
     throw new Error("Missing images or scene data");
@@ -1417,6 +2078,55 @@ export async function runAssemblePhase(
   });
   console.log(`[ASSEMBLE] 🎭 Mood levels for Ken Burns: [${moodLevels.join(', ')}]`);
   
+  // v3.0: Extract Visual DNA from job meta for FFmpeg filter binding
+  const visualDNA = jobMeta.visual_dna || null;
+  if (visualDNA) {
+    console.log(`[ASSEMBLE] 🎨 Visual DNA detected:`);
+    console.log(`[ASSEMBLE]   Style: ${visualDNA.visual_style}`);
+    console.log(`[ASSEMBLE]   Palette: ${visualDNA.color_palette}`);
+    console.log(`[ASSEMBLE]   Motion: ${visualDNA.motion_profile}`);
+    console.log(`[ASSEMBLE]   Platform: ${visualDNA.platform}`);
+  }
+  
+  // v3.1: Resolve effects profile with intensity controls
+  // Priority: user overrides → preset defaults → art_style adjustments → system defaults
+  const vibePreset = job.vibe_preset || "slow_creepy";
+  const artStyle = jobMeta.art_style || "cinematic-dark";
+  const effectsMode = jobMeta.effects_mode || "auto";
+  
+  // Get user overrides if custom mode, sanitize to prevent FFmpeg crashes
+  let userEffectsOverrides: Partial<EffectsProfile> | null = null;
+  if (effectsMode === "custom" && jobMeta.effects_profile) {
+    try {
+      userEffectsOverrides = sanitizeEffectsProfile(jobMeta.effects_profile);
+      console.log(`[ASSEMBLE] Custom effects_profile sanitized (schema_version: ${SCHEMA_VERSION})`);
+    } catch (err) {
+      console.warn(`[ASSEMBLE] ⚠️ Failed to sanitize effects_profile, using preset defaults:`, (err as Error).message);
+      // Fall back to null (will use preset defaults)
+    }
+  }
+  
+  // Convert legacy boolean effects to profile format for backwards compatibility
+  const legacyOverrides = legacyEffectsToProfile(jobMeta);
+  
+  // Resolve final effects profile (fail-soft: returns valid profile even on error)
+  let effectsProfile: EffectsProfile;
+  try {
+    effectsProfile = resolveEffectsProfile(
+      vibePreset,
+      artStyle,
+      userEffectsOverrides || legacyOverrides
+    );
+  } catch (err) {
+    console.warn(`[ASSEMBLE] ⚠️ resolveEffectsProfile failed, using system defaults:`, (err as Error).message);
+    effectsProfile = resolveEffectsProfile(vibePreset, artStyle, null);
+  }
+  
+  console.log(`[ASSEMBLE] 🎛️ Effects Profile (schema_version: ${SCHEMA_VERSION}):`);
+  console.log(`[ASSEMBLE]   Mode: ${effectsMode}`);
+  console.log(`[ASSEMBLE]   Vibe: ${vibePreset}, Art: ${artStyle}`);
+  console.log(`[ASSEMBLE]   Active: ${profileToSummary(effectsProfile)}`);
+  
   let renderId: string;
   
   if (useFFmpeg) {
@@ -1430,7 +2140,9 @@ export async function runAssemblePhase(
         options,
         job_id, // Pass job_id for direct Supabase upload
         captionsData.captions, // Pass captions for text overlay
-        moodLevels // Pass mood intensities for intelligent Ken Burns
+        moodLevels, // Pass mood intensities for intelligent Ken Burns
+        visualDNA, // v3.0: Pass Visual DNA for deterministic aesthetic binding
+        effectsProfile // v3.1: Pass effects profile with intensity controls
       );
       renderId = result.renderId;
     } catch (ffmpegError) {
@@ -1483,14 +2195,30 @@ export async function runAssemblePhase(
   await updateJob(supabase, job_id, { 
     status: "rendering",
     progress: 75,
-    meta: { ...jobMeta, render_id: renderId, renderer: useFFmpeg ? "ffmpeg" : "creatomate" }
+    meta: { 
+      ...jobMeta, 
+      render_id: renderId, 
+      renderer: useFFmpeg ? "ffmpeg" : "creatomate",
+      render_status: "processing",
+      render_progress: 0,
+      assemble_started_at: jobMeta.assemble_started_at || new Date().toISOString(),
+      assemble_timeout_at: jobMeta.assemble_timeout_at || new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    }
   });
 
   // For FFmpeg renders: return immediately and let check-job poll for completion
   // This avoids edge function timeout issues for long renders
+  // v3.2: Return consistent response with render_id for UI tracking
   if (useFFmpeg) {
     console.log(`[ASSEMBLE] FFmpeg render started (${renderId}), returning to let check-job poll`);
-    return { status: "rendering", nextPhase: "assemble", message: "FFmpeg render started, polling for completion..." };
+    return { 
+      status: "assembling",  // Changed from "rendering" for UI clarity
+      nextPhase: "poll",     // Signal UI to poll, not call run-job again
+      message: "FFmpeg render started, polling for completion...",
+      // @ts-ignore - Adding custom fields for UI
+      render_id: renderId,
+      job_id: job_id,
+    };
   }
 
   // For Creatomate: still do short polling (it's usually faster)

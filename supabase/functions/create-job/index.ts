@@ -1,16 +1,17 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform",
 };
 
 interface CreateJobRequest {
   // Content settings
   theme?: string;
-  vibe_preset?: "slow_creepy" | "punchy_shock" | "atmospheric" | "urban_legend";
-  length_preset?: "short" | "medium" | "long" | "30" | "45" | "60" | "90";
+  vibe_preset?: "slow_creepy" | "punchy_shock" | "atmospheric" | "urban_legend" | "analog_horror";
+  length_preset?: "short" | "medium" | "long" | "30" | "45" | "60" | "90" | "120";
   visual_preset?: "forest" | "hallway" | "attic" | "foggy" | "rain";
   visual_source?: "pexels" | "ai";
   image_model?: "dall-e-3" | "gpt-4o" | "flux";  // AI image model selection
@@ -23,6 +24,15 @@ interface CreateJobRequest {
     negativePrompt: string;
   };
   scene_count?: number;
+  // Scene count mode: 'strict' = exact count (no fusion), 'auto' = allow fusion for coherence
+  scene_count_mode?: "strict" | "auto";
+  // DNA/advanced settings
+  era?: string;           // e.g., "1970s", "1980s"
+  tone?: number;          // 0-1 scale
+  ending?: string;        // e.g., "suppressed", "cyclical"
+  pace?: string;          // e.g., "slow", "fast"
+  platform?: string;      // e.g., "reels", "tiktok", "shorts"
+  visual_dna_override?: any;  // Optional Visual DNA override
   // Preview mode
   preview_only?: boolean;
   // Debug mode - skip video assembly
@@ -46,6 +56,26 @@ interface CreateJobRequest {
   effect_heartbeat_zoom?: boolean;
   effect_negative_flash?: boolean;
   effect_edge_darkening?: boolean;
+  // Effects Profile (v1.0) - intensity-based effects configuration
+  // When provided, this overrides individual effect_* booleans
+  effects_profile?: {
+    version?: string;
+    transitions?: { enabled?: boolean; intensity?: number; type?: string; duration?: number };
+    kenburns?: { enabled?: boolean; intensity?: number; zoom_amount?: number; speed?: number; direction?: string };
+    color_grade?: { enabled?: boolean; intensity?: number; preset?: string; contrast?: number; saturation?: number; brightness?: number; temperature?: number };
+    vignette?: { enabled?: boolean; intensity?: number; radius?: number; softness?: number };
+    film_grain?: { enabled?: boolean; intensity?: number; size?: number; color?: boolean };
+    scanlines?: { enabled?: boolean; intensity?: number; spacing?: number; thickness?: number; flicker?: boolean };
+    vhs?: { enabled?: boolean; intensity?: number; tracking_noise?: number; color_bleed?: number; tape_crinkle?: number; jitter?: number };
+    glitch?: { enabled?: boolean; intensity?: number; frequency?: number; duration?: number; rgb_shift?: number; block_shift?: boolean };
+    light_flicker?: { enabled?: boolean; intensity?: number; frequency?: number; variation?: number };
+    fade?: { fade_in?: boolean; fade_in_duration?: number; fade_out?: boolean; fade_out_duration?: number };
+    edge_darken?: { enabled?: boolean; intensity?: number; creep_speed?: number };
+    heartbeat_zoom?: { enabled?: boolean; intensity?: number };
+    negative_flash?: { enabled?: boolean; intensity?: number };
+  };
+  // Effects mode: 'auto' = derive from preset, 'custom' = use effects_profile overrides
+  effects_mode?: "auto" | "custom";
   // Audio
   audio_music?: boolean;
   audio_track?: string;
@@ -62,10 +92,13 @@ function mapDuration(preset: string): string {
     'short': '30',
     'medium': '45',
     'long': '60',
+    'extended': '90',
+    'full': '120',
     '30': '30',
     '45': '45',
     '60': '60',
     '90': '90',
+    '120': '120',
   };
   return map[preset] || '45';
 }
@@ -93,6 +126,7 @@ serve(async (req) => {
       image_model: body.image_model || "gpt-4o",  // Default to GPT-4o for balanced cost/quality
       art_style: body.art_style || "cinematic-dark",
       scene_count: body.scene_count || 4,
+      scene_count_mode: body.scene_count_mode || "strict",  // Default to strict (no fusion)
       skip_video_assembly: body.skip_video_assembly === true,
       // Transitions - store explicit boolean values
       effect_fade_in: body.effect_fade_in === true,
@@ -121,6 +155,16 @@ serve(async (req) => {
       // Captions
       caption_style: body.caption_style || "bold",
       highlight_scary: body.highlight_scary !== false,
+      // DNA/advanced settings
+      era: body.era || null,
+      tone: body.tone ?? null,
+      ending: body.ending || null,
+      pace: body.pace || null,
+      platform: body.platform || "default",
+      visual_dna_override: body.visual_dna_override || null,
+      // Effects Profile v1.0 - intensity-based effects
+      effects_mode: body.effects_mode || "auto",  // auto = derive from preset, custom = use overrides
+      effects_profile: body.effects_profile || null,  // User overrides for effects (when effects_mode=custom)
     };
     
     // If custom style, include the custom style data in meta
@@ -219,11 +263,16 @@ serve(async (req) => {
         status: 200,
       }
     );
-  } catch (error) {
+  } catch (error: any) {
+    console.error("[CREATE-JOB] fatal", {
+      message: error?.message,
+      stack: error?.stack,
+    });
     return new Response(
       JSON.stringify({
         success: false,
-        error: error.message,
+        error: error?.message || String(error),
+        stack: error?.stack?.split('\n').slice(0, 5).join('\n'),
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

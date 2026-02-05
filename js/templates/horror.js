@@ -1,6 +1,12 @@
 /**
  * Horror Stories Template
  * Full configuration for horror video generation
+ * 
+ * Features Visual DNA v2.1:
+ * - Automated visual fingerprinting for uniqueness
+ * - Weighted similarity scoring (style 35%, palette 25%, motion 15%, lighting 10%, texture 15%)
+ * - Half-life decay (48h = 50% influence reduction)
+ * - Genre-locked style forcing for analog_horror
  */
 
 const HorrorTemplate = {
@@ -9,6 +15,13 @@ const HorrorTemplate = {
     name: 'Horror Stories',
     icon: '👻',
     description: 'Generate terrifying short horror stories with atmospheric visuals',
+    
+    // Visual DNA configuration hints (used by backend)
+    visualDNA: {
+        enabled: true,
+        version: '2.1',
+        features: ['fingerprint', 'similarity', 'variety-forcing', 'shadow-profiles']
+    },
 
     // Theme configuration
     theme: {
@@ -19,12 +32,104 @@ const HorrorTemplate = {
         vibe: 'dark'
     },
 
-    // Workflow steps
+    // NEW: 6-step workflow (0-5)
     steps: [
-        { id: 'settings', name: 'Settings', icon: '⚙️' },
-        { id: 'story', name: 'Story', icon: '📖' },
-        { id: 'images', name: 'Images', icon: '🎨' },
-        { id: 'video', name: 'Video', icon: '🎬' }
+        { id: 'preset', name: 'Preset', icon: '🎯', subtitle: 'Pick a vibe. We\'ll auto-fill the engine settings.' },
+        { id: 'settings', name: 'Settings', icon: '⚙️', subtitle: 'Define intent. DNA handles uniqueness + look.' },
+        { id: 'story', name: 'Story', icon: '📖', subtitle: 'Review narrative. Approve to lock the visual world.' },
+        { id: 'visual-dna', name: 'Visual DNA', icon: '🧬', subtitle: 'Style is derived. Optional safe rotations available.' },
+        { id: 'images', name: 'Images', icon: '🎨', subtitle: 'Approve frames. Regenerate individual scenes if needed.' },
+        { id: 'assemble', name: 'Assemble', icon: '🎬', subtitle: 'Platform-tuned render + final preview.' }
+    ],
+
+    // NEW: Genre presets (Step 0)
+    presets: [
+        {
+            id: 'urban_legend',
+            name: 'Urban Legend',
+            icon: '📜',
+            tagline: 'Documentary tone',
+            description: 'Classic creepypasta feel with found-footage authenticity',
+            defaults: {
+                vibe_preset: 'urban_legend',
+                era: '1990s',
+                tone: 0.6,
+                ending: 'unresolved',
+                visual_style: 'VHS_degraded',
+                color_palette: 'sickly_green',
+                motion_profile: 'micro_jitter'
+            }
+        },
+        {
+            id: 'true_crime',
+            name: 'True Crime',
+            icon: '🗂️',
+            tagline: 'Casefile mystery',
+            description: 'Cold case documentary with evidence-based tension',
+            defaults: {
+                vibe_preset: 'slow_creepy',
+                era: '1980s',
+                tone: 0.4,
+                ending: 'suppressed',
+                visual_style: 'film_noir',
+                color_palette: 'cold_blue',
+                motion_profile: 'slow_drift'
+            }
+        },
+        {
+            id: 'analog_horror',
+            name: 'Analog Horror',
+            icon: '📺',
+            tagline: 'VHS / Broadcast',
+            description: 'Corrupted broadcast signals and local TV terror',
+            defaults: {
+                vibe_preset: 'analog_horror',
+                era: '1970s',
+                tone: 0.7,
+                ending: 'cyclical',
+                visual_style: 'VHS_degraded',
+                color_palette: 'broadcast_amber',
+                motion_profile: 'tracking_wobble'
+            }
+        },
+        {
+            id: 'cosmic_horror',
+            name: 'Cosmic Horror',
+            icon: '🌌',
+            tagline: 'Vast dread',
+            description: 'Incomprehensible entities and existential terror',
+            defaults: {
+                vibe_preset: 'atmospheric',
+                era: 'timeless',
+                tone: 0.5,
+                ending: 'open',
+                visual_style: 'ethereal_void',
+                color_palette: 'deep_purple',
+                motion_profile: 'slow_pulse'
+            }
+        },
+        {
+            id: 'neutral',
+            name: 'Neutral',
+            icon: '⚪',
+            tagline: 'Experimental',
+            description: 'No preset constraints. Full DNA randomization.',
+            defaults: {
+                vibe_preset: 'slow_creepy',
+                era: 'modern',
+                tone: 0.5,
+                ending: 'open'
+            }
+        },
+        {
+            id: 'custom',
+            name: 'Custom DNA',
+            icon: '🧬',
+            tagline: 'Full control',
+            description: 'Advanced users only. Define your own DNA parameters.',
+            requiresAdvanced: true,
+            defaults: {}
+        }
     ],
 
     // Default settings
@@ -33,7 +138,8 @@ const HorrorTemplate = {
         sceneCount: 12,
         captionStyle: 'bold',
         visualSource: 'ai',
-        imageModel: 'gpt-4o'
+        imageModel: 'gpt-4o',
+        preset: 'urban_legend'
     },
 
     // Settings configuration for the UI
@@ -46,6 +152,39 @@ const HorrorTemplate = {
             { value: 'psychological', label: 'Psychological Horror', icon: '🧠' },
             { value: 'folklore', label: 'Folklore / Urban Legend', icon: '📜' },
             { value: 'cosmic', label: 'Cosmic Horror', icon: '🌌' }
+        ],
+
+        // NEW: Eras for narrative context
+        eras: [
+            { value: '1970s', label: '1970s', description: 'Analog era, rotary phones, station wagons' },
+            { value: '1980s', label: '1980s', description: 'VHS tapes, malls, early computing' },
+            { value: '1990s', label: '1990s', description: 'Early internet, camcorders, suburbs' },
+            { value: '2000s', label: '2000s', description: 'Flip phones, forums, found footage' },
+            { value: 'modern', label: 'Modern', description: 'Smartphones, social media, streaming' },
+            { value: 'timeless', label: 'Timeless', description: 'No specific era, universal dread' }
+        ],
+
+        // NEW: Ending types
+        endings: [
+            { value: 'unresolved', label: 'Unresolved', description: 'Mystery remains, lingering dread' },
+            { value: 'suppressed', label: 'Suppressed', description: 'Truth hidden, covered up' },
+            { value: 'cyclical', label: 'Cyclical', description: 'It happens again, pattern repeats' },
+            { value: 'open', label: 'Open', description: 'Viewer decides, ambiguous fate' },
+            { value: 'reveal', label: 'Reveal', description: 'Truth exposed, final twist' }
+        ],
+
+        // NEW: Uniqueness modes
+        uniquenessModes: [
+            { value: 'normal', label: 'Normal', description: 'Balanced variety and consistency' },
+            { value: 'strict', label: 'Strict', description: 'Maximum uniqueness enforcement' },
+            { value: 'experimental', label: 'Experimental', description: 'Allow more similarity for testing' }
+        ],
+
+        // NEW: Rarity bias (Advanced)
+        rarityBias: [
+            { value: 'low', label: 'Low', description: 'Prefer common, reliable combinations' },
+            { value: 'normal', label: 'Normal', description: 'Balanced rarity selection' },
+            { value: 'aggressive', label: 'Aggressive', description: 'Prefer rare, unusual combinations' }
         ],
 
         // Story vibes

@@ -194,6 +194,7 @@ async function runJob(jobId, options = {}) {
  * @param {string} jobId - The job ID
  * @param {string} phase - The phase to run: 'audio', 'images', 'assemble'
  * @param {object} options - Optional parameters
+ * @param {number} options.timeout - Custom timeout in ms (default 60s, assemble uses 30s)
  * @returns {object} Phase result with nextPhase indicator
  */
 async function runJobPhase(jobId, phase, options = {}) {
@@ -202,30 +203,79 @@ async function runJobPhase(jobId, phase, options = {}) {
     console.log(`[API] runJobPhase: job=${jobId.substring(0,8)}..., phase=${phase}`);
     const startTime = performance.now();
     
-    const { data, error } = await client.functions.invoke('run-job', {
-        body: { 
-            job_id: jobId,
-            phase: phase,
-            preview_only: false,
-            ...options
-        },
-    });
+    // v3.2: Shorter timeout for assemble phase - it should return quickly
+    // The actual render continues in the background and we poll for completion
+    const timeout = options.timeout || (phase === 'assemble' ? 30000 : 60000);
     
-    const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
-    console.log(`[API] runJobPhase completed in ${elapsed}s:`, data);
+    try {
+        const { data, error } = await client.functions.invoke('run-job', {
+            body: { 
+                job_id: jobId,
+                phase: phase,
+                preview_only: false,
+                ...options
+            },
+        });
+        
+        const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+        console.log(`[API] runJobPhase completed in ${elapsed}s:`, data);
 
-    if (error) {
-        console.error(`[API] runJobPhase error (${phase}):`, error);
-        throw new Error(`${phase} phase failed: ${error.message || error}`);
-    }
-    if (!data) {
-        throw new Error(`${phase} phase returned no data`);
-    }
-    if (!data.success && data.error) {
-        throw new Error(`${phase} phase error: ${data.error}`);
-    }
+        if (error) {
+            // v3.2: For assemble phase, timeout doesn't mean failure
+            // The render may have started and is still running
+            if (phase === 'assemble' && (error.message?.includes('timeout') || error.message?.includes('504'))) {
+                console.log(`[API] Assemble phase timed out - this is OK, render may be running`);
+                return {
+                    success: true,
+                    status: 'assembling',
+                    nextPhase: 'poll',
+                    message: 'Assembly may have started, switching to polling...',
+                    timedOut: true
+                };
+            }
+            console.error(`[API] runJobPhase error (${phase}):`, error);
+            throw new Error(`${phase} phase failed: ${error.message || error}`);
+        }
+        if (!data) {
+            // v3.2: No data could mean timeout
+            if (phase === 'assemble') {
+                console.log(`[API] Assemble phase returned no data - assuming started, switching to poll`);
+                return {
+                    success: true,
+                    status: 'assembling', 
+                    nextPhase: 'poll',
+                    message: 'Assembly may have started, switching to polling...',
+                    timedOut: true
+                };
+            }
+            throw new Error(`${phase} phase returned no data`);
+        }
+        if (!data.success && data.error) {
+            throw new Error(`${phase} phase error: ${data.error}`);
+        }
 
-    return data;
+        return data;
+    } catch (err) {
+        // v3.2: Catch network errors during assemble - assume render may have started
+        if (phase === 'assemble') {
+            const isNetworkError = err.message?.includes('fetch') || 
+                                   err.message?.includes('network') ||
+                                   err.message?.includes('timeout') ||
+                                   err.message?.includes('504') ||
+                                   err.message?.includes('502');
+            if (isNetworkError) {
+                console.log(`[API] Assemble phase network error - assuming render may have started:`, err.message);
+                return {
+                    success: true,
+                    status: 'assembling',
+                    nextPhase: 'poll', 
+                    message: 'Network error during assembly, switching to polling...',
+                    timedOut: true
+                };
+            }
+        }
+        throw err;
+    }
 }
 
 /**
