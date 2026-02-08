@@ -103,7 +103,13 @@ ensureDirs();
  * Supports both HTTP URLs and base64 data URLs
  */
 async function downloadFile(url, outputPath) {
+  // v5.13: Validate URL is not empty
+  if (!url || typeof url !== 'string' || url.trim() === '') {
+    throw new Error(`Invalid URL: received empty or undefined URL`);
+  }
+  
   // Handle base64 data URLs (common for AI-generated images)
+  if (url.startsWith('data:')) {
   if (url.startsWith('data:')) {
     console.log(`  → Decoding base64 image to ${path.basename(outputPath)}`);
     const matches = url.match(/^data:([^;]+);base64,(.+)$/);
@@ -2535,6 +2541,49 @@ async function processImageGeneration(imageJobId, supabaseJobId, scenes, model, 
           if (imageUrl && supabase) {
             const storagePath = `${supabaseJobId}/images/scene_${sceneIndex}.webp`;
             imageUrl = await uploadImageToSupabase(imageUrl, 'story-videos', storagePath);
+            
+            // v5.13: Save directly to job_assets for durability
+            // This ensures images survive server restarts and race conditions
+            try {
+              const { error: assetError } = await supabase.from('job_assets').upsert({
+                job_id: supabaseJobId,
+                type: 'dalle_image',
+                storage_path: imageUrl,
+                public_url: imageUrl,
+                meta: {
+                  scene_index: sceneIndex,
+                  scene_text: scene.text,
+                  keywords: scene.keywords || [],
+                  start_time: scene.start_time,
+                  end_time: scene.end_time,
+                  source: 'parallel',
+                  image_model: model,
+                  art_style: artStyle,
+                  dalle_prompt: scene.prompt,
+                  prompt_len: promptLen,
+                  prompt_hash: scene.prompt_hash || null,
+                  prompt_mode: scene.prompt_mode || null,
+                  visual_beat: scene.visual_beat || null,
+                  visual_contract: scene.visual_contract || null,
+                  visual_dna: scene.visual_dna || null,
+                  mood_level: scene.mood_level || null,
+                  camera_angle: scene.camera_angle || null,
+                  generated_at: new Date().toISOString(),
+                  is_permanent: true,
+                },
+              }, {
+                onConflict: 'job_id,type,meta->scene_index',
+                ignoreDuplicates: false
+              });
+              
+              if (assetError) {
+                console.log(`  [IMG-${imageJobId}] Warning: Could not save to job_assets: ${assetError.message}`);
+              } else {
+                console.log(`  [IMG-${imageJobId}] ✓ Scene ${sceneIndex + 1} saved to job_assets`);
+              }
+            } catch (dbErr) {
+              console.log(`  [IMG-${imageJobId}] Warning: job_assets save failed: ${dbErr.message}`);
+            }
           }
           
           return {
