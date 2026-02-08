@@ -10,7 +10,8 @@ const corsHeaders = {
 interface CreateJobRequest {
   // Content settings
   theme?: string;
-  vibe_preset?: "slow_creepy" | "punchy_shock" | "atmospheric" | "urban_legend" | "analog_horror";
+  // v4.0: Only two active story engines. Deprecated presets map to urban_legend on backend.
+  vibe_preset?: "urban_legend" | "one_too_many";
   length_preset?: "short" | "medium" | "long" | "30" | "45" | "60" | "90" | "120";
   visual_preset?: "forest" | "hallway" | "attic" | "foggy" | "rain";
   visual_source?: "pexels" | "ai";
@@ -76,6 +77,21 @@ interface CreateJobRequest {
   };
   // Effects mode: 'auto' = derive from preset, 'custom' = use effects_profile overrides
   effects_mode?: "auto" | "custom";
+  // Story Profile (v1.0) - narrative structure configuration
+  // When provided, this overrides default story generation behavior
+  story_profile?: {
+    version?: string;
+    voiceFormat?: { format?: string; structuralMarkers?: string[]; enforceMarkers?: boolean; povConstraint?: string; styleNotes?: string };
+    motif?: { minMentions?: number; shouldEscalate?: boolean; distribution?: string };
+    uniqueElement?: { minAppearances?: number; requireEscalation?: boolean; finalMentionPosition?: string };
+    beatStructure?: { beatCount?: number; beatLabels?: string[]; requireGroundingDetail?: boolean; groundingTypes?: string[] };
+    embodiment?: { eraLevel?: string; requirePeriodObjects?: boolean; requireLocationSensory?: boolean };
+    authority?: { style?: string; minDetailSentences?: number };
+    ending?: { antiClosure?: number; enforceFinalImage?: boolean; allowedEndingTypes?: string[]; takeaway?: { enabled?: boolean; style?: string } };
+    wordCount?: { target?: number; variance?: number; priority?: string };
+  };
+  // Story mode: 'auto' = derive from niche/preset, 'custom' = use story_profile overrides
+  story_mode?: "auto" | "custom";
   // Audio
   audio_music?: boolean;
   audio_track?: string;
@@ -165,6 +181,9 @@ serve(async (req) => {
       // Effects Profile v1.0 - intensity-based effects
       effects_mode: body.effects_mode || "auto",  // auto = derive from preset, custom = use overrides
       effects_profile: body.effects_profile || null,  // User overrides for effects (when effects_mode=custom)
+      // Story Profile v1.0 - narrative structure enforcement
+      story_mode: body.story_mode || "auto",  // auto = derive from niche/preset, custom = use overrides
+      story_profile: body.story_profile || null,  // User overrides for story (when story_mode=custom)
     };
     
     // If custom style, include the custom style data in meta

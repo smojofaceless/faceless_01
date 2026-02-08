@@ -1,6 +1,6 @@
 // =====================================================
 // STORY DNA SYSTEM - Production-Grade Uniqueness Engine
-// VERSION: 3.1.0 - 2026-02-04
+// VERSION: 4.0.0 - 2026-02-08
 // 
 // Purpose: Generate mathematically unique story "DNA" before
 // the AI writes anything. The AI is a RENDERER, not the
@@ -14,6 +14,17 @@
 // 5. Ban recently-used concepts via negative memory
 // 6. Adaptive weighting for entropy maximization (v3.0)
 // 7. Genre profiles for tonal consistency (v3.1)
+// 8. Story engine consolidation (v4.0)
+//
+// STORY ENGINES (v4.0):
+// ---------------------
+// Presets are now "STORY ENGINES", not genres/vibes/formats.
+// Only two active engines are supported:
+//   - urban_legend: Broad folklore documentary horror
+//   - one_too_many: Counting horror (group has extra person)
+//
+// Deprecated presets (cosmic_horror, true_crime, analog_horror,
+// neutral) map to urban_legend for backward compatibility.
 // =====================================================
 
 // NOTE: Uses built-in Web Crypto API (crypto.subtle.digest) - no external import needed
@@ -49,7 +60,16 @@ export type GenreProfile = {
 };
 
 export const GENRE_PROFILES: Record<string, GenreProfile> = {
-  // ===== URBAN LEGEND (default for horror brand) =====
+  // =====================================================
+  // ACTIVE STORY ENGINES (v4.0)
+  // Only two engines are actively supported.
+  // All deprecated presets map to urban_legend.
+  // =====================================================
+
+  // ===== URBAN LEGEND - Primary Folklore Engine =====
+  // Broad, flexible engine for documentary-style horror.
+  // Authority denial, repeating motif, ambiguous ending.
+  // Designed for high-volume auto-generation.
   urban_legend: {
     name: "Urban Legend",
     description: "Classic American folklore horror - whispered stories, suppressed truths, authorities hiding something",
@@ -138,189 +158,271 @@ export const GENRE_PROFILES: Record<string, GenreProfile> = {
     },
   },
 
-  // ===== COSMIC HORROR =====
-  cosmic_horror: {
-    name: "Cosmic Horror",
-    description: "Lovecraftian dread - insignificance, incomprehensible entities, reality breaking down",
+  // ===== ONE TOO MANY - Counting Horror Engine =====
+  // Specialized micro-engine for "extra person in group" stories.
+  // Requires TropePack for group_type, container, evidence variations.
+  // Always uses counting_horror contract with N→N+1 consistency.
+  one_too_many: {
+    name: "One Too Many",
+    description: "Counting horror - the group has one extra person that no one can identify",
     weights: {
+      // Boost contemporary/recent eras (group trips, road trips, camping)
       era: {
-        "1920s_jazz": 1.3,       // Classic Lovecraft era (would need to add)
-        "1950s_atomic": 1.3,
-        "1940s_postwar": 1.2,
+        "2000s_early": 1.4,
+        "1990s_late": 1.3,
+        "1980s_late": 1.2,
+        "1970s_late": 1.1,
       },
+      // Boost enclosed/confined locations (vans, elevators, cabins)
       location: {
-        "coastal_town": 1.5,     // Innsmouth vibes
-        "industrial_ruins": 1.3,
-        "mining_towns": 1.2,
-        "national_parks": 1.1,
+        "lakeside_cabins": 1.5,   // Classic "cabin with friends"
+        "rural_highway": 1.4,     // Van/road trip setting
+        "forest_trail": 1.3,      // Hiking group
+        "motel_room": 1.3,        // Hotel/motel gathering
+        "small_towns": 1.2,
       },
+      // Boost witness-style narration (counting requires observer POV)
       narrative_artifact: {
-        "research_footnote": 1.5,
-        "agency_report": 1.3,
-        "deathbed_confession": 1.3,
-        "oral_history": 0.8,
-        "forum_post": 0.7,
+        "witness_interview": 1.5,
+        "documentary_narration": 1.4,
+        "oral_history": 1.3,
+        "forum_post": 1.1,        // Reddit-style "this happened to my friend group"
       },
-      threat_behavior: {
-        "broadcasting": 1.4,
-        "gathering": 1.3,
-        "signaling": 1.2,
-        "watching": 0.9,
-      },
-      threat_manifestation: {
-        "light_geometric": 1.5,
-        "distortion_visual": 1.4,
-        "environmental": 1.3,
-        "sound_pattern": 1.2,
-        "humanoid_tall": 0.8,
-      },
+      // The core weird axis - counting_wrong is heavily boosted
       weird_axis: {
-        "maps_wrong": 1.4,
-        "time_wrong": 1.4,
-        "direction_wrong": 1.3,
-        "counting_wrong": 1.3,
-        "dreams_shared": 1.2,
+        "counting_wrong": 2.5,    // HEAVILY BOOSTED - core premise
+        "photos_closer": 1.3,     // Evidence variation
+        "photos_show_more": 1.3,  // Extra person in photos
+        "names_forgotten": 1.2,   // Can't remember who's extra
+        "reflection_delayed": 1.1,
       },
-      ending_knowledge: {
-        "forgotten": 1.4,
-        "denied": 1.3,
-        "cyclical": 1.2,
-      },
-      emotion: {
-        "insignificance": 1.6,
-        "wrongness": 1.4,
-        "dread": 1.2,
-        "paranoia": 0.8,
-      },
-    },
-  },
-
-  // ===== TRUE CRIME HORROR =====
-  true_crime: {
-    name: "True Crime Horror",
-    description: "Documentary-style horror - institutional failure, cold cases, procedural dread",
-    weights: {
-      era: {
-        "1970s_late": 1.4,       // Serial killer era
-        "1980s_early": 1.3,
-        "1990s_early": 1.2,
-        "2000s_early": 1.1,
-      },
-      location: {
-        "suburban_sprawl": 1.4,
-        "small_towns": 1.3,
-        "industrial_ruins": 1.2,
-        "rural_highway": 1.1,
-      },
-      narrative_artifact: {
-        "police_memo": 1.5,
-        "agency_report": 1.4,
-        "newspaper_recap": 1.3,
-        "witness_interview": 1.2,
-        "documentary_narration": 1.1,
-        "oral_history": 0.7,
-      },
-      authority: {
-        "investigation_closed": 1.4,
-        "files_lost": 1.3,
-        "dismissed": 1.2,
-        "active_coverup": 1.1,
-      },
-      threat_behavior: {
-        "following": 1.3,
-        "waiting": 1.3,
-        "watching": 1.2,
-        "mimicking": 1.1,
-      },
+      // Boost humanoid manifestations (the "extra" is person-shaped)
       threat_manifestation: {
+        "humanoid_faceless": 1.5,
         "humanoid_dated": 1.3,
-        "vehicle_black": 1.3,
-        "humanoid_tall": 1.1,
+        "humanoid_tall": 1.2,
+        "reflection": 1.2,
       },
-      escalation: {
-        "sightings_to_missing": 1.4,
-        "individual_to_group": 1.3,
-        "passive_to_active": 1.2,
+      // Boost passive behaviors (it blends in, doesn't attack)
+      threat_behavior: {
+        "mimicking": 1.5,         // Blending with the group
+        "appearing": 1.4,
+        "watching": 1.3,
+        "waiting": 1.2,
       },
-      ending_knowledge: {
-        "unresolved": 1.4,
-        "suppressed": 1.2,
-        "partial": 1.1,
-      },
+      // Boost proof-based endings
       ending_imagery: {
-        "sealed_files": 1.4,
-        "silent_recording": 1.3,
-        "empty_road": 1.2,
+        "photograph_changing": 1.5, // Photo shows extra person
+        "silent_recording": 1.3,    // Camera caught it
+        "watching_treeline": 1.2,   // Figure still there
       },
+      // Boost paranoia (who's real?)
       emotion: {
-        "paranoia": 1.3,
-        "recognition": 1.3,
+        "paranoia": 1.5,
+        "wrongness": 1.4,
         "dread": 1.2,
         "isolation": 1.1,
       },
     },
   },
+};
 
-  // ===== ANALOG HORROR =====
-  analog_horror: {
-    name: "Analog Horror",
-    description: "VHS-era dread - corrupted media, emergency broadcasts, found footage",
-    weights: {
-      era: {
-        "1980s_late": 1.5,
-        "1990s_early": 1.4,
-        "1980s_early": 1.3,
-        "1970s_late": 1.1,
-        "2000s_early": 0.7,
-      },
-      narrative_artifact: {
-        "radio_transcript": 1.5,
-        "documentary_narration": 1.3,
-        "agency_report": 1.2,
-        "forum_post": 0.6,
-      },
-      subgenre: {
-        "broadcast_interruption": 1.5,
-        "found_document": 1.3,
-        "government_coverup": 1.2,
-      },
-      threat_behavior: {
-        "broadcasting": 1.5,
-        "signaling": 1.3,
-        "appearing": 1.2,
-      },
-      threat_manifestation: {
-        "distortion_visual": 1.4,
-        "sound_pattern": 1.3,
-        "humanoid_faceless": 1.2,
-        "reflection": 1.2,
-      },
-      weird_axis: {
-        "radio_predicts": 1.4,
-        "electronics_fail": 1.4,
-        "voices_recorded": 1.3,
-        "photos_show_more": 1.2,
-      },
-      ending_imagery: {
-        "silent_recording": 1.5,
-        "coordinates_appearing": 1.3,
-        "message_reappearing": 1.2,
-      },
-      emotion: {
-        "wrongness": 1.4,
-        "dread": 1.2,
-        "unease": 1.2,
-      },
-    },
-  },
+// =====================================================
+// DEPRECATED PRESET MAPPING
+// For backward compatibility, deprecated presets map to urban_legend
+// =====================================================
+const DEPRECATED_PRESET_MAP: Record<string, string> = {
+  cosmic_horror: 'urban_legend',
+  true_crime: 'urban_legend',
+  analog_horror: 'urban_legend',
+  neutral: 'urban_legend',
+  slow_creepy: 'urban_legend',
+  punchy_shock: 'urban_legend',
+  atmospheric: 'urban_legend',
+};
 
-  // ===== NEUTRAL (no bias) =====
-  neutral: {
-    name: "Neutral",
-    description: "No genre bias - pure entropy maximization",
-    weights: {},
+// =====================================================
+// TROPE PACKS - Preset-specific randomization pools
+// Allows micro-presets to randomize within a narrow lane
+// =====================================================
+
+export interface TropePack {
+  name: string;
+  /** Group type variations (who's together) */
+  group_types: string[];
+  /** Container/setting variations (where they're trapped) */
+  containers: string[];
+  /** Evidence source variations (how they discover proof) */
+  evidence_sources: string[];
+  /** Glitch variations (what else goes wrong) */
+  glitches: string[];
+  /** Count phrases for unique element detection */
+  count_phrases: string[];
+  /** External witnesses who confirm the count (optional) */
+  external_witnesses?: string[];
+  /** Group size variations with start/extra counts (optional) */
+  group_sizes?: Array<{ start: number; extra: number; description: string }>;
+  /** Dialogue lines for acknowledging the count (optional) */
+  dialogue_lines?: string[];
+}
+
+export const TROPE_PACKS: Record<string, TropePack> = {
+  one_too_many: {
+    name: "One Too Many",
+    group_types: [
+      "college friends on a road trip",
+      "coworkers at a team retreat",
+      "family members on a camping trip",
+      "hikers in a guided group",
+      "wedding party staying at a cabin",
+      "students on a field trip",
+      "old friends reuniting for a birthday",
+      "neighbors evacuating together",
+    ],
+    containers: [
+      "rented van",
+      "hotel hallway",
+      "elevator",
+      "subway car",
+      "lakeside cabin",
+      "ferry deck",
+      "bus",
+      "mountain lodge",
+      "rental car",
+      "campfire circle",
+      "motel room",
+      "train car",
+      "small boat",
+      "ski lift gondola",
+      "escape room",
+    ],
+    evidence_sources: [
+      "group photo on someone's phone",
+      "dashcam footage",
+      "security camera still",
+      "bathroom mirror reflection",
+      "group selfie",
+      "receipt showing wrong headcount",
+      "reservation confirmation showing wrong party size",
+      "polaroid from that night",
+      "video doorbell footage",
+      "CCTV playback at gas station",
+      "hotel key card log",
+      "restaurant bill showing wrong covers",
+    ],
+    glitches: [
+      "clock keeps resetting to the same time",
+      "doors won't unlock from inside",
+      "windows won't roll down no matter what",
+      "radio keeps playing the same song on loop",
+      "GPS keeps rerouting to the same dead end",
+      "phones show different times for everyone",
+      "camera is missing frames from the trip",
+      "no cell service despite showing full bars",
+      "car won't start until everyone gets out and back in",
+      "lights flicker whenever someone mentions the count",
+      "engine dies every time they try to leave",
+      "AC blasts cold air even when turned off",
+    ],
+    // External witnesses who notice something wrong
+    external_witnesses: [
+      "gas station attendant counting heads",
+      "security guard reviewing footage",
+      "motel clerk checking keys returned",
+      "toll booth operator counting passengers",
+      "restaurant host counting chairs needed",
+      "park ranger doing headcount",
+      "bus driver counting tickets",
+      "ferry worker counting life jackets issued",
+    ],
+    // Starting group sizes (just numbers, no pre-written descriptions to leak)
+    group_sizes: [
+      { start: 4, extra: 5 },
+      { start: 5, extra: 6 },
+      { start: 6, extra: 7 },
+      { start: 7, extra: 8 },
+      { start: 8, extra: 9 },
+    ],
+    // Phrases that indicate the count anomaly (for unique element detection)
+    count_phrases: [
+      "we're one too many",
+      "count again",
+      "still wrong",
+      "that's not right",
+      "there should only be",
+      "who's the extra one",
+      "one more than there should be",
+      "the count kept coming up wrong",
+      "count didn't match",
+      "extra person",
+      "extra seat was taken",
+      "the number was always one higher",
+      "one nobody recognized",
+      "couldn't account for",
+      "I think we're one too many",
+      "count one more time",
+      "always came up one over",
+      "but we only booked for",
+      "the math doesn't work",
+      "someone who wasn't there before",
+    ],
+    // Dialogue lines for acknowledgment (generic, no specific numbers)
+    dialogue_lines: [
+      "I think we're one too many.",
+      "Wait... count again.",
+      "That can't be right.",
+      "Who's the extra?",
+      "Someone check the count.",
+      "The number's wrong.",
+      "Count them again.",
+      "There's one more than there should be.",
+    ],
   },
 };
+
+/**
+ * Get a trope pack by name
+ */
+export function getTropePack(packName: string): TropePack | null {
+  return TROPE_PACKS[packName] || null;
+}
+
+/**
+ * Pick random elements from a trope pack for story variation
+ */
+export function pickFromTropePack(packName: string): {
+  group_type: string;
+  container: string;
+  evidence_source: string;
+  glitch: string;
+  count_phrase: string;
+  external_witness: string;
+  group_size: { start: number; extra: number };
+  dialogue_line: string;
+} | null {
+  const pack = TROPE_PACKS[packName];
+  if (!pack) return null;
+  
+  const groupSize = pack.group_sizes 
+    ? pack.group_sizes[Math.floor(Math.random() * pack.group_sizes.length)]
+    : { start: 5, extra: 6 };
+  
+  return {
+    group_type: pack.group_types[Math.floor(Math.random() * pack.group_types.length)],
+    container: pack.containers[Math.floor(Math.random() * pack.containers.length)],
+    evidence_source: pack.evidence_sources[Math.floor(Math.random() * pack.evidence_sources.length)],
+    glitch: pack.glitches[Math.floor(Math.random() * pack.glitches.length)],
+    count_phrase: pack.count_phrases[Math.floor(Math.random() * pack.count_phrases.length)],
+    external_witness: pack.external_witnesses 
+      ? pack.external_witnesses[Math.floor(Math.random() * pack.external_witnesses.length)]
+      : "someone outside the group",
+    group_size: groupSize,
+    dialogue_line: pack.dialogue_lines
+      ? pack.dialogue_lines[Math.floor(Math.random() * pack.dialogue_lines.length)]
+        .replace('[N]', String(groupSize.start))
+      : `We only came with ${groupSize.start}.`,
+  };
+}
 
 /**
  * Get genre profile multiplier for a specific component
@@ -1022,7 +1124,7 @@ function pickAvoidingRecent<T extends { id: string }>(
  * - Each dimension independently weighted for combinatorial explosion
  * 
  * @param supabase - Database client
- * @param genreName - Which genre profile to use ('urban_legend', 'cosmic_horror', 'true_crime', 'analog_horror', 'neutral')
+ * @param genreName - Which genre profile to use ('urban_legend' or 'one_too_many')
  * @param maxAttempts - Max retries for unique concept hash
  */
 export async function generateStoryDNA(
@@ -1030,9 +1132,15 @@ export async function generateStoryDNA(
   genreName: string = 'urban_legend',
   maxAttempts: number = 10
 ): Promise<StoryDNA> {
-  // Load genre profile (fallback to neutral if invalid)
-  const genreProfile = GENRE_PROFILES[genreName] || GENRE_PROFILES.neutral;
-  console.log(`[DNA] Generating unique story DNA (v3.1 - genre: ${genreProfile.name})...`);
+  // v4.0: Map deprecated presets to active engines
+  const resolvedGenre = DEPRECATED_PRESET_MAP[genreName] || genreName;
+  
+  // Load genre profile (fallback to urban_legend if not found)
+  const genreProfile = GENRE_PROFILES[resolvedGenre] || GENRE_PROFILES.urban_legend;
+  console.log(`[DNA] Generating unique story DNA (v4.0 - engine: ${genreProfile.name})...`);
+  if (resolvedGenre !== genreName) {
+    console.log(`[DNA] Note: '${genreName}' is deprecated, using '${resolvedGenre}'`);
+  }
   console.log(`[DNA] Genre description: ${genreProfile.description}`);
   
   // Fetch usage counts for adaptive weighting
@@ -1132,6 +1240,82 @@ export async function generateStoryDNA(
           ...recentConcepts.weirdAxes,
         ],
       };
+      
+      // =====================================================
+      // PRESET-AWARE DNA LANE LOCK: one_too_many
+      // HARD OVERRIDE - Forces counting horror DNA
+      // No generic horror elements allowed
+      // =====================================================
+      if (genreName === 'one_too_many') {
+        console.log(`[DNA] 🔒 Applying one_too_many HARD lane lock...`);
+        
+        // Get random elements from trope pack for variety
+        const tropePick = pickFromTropePack('one_too_many');
+        
+        if (tropePick) {
+          // HARD OVERRIDE: Threat is the extra person (not generic entity)
+          dna.threat_behavior = {
+            id: 'count_appears',
+            label: 'appears in counts',
+            description: `appears ONLY when people count, recount, or review records; the extra ${tropePick.group_size.extra}th person is visible in every headcount but invisible to casual observation`,
+          } as typeof dna.threat_behavior;
+          
+          dna.threat_manifestation = {
+            id: 'extra_person',
+            label: 'extra person',
+            description: `an extra person who was never meant to be there; no one invited them, no one recognizes them, yet they fit in perfectly`,
+          } as typeof dna.threat_manifestation;
+          
+          // HARD OVERRIDE: Repeating detail = numbers coming up wrong
+          dna.repeating_detail = {
+            id: 'numbers_wrong',
+            category: 'counting',
+            description: `group of ${tropePick.group_size.start} keeps counting ${tropePick.group_size.extra} people - one extra that shouldn't exist`,
+          } as typeof dna.repeating_detail;
+          
+          // HARD OVERRIDE: Weird axis = the counting phrase
+          dna.weird_axis = {
+            id: 'counting_wrong',
+            description: `"${tropePick.count_phrase}" - and no one can identify who the extra one is`,
+          } as typeof dna.weird_axis;
+          
+          // HARD OVERRIDE: Ending = photo/video proof showing one too many
+          dna.ending_imagery = {
+            id: 'proof_n_plus_one',
+            label: 'visual proof',
+            description: `${tropePick.evidence_source} showing exactly ${tropePick.group_size.extra} people (should be ${tropePick.group_size.start}) with extra face looking at camera`,
+          } as typeof dna.ending_imagery;
+          
+          // HARD OVERRIDE: Escalation = recount → confusion → glitches
+          const countingEscalation = `group of ${tropePick.group_size.start} always recounts to ${tropePick.group_size.extra}; confusion about who's extra; memory fog when trying to identify; then ${tropePick.glitch}`;
+          dna.escalation = {
+            id: 'counting_escalation',
+            label: 'count escalation',
+            description: countingEscalation,
+          } as typeof dna.escalation;
+          
+          // Store full trope pick for contract builder
+          (dna as any).trope_selection = tropePick;
+          (dna as any).counting_horror = {
+            start_count: tropePick.group_size.start,
+            wrong_count: tropePick.group_size.extra,
+            container: tropePick.container,
+            glitch: tropePick.glitch,
+            external_witness: tropePick.external_witness,
+            dialogue: tropePick.dialogue_line,
+            evidence: tropePick.evidence_source,
+          };
+          
+          console.log(`[DNA]   🔒 HARD LANE LOCK: one_too_many`);
+          console.log(`[DNA]   Group: ${tropePick.group_type}`);
+          console.log(`[DNA]   Size: ${tropePick.group_size.start} → ${tropePick.group_size.extra}`);
+          console.log(`[DNA]   Container: ${tropePick.container}`);
+          console.log(`[DNA]   Glitch: ${tropePick.glitch}`);
+          console.log(`[DNA]   Witness: ${tropePick.external_witness}`);
+          console.log(`[DNA]   Evidence: ${tropePick.evidence_source}`);
+          console.log(`[DNA]   Dialogue: "${tropePick.dialogue_line}"`);
+        }
+      }
       
       console.log(`[DNA] ✅ Generated unique DNA on attempt ${attempt} (genre: ${genreProfile.name}):`);
       console.log(`[DNA]   Genre: ${genreProfile.name}`);
@@ -1673,8 +1857,10 @@ export function getAvailableGenres(): { id: string; name: string; description: s
 
 /**
  * Get a specific genre profile by ID
- * Returns neutral if not found
+ * Returns urban_legend if not found (v4.0 - no more neutral)
  */
 export function getGenreProfile(genreName: string): GenreProfile {
-  return GENRE_PROFILES[genreName] || GENRE_PROFILES.neutral;
+  // v4.0: Map deprecated presets to active engines
+  const resolvedGenre = DEPRECATED_PRESET_MAP[genreName] || genreName;
+  return GENRE_PROFILES[resolvedGenre] || GENRE_PROFILES.urban_legend;
 }

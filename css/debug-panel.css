@@ -1,0 +1,472 @@
+/* ==========================================================================
+   Story Debug Panel Styles v1.0
+   Comprehensive debug view for story generation pipeline
+   ========================================================================== */
+
+/* ==========================================================================
+   Debug Panel Container
+   ========================================================================== */
+
+.story-debug-panel {
+    margin-top: var(--space-4);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-lg);
+    background: var(--color-bg-elevated);
+    overflow: hidden;
+}
+
+.debug-panel__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) var(--space-4);
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(99, 102, 241, 0.1) 100%);
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s ease;
+}
+
+.debug-panel__header:hover {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(99, 102, 241, 0.15) 100%);
+}
+
+.debug-panel__title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.debug-panel__icon {
+    font-size: 1.25rem;
+}
+
+.debug-panel__arrow {
+    color: var(--color-text-secondary);
+    font-size: 0.875rem;
+    transition: transform 0.2s ease;
+}
+
+.debug-panel__content {
+    padding: var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+
+/* ==========================================================================
+   Status Badges
+   ========================================================================== */
+
+.debug-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+    font-size: 0.75rem;
+    font-weight: 600;
+    border-radius: var(--radius-full);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.debug-badge--success {
+    background: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+}
+
+.debug-badge--warning {
+    background: rgba(234, 179, 8, 0.15);
+    color: #eab308;
+}
+
+.debug-badge--error {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
+.debug-badge--muted {
+    background: rgba(156, 163, 175, 0.15);
+    color: #9ca3af;
+}
+
+/* ==========================================================================
+   Debug Sections
+   ========================================================================== */
+
+.debug-section {
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.debug-section--success {
+    border-left: 3px solid #22c55e;
+}
+
+.debug-section--warning {
+    border-left: 3px solid #eab308;
+}
+
+.debug-section--error {
+    border-left: 3px solid #ef4444;
+}
+
+.debug-section--info {
+    border-left: 3px solid #6366f1;
+}
+
+.debug-section--muted {
+    border-left: 3px solid #6b7280;
+    opacity: 0.7;
+}
+
+.debug-section__header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    background: rgba(0, 0, 0, 0.2);
+    border-bottom: 1px solid var(--color-border-default);
+}
+
+.debug-section--collapsible .debug-section__header {
+    cursor: pointer;
+    justify-content: space-between;
+}
+
+.debug-section__icon {
+    font-size: 1rem;
+}
+
+.debug-section__title {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--color-text-primary);
+}
+
+.debug-section__arrow {
+    color: var(--color-text-secondary);
+    font-size: 0.75rem;
+}
+
+.debug-section__content {
+    padding: var(--space-3);
+}
+
+.debug-section__content--tabs {
+    padding: 0;
+}
+
+/* ==========================================================================
+   Debug Grid
+   ========================================================================== */
+
+.debug-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: var(--space-3);
+}
+
+.debug-grid--dense {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: var(--space-2);
+}
+
+.debug-item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.debug-item--full {
+    grid-column: 1 / -1;
+}
+
+.debug-label {
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.debug-value {
+    font-size: 0.875rem;
+    color: var(--color-text-primary);
+}
+
+.debug-value--mono {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    word-break: break-word;
+}
+
+.debug-value--large {
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.debug-value--success {
+    color: #22c55e;
+}
+
+.debug-value--warning {
+    color: #eab308;
+}
+
+.debug-value--error {
+    color: #ef4444;
+}
+
+/* ==========================================================================
+   Debug Chips
+   ========================================================================== */
+
+.debug-chip {
+    display: inline-block;
+    padding: var(--space-1) var(--space-2);
+    font-size: 0.75rem;
+    font-weight: 500;
+    border-radius: var(--radius-sm);
+    background: rgba(99, 102, 241, 0.15);
+    color: #818cf8;
+}
+
+.debug-chip--success {
+    background: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+}
+
+.debug-chip--warning {
+    background: rgba(234, 179, 8, 0.15);
+    color: #eab308;
+}
+
+.debug-chip--error {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
+/* ==========================================================================
+   Debug Tags
+   ========================================================================== */
+
+.debug-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+}
+
+.debug-tag {
+    display: inline-block;
+    padding: var(--space-1) var(--space-2);
+    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    border-radius: var(--radius-sm);
+    background: rgba(99, 102, 241, 0.1);
+    color: #a5b4fc;
+    border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.debug-tags--error .debug-tag,
+.debug-tag--error {
+    background: rgba(239, 68, 68, 0.1);
+    color: #fca5a5;
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* ==========================================================================
+   Debug Subheader
+   ========================================================================== */
+
+.debug-subheader {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: var(--space-3);
+    margin-bottom: var(--space-2);
+    padding-bottom: var(--space-1);
+    border-bottom: 1px solid var(--color-border-default);
+}
+
+.debug-subheader--error {
+    color: #ef4444;
+    border-bottom-color: rgba(239, 68, 68, 0.3);
+}
+
+/* ==========================================================================
+   Debug Table
+   ========================================================================== */
+
+.debug-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+}
+
+.debug-table--compact {
+    font-size: 0.75rem;
+}
+
+.debug-table th {
+    text-align: left;
+    padding: var(--space-2);
+    font-weight: 600;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-secondary);
+    background: rgba(0, 0, 0, 0.2);
+    border-bottom: 1px solid var(--color-border-default);
+}
+
+.debug-table td {
+    padding: var(--space-2);
+    border-bottom: 1px solid var(--color-border-default);
+    vertical-align: top;
+}
+
+.debug-table__row--warning td {
+    background: rgba(234, 179, 8, 0.05);
+}
+
+.debug-table__row--error td {
+    background: rgba(239, 68, 68, 0.05);
+}
+
+.debug-table__row--success td {
+    background: rgba(34, 197, 94, 0.02);
+}
+
+.debug-td--wrap {
+    max-width: 150px;
+    word-break: break-word;
+}
+
+/* ==========================================================================
+   Debug List
+   ========================================================================== */
+
+.debug-list {
+    margin: 0;
+    padding-left: var(--space-4);
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+}
+
+.debug-list li {
+    margin-bottom: var(--space-1);
+}
+
+.debug-muted {
+    color: var(--color-text-secondary);
+    font-style: italic;
+    font-size: 0.875rem;
+}
+
+/* ==========================================================================
+   Debug Tabs
+   ========================================================================== */
+
+.debug-tabs {
+    display: flex;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    background: rgba(0, 0, 0, 0.1);
+    border-bottom: 1px solid var(--color-border-default);
+}
+
+.debug-tab {
+    padding: var(--space-1) var(--space-3);
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.debug-tab:hover {
+    background: rgba(99, 102, 241, 0.1);
+    color: var(--color-text-primary);
+}
+
+.debug-tab--active {
+    background: rgba(99, 102, 241, 0.2);
+    color: #818cf8;
+    border-color: rgba(99, 102, 241, 0.3);
+}
+
+.debug-tab-content {
+    padding: var(--space-3);
+}
+
+.debug-tab-pane {
+    display: none;
+}
+
+.debug-tab-pane--active {
+    display: block;
+}
+
+/* ==========================================================================
+   Debug Code Blocks
+   ========================================================================== */
+
+.debug-code {
+    margin: 0;
+    padding: var(--space-3);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    line-height: 1.6;
+    color: var(--color-text-secondary);
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.debug-code--small {
+    font-size: 0.65rem;
+    max-height: 200px;
+}
+
+/* ==========================================================================
+   Debug Copy Button
+   ========================================================================== */
+
+.debug-copy-btn {
+    margin-top: var(--space-2);
+}
+
+/* ==========================================================================
+   Responsive Adjustments
+   ========================================================================== */
+
+@media (max-width: 640px) {
+    .debug-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+    
+    .debug-grid--dense {
+        grid-template-columns: 1fr 1fr;
+    }
+    
+    .debug-table {
+        display: block;
+        overflow-x: auto;
+    }
+    
+    .debug-tabs {
+        flex-wrap: wrap;
+    }
+}

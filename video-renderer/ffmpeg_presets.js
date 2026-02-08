@@ -745,45 +745,33 @@ function buildCombinedFilterGraph(visualDNA, options = {}) {
  * Shadow profiles define the allowed visual identity range per brand/genre.
  * Maintains brand consistency while allowing enough rotation to avoid sameness.
  * 
+ * v4.0: Only two active story engines - urban_legend and one_too_many
+ * Deprecated presets (analog_horror, cosmic_horror, true_crime) map to urban_legend
+ * at the DNA layer, so they'll use the urban_legend shadow profile.
+ * 
  * Usage: When forcing variety, respect these constraints.
  */
 const DEFAULT_SHADOW_PROFILES = {
-  // Analog horror: VHS is locked, but palette/motion/lighting can rotate
-  analog_horror: {
-    locked_visual_style: 'VHS_degraded',  // Cannot change
-    allowed_palettes: ['sickly_green', 'cold_desaturated', 'muted_gray', 'amber_decay'],
-    allowed_motions: ['micro_jitter', 'none', 'slow_drift', 'tracking_stutter'],
-    allowed_lightings: ['fluorescent_flat', 'deep_darkness', 'single_source_harsh'],
-    texture_pool: ['scanlines', 'tracking_noise', 'film_grain', 'vignette_heavy'],
-  },
-  
-  // Cosmic horror: cinematic minimal locked, cold palettes
-  cosmic_horror: {
-    locked_visual_style: 'cinematic_minimal',
-    allowed_palettes: ['cold_desaturated', 'blue_black_void', 'muted_gray', 'monochrome_harsh'],
-    allowed_motions: ['slow_drift', 'none', 'subtle_zoom'],
-    allowed_lightings: ['moonlit_fog', 'deep_darkness', 'low_key_shadow'],
-    texture_pool: ['fog_bloom', 'film_grain', 'vignette_heavy'],
-  },
-  
   // Urban legend: style can rotate, but within limits
+  // This is the primary/default engine for most horror content
   urban_legend: {
     locked_visual_style: null,  // Can rotate
-    preferred_styles: ['cinematic_dark', 'documentary_archival', 'found_footage'],
-    allowed_palettes: ['deep_shadow_contrast', 'cold_desaturated', 'amber_decay', 'muted_gray'],
-    allowed_motions: ['slow_pan', 'subtle_zoom', 'none', 'slow_drift'],
-    allowed_lightings: ['low_key_shadow', 'twilight_amber', 'single_source_harsh', 'moonlit_fog'],
-    texture_pool: ['film_grain', 'dust_scratches', 'vignette_heavy'],
+    preferred_styles: ['cinematic_dark', 'documentary_archival', 'found_footage', 'VHS_degraded'],
+    allowed_palettes: ['deep_shadow_contrast', 'cold_desaturated', 'amber_decay', 'muted_gray', 'sickly_green'],
+    allowed_motions: ['slow_pan', 'subtle_zoom', 'none', 'slow_drift', 'micro_jitter'],
+    allowed_lightings: ['low_key_shadow', 'twilight_amber', 'single_source_harsh', 'moonlit_fog', 'fluorescent_flat'],
+    texture_pool: ['film_grain', 'dust_scratches', 'vignette_heavy', 'scanlines'],
   },
   
-  // True crime: documentary feel
-  true_crime: {
+  // One Too Many: counting horror - documentary witness style
+  // Focused on group settings, paranoid atmosphere
+  one_too_many: {
     locked_visual_style: null,
-    preferred_styles: ['documentary_archival', 'cinematic_dark', 'surveillance_footage'],
-    allowed_palettes: ['muted_gray', 'deep_shadow_contrast', 'cold_desaturated', 'monochrome_harsh'],
-    allowed_motions: ['none', 'slow_pan', 'subtle_zoom'],
-    allowed_lightings: ['fluorescent_flat', 'low_key_shadow', 'single_source_harsh'],
-    texture_pool: ['compression_noise', 'dust_scratches', 'vignette_heavy'],
+    preferred_styles: ['documentary_archival', 'found_footage', 'surveillance_footage', 'cinematic_dark'],
+    allowed_palettes: ['cold_desaturated', 'muted_gray', 'deep_shadow_contrast', 'blue_black_void'],
+    allowed_motions: ['none', 'slow_pan', 'subtle_zoom', 'slow_drift'],
+    allowed_lightings: ['low_key_shadow', 'fluorescent_flat', 'single_source_harsh'],
+    texture_pool: ['film_grain', 'compression_noise', 'vignette_heavy'],
   },
 };
 

@@ -829,14 +829,16 @@ const VIBE_NAMES = {
     'slow_creepy': 'Slow Creepy',
     'punchy_shock': 'Punchy Shock',
     'atmospheric': 'Atmospheric',
-    'urban_legend': 'Urban Legend'
+    'urban_legend': 'Urban Legend',
+    'one_too_many': 'One Too Many'
 };
 
 const VIBE_DESCRIPTIONS = {
     'slow_creepy': 'slow building dread, atmospheric, unsettling ending',
     'punchy_shock': 'fast-paced, shocking twist, punchy ending',
     'atmospheric': 'moody, descriptive, lingering unease',
-    'urban_legend': 'faux true-crime documentary, presented as a real unsolved event, factual tone'
+    'urban_legend': 'faux true-crime documentary, presented as a real unsolved event, factual tone',
+    'one_too_many': 'counting horror, group has one extra person/thing, unexplained wrongness'
 };
 
 const VISUAL_NAMES = {
@@ -880,7 +882,8 @@ const VIBE_PACING_HINTS = {
     'slow_creepy': 'Build atmosphere gradually. Let wrongness creep in slowly.',
     'punchy_shock': 'Quick setup, rapid escalation. Hit hard and fast.',
     'atmospheric': 'Prioritize mood over action. Let environment be a character.',
-    'urban_legend': 'Documentary tone. Calm, factual. The horror comes from "this really happened".'
+    'urban_legend': 'Documentary tone. Calm, factual. The horror comes from "this really happened".',
+    'one_too_many': 'Establish the count. Build normalcy. Then reveal the extra. Never explain.'
 };
 
 // Build generation details from UI selections (fallback if backend doesn't return them)

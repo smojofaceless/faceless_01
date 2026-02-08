@@ -43,13 +43,15 @@ const HorrorTemplate = {
     ],
 
     // NEW: Genre presets (Step 0)
+    // v4.0: Only two active story engines + custom option
+    // Deprecated presets (true_crime, analog_horror, cosmic_horror, neutral) removed from UI
     presets: [
         {
             id: 'urban_legend',
             name: 'Urban Legend',
             icon: '📜',
-            tagline: 'Documentary tone',
-            description: 'Classic creepypasta feel with found-footage authenticity',
+            tagline: 'Documentary folklore',
+            description: 'Classic creepypasta with authority denial, repeating motifs, and ambiguous endings.',
             defaults: {
                 vibe_preset: 'urban_legend',
                 era: '1990s',
@@ -61,64 +63,21 @@ const HorrorTemplate = {
             }
         },
         {
-            id: 'true_crime',
-            name: 'True Crime',
-            icon: '🗂️',
-            tagline: 'Casefile mystery',
-            description: 'Cold case documentary with evidence-based tension',
+            id: 'one_too_many',
+            name: 'One Too Many',
+            icon: '👥',
+            tagline: 'Counting horror',
+            description: 'N friends went on a trip... but the photo shows N+1. The extra is never explained.',
             defaults: {
-                vibe_preset: 'slow_creepy',
-                era: '1980s',
-                tone: 0.4,
-                ending: 'suppressed',
-                visual_style: 'film_noir',
-                color_palette: 'cold_blue',
-                motion_profile: 'slow_drift'
-            }
-        },
-        {
-            id: 'analog_horror',
-            name: 'Analog Horror',
-            icon: '📺',
-            tagline: 'VHS / Broadcast',
-            description: 'Corrupted broadcast signals and local TV terror',
-            defaults: {
-                vibe_preset: 'analog_horror',
-                era: '1970s',
-                tone: 0.7,
-                ending: 'cyclical',
-                visual_style: 'VHS_degraded',
-                color_palette: 'broadcast_amber',
-                motion_profile: 'tracking_wobble'
-            }
-        },
-        {
-            id: 'cosmic_horror',
-            name: 'Cosmic Horror',
-            icon: '🌌',
-            tagline: 'Vast dread',
-            description: 'Incomprehensible entities and existential terror',
-            defaults: {
-                vibe_preset: 'atmospheric',
-                era: 'timeless',
-                tone: 0.5,
-                ending: 'open',
-                visual_style: 'ethereal_void',
-                color_palette: 'deep_purple',
-                motion_profile: 'slow_pulse'
-            }
-        },
-        {
-            id: 'neutral',
-            name: 'Neutral',
-            icon: '⚪',
-            tagline: 'Experimental',
-            description: 'No preset constraints. Full DNA randomization.',
-            defaults: {
-                vibe_preset: 'slow_creepy',
+                vibe_preset: 'one_too_many',
                 era: 'modern',
-                tone: 0.5,
-                ending: 'open'
+                tone: 0.7,
+                ending: 'unresolved',
+                // CRITICAL: Force uncanny-illustrated style for this preset
+                art_style: 'uncanny-illustrated',
+                visual_style: 'documentary',
+                color_palette: 'cold_blue',
+                motion_profile: 'static_tension'
             }
         },
         {

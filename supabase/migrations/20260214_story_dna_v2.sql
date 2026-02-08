@@ -33,7 +33,7 @@ ADD COLUMN IF NOT EXISTS ending_imagery_description TEXT;
 CREATE INDEX IF NOT EXISTS idx_story_dna_threat_behavior ON story_dna(threat_behavior_id);
 CREATE INDEX IF NOT EXISTS idx_story_dna_threat_manifestation ON story_dna(threat_manifestation_id);
 CREATE INDEX IF NOT EXISTS idx_story_dna_narrative_artifact ON story_dna(narrative_artifact_id);
-CREATE INDEX IF NOT EXISTS idx_story_dna_ending_knowledge ON story_dna(ending_knowledge_id);
+CREATE INDEX IF NOT EXISTS idx_story_dna_ending_knowledge ON story_dna(ending_knowledge_id);weeaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 CREATE INDEX IF NOT EXISTS idx_story_dna_ending_imagery ON story_dna(ending_imagery_id);
 
 -- Update the component frequency view to include new dimensions

@@ -2,5 +2,8 @@
 # Increase timeout to maximum (150 seconds) for DALL-E generation
 [function]
 max_request_body_size = "2mb"
+# CRITICAL: Disable JWT verification so check-job can call run-job
+# with the service role key (which is not a valid JWT)
+verify_jwt = false
 # Maximum execution time in seconds (max is 150 for paid plans, 60 for free)
 # This allows time for DALL-E image generation

@@ -60,16 +60,20 @@ async function getParallelImageStatus(imageJobId: string): Promise<{
 }
 
 // Helper to trigger next phase (fire-and-forget, don't wait)
-async function triggerNextPhase(supabaseUrl: string, supabaseServiceKey: string, job_id: string, phase: string) {
+async function triggerNextPhase(supabaseUrl: string, supabaseAnonKey: string, supabaseServiceKey: string, job_id: string, phase: string) {
   try {
     console.log(`[CHECK] Triggering phase: ${phase} for job ${job_id}`);
     // Fire and forget - don't await the full response
+    // CRITICAL: Supabase gateway requires BOTH headers:
+    // - apikey: identifies the project (use anon key)
+    // - Authorization: Bearer token for auth (use service key for admin access)
+    // Even with verify_jwt=false, the gateway still needs these headers
     fetch(`${supabaseUrl}/functions/v1/run-job`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "apikey": supabaseAnonKey,
         "Authorization": `Bearer ${supabaseServiceKey}`,
-        "apikey": supabaseServiceKey,
       },
       body: JSON.stringify({ job_id, phase }),
     }).catch(err => console.error(`[CHECK] Phase trigger error:`, err));
@@ -107,32 +111,50 @@ function toScene(asset: any) {
     imageUrl: url,  // Canonical field - prefer this
     videoUrl: url,  // Legacy compatibility
     source: inferredSource,
-    // Image generation details (for "show details" view)
+    // Image generation details (for "show details" view) - COMPREHENSIVE v5.7
     image_details: {
+      // PROMPT DATA
       prompt: asset.meta?.dalle_prompt || asset.meta?.prompt_final || null,
       prompt_len: asset.meta?.prompt_len || null,
       prompt_hash: asset.meta?.prompt_hash || null,  // v5.1: Ground-truth hash
       prompt_preview_start: asset.meta?.prompt_preview_start || null,
       prompt_preview_end: asset.meta?.prompt_preview_end || null,
       prompt_mode: asset.meta?.prompt_mode || null,  // "final_prompt", "anchor_only", "keywords_fallback", "text_fallback"
+      
+      // MODEL & STYLE
       model: asset.meta?.image_model || null,
       art_style: asset.meta?.art_style || null,
+      art_style_override: asset.meta?.art_style_override || null,
+      style_config: asset.meta?.style_config || null,  // { name, basePrompt_preview, colorOverride_preview, technicalStyle_preview }
+      
+      // VISUAL DNA
+      visual_dna: asset.meta?.visual_dna || null,  // { style, palette, lighting, composition, textures, camera, motion }
+      visual_dna_suppressed: asset.meta?.visual_dna_suppressed || false,
+      visual_dna_suppressed_reason: asset.meta?.visual_dna_suppressed_reason || null,
+      
+      // VISUAL CONTRACT
+      visual_contract: asset.meta?.visual_contract || null,  // { location, characterPose, actionFrozen, visibleObjects, forbiddenElements, evidenceRule, group_count }
       visual_beat: asset.meta?.visual_beat || null,
-      visual_contract: asset.meta?.visual_contract || null,
-      visual_dna: asset.meta?.visual_dna || null,
-      mood_level: asset.meta?.mood_level || null,
-      camera_angle: asset.meta?.camera_angle || null,
+      
+      // CONTINUITY & CHARACTER
       character_description: asset.meta?.character_description || null,
       continuity_rules: asset.meta?.continuity_rules || null,
-      generated_at: asset.meta?.generated_at || null,
-      generation_source: asset.meta?.source || null,  // "sequential" or "parallel"
+      camera_angle: asset.meta?.camera_angle || null,
+      mood_level: asset.meta?.mood_level || null,
+      
       // RELEVANCE SCORING (v5.1 - hardened)
-      relevance_score: asset.meta?.relevance_score || null,
+      relevance_score: asset.meta?.relevance_score ?? null,
       relevance_missing: asset.meta?.relevance_missing || null,
       relevance_reason: asset.meta?.relevance_reason || null,
       relevance_repaired: asset.meta?.relevance_repaired || false,
       relevance_failure_type: asset.meta?.relevance_failure_type || null,
       relevance_matched_objects: asset.meta?.relevance_matched_objects || null,
+      relevance_mismatched_fields: asset.meta?.relevance_mismatched_fields || null,
+      
+      // GENERATION META
+      generated_at: asset.meta?.generated_at || null,
+      generation_source: asset.meta?.source || null,  // "sequential" or "parallel"
+      is_permanent: asset.meta?.is_permanent || false,  // true if stored in Supabase Storage
     },
     // Legacy fields for backward compatibility
     dallePrompt: asset.meta?.dalle_prompt || null,
@@ -152,12 +174,13 @@ serve(async (req) => {
   // Wrap EVERYTHING in try-catch to ensure CORS headers are always returned
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const creatomateKey = Deno.env.get("CREATOMATE_API_KEY");
     
     // Validate required env vars
-    if (!supabaseUrl || !supabaseServiceKey) {
-      console.error("[CHECK] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+    if (!supabaseUrl || !supabaseServiceKey || !supabaseAnonKey) {
+      console.error("[CHECK] Missing SUPABASE_URL, SUPABASE_ANON_KEY, or SUPABASE_SERVICE_ROLE_KEY");
       return new Response(
         JSON.stringify({ success: false, error: "Server configuration error" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
@@ -831,7 +854,7 @@ serve(async (req) => {
                 })
                 .eq("id", job_id);
               
-              const result = await triggerNextPhase(supabaseUrl, supabaseServiceKey, job_id, "images");
+              const result = await triggerNextPhase(supabaseUrl, supabaseAnonKey, supabaseServiceKey, job_id, "images");
               phaseTriggered = result?.success === true;
               console.log(`[CHECK] Images phase triggered: ${phaseTriggered}`);
             }
@@ -914,7 +937,7 @@ serve(async (req) => {
             nextPhase = "assemble";
             const retryInfo = assembleError ? ` (retry ${assembleRetryCount + 1}/${maxAssembleRetries})` : '';
             console.log(`[CHECK] Triggering assemble phase${retryInfo} (images: ${imagesReady}/${totalScenes}, progress: ${progress})`);
-            const result = await triggerNextPhase(supabaseUrl, supabaseServiceKey, job_id, "assemble");
+            const result = await triggerNextPhase(supabaseUrl, supabaseAnonKey, supabaseServiceKey, job_id, "assemble");
             phaseTriggered = result?.success === true;
           }
         }

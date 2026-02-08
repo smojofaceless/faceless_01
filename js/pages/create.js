@@ -96,12 +96,61 @@ class CreatePageController {
         // NEW: Console timing
         this.startTime = null;
         
-        // Debug state
-        this.debugMode = false;
+        // Debug state - check URL param or localStorage
+        this.debugMode = this._checkDebugMode();
         this.verboseMode = false;
         this.apiLogs = [];
 
         this.init();
+    }
+    
+    /**
+     * Check if debug mode is enabled via URL param or localStorage
+     */
+    _checkDebugMode() {
+        // Check URL param first
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('debug') === 'true') {
+            console.log('[DEBUG] Debug mode enabled via URL param');
+            return true;
+        }
+        
+        // Check localStorage
+        try {
+            if (localStorage.getItem('DEBUG_STORY') === 'true') {
+                console.log('[DEBUG] Debug mode enabled via localStorage');
+                return true;
+            }
+        } catch (e) {
+            // localStorage may not be available
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Toggle debug mode (can be called from console)
+     */
+    toggleStoryDebug(enable) {
+        if (enable === undefined) {
+            enable = !this.debugMode;
+        }
+        
+        this.debugMode = enable;
+        
+        try {
+            if (enable) {
+                localStorage.setItem('DEBUG_STORY', 'true');
+                console.log('[DEBUG] Story debug mode ENABLED. Reload to see debug panel.');
+            } else {
+                localStorage.removeItem('DEBUG_STORY');
+                console.log('[DEBUG] Story debug mode DISABLED.');
+            }
+        } catch (e) {
+            console.warn('[DEBUG] Could not persist debug state to localStorage');
+        }
+        
+        return this.debugMode;
     }
 
     async init() {
@@ -413,12 +462,13 @@ class CreatePageController {
         
         const genDetails = this.formData.generationDetails || {};
         const visualDNA = genDetails.visual_dna || this.visualDNA || {};
-        const similarity = genDetails.similarity || {};
-        const isUnique = similarity.is_likely_unique !== false;
+        const similarity = genDetails.similarity || null;
+        const isUnique = similarity ? similarity.is_likely_unique !== false : true;
+        const hasSimData = similarity && typeof similarity.score === 'number';
         
         // Current step info
         const stepConfig = this.template?.steps?.[this.currentStep];
-        const stepName = stepConfig?.title || 'Unknown';
+        const stepName = stepConfig?.name || stepConfig?.title || 'Unknown';
         const totalSteps = this.template?.steps?.length || 1;
         
         // Calculate costs
@@ -469,11 +519,11 @@ class CreatePageController {
                     <div class="inspector-hud-grid">
                         <div class="inspector-hud-item">
                             <span class="inspector-hud-item__label">Score</span>
-                            <span class="inspector-hud-item__value ${isUnique ? '' : 'inspector-hud-item__value--warning'}">${similarity.score ? (similarity.score * 100).toFixed(0) + '%' : '—'}</span>
+                            <span class="inspector-hud-item__value ${!hasSimData ? 'inspector-hud-item__value--muted' : (isUnique ? '' : 'inspector-hud-item__value--warning')}">${hasSimData ? (similarity.score * 100).toFixed(0) + '%' : 'Not checked'}</span>
                         </div>
                         <div class="inspector-hud-item">
                             <span class="inspector-hud-item__label">Status</span>
-                            <span class="inspector-hud-item__value ${isUnique ? 'inspector-hud-item__value--good' : 'inspector-hud-item__value--warning'}">${isUnique ? 'Unique' : 'Too Close'}</span>
+                            <span class="inspector-hud-item__value ${!hasSimData ? 'inspector-hud-item__value--muted' : (isUnique ? 'inspector-hud-item__value--good' : 'inspector-hud-item__value--warning')}">${hasSimData ? (isUnique ? 'Unique' : 'Too Close') : '—'}</span>
                         </div>
                     </div>
                 </div>
@@ -548,8 +598,9 @@ class CreatePageController {
         
         const genDetails = this.formData.generationDetails || {};
         const visualDNA = genDetails.visual_dna || this.visualDNA || {};
-        const similarity = genDetails.similarity || {};
-        const isUnique = similarity.is_likely_unique !== false;
+        const similarity = genDetails.similarity || null;
+        const isUnique = similarity ? similarity.is_likely_unique !== false : true;
+        const hasSimData = similarity && typeof similarity.score === 'number';
         
         // Calculate estimated cost
         const imageCost = this.calculateImageCost();
@@ -558,12 +609,14 @@ class CreatePageController {
         const totalCost = imageCost + audioCost + renderCost;
         
         // Determine culprit dimension (what's causing similarity)
-        let culpritDimension = '—';
-        if (similarity.breakdown) {
+        let culpritDimension = 'Not checked';
+        if (similarity && similarity.breakdown) {
             const dims = Object.entries(similarity.breakdown);
             const highest = dims.sort((a, b) => b[1] - a[1])[0];
             if (highest && highest[1] > 0.5) {
                 culpritDimension = highest[0].replace('_', ' ');
+            } else {
+                culpritDimension = '—';
             }
         }
         
@@ -574,7 +627,7 @@ class CreatePageController {
         if (genDetails.forced_variety) {
             sequenceHealth = 'Warning';
             healthClass = 'warning';
-        } else if (recentCount > 10 && similarity.score > 0.6) {
+        } else if (recentCount > 10 && hasSimData && similarity.score > 0.6) {
             sequenceHealth = 'Critical';
             healthClass = 'critical';
         }
@@ -627,15 +680,15 @@ class CreatePageController {
             <div class="job-summary-strip__row job-summary-strip__row--uniqueness">
                 <div class="uniqueness-hud__item">
                     <span class="uniqueness-hud__label">Similarity</span>
-                    <span class="uniqueness-hud__value ${isUnique ? 'uniqueness-hud__value--good' : 'uniqueness-hud__value--warning'}">${typeof similarity.score === 'number' ? (similarity.score * 100).toFixed(0) + '%' : 'N/A'}</span>
+                    <span class="uniqueness-hud__value ${!hasSimData ? 'uniqueness-hud__value--muted' : (isUnique ? 'uniqueness-hud__value--good' : 'uniqueness-hud__value--warning')}">${hasSimData ? (similarity.score * 100).toFixed(0) + '%' : 'Not checked'}</span>
                 </div>
                 <div class="uniqueness-hud__item">
                     <span class="uniqueness-hud__label">Culprit</span>
-                    <span class="uniqueness-hud__value">${culpritDimension !== '—' ? culpritDimension : 'N/A'}</span>
+                    <span class="uniqueness-hud__value ${!hasSimData ? 'uniqueness-hud__value--muted' : ''}">${culpritDimension}</span>
                 </div>
                 <div class="uniqueness-hud__item">
                     <span class="uniqueness-hud__label">Contamination</span>
-                    <span class="uniqueness-hud__value ${isUnique ? 'uniqueness-hud__value--pass' : 'uniqueness-hud__value--fail'}">${isUnique ? 'PASS' : 'FAIL'}</span>
+                    <span class="uniqueness-hud__value ${!hasSimData ? 'uniqueness-hud__value--muted' : (isUnique ? 'uniqueness-hud__value--pass' : 'uniqueness-hud__value--fail')}">${hasSimData ? (isUnique ? 'PASS' : 'FAIL') : '—'}</span>
                 </div>
                 <div class="uniqueness-hud__item">
                     <span class="uniqueness-hud__label">Sequence</span>
@@ -810,9 +863,14 @@ class CreatePageController {
         const pacePreset = PACE_PRESETS[pace] || PACE_PRESETS.balanced;
         const numScenes = targetScenes || Math.round(durationSec / pacePreset.secPerScene);
         
+        // Log entry
+        console.log(`[splitIntoScenes] Input: ${text.split(/\s+/).filter(w=>w).length} words, targetScenes=${numScenes}, pace=${pace}`);
+        
         // Split text into sentences (story beats)
         const sentences = this.splitIntoSentences(text);
         if (sentences.length === 0) return [];
+        
+        console.log(`[splitIntoScenes] Split into ${sentences.length} sentences`);
         
         // Calculate words per sentence
         const sentenceData = sentences.map(s => ({
@@ -822,6 +880,8 @@ class CreatePageController {
         
         const totalWords = sentenceData.reduce((sum, s) => sum + s.words, 0);
         const idealWordsPerScene = Math.ceil(totalWords / numScenes);
+        
+        console.log(`[splitIntoScenes] Total words: ${totalWords}, idealWordsPerScene: ${idealWordsPerScene}`);
         
         // Greedy packing: pack sentences into scenes
         const scenes = [];
@@ -854,17 +914,50 @@ class CreatePageController {
             scenes.push(this.finalizeScene(currentScene, durationSec, numScenes, wps));
         }
         
+        console.log(`[splitIntoScenes] Greedy packing produced ${scenes.length} scenes (target: ${numScenes})`);
+        
         // Post-process: merge short scenes, split long scenes to hit exact target
-        return this.adjustScenesToTarget(scenes, numScenes, durationSec, wps, minSceneSec, maxSceneSec);
+        const adjusted = this.adjustScenesToTarget(scenes, numScenes, durationSec, wps, minSceneSec, maxSceneSec);
+        console.log(`[splitIntoScenes] After adjustment: ${adjusted.length} scenes`);
+        return adjusted;
     }
 
     /**
-     * Split text into sentences (story beats)
+     * Split text into segments at various granularity levels
+     * @param {string} text - Text to split
+     * @param {string} level - 'sentence' (default), 'clause', 'phrase', or 'word'
+     * @returns {array} Array of text segments
      */
-    splitIntoSentences(text) {
-        // Split on sentence-ending punctuation, keeping the punctuation
-        const raw = text.split(/(?<=[.!?])\s+/);
-        return raw.filter(s => s.trim().length > 0).map(s => s.trim());
+    splitIntoSentences(text, level = 'sentence') {
+        if (level === 'word') {
+            // Finest granularity: split into word groups (2-4 words each)
+            const words = text.split(/\s+/).filter(w => w.length > 0);
+            if (words.length <= 4) {
+                // Can't split further meaningfully
+                return [text.trim()];
+            }
+            // Split into roughly equal halves at word boundaries
+            const midpoint = Math.ceil(words.length / 2);
+            return [
+                words.slice(0, midpoint).join(' '),
+                words.slice(midpoint).join(' ')
+            ];
+        } else if (level === 'phrase') {
+            // Fine granularity: split on commas, semicolons, colons, dashes, and sentence endings
+            // Also handle punctuation at the end by trimming
+            const raw = text.split(/(?<=[.!?;:,—–-])\s+/);
+            const result = raw.filter(s => s.trim().length > 0).map(s => s.trim());
+            // If only one segment (no splits possible), return as-is
+            return result.length >= 2 ? result : [text.trim()];
+        } else if (level === 'clause') {
+            // Medium granularity: split on semicolons, colons, and sentence endings
+            const raw = text.split(/(?<=[.!?;:])\s+/);
+            return raw.filter(s => s.trim().length > 0).map(s => s.trim());
+        } else {
+            // Default: sentence level (split on .!?)
+            const raw = text.split(/(?<=[.!?])\s+/);
+            return raw.filter(s => s.trim().length > 0).map(s => s.trim());
+        }
     }
 
     /**
@@ -895,44 +988,125 @@ class CreatePageController {
 
     /**
      * Adjust scenes to hit exact target count
-     * Merges short scenes and splits long scenes
+     * Uses progressive granularity: sentence -> clause -> phrase -> word
+     * Never produces 0-word scenes
+     * 
+     * ALGORITHM v2.1:
+     * - For each split attempt, try all granularity levels on the current longest scene
+     * - Only move on when a split succeeds
+     * - 'word' level can always split scenes with >4 words
+     * - Log detailed progress for debugging
      */
     adjustScenesToTarget(scenes, targetCount, totalDuration, wps, minSceneSec, maxSceneSec) {
+        // Generate unique ID for this adjustment session
+        const adjustId = `adj_${Date.now().toString(36)}`;
+        console.log(`[${adjustId}] adjustScenesToTarget: current=${scenes.length}, target=${targetCount}`);
+        
         // If we have exactly the right count, return as-is
-        if (scenes.length === targetCount) return scenes;
+        if (scenes.length === targetCount) {
+            console.log(`[${adjustId}] Already at target, returning`);
+            return scenes;
+        }
         
         const avgSceneDuration = totalDuration / targetCount;
-        const minWords = Math.floor(minSceneSec * wps);
+        const minWords = Math.max(1, Math.floor(minSceneSec * wps));
         const maxWords = Math.ceil(maxSceneSec * wps);
         
-        // Too few scenes: split the longest ones
-        while (scenes.length < targetCount) {
-            // Find longest scene
-            let maxIdx = 0;
-            let maxWords = 0;
+        // Track granularity levels - 'word' is the finest (can always split if >4 words)
+        const granularityLevels = ['sentence', 'clause', 'phrase', 'word'];
+        
+        // Too few scenes: split the longest ones with increasing granularity
+        let splitAttempts = 0;
+        const MAX_SPLIT_ATTEMPTS = 100; // Safety limit
+        
+        while (scenes.length < targetCount && splitAttempts < MAX_SPLIT_ATTEMPTS) {
+            splitAttempts++;
+            const prevLength = scenes.length;
+            
+            // Find longest scene that hasn't been marked as unsplittable
+            let maxIdx = -1;
+            let maxWordCount = 0;
             scenes.forEach((s, i) => {
-                if (s.wordCount > maxWords) {
-                    maxWords = s.wordCount;
+                if (!s._cannotSplit && s.wordCount > maxWordCount) {
+                    maxWordCount = s.wordCount;
                     maxIdx = i;
                 }
             });
             
+            // If no splittable scene found, we're done
+            if (maxIdx === -1) {
+                console.warn(`[${adjustId}] No more splittable scenes. Target: ${targetCount}, Achieved: ${scenes.length}`);
+                break;
+            }
+            
             const toSplit = scenes[maxIdx];
-            const sentences = this.splitIntoSentences(toSplit.text);
+            console.log(`[${adjustId}] Attempt ${splitAttempts}: trying to split scene ${maxIdx} (${toSplit.wordCount} words)`);
             
-            if (sentences.length < 2) break; // Can't split further
+            // Try ALL granularity levels for THIS scene, starting from finest
+            // (phrase is most likely to succeed for dense text)
+            let splitSuccess = false;
             
-            // Split roughly in half
-            const mid = Math.ceil(sentences.length / 2);
-            const firstHalf = sentences.slice(0, mid).join(' ');
-            const secondHalf = sentences.slice(mid).join(' ');
+            for (let g = granularityLevels.length - 1; g >= 0 && !splitSuccess; g--) {
+                const level = granularityLevels[g];
+                const segments = this.splitIntoSentences(toSplit.text, level);
+                
+                if (segments.length >= 2) {
+                    // Split into two parts, trying to balance word counts
+                    const segmentWords = segments.map(s => ({
+                        text: s,
+                        words: s.split(/\s+/).filter(w => w.length > 0).length
+                    }));
+                    
+                    // Find optimal split point (closest to half)
+                    const totalWords = segmentWords.reduce((sum, s) => sum + s.words, 0);
+                    const targetHalf = totalWords / 2;
+                    
+                    let bestSplit = 1;
+                    let bestDiff = Infinity;
+                    let runningSum = 0;
+                    
+                    for (let i = 0; i < segmentWords.length - 1; i++) {
+                        runningSum += segmentWords[i].words;
+                        const diff = Math.abs(runningSum - targetHalf);
+                        if (diff < bestDiff) {
+                            bestDiff = diff;
+                            bestSplit = i + 1;
+                        }
+                    }
+                    
+                    const firstHalf = segmentWords.slice(0, bestSplit).map(s => s.text).join(' ');
+                    const secondHalf = segmentWords.slice(bestSplit).map(s => s.text).join(' ');
+                    
+                    const firstWords = firstHalf.split(/\s+/).filter(w => w.length > 0).length;
+                    const secondWords = secondHalf.split(/\s+/).filter(w => w.length > 0).length;
+                    
+                    // Only split if both parts have at least 1 word
+                    if (firstWords >= 1 && secondWords >= 1) {
+                        scenes.splice(maxIdx, 1, 
+                            this.finalizeScene({ texts: [firstHalf], words: firstWords }, totalDuration, targetCount, wps),
+                            this.finalizeScene({ texts: [secondHalf], words: secondWords }, totalDuration, targetCount, wps)
+                        );
+                        splitSuccess = true;
+                        console.log(`[${adjustId}] ✅ Split success at '${level}': ${toSplit.wordCount} → ${firstWords} + ${secondWords}. Scenes: ${scenes.length}/${targetCount}`);
+                    }
+                }
+            }
             
-            // Replace with two scenes
-            scenes.splice(maxIdx, 1, 
-                this.finalizeScene({ texts: [firstHalf], words: firstHalf.split(/\s+/).length }, totalDuration, targetCount, wps),
-                this.finalizeScene({ texts: [secondHalf], words: secondHalf.split(/\s+/).length }, totalDuration, targetCount, wps)
-            );
+            // Check if we made ANY progress
+            if (!splitSuccess) {
+                console.warn(`[${adjustId}] ❌ Could not split scene ${maxIdx} (${toSplit.wordCount} words) at any granularity`);
+                console.warn(`[${adjustId}] Scene text: "${toSplit.text.substring(0, 100)}..."`);
+                // Mark this scene as "unsplittable" and try another
+                toSplit._cannotSplit = true;
+            }
         }
+        
+        if (splitAttempts >= MAX_SPLIT_ATTEMPTS) {
+            console.warn(`[${adjustId}] Hit max split attempts (${MAX_SPLIT_ATTEMPTS}). Target: ${targetCount}, Achieved: ${scenes.length}`);
+        }
+        
+        // Clean up internal markers
+        scenes.forEach(s => delete s._cannotSplit);
         
         // Too many scenes: merge the shortest adjacent pairs
         while (scenes.length > targetCount) {
@@ -955,18 +1129,27 @@ class CreatePageController {
             };
             
             scenes.splice(mergeIdx, 2, this.finalizeScene(merged, totalDuration, targetCount, wps));
+            console.log(`[${adjustId}] Merged scenes ${mergeIdx} and ${mergeIdx + 1}. Scenes: ${scenes.length}/${targetCount}`);
         }
         
+        console.log(`[${adjustId}] FINAL: ${scenes.length} scenes (target was ${targetCount})`);
         return scenes;
     }
 
     /**
      * Auto-adjust scene count based on story word density
      * Returns recommendation and action
+     * 
+     * Key formulas:
+     * - idealWordsPerScene = secPerScene * wps (e.g., 2.5s * 2.3wps = 5.75 words/scene)
+     * - recommendedScenes = ceil(storyWords / idealWordsPerScene)
+     * - For dense stories: INCREASE scenes to distribute words
+     * - For sparse stories: DECREASE scenes to fill time
      */
     autoAdjustSceneCount(options = {}) {
         const {
             storyWords,
+            currentSceneCount = null,
             durationSec = 60,
             pace = 'balanced',
             platform = 'reels'
@@ -974,37 +1157,83 @@ class CreatePageController {
         
         const pacePreset = PACE_PRESETS[pace] || PACE_PRESETS.balanced;
         const platformClamps = PLATFORM_SCENE_CLAMPS[platform] || PLATFORM_SCENE_CLAMPS.reels;
-        const clamp = platformClamps[durationSec] || platformClamps[60] || { min: 12, max: 30 };
+        const clamp = platformClamps[durationSec] || platformClamps[60] || { min: 6, max: 40 };
         
-        // Calculate ideal scene count from pace
+        // Ideal words per scene at target pace
+        const idealWordsPerScene = pacePreset.secPerScene * PACING_CONSTANTS.wps;
+        
+        // Calculate recommended scene count based on word count
+        // This is the key fix: we compute from words, not by scaling idealSceneCount
+        const recommendedFromWords = Math.ceil(storyWords / idealWordsPerScene);
+        
+        // Ideal scene count from pace (for reference)
         const idealSceneCount = Math.round(durationSec / pacePreset.secPerScene);
         
         // Calculate ideal total words for this duration at target WPS
         const idealTotalWords = durationSec * PACING_CONSTANTS.wps;
         
-        // Calculate density ratio
+        // Calculate density ratio (for display/diagnostics)
         const densityRatio = storyWords / idealTotalWords;
         
+        // Determine action and adjusted count
         let action = 'ok';
         let adjustedSceneCount = idealSceneCount;
         let message = null;
+        let atClampLimit = false;
         
         if (densityRatio < 0.7) {
-            // Story is too short
+            // Story is TOO SPARSE (short) - need FEWER scenes
             action = 'story_short';
-            // Reduce scene count to compensate (fewer scenes = longer per scene = slower read)
-            adjustedSceneCount = Math.max(clamp.min, Math.round(idealSceneCount * densityRatio));
-            message = `Story is short for ${durationSec}s. Consider adding more content or reducing duration.`;
+            // Reduce scene count: fewer scenes = longer per scene = fill time better
+            adjustedSceneCount = recommendedFromWords;
+            message = `Story is sparse (${storyWords} words for ${durationSec}s). Reducing scenes to improve pacing.`;
         } else if (densityRatio > 1.3) {
-            // Story is too long
+            // Story is TOO DENSE (long) - need MORE scenes
             action = 'story_long';
-            // Increase scene count to compensate (more scenes = shorter per scene = faster read)
-            adjustedSceneCount = Math.min(clamp.max, Math.round(idealSceneCount * densityRatio));
-            message = `Story is dense for ${durationSec}s. Consider trimming or increasing duration.`;
+            // Increase scene count: more scenes = faster cuts = handle more words
+            adjustedSceneCount = recommendedFromWords;
+            message = `Story is dense (${storyWords} words for ${durationSec}s). Increasing scenes for better pacing.`;
         }
         
-        // Clamp to platform limits
+        // Store unclamped value for comparison
+        const unclampedSceneCount = adjustedSceneCount;
+        
+        // Enforce minimum and maximum scene bounds (6-40)
+        const MIN_SCENES = 6;
+        const MAX_SCENES = 40;
+        adjustedSceneCount = Math.max(MIN_SCENES, Math.min(MAX_SCENES, adjustedSceneCount));
+        
+        // Also respect platform clamps
         adjustedSceneCount = Math.max(clamp.min, Math.min(clamp.max, adjustedSceneCount));
+        
+        // Check if we hit a clamp limit
+        if (action === 'story_long' && adjustedSceneCount < unclampedSceneCount) {
+            atClampLimit = true;
+            message = `Story is very dense (${storyWords} words for ${durationSec}s). Already at max ${clamp.max} scenes for this platform.`;
+        } else if (action === 'story_short' && adjustedSceneCount > unclampedSceneCount) {
+            atClampLimit = true;
+            message = `Story is very sparse (${storyWords} words for ${durationSec}s). Already at min ${clamp.min} scenes for this platform.`;
+        }
+        
+        // If adjusted equals current AND we're at a clamp limit, mark action as 'at_limit'
+        if (adjustedSceneCount === currentSceneCount && atClampLimit) {
+            action = 'at_limit';
+        }
+        
+        // Debug info
+        const debugInfo = {
+            storyWords,
+            idealTotalWords: Math.round(idealTotalWords),
+            idealWordsPerScene: idealWordsPerScene.toFixed(1),
+            idealSceneCount,
+            recommendedFromWords,
+            unclampedSceneCount,
+            densityRatio: densityRatio.toFixed(2),
+            currentSceneCount,
+            adjustedSceneCount,
+            atClampLimit,
+            clamp
+        };
         
         return {
             action,
@@ -1014,7 +1243,8 @@ class CreatePageController {
             message,
             storyWords,
             idealTotalWords: Math.round(idealTotalWords),
-            clamp
+            clamp,
+            debugInfo
         };
     }
 
@@ -2056,25 +2286,37 @@ class CreatePageController {
         
         // Check for density warning
         const densityWarning = this.formData.densityWarning;
+        const currentSceneCount = this.sceneBuilder.scenes.length;
+        
+        // Determine if auto-adjust button should be shown
+        const showAutoAdjustButton = densityWarning && 
+            densityWarning.action !== 'at_limit' && 
+            densityWarning.action !== 'ok' &&
+            densityWarning.adjustedSceneCount !== currentSceneCount;
         
         container.innerHTML = `
             <div class="create-card story-review-card">
                 <!-- Density Warning (if applicable) -->
-                ${densityWarning ? `
+                ${densityWarning && densityWarning.action !== 'ok' ? `
                 <div class="density-warning density-warning--${densityWarning.action}">
-                    <span class="density-warning__icon">${densityWarning.action === 'story_short' ? '📉' : '📈'}</span>
+                    <span class="density-warning__icon">${densityWarning.action === 'story_short' ? '📉' : densityWarning.action === 'at_limit' ? '⚠️' : '📈'}</span>
                     <div class="density-warning__content">
-                        <strong>${densityWarning.action === 'story_short' ? 'Story may be too short' : 'Story may be too long'}</strong>
+                        <strong>${densityWarning.action === 'story_short' ? 'Story is too sparse' : densityWarning.action === 'at_limit' ? 'At scene limit' : 'Story is too dense'}</strong>
                         <p>${densityWarning.message}</p>
                         <div class="density-warning__stats">
                             <span>Words: ${densityWarning.storyWords}</span>
                             <span>Ideal: ~${densityWarning.idealTotalWords}</span>
                             <span>Density: ${(densityWarning.densityRatio * 100).toFixed(0)}%</span>
+                            <span>Current: ${currentSceneCount} scenes</span>
                         </div>
                     </div>
+                    ${showAutoAdjustButton ? `
                     <button type="button" class="btn btn--sm btn--outline" id="btn-auto-adjust-scenes">
-                        🔧 Auto-Adjust (${densityWarning.adjustedSceneCount} scenes)
+                        🔧 Auto-Adjust (${currentSceneCount} → ${densityWarning.adjustedSceneCount} scenes)
                     </button>
+                    ` : densityWarning.action === 'at_limit' ? `
+                    <span class="density-warning__limit-badge">🔒 Max scenes</span>
+                    ` : ''}
                 </div>
                 ` : ''}
                 
@@ -2119,16 +2361,14 @@ class CreatePageController {
                     </div>
                     <div class="scene-timeline__body" id="scene-timeline-body">
                         ${this.sceneBuilder.scenes.map((scene, i) => {
-                            const wordCount = scene.text?.split(' ').length || 0;
-                            // Use pacing-derived duration instead of word-based estimate
-                            const durationSec = parseInt(this.formData.duration) || 60;
-                            const sceneCount = this.sceneBuilder.scenes.length;
-                            const avgSceneDuration = durationSec / sceneCount;
-                            const sceneDuration = avgSceneDuration.toFixed(1);
+                            const wordCount = scene.text?.split(/\s+/).filter(w => w).length || 0;
+                            // Calculate scene duration from actual word count (not target duration)
+                            // Using ~2.3 words per second (average TTS speaking rate)
+                            const sceneDuration = (wordCount / PACING_CONSTANTS.wps).toFixed(1);
                             const visualBeat = this.extractVisualBeat(scene);
                             
                             // Build caption and get readability status
-                            const caption = this.buildCaption(scene.text || '', avgSceneDuration);
+                            const caption = this.buildCaption(scene.text || '', parseFloat(sceneDuration));
                             const readabilityIcon = caption.readabilityStatus === 'critical' ? '🔴' : 
                                                    caption.readabilityStatus === 'warning' ? '🟡' : '✅';
                             const readabilityTitle = caption.warnings.length > 0 ? caption.warnings.join(', ') : 'Good readability';
@@ -2209,6 +2449,29 @@ class CreatePageController {
                     </div>
                 </div>
                 
+                <!-- Generation Prompt Section (always visible, collapsed by default) -->
+                <div class="generation-prompt-panel">
+                    <button type="button" class="generation-prompt-toggle" id="toggle-generation-prompt">
+                        <span class="generation-prompt-toggle__icon">📝</span>
+                        <span class="generation-prompt-toggle__text">Story Generation Prompt</span>
+                        <span class="generation-prompt-toggle__hint">View the prompt used to generate this story</span>
+                        <span class="generation-prompt-toggle__arrow" id="generation-prompt-arrow">▼</span>
+                    </button>
+                    <div class="generation-prompt-content" id="generation-prompt-content" style="display: none;">
+                        <pre class="generation-prompt-display">${this.escapeHtml(storyPrompt)}</pre>
+                        <div class="generation-prompt-actions">
+                            <button type="button" class="btn btn--sm btn--outline" id="btn-copy-generation-prompt">
+                                📋 Copy Prompt
+                            </button>
+                            ${this.advancedMode ? `
+                            <button type="button" class="btn btn--sm btn--outline" id="btn-edit-generation-prompt">
+                                ✏️ Edit Prompt
+                            </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+                
                 <!-- Story Actions -->
                 <div class="story-actions">
                     <button type="button" class="btn btn--outline" id="btn-regenerate-story" title="Generate a new story with same settings">
@@ -2224,25 +2487,72 @@ class CreatePageController {
                     </button>
                 </div>
                 
-                <!-- Full Prompt Section (Advanced) -->
-                ${this.advancedMode ? `
-                <div class="prompt-section-wrapper">
-                    <button type="button" id="toggle-prompt-btn" class="prompt-toggle-btn" onclick="window.createController?.togglePromptSection()">
-                        <span class="prompt-toggle-btn__icon">📝</span>
-                        <span class="prompt-toggle-btn__text">View Full Prompt</span>
-                        <span class="prompt-toggle-btn__arrow" id="prompt-arrow">▼</span>
-                    </button>
-                    <div id="prompt-section" class="prompt-section prompt-section--hidden">
-                        <pre id="story-prompt-display" class="prompt-display">${this.escapeHtml(storyPrompt)}</pre>
-                        <button type="button" class="btn btn--small" onclick="window.createController?.copyPrompt()">📋 Copy</button>
-                    </div>
-                </div>
-                ` : ''}
+                <!-- Story Debug Panel (shown when debug mode enabled) -->
+                <div id="story-debug-panel-container"></div>
             </div>
         `;
 
         // Setup story step listeners
         this.setupStoryStepListeners();
+        
+        // Render debug panel if enabled
+        this.renderDebugPanel(genDetails);
+    }
+    
+    /**
+     * Render the Story Debug Panel if debug mode is enabled
+     */
+    renderDebugPanel(genDetails) {
+        // Check if debug is enabled
+        const isDebugEnabled = StoryDebugPanel?.isDebugEnabled?.() || this.debugMode;
+        
+        // Also auto-show if there's a compliance failure or legacy fallback
+        const storyDebug = genDetails?.story_debug;
+        const hasFailure = storyDebug && (
+            !storyDebug.compliance?.passed ||
+            storyDebug.method?.generation_method === 'legacy_fallback' ||
+            storyDebug.compliance?.hard_failures?.length > 0
+        );
+        
+        if (!isDebugEnabled && !hasFailure) {
+            return;
+        }
+        
+        const container = document.getElementById('story-debug-panel-container');
+        if (!container) return;
+        
+        try {
+            // Create debug panel
+            const panel = new StoryDebugPanel(genDetails, {
+                autoExpand: hasFailure,
+                showCopyButtons: true
+            });
+            
+            // Render and append
+            const panelElement = panel.render();
+            container.appendChild(panelElement);
+            
+            // Setup interactivity (tabs, copy buttons, etc.)
+            panel.setupInteractivity();
+            
+            // Log to console for debug
+            if (this.debugMode) {
+                console.log('[DEBUG] Story Debug Panel rendered', {
+                    debugEnabled: isDebugEnabled,
+                    hasFailure,
+                    storyDebug,
+                    visualReadiness: genDetails?.visual_readiness
+                });
+            }
+        } catch (error) {
+            console.error('[DEBUG] Failed to render debug panel:', error);
+            // Fail soft - don't break the UI
+            container.innerHTML = `
+                <div class="story-debug-panel" style="padding: 1rem; border: 1px solid #ef4444; border-radius: 8px; margin-top: 1rem;">
+                    <p style="color: #ef4444;">⚠️ Debug panel failed to render: ${error.message}</p>
+                </div>
+            `;
+        }
     }
     
     extractVisualBeat(scene) {
@@ -2283,10 +2593,10 @@ class CreatePageController {
         document.getElementById('btn-copy-story')?.addEventListener('click', () => {
             const storyText = this.sceneBuilder.scenes.map(s => s.text).join('\n\n');
             navigator.clipboard.writeText(storyText).then(() => {
-                this.showToast('Story text copied to clipboard!', 'success');
+                this.addConsoleLog('📋 Story text copied to clipboard!', 'success');
             }).catch(err => {
                 console.error('Copy failed:', err);
-                this.showToast('Failed to copy', 'error');
+                this.addConsoleLog('❌ Failed to copy story text', 'error');
             });
         });
         
@@ -2299,6 +2609,29 @@ class CreatePageController {
                 content.style.display = isHidden ? 'block' : 'none';
                 if (arrow) arrow.textContent = isHidden ? '▲' : '▼';
             }
+        });
+        
+        // Generation Prompt toggle
+        document.getElementById('toggle-generation-prompt')?.addEventListener('click', () => {
+            const content = document.getElementById('generation-prompt-content');
+            const arrow = document.getElementById('generation-prompt-arrow');
+            if (content) {
+                const isHidden = content.style.display === 'none';
+                content.style.display = isHidden ? 'block' : 'none';
+                if (arrow) arrow.textContent = isHidden ? '▲' : '▼';
+            }
+        });
+        
+        // Copy generation prompt
+        document.getElementById('btn-copy-generation-prompt')?.addEventListener('click', () => {
+            const genDetails = this.formData.generationDetails || {};
+            const storyPrompt = genDetails.story_prompt || 'No prompt available';
+            navigator.clipboard.writeText(storyPrompt).then(() => {
+                this.addConsoleLog('📋 Story prompt copied to clipboard!', 'success');
+            }).catch(err => {
+                console.error('Copy failed:', err);
+                this.addConsoleLog('❌ Failed to copy story prompt', 'error');
+            });
         });
         
         // Regenerate story
@@ -2329,6 +2662,7 @@ class CreatePageController {
     
     /**
      * Auto-adjust scenes based on the density warning recommendation
+     * Shows before/after scene count and debug info
      */
     autoAdjustScenesFromWarning() {
         const densityWarning = this.formData.densityWarning;
@@ -2337,7 +2671,36 @@ class CreatePageController {
             return;
         }
         
-        this.addConsoleLog(`🔧 Auto-adjusting to ${densityWarning.adjustedSceneCount} scenes...`, 'info');
+        const currentSceneCount = this.sceneBuilder.scenes.length;
+        const targetSceneCount = densityWarning.adjustedSceneCount;
+        
+        // Log debug info
+        this.addConsoleLog(`🔧 Auto-Adjust Debug:`, 'info');
+        this.addConsoleLog(`   Words: ${densityWarning.storyWords}`, 'info');
+        this.addConsoleLog(`   Ideal words: ${densityWarning.idealTotalWords}`, 'info');
+        this.addConsoleLog(`   Density: ${(densityWarning.densityRatio * 100).toFixed(0)}%`, 'info');
+        this.addConsoleLog(`   Current scenes: ${currentSceneCount}`, 'info');
+        this.addConsoleLog(`   Target scenes: ${targetSceneCount}`, 'info');
+        this.addConsoleLog(`   Action: ${densityWarning.action}`, 'info');
+        
+        // Sanity check for "too dense" - ensure we INCREASE scenes
+        if (densityWarning.action === 'story_long' && targetSceneCount <= currentSceneCount) {
+            this.addConsoleLog(`⚠️ Warning: Dense story but target (${targetSceneCount}) <= current (${currentSceneCount}). Forcing increase.`, 'warning');
+            // Force at least +50% more scenes for dense stories
+            const forcedTarget = Math.max(targetSceneCount, Math.ceil(currentSceneCount * 1.5));
+            densityWarning.adjustedSceneCount = Math.min(40, forcedTarget); // Cap at 40
+        }
+        
+        // Sanity check for "too sparse" - ensure we DECREASE scenes
+        if (densityWarning.action === 'story_short' && targetSceneCount >= currentSceneCount) {
+            this.addConsoleLog(`⚠️ Warning: Sparse story but target (${targetSceneCount}) >= current (${currentSceneCount}). Forcing decrease.`, 'warning');
+            // Force fewer scenes for sparse stories
+            const forcedTarget = Math.min(targetSceneCount, Math.ceil(currentSceneCount * 0.7));
+            densityWarning.adjustedSceneCount = Math.max(6, forcedTarget); // Min of 6
+        }
+        
+        const finalTargetScenes = densityWarning.adjustedSceneCount;
+        this.addConsoleLog(`🔧 Adjusting: ${currentSceneCount} → ${finalTargetScenes} scenes...`, 'info');
         
         // Combine all scene text into one story
         const fullText = this.sceneBuilder.scenes
@@ -2352,11 +2715,49 @@ class CreatePageController {
         
         const newScenes = this.splitIntoScenes(fullText, {
             durationSec,
-            targetScenes: densityWarning.adjustedSceneCount,
+            targetScenes: finalTargetScenes,
             wps: PACING_CONSTANTS.wps,
             minSceneSec: PACING_CONSTANTS.minSceneSec,
             maxSceneSec: PACING_CONSTANTS.maxSceneSec
         });
+        
+        // SAFETY GUARD: For dense stories, result must increase
+        if (densityWarning.action === 'story_long' && newScenes.length <= currentSceneCount) {
+            const errorDetail = {
+                action: densityWarning.action,
+                storyWords: densityWarning.storyWords,
+                densityRatio: densityWarning.densityRatio,
+                currentSceneCount,
+                targetSceneCount: finalTargetScenes,
+                actualResult: newScenes.length,
+                fullTextWords: fullText.split(/\s+/).filter(w => w).length
+            };
+            console.error(`[AUTO-ADJUST FAILURE] Dense story but scene count did not increase!`, errorDetail);
+            this.addConsoleLog(`❌ ERROR: Dense story but scenes decreased! ${currentSceneCount} → ${newScenes.length} (target was ${finalTargetScenes})`, 'error');
+            this.addConsoleLog(`   Debug: ${JSON.stringify(errorDetail)}`, 'error');
+            // Don't apply the change - it's wrong
+            this.showError('Auto-adjust failed - could not increase scenes. Check console for details.');
+            return;
+        }
+        
+        // SAFETY GUARD: For sparse stories, result must decrease
+        if (densityWarning.action === 'story_short' && newScenes.length >= currentSceneCount) {
+            const errorDetail = {
+                action: densityWarning.action,
+                storyWords: densityWarning.storyWords,
+                densityRatio: densityWarning.densityRatio,
+                currentSceneCount,
+                targetSceneCount: finalTargetScenes,
+                actualResult: newScenes.length,
+                fullTextWords: fullText.split(/\s+/).filter(w => w).length
+            };
+            console.error(`[AUTO-ADJUST FAILURE] Sparse story but scene count did not decrease!`, errorDetail);
+            this.addConsoleLog(`❌ ERROR: Sparse story but scenes increased! ${currentSceneCount} → ${newScenes.length} (target was ${finalTargetScenes})`, 'error');
+            this.addConsoleLog(`   Debug: ${JSON.stringify(errorDetail)}`, 'error');
+            // Don't apply the change - it's wrong
+            this.showError('Auto-adjust failed - could not decrease scenes. Check console for details.');
+            return;
+        }
         
         // Convert to scene builder format
         this.sceneBuilder.scenes = newScenes.map((scene, i) => ({
@@ -2369,7 +2770,9 @@ class CreatePageController {
         // Clear the warning since we addressed it
         this.formData.densityWarning = null;
         
-        this.addConsoleLog(`✅ Adjusted to ${newScenes.length} scenes`, 'success');
+        // Show result with before/after
+        const resultMsg = `✅ Adjusted: ${currentSceneCount} → ${newScenes.length} scenes`;
+        this.addConsoleLog(resultMsg, 'success');
         
         // Re-render the story step
         const container = document.getElementById('step-content');
@@ -2672,17 +3075,70 @@ class CreatePageController {
         
         // Copy image log button
         document.getElementById('btn-copy-image-log')?.addEventListener('click', () => {
+            // Debug: log what we have
+            console.log('[COPY-LOG] Scenes data:', this.sceneBuilder.scenes.map(s => ({
+                id: s.id,
+                hasImageDetails: !!s.imageDetails,
+                imageDetailsKeys: s.imageDetails ? Object.keys(s.imageDetails) : [],
+                art_style: s.imageDetails?.art_style,
+                art_style_override: s.imageDetails?.art_style_override,
+                visual_dna_suppressed: s.imageDetails?.visual_dna_suppressed,
+            })));
+            
             const logText = this.sceneBuilder.scenes.map((scene, i) => {
                 const prompt = scene.imagePrompt || scene.image_prompt || scene.visual || 'Not yet generated';
                 const modeInfo = scene.promptMode && scene.promptLen ? `\n[Mode: ${scene.promptMode} | Length: ${scene.promptLen} chars]` : '';
-                return `=== Scene ${i + 1} ===\nNarration:\n${scene.text}\n\nImage Prompt:\n${prompt}${modeInfo}`;
+                
+                // v5.6: Add diagnostic info from imageDetails
+                let diagnosticBlock = '';
+                const details = scene.imageDetails || {};
+                
+                // Debug: always show what we have
+                console.log(`[COPY-LOG] Scene ${i+1} details:`, details);
+                
+                if (details.art_style || details.art_style_override || details.visual_dna_suppressed !== undefined) {
+                    const lines = [
+                        '',
+                        '--- STYLE CONTROL DIAGNOSTICS ---',
+                        `Art Style: ${details.art_style || 'default'}`,
+                    ];
+                    if (details.art_style_override) {
+                        lines.push(`Art Style Override: ${details.art_style_override} (FORCED)`);
+                    }
+                    if (details.style_config) {
+                        lines.push(`Style Config: ${details.style_config.name || 'unknown'}`);
+                        if (details.style_config.basePrompt_preview) {
+                            lines.push(`  basePrompt: ${details.style_config.basePrompt_preview}...`);
+                        }
+                        if (details.style_config.colorOverride_preview) {
+                            lines.push(`  colorOverride: ${details.style_config.colorOverride_preview}...`);
+                        }
+                    }
+                    if (details.visual_dna) {
+                        lines.push(`Visual DNA: style=${details.visual_dna.style}, palette=${details.visual_dna.palette}`);
+                    }
+                    if (details.visual_dna_suppressed) {
+                        lines.push(`⚠️ Visual DNA SUPPRESSED: ${details.visual_dna_suppressed_reason || 'art style override'}`);
+                    }
+                    if (details.model) {
+                        lines.push(`Image Model: ${details.model}`);
+                    }
+                    if (details.relevance_score !== null && details.relevance_score !== undefined) {
+                        const pct = (details.relevance_score * 100).toFixed(0);
+                        lines.push(`Relevance Score: ${pct}%${details.relevance_repaired ? ' (repaired)' : ''}`);
+                    }
+                    lines.push('--- END DIAGNOSTICS ---');
+                    diagnosticBlock = lines.join('\n');
+                }
+                
+                return `=== Scene ${i + 1} ===\nNarration:\n${scene.text}\n\nImage Prompt:\n${prompt}${modeInfo}${diagnosticBlock}`;
             }).join('\n\n' + '='.repeat(40) + '\n\n');
             
             navigator.clipboard.writeText(logText).then(() => {
-                this.showToast('Image log copied to clipboard!', 'success');
+                this.addConsoleLog('📋 Image log copied to clipboard!', 'success');
             }).catch(err => {
                 console.error('Copy failed:', err);
-                this.showToast('Failed to copy', 'error');
+                this.addConsoleLog('❌ Failed to copy image log', 'error');
             });
         });
     }
@@ -3450,16 +3906,18 @@ class CreatePageController {
                 const totalScenes = this.sceneBuilder.scenes.length;
                 const sceneBuilderPassed = totalScenes > 0 && (scenesWithImages / totalScenes) >= 0.8;
                 
-                // Also check last check-job status as fallback
+                // Also check last check-job status as fallback (handle undefined)
                 const checkJobStatus = this.lastCheckJobStatus || {};
-                const checkJobPassed = checkJobStatus.images_generated >= (checkJobStatus.total_images * 0.8);
+                const imagesGen = checkJobStatus.images_generated || 0;
+                const totalImg = checkJobStatus.total_images || totalScenes || 1;
+                const checkJobPassed = imagesGen > 0 && imagesGen >= (totalImg * 0.8);
                 
                 // Phase-based gating: only allow leaving images if backend phase >= images
                 // This prevents weird cases where UI step doesn't match backend state
                 const backendPhase = checkJobStatus.phase || 'unknown';
                 const validPhases = ['images', 'assemble', 'rendering', 'complete', 'completed'];
                 const phaseGatePassed = validPhases.includes(backendPhase) || 
-                                        (checkJobStatus.images_generated > 0); // Fallback if phase not set
+                                        (imagesGen > 0); // Fallback if phase not set
                 
                 console.log(`[canProceedFromStep:images] scenesWithImages=${scenesWithImages}/${totalScenes}, sceneBuilderPassed=${sceneBuilderPassed}, checkJobPassed=${checkJobPassed}, phaseGatePassed=${phaseGatePassed}, backendPhase=${backendPhase}`);
                 
@@ -3696,15 +4154,18 @@ class CreatePageController {
                 const totalWords = this.sceneBuilder.scenes.reduce((sum, s) => sum + (s.text?.split(' ').length || 0), 0);
                 const durationSec = parseInt(this.formData.duration) || 60;
                 const pace = this.formData.pace || 'balanced';
+                const currentSceneCount = this.sceneBuilder.scenes.length;
                 
                 const densityCheck = this.autoAdjustSceneCount({
                     storyWords: totalWords,
+                    currentSceneCount,
                     durationSec,
                     pace,
                     platform: this.targetPlatform || 'reels'
                 });
                 
                 this.debugLog('autoAdjust', `Density: ${densityCheck.densityRatio}, Action: ${densityCheck.action}`);
+                this.debugLog('autoAdjust', `Current: ${currentSceneCount} scenes, Recommended: ${densityCheck.adjustedSceneCount} scenes`);
                 
                 if (densityCheck.action !== 'ok') {
                     this.addLog(`⚠️ ${densityCheck.message}`, 'warning');
@@ -3863,7 +4324,30 @@ class CreatePageController {
                             // Convert 0-based API index → 1-based SceneBuilder ID
                             const sceneId = sceneIndex + 1;
                             if (this.sceneBuilder.scenes[sceneIndex]) {
-                                this.sceneBuilder.updateScene(sceneId, { imageUrl: imageUrl });
+                                // Build update object with URL and prompt info if available
+                                const details = scene.image_details || {};
+                                let updateObj = { imageUrl: imageUrl };
+                                
+                                // v5.14: ALWAYS store imageDetails for extended info display
+                                if (Object.keys(details).length > 0) {
+                                    updateObj.imageDetails = details;
+                                }
+                                
+                                // Extract prompt from image_details if available
+                                if (details.prompt && details.prompt.length > 50) {
+                                    updateObj.imagePrompt = details.prompt;
+                                    updateObj.promptMode = details.prompt_mode || 'final_prompt';
+                                    updateObj.promptLen = details.prompt.length;
+                                } else if (details.prompt_preview_start) {
+                                    updateObj.imagePrompt = `${details.prompt_preview_start}... [${details.prompt_len || '?'} chars]`;
+                                    updateObj.promptMode = details.prompt_mode || 'preview';
+                                    updateObj.promptLen = details.prompt_len || 0;
+                                } else if (details.prompt_len || details.prompt_mode) {
+                                    updateObj.promptMode = details.prompt_mode || 'metadata_only';
+                                    updateObj.promptLen = details.prompt_len || 0;
+                                }
+                                
+                                this.sceneBuilder.updateScene(sceneId, updateObj);
                             }
                         }
                     });
@@ -3871,6 +4355,22 @@ class CreatePageController {
                     if (imagesGenerated > lastImageCount) {
                         lastImageCount = imagesGenerated;
                         this.addLog(`🖼️ ${imagesGenerated}/${actualTotal} images generated`, 'info');
+                        // Refresh the image prompts log to show actual prompts
+                        this.refreshImagePromptsLog();
+                        
+                        // Update lastCheckJobStatus during polling so canProceedFromStep works
+                        this.lastCheckJobStatus = {
+                            images_generated: imagesGenerated,
+                            total_images: actualTotal,
+                            source: imageSource,
+                            source_detail: sourceDetail,
+                            phase: status.phase || 'images',
+                            scene_count_expected: expectedScenes,
+                            scene_count_returned: returnedScenes
+                        };
+                        
+                        // Update nav buttons so Continue enables when ready
+                        this.updateNavigationButtons();
                     }
                 }
                 
@@ -3968,18 +4468,26 @@ class CreatePageController {
                 const details = scene.image_details || {};
                 let updateObj = { imageUrl: imageUrl };
                 
+                // v5.14: ALWAYS store imageDetails for extended info display (model, art_style, visual_dna, etc.)
+                // Even if prompt is not available, there's valuable metadata to display
+                if (Object.keys(details).length > 0) {
+                    updateObj.imageDetails = details;
+                }
+                
                 if (details.prompt && details.prompt.length > 50) {
                     // Full prompt available from server
                     updateObj.imagePrompt = details.prompt;
                     updateObj.promptMode = details.prompt_mode || 'final_prompt';
                     updateObj.promptLen = details.prompt.length;
-                    updateObj.imageDetails = details;
                 } else if (details.prompt_preview_start) {
                     // Preview available
                     updateObj.imagePrompt = `${details.prompt_preview_start}... [${details.prompt_len || '?'} chars]`;
                     updateObj.promptMode = details.prompt_mode || 'preview';
                     updateObj.promptLen = details.prompt_len || 0;
-                    updateObj.imageDetails = details;
+                } else if (details.prompt_len || details.prompt_mode) {
+                    // Metadata available but no prompt text
+                    updateObj.promptMode = details.prompt_mode || 'metadata_only';
+                    updateObj.promptLen = details.prompt_len || 0;
                 }
                 
                 this.sceneBuilder.updateScene(sceneId, updateObj);
@@ -4003,7 +4511,165 @@ class CreatePageController {
         const logList = document.querySelector('.image-log-list');
         if (!logList) return;
         
-        logList.innerHTML = this.sceneBuilder.scenes.map((scene, i) => `
+        logList.innerHTML = this.sceneBuilder.scenes.map((scene, i) => {
+            const details = scene.imageDetails || {};
+            
+            // =====================================================
+            // BUILD COMPREHENSIVE DIAGNOSTICS - ALL GENERATION DETAILS
+            // =====================================================
+            let diagnosticsHtml = '';
+            
+            // Section 1: Model & Style
+            const modelStyleLines = [];
+            modelStyleLines.push(`<strong>🖼️ Model:</strong> <code>${details.model || 'unknown'}</code>`);
+            modelStyleLines.push(`<strong>🎨 Art Style:</strong> <code>${details.art_style || 'default'}</code>`);
+            if (details.art_style_override) {
+                modelStyleLines.push(`<strong>⚡ Override:</strong> <span style="color: #f59e0b; font-weight: bold;">${details.art_style_override} (FORCED)</span>`);
+            }
+            if (details.generation_source) {
+                modelStyleLines.push(`<strong>📡 Source:</strong> <code>${details.generation_source}</code>`);
+            }
+            if (details.generated_at) {
+                modelStyleLines.push(`<strong>🕐 Generated:</strong> <code>${new Date(details.generated_at).toLocaleString()}</code>`);
+            }
+            
+            // Section 2: Style Config Details
+            const styleConfigLines = [];
+            if (details.style_config) {
+                styleConfigLines.push(`<strong>📋 Config Name:</strong> <code>${details.style_config.name || '?'}</code>`);
+                if (details.style_config.basePrompt_preview) {
+                    styleConfigLines.push(`<strong>Base Prompt:</strong> <span style="color: #888; font-style: italic;">"${details.style_config.basePrompt_preview}..."</span>`);
+                }
+                if (details.style_config.colorOverride_preview) {
+                    styleConfigLines.push(`<strong>Color Override:</strong> <span style="color: #888; font-style: italic;">"${details.style_config.colorOverride_preview}..."</span>`);
+                }
+                if (details.style_config.technicalStyle_preview) {
+                    styleConfigLines.push(`<strong>Technical Style:</strong> <span style="color: #888; font-style: italic;">"${details.style_config.technicalStyle_preview}..."</span>`);
+                }
+            }
+            
+            // Section 3: Visual DNA
+            const visualDnaLines = [];
+            if (details.visual_dna) {
+                const dna = details.visual_dna;
+                visualDnaLines.push(`<strong>🧬 Style:</strong> <code>${dna.style || '?'}</code>`);
+                visualDnaLines.push(`<strong>🎨 Palette:</strong> <code>${dna.palette || '?'}</code>`);
+                if (dna.lighting) visualDnaLines.push(`<strong>💡 Lighting:</strong> <code>${dna.lighting}</code>`);
+                if (dna.composition) visualDnaLines.push(`<strong>📐 Composition:</strong> <code>${dna.composition}</code>`);
+                if (dna.camera) visualDnaLines.push(`<strong>📷 Camera:</strong> <code>${dna.camera}</code>`);
+                if (dna.motion) visualDnaLines.push(`<strong>🎬 Motion:</strong> <code>${dna.motion}</code>`);
+                if (dna.textures?.length > 0) visualDnaLines.push(`<strong>🧱 Textures:</strong> <code>${dna.textures.join(', ')}</code>`);
+            }
+            if (details.visual_dna_suppressed) {
+                visualDnaLines.push(`<span style="color: #f59e0b; font-weight: bold;">⚠️ VISUAL DNA SUPPRESSED</span>`);
+                if (details.visual_dna_suppressed_reason) {
+                    visualDnaLines.push(`<span style="color: #888; font-size: 0.7rem;">Reason: ${details.visual_dna_suppressed_reason}</span>`);
+                }
+            }
+            
+            // Section 4: Visual Contract
+            const contractLines = [];
+            if (details.visual_contract) {
+                const contract = details.visual_contract;
+                if (contract.location) contractLines.push(`<strong>📍 Location:</strong> <code>${contract.location}</code>`);
+                if (contract.characterPose) contractLines.push(`<strong>🧍 Pose:</strong> <code>${contract.characterPose}</code>`);
+                if (contract.actionFrozen) contractLines.push(`<strong>⚡ Action:</strong> <span style="color: #888;">"${contract.actionFrozen.substring(0, 80)}${contract.actionFrozen.length > 80 ? '...' : ''}"</span>`);
+                if (contract.visibleObjects?.length > 0) contractLines.push(`<strong>👁️ Objects:</strong> <code>${contract.visibleObjects.join(', ')}</code>`);
+                if (contract.forbiddenElements?.length > 0) contractLines.push(`<strong>🚫 Forbidden:</strong> <code style="color: #ef4444;">${contract.forbiddenElements.join(', ')}</code>`);
+                if (contract.evidenceRule) contractLines.push(`<strong>📜 Evidence:</strong> <span style="color: #888;">${contract.evidenceRule}</span>`);
+                if (contract.group_count) {
+                    contractLines.push(`<strong>👥 Group Count:</strong> <code style="color: #22c55e;">${contract.group_count.expected} people (${contract.group_count.is_wrong ? 'WRONG COUNT STORY' : 'normal'})</code>`);
+                }
+            }
+            
+            // Section 5: Continuity & Character
+            const continuityLines = [];
+            if (details.character_description) {
+                continuityLines.push(`<strong>👤 Character:</strong> <span style="color: #888;">"${details.character_description.substring(0, 100)}${details.character_description.length > 100 ? '...' : ''}"</span>`);
+            }
+            if (details.continuity_rules) {
+                continuityLines.push(`<strong>🔗 Continuity:</strong> <span style="color: #888;">"${details.continuity_rules.substring(0, 100)}${details.continuity_rules.length > 100 ? '...' : ''}"</span>`);
+            }
+            if (details.camera_angle) continuityLines.push(`<strong>📷 Camera:</strong> <code>${details.camera_angle}</code>`);
+            if (details.mood_level !== null && details.mood_level !== undefined) continuityLines.push(`<strong>😰 Mood Level:</strong> <code>${details.mood_level}/10</code>`);
+            if (details.visual_beat) continuityLines.push(`<strong>🎬 Beat:</strong> <span style="color: #888;">"${details.visual_beat.substring(0, 80)}${details.visual_beat.length > 80 ? '...' : ''}"</span>`);
+            
+            // Section 6: Relevance Scoring
+            const relevanceLines = [];
+            if (details.relevance_score !== null && details.relevance_score !== undefined) {
+                const scoreColor = details.relevance_score >= 0.65 ? '#22c55e' : details.relevance_score >= 0.4 ? '#f59e0b' : '#ef4444';
+                relevanceLines.push(`<strong>📊 Score:</strong> <code style="color: ${scoreColor}; font-weight: bold;">${(details.relevance_score * 100).toFixed(0)}%</code>`);
+            }
+            if (details.relevance_failure_type && details.relevance_failure_type !== 'ok') {
+                relevanceLines.push(`<strong>❌ Failure Type:</strong> <code style="color: #ef4444;">${details.relevance_failure_type}</code>`);
+            }
+            if (details.relevance_repaired) {
+                relevanceLines.push(`<span style="color: #f59e0b;">🔧 PROMPT WAS AUTO-REPAIRED</span>`);
+            }
+            if (details.relevance_matched_objects?.length > 0) {
+                relevanceLines.push(`<strong>✅ Matched:</strong> <code style="color: #22c55e;">${details.relevance_matched_objects.join(', ')}</code>`);
+            }
+            if (details.relevance_missing?.length > 0) {
+                relevanceLines.push(`<strong>❌ Missing:</strong> <code style="color: #ef4444;">${details.relevance_missing.join(', ')}</code>`);
+            }
+            if (details.relevance_reason) {
+                relevanceLines.push(`<strong>📝 Reason:</strong> <span style="color: #888;">${details.relevance_reason}</span>`);
+            }
+            
+            // Section 7: Prompt Verification (Ground Truth)
+            const promptVerifyLines = [];
+            if (details.prompt_mode) {
+                const modeColor = details.prompt_mode === 'final_prompt' ? '#22c55e' : '#f59e0b';
+                promptVerifyLines.push(`<strong>📋 Mode:</strong> <code style="color: ${modeColor};">${details.prompt_mode}</code>`);
+            }
+            if (details.prompt_len) promptVerifyLines.push(`<strong>📏 Length:</strong> <code>${details.prompt_len} chars</code>`);
+            if (details.prompt_hash) promptVerifyLines.push(`<strong>🔐 Hash:</strong> <code style="font-size: 0.65rem;">${details.prompt_hash}</code>`);
+            
+            // Build the full diagnostics HTML
+            const buildSection = (title, icon, lines, borderColor) => {
+                if (lines.length === 0) return '';
+                return `
+                    <div style="margin-top: 6px; padding: 6px 8px; background: #1a1a2e; border-radius: 4px; border-left: 3px solid ${borderColor};">
+                        <div style="font-size: 0.7rem; color: ${borderColor}; font-weight: bold; margin-bottom: 4px;">${icon} ${title}</div>
+                        <div style="font-size: 0.7rem; color: #a0a0a0; line-height: 1.5;">
+                            ${lines.join('<br>')}
+                        </div>
+                    </div>
+                `;
+            };
+            
+            diagnosticsHtml = `
+                <div class="image-log-item__diagnostics" style="margin-top: 10px;">
+                    <details style="cursor: pointer;">
+                        <summary style="font-size: 0.8rem; color: #6366f1; font-weight: bold; padding: 4px 0;">
+                            🔍 Full Generation Details (click to expand)
+                        </summary>
+                        <div style="margin-top: 8px;">
+                            ${buildSection('Model & Style', '🎨', modelStyleLines, '#6366f1')}
+                            ${styleConfigLines.length > 0 ? buildSection('Style Config', '⚙️', styleConfigLines, '#8b5cf6') : ''}
+                            ${visualDnaLines.length > 0 ? buildSection('Visual DNA', '🧬', visualDnaLines, details.visual_dna_suppressed ? '#f59e0b' : '#10b981') : ''}
+                            ${contractLines.length > 0 ? buildSection('Visual Contract', '📜', contractLines, '#3b82f6') : ''}
+                            ${continuityLines.length > 0 ? buildSection('Continuity & Character', '🔗', continuityLines, '#ec4899') : ''}
+                            ${relevanceLines.length > 0 ? buildSection('Relevance Scoring', '📊', relevanceLines, details.relevance_score >= 0.65 ? '#22c55e' : '#f59e0b') : ''}
+                            ${promptVerifyLines.length > 0 ? buildSection('Prompt Verification', '🔐', promptVerifyLines, '#14b8a6') : ''}
+                        </div>
+                    </details>
+                </div>
+            `;
+            
+            // Quick status badges (always visible)
+            let quickBadges = '';
+            const badges = [];
+            if (details.art_style_override) badges.push(`<span style="background: #f59e0b; color: #000; padding: 1px 4px; border-radius: 2px; font-size: 0.65rem; font-weight: bold;">⚡ ${details.art_style_override}</span>`);
+            if (details.visual_dna_suppressed) badges.push(`<span style="background: #ef4444; color: #fff; padding: 1px 4px; border-radius: 2px; font-size: 0.65rem;">DNA OFF</span>`);
+            if (details.relevance_repaired) badges.push(`<span style="background: #8b5cf6; color: #fff; padding: 1px 4px; border-radius: 2px; font-size: 0.65rem;">🔧 REPAIRED</span>`);
+            if (details.model) badges.push(`<span style="background: #1e40af; color: #fff; padding: 1px 4px; border-radius: 2px; font-size: 0.65rem;">${details.model}</span>`);
+            if (details.generation_source) badges.push(`<span style="background: #065f46; color: #fff; padding: 1px 4px; border-radius: 2px; font-size: 0.65rem;">${details.generation_source}</span>`);
+            if (badges.length > 0) {
+                quickBadges = `<div style="margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px;">${badges.join('')}</div>`;
+            }
+            
+            return `
             <div class="image-log-item">
                 <div class="image-log-item__header">
                     <span class="image-log-item__number">Scene ${i + 1}</span>
@@ -4016,10 +4682,12 @@ class CreatePageController {
                 <div class="image-log-item__section">
                     <span class="image-log-item__label">Image Prompt:</span>
                     <p class="image-log-item__prompt ${scene.promptMode?.includes('fallback') || scene.promptMode?.includes('keywords') ? 'prompt-fallback' : ''}">${this.escapeHtml(scene.imagePrompt || scene.image_prompt || scene.visual || 'Not yet generated')}</p>
-                    ${scene.promptMode && scene.promptLen ? `<p class="image-log-item__meta" style="font-size: 0.75rem; color: #888; margin-top: 4px;">📊 Mode: <code>${scene.promptMode}</code> | Length: <code>${scene.promptLen}</code> chars${scene.imageDetails?.relevance_score ? ` | Relevance: <code style="color: ${scene.imageDetails.relevance_score >= 0.65 ? '#22c55e' : '#f59e0b'}">${(scene.imageDetails.relevance_score * 100).toFixed(0)}%</code>${scene.imageDetails.relevance_repaired ? ' 🔧' : ''}` : ''}</p>` : scene.promptMode === 'keywords_fallback' ? `<p class="image-log-item__meta" style="font-size: 0.75rem; color: #f59e0b; margin-top: 4px;">⚠️ Using keywords only (full prompt pending)</p>` : ''}
+                    ${scene.promptMode && scene.promptLen ? `<p class="image-log-item__meta" style="font-size: 0.75rem; color: #888; margin-top: 4px;">📊 Mode: <code>${scene.promptMode}</code> | Length: <code>${scene.promptLen}</code> chars${details.relevance_score ? ` | Relevance: <code style="color: ${details.relevance_score >= 0.65 ? '#22c55e' : '#f59e0b'}">${(details.relevance_score * 100).toFixed(0)}%</code>${details.relevance_repaired ? ' 🔧' : ''}` : ''}</p>` : scene.promptMode === 'keywords_fallback' ? `<p class="image-log-item__meta" style="font-size: 0.75rem; color: #f59e0b; margin-top: 4px;">⚠️ Using keywords only (full prompt pending)</p>` : ''}
+                    ${quickBadges}
                 </div>
+                ${diagnosticsHtml}
             </div>
-        `).join('');
+        `}).join('');
         
         this.debugLog('refreshImagePromptsLog', `Updated log with ${this.sceneBuilder.scenes.length} scenes`);
     }
@@ -4095,15 +4763,18 @@ class CreatePageController {
      * Poll for video completion
      */
     async pollForVideoCompletion() {
-        // Extended timeout for video rendering (can take 10-15 mins for complex renders)
+        // Extended timeout for video rendering (render.com free tier can be slow)
+        // 30 scenes + effects can take 30-45 minutes
         const sceneCount = this.sceneBuilder.scenes.length || 6;
-        const baseTimeout = 900; // 15 minutes minimum (render.com can be slow)
-        const perSceneExtra = sceneCount > 10 ? (sceneCount - 10) * 30 : 0; // Extra 30s per scene over 10
-        const maxPolls = Math.min(900, Math.ceil((baseTimeout + perSceneExtra) / 2)); // Max 30 minutes
+        const baseTimeout = 900; // 15 minutes minimum
+        const perSceneExtra = sceneCount > 10 ? (sceneCount - 10) * 45 : 0; // 45s per scene over 10
+        const maxPolls = Math.min(1500, Math.ceil((baseTimeout + perSceneExtra) / 2)); // Max 50 minutes
         const pollInterval = 2000;
         let polls = 0;
         
-        this.debugLog('pollForVideoCompletion', `Polling with timeout=${maxPolls * 2}s for ${sceneCount} scenes`);
+        // For 30 scenes: 900 + (20 * 45) = 1800s = 30 min
+        // For 12 scenes: 900 + (2 * 45) = 990s = 16.5 min
+        this.debugLog('pollForVideoCompletion', `Polling with timeout=${maxPolls * 2}s (${Math.round(maxPolls * 2 / 60)}min) for ${sceneCount} scenes`);
         
         while (polls < maxPolls) {
             const status = await checkJob(this.jobId);
@@ -4768,16 +5439,38 @@ class CreatePageController {
         document.getElementById('generation-progress').classList.add('hidden');
         document.getElementById('result-view').classList.remove('hidden');
 
+        // Normalize result data (handle both snake_case from API and camelCase)
+        const videoUrl = result.videoUrl || result.video_url;
+        const duration = result.duration || result.duration_sec || 0;
+        const storyText = result.story_text || result.storyText || this.formData.content;
+        
+        // Debug log
+        console.log('[showResult] Raw result:', { 
+            hasVideoUrl: !!result.videoUrl, 
+            hasVideo_url: !!result.video_url, 
+            resolvedUrl: videoUrl,
+            duration,
+            title: result.title
+        });
+
         // Populate result
-        document.getElementById('result-video').src = result.videoUrl;
-        document.getElementById('btn-download').href = result.videoUrl;
+        document.getElementById('result-video').src = videoUrl || '';
+        document.getElementById('btn-download').href = videoUrl || '#';
         document.getElementById('result-title').textContent = result.title || this.formData.title;
-        document.getElementById('result-duration').textContent = `${result.duration || 0}s`;
+        document.getElementById('result-duration').textContent = `${duration}s`;
         document.getElementById('result-scenes').textContent = result.scenes?.length || this.sceneBuilder.scenes.length;
-        document.getElementById('result-content').textContent = this.formData.content;
+        document.getElementById('result-content').textContent = storyText;
+
+        // Normalize result for addToPostQueue (ensure camelCase)
+        const normalizedResult = {
+            ...result,
+            videoUrl: videoUrl,
+            duration: duration,
+            storyText: storyText
+        };
 
         // Add to post queue automatically
-        this.addToPostQueue(result);
+        this.addToPostQueue(normalizedResult);
 
         // Scenes gallery
         const gallery = document.getElementById('result-scenes-gallery');
@@ -4849,6 +5542,12 @@ class CreatePageController {
      */
     async addToPostQueue(result) {
         try {
+            // Validate video URL
+            if (!result.videoUrl) {
+                console.warn('⚠️ No videoUrl in result, skipping post queue. Result keys:', Object.keys(result));
+                return;
+            }
+
             // Initialize postQueueService if not already
             if (typeof postQueueService !== 'undefined') {
                 await postQueueService.init();

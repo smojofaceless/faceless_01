@@ -1,6 +1,6 @@
 // =====================================================
 // OPENAI MODULE - Story Generation, Scene Analysis, Anchors
-// VERSION: 5.1.0 - 2026-02-05 - Added prompt_hash + hardened relevance
+// VERSION: 5.5.0 - 2026-02-08 - Fixed NO/NOT cleanup, clean prompts
 // =====================================================
 
 import {
@@ -10,6 +10,9 @@ import {
   VISUAL_KEYWORDS,
   ORIENTATION_LOCK,
   FORBIDDEN_STYLE_TERMS,
+  UNCANNY_ILLUSTRATED_BANNED_TOKENS,
+  UNCANNY_ILLUSTRATED_STYLE_REPLACEMENT,
+  UNCANNY_ILLUSTRATED_TEXTURE_REPLACEMENT,
   rewriteToContentOnly,
   type StoryAnchor,
   type VisualBeat,
@@ -38,6 +41,36 @@ import {
   buildImagePromptWithVisualDNA,
   formatVisualDNADisplay,
 } from "./visual_dna.ts";
+
+import {
+  resolveStoryProfile,
+  sanitizeStoryProfile,
+  getTemplateDefaults,
+  getPresetProfile,
+  profileToSummary as storyProfileToSummary,
+  type StoryProfile,
+  type PartialStoryProfile,
+} from "./story_profile.ts";
+
+import {
+  buildStoryContract,
+  checkCompliance,
+  stripContractTags,
+  processStoryOutput,
+  complianceToLog,
+  buildRepairPrompt,
+  needsRepair,
+  contractToSummary,
+  convertDNAToContract,
+  canonicalizeStory,
+  truncateAtSentenceBoundary,
+  truncatePreservingBeats,
+  type StoryContract,
+  type ComplianceResult,
+  type CanonicalizationResult,
+  type StoryDNA as ContractStoryDNA,
+  type BeatPreservingTruncationResult,
+} from "./story_contract.ts";
 
 // =====================================================
 // PROMPT HASH UTILITY (SHA-256 for ground-truth tracing)
@@ -350,19 +383,128 @@ Return ONLY valid JSON:
 // The AI is a RENDERER - DNA defines uniqueness
 // =====================================================
 
+// =====================================================
+// FALLBACK AUTOPSY TYPES (v2.1)
+// =====================================================
+
+/** Reason enum for why legacy fallback was triggered */
+export type FallbackReason = 
+  | "contract_exception"       // Exception during contract build or generation
+  | "missing_beats"            // Beat tags missing after generation
+  | "beat_tag_mismatch"        // Wrong number of beats
+  | "word_count_out_of_range"  // Word count too high/low
+  | "unique_element_below_min" // Unique element not mentioned enough
+  | "grounding_missing_beats"  // Missing grounding in required beats
+  | "motif_below_min"          // Motif not mentioned enough
+  | "repair_failed"            // All repair attempts failed
+  | "unknown";                 // Unknown error
+
+/** Error details for contract failure */
+export interface ContractError {
+  message: string;
+  stack?: string;
+  stage: "build_contract" | "openai_generate" | "canonicalize" | "compliance" | "repair" | "truncate";
+}
+
+/** Single contract attempt record for tracking */
+export interface ContractAttempt {
+  stage: "initial" | "repair_1" | "repair_2" | "shorten" | "truncate";
+  word_count: number;
+  compliance_score?: number;
+  hard_failures?: string[];
+  had_tags: boolean;
+}
+
+/** Best contract attempt preserved for debugging even on fallback */
+export interface BestContractAttempt {
+  raw_with_tags: string;
+  canonical_with_tags: string;
+  stripped_for_tts: string;
+  compliance: ComplianceResult | null;
+  word_count: number;
+  had_beat_tags: boolean;
+  beat_count: number;
+}
+
 /**
- * Generate a story using the DNA system
- * This is the NEW primary method for story generation
+ * DNA-Based Story Generation with StoryContract Enforcement (v2.1)
+ * 
+ * This is the NEW primary method for story generation with contract-based compliance.
+ * Now includes full "fallback autopsy" when legacy fallback is triggered.
  * 
  * 1. Generate unique Story DNA (parameters)
  * 2. Derive Visual DNA from Story DNA (deterministic)
- * 3. Build strict prompt from DNA
- * 4. Let AI render the story
- * 5. Store both DNAs for tracking
+ * 3. Resolve and sanitize StoryProfile (system → template → preset → brand → user)
+ * 4. Build StoryContract with beat tags and requirements
+ * 5. Generate story with contract prompt
+ * 6. Check compliance and repair if needed
+ * 7. Fallback to legacy prompt if repair fails (with full autopsy)
+ * 8. Store both DNAs for tracking
  * 
  * @param genre - Genre profile to use (urban_legend, cosmic_horror, true_crime, analog_horror, neutral)
  * @param platform - Target platform for Visual DNA tuning (reels, tiktok, shorts, default)
+ * @param storyOptions - Optional story_mode, story_profile, niche overrides
  */
+export interface StoryGenerationOptions {
+  story_mode?: "auto" | "custom";
+  story_profile?: PartialStoryProfile;
+  niche?: string;  // For template selection (horror, food, finance, etc.)
+  vibe_preset?: string;  // For preset selection
+}
+
+export interface StoryGenerationResult {
+  title: string;
+  story: string;           // Final stripped text for TTS
+  raw_story: string;       // Original with beat tags (if contract used)
+  hook: string;
+  dna: StoryDNA;
+  visual_dna: VisualDNA;
+  dna_display: string;
+  visual_dna_display: string;
+  // Contract system outputs
+  story_profile: StoryProfile;
+  compliance: ComplianceResult | null;
+  contract_summary: string;
+  generation_method: "contract" | "contract_repaired" | "legacy_fallback";
+  // Pipeline metadata
+  canonicalization?: {
+    changed: boolean;
+    notes: string[];
+  };
+  truncation?: {
+    truncated: boolean;
+    originalWordCount: number;
+    finalWordCount: number;
+    notes?: string[];
+  };
+  // v2.0: Enhanced debug fields
+  word_range?: {
+    min: number;
+    max: number;
+    target: number;
+    variance: number;
+  };
+  word_count_check?: {
+    in_range: boolean;
+    actual: number;
+    reason: string;
+  };
+  repair_reasons?: string[];
+  post_fixes_applied?: string[];
+  final_source_text?: "contract" | "repaired" | "truncated" | "legacy";
+  // v2.1: Fallback Autopsy fields
+  fallback_reason?: FallbackReason;
+  contract_error?: ContractError;
+  contract_attempts?: ContractAttempt[];
+  best_contract_attempt?: BestContractAttempt;
+}
+
+// Helper to convert numbers to words for clearer prompts
+function numberToWord(n: number): string {
+  const words = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+  return n >= 0 && n < words.length ? words[n] : String(n);
+}
+
 export async function generateStoryWithDNA(
   supabase: any,
   openaiKey: string,
@@ -370,24 +512,27 @@ export async function generateStoryWithDNA(
   visualPreset?: string,
   genre?: string,
   platform?: string,
-  jobId?: string
-): Promise<{ 
-  title: string; 
-  story: string; 
-  hook: string;
-  dna: StoryDNA;
-  visual_dna: VisualDNA;
-  dna_display: string;
-  visual_dna_display: string;
-}> {
-  console.log(`[STORY-DNA] Starting DNA-based story generation (genre: ${genre || 'urban_legend'}, platform: ${platform || 'default'})...`);
+  jobId?: string,
+  storyOptions?: StoryGenerationOptions
+): Promise<StoryGenerationResult> {
+  const effectiveGenre = genre || 'urban_legend';
+  const effectivePlatform = platform || 'default';
+  const storyMode = storyOptions?.story_mode || 'auto';
+  const niche = storyOptions?.niche || 'horror';  // Default to horror for backward compat
+  const vibePreset = storyOptions?.vibe_preset || effectiveGenre;
+  
+  console.log(`[STORY-CONTRACT] Starting contract-based story generation`);
+  console.log(`[STORY-CONTRACT]   genre=${effectiveGenre}, niche=${niche}, vibe=${vibePreset}`);
+  console.log(`[STORY-CONTRACT]   story_mode=${storyMode}`);
   
   const config = LENGTH_CONFIG[lengthPreset as keyof typeof LENGTH_CONFIG] || LENGTH_CONFIG["60"];
   const visualEnv = VISUAL_ENVIRONMENT_DESCRIPTIONS[visualPreset || "forest"] || VISUAL_ENVIRONMENT_DESCRIPTIONS["forest"];
   
+  // =====================================================
   // Step 1: Generate unique Story DNA with genre profile
+  // =====================================================
   console.log(`[STORY-DNA] Generating unique Story DNA...`);
-  const dna = await generateStoryDNA(supabase, genre || 'urban_legend', 10);
+  const dna = await generateStoryDNA(supabase, effectiveGenre, 10);
   
   console.log(`[STORY-DNA] Story DNA generated:`);
   console.log(`[STORY-DNA]   Genre: ${dna.genre}`);
@@ -397,9 +542,11 @@ export async function generateStoryWithDNA(
   console.log(`[STORY-DNA]   Weird Axis: ${dna.weird_axis.id}`);
   console.log(`[STORY-DNA]   Concept Hash: ${dna.concept_hash}`);
   
-  // Step 2: Derive Visual DNA from Story DNA (DETERMINISTIC - not random!)
+  // =====================================================
+  // Step 2: Derive Visual DNA from Story DNA (DETERMINISTIC)
+  // =====================================================
   console.log(`[VISUAL-DNA] Deriving Visual DNA from Story DNA...`);
-  const targetPlatform = (platform || 'default') as Platform;
+  const targetPlatform = effectivePlatform as Platform;
   const visualDNA = deriveVisualDNA(dna, targetPlatform);
   
   console.log(`[VISUAL-DNA] Visual DNA derived:`);
@@ -408,19 +555,810 @@ export async function generateStoryWithDNA(
   console.log(`[VISUAL-DNA]   Camera: ${visualDNA.camera_language}`);
   console.log(`[VISUAL-DNA]   Lighting: ${visualDNA.lighting_profile}`);
   
-  // Step 3: Build prompt from DNA
-  const prompt = buildPromptFromDNA(dna, { min: config.minWords, max: config.maxWords }, visualEnv);
+  // =====================================================
+  // Step 3: Resolve and sanitize StoryProfile
+  // Merge order: SYSTEM → TEMPLATE → PRESET → BRAND → USER
+  // =====================================================
+  const presetProfile = getPresetProfile(vibePreset);
+  console.log(`[STORY-PROFILE] vibePreset=${vibePreset}, presetProfile found=${!!presetProfile}`);
+  if (presetProfile) {
+    console.log(`[STORY-PROFILE] preset.genreFlags=${JSON.stringify(presetProfile.genreFlags)}`);
+  }
   
-  // Step 4: Get negative memory injection (optional enhancement)
+  const resolvedProfile = resolveStoryProfile({
+    // System defaults are built-in
+    template: getTemplateDefaults(niche),
+    preset: presetProfile,
+    // Brand-level would come from brand.settings.storyProfile (future)
+    user: storyMode === 'custom' ? storyOptions?.story_profile : undefined,
+  });
+  console.log(`[STORY-PROFILE] resolved.genreFlags=${JSON.stringify(resolvedProfile.genreFlags)}`);
+  
+  const storyProfile = sanitizeStoryProfile(resolvedProfile);
+  console.log(`[STORY-PROFILE] sanitized.genreFlags=${JSON.stringify(storyProfile.genreFlags)}`);
+  
+  console.log(`[STORY-PROFILE] ${storyProfileToSummary(storyProfile)}`);
+  
+  // =====================================================
+  // Step 4: Build StoryContract with beat tags
+  // =====================================================
+  const contractDna = convertDNAToContract(dna);
+  const contract = buildStoryContract(contractDna, storyProfile);
+  const contractSummary = contractToSummary(contract);
+  
+  console.log(`[STORY-CONTRACT] Contract built: ${contractSummary}`);
+  console.log(`[STORY-CONTRACT]   beats=${contract.expectedBeats.join(', ')}`);
+  console.log(`[STORY-CONTRACT]   motifMin=${contract.requiredMotifMentions}, finalImage=${contract.requiresFinalImage}`);
+  
+  // =====================================================
+  // Step 5: Generate story with contract prompt
+  // =====================================================
+  let rawStory: string;
+  let compliance: ComplianceResult | null = null;
+  let generationMethod: "contract" | "contract_repaired" | "legacy_fallback" = "contract";
+  let title: string = "";
+  let hook: string = "";
+  let canonicalization: { changed: boolean; notes: string[] } | undefined;
+  let truncation: { truncated: boolean; originalWordCount: number; finalWordCount: number; notes?: string[] } | undefined;
+  
+  // v2.0: Enhanced tracking
+  let repairReasons: string[] = [];
+  let postFixesApplied: string[] = [];
+  let finalSourceText: "contract" | "repaired" | "truncated" | "legacy" = "contract";
+  let wordRange: { min: number; max: number; target: number; variance: number } | undefined;
+  let wordCountCheck: { in_range: boolean; actual: number; reason: string } | undefined;
+  
+  // v2.1: Fallback autopsy tracking
+  let fallbackReason: FallbackReason | undefined;
+  let contractError: ContractError | undefined;
+  const contractAttempts: ContractAttempt[] = [];
+  let bestContractAttempt: BestContractAttempt | undefined;
+  
+  // Helper to check if story has beat tags
+  const countBeatTags = (text: string): number => {
+    const matches = text.match(/\[\s*BEAT_\d+\s*:\s*[^\]]+\s*\]/g);
+    return matches?.length || 0;
+  };
+  
+  // Helper to preserve best attempt (highest compliance score, or most beat tags)
+  const preserveBestAttempt = (
+    rawText: string, 
+    complianceResult: ComplianceResult | null, 
+    stage: string
+  ) => {
+    const beatCount = countBeatTags(rawText);
+    const wc = rawText.split(/\s+/).filter(w => w.length > 0).length;
+    const score = complianceResult?.score ?? 0;
+    
+    // Keep if: no best yet, OR higher score, OR same score + more beats
+    if (!bestContractAttempt || 
+        score > (bestContractAttempt.compliance?.score ?? 0) ||
+        (score === (bestContractAttempt.compliance?.score ?? 0) && beatCount > bestContractAttempt.beat_count)) {
+      bestContractAttempt = {
+        raw_with_tags: rawText,
+        canonical_with_tags: rawText, // Will be updated after canonicalization
+        stripped_for_tts: stripContractTags(rawText),
+        compliance: complianceResult,
+        word_count: wc,
+        had_beat_tags: beatCount > 0,
+        beat_count: beatCount,
+      };
+      console.log(`[STORY-CONTRACT] Best attempt updated at ${stage}: score=${score}, beats=${beatCount}`);
+    }
+  };
+  
+  // Get negative memory injection
   const recentConcepts = await getRecentlyUsedConcepts(supabase, 7, 10);
   const negativeMemory = buildNegativeMemoryInjection(recentConcepts);
   
+  // Build the full contract prompt
+  const contractPrompt = negativeMemory 
+    ? contract.prompt + '\n' + negativeMemory 
+    : contract.prompt;
+  
+  // System prompt for contract-based generation
+  // Check for counting horror special case
+  const countingHorror = (dna as any).counting_horror;
+  let numberRule = '';
+  if (countingHorror) {
+    console.log(`[STORY-CONTRACT] COUNTING HORROR detected: start=${countingHorror.start_count}, wrong=${countingHorror.wrong_count}`);
+    const correctWord = numberToWord(countingHorror.start_count);
+    const wrongWord = numberToWord(countingHorror.wrong_count);
+    numberRule = `
+7. COUNTING HORROR - MANDATORY NUMBERS:
+   - The group STARTS with exactly ${countingHorror.start_count} (${correctWord}) people
+   - The WRONG count is always ${countingHorror.wrong_count} (${wrongWord}) people
+   
+   Example phrasing you MUST use:
+   - "There were ${correctWord} of us" (correct count)
+   - "The count showed ${wrongWord}" (wrong count)
+   - "${wrongWord} people—one more than there should be" (final proof)
+   
+   DO NOT use ${countingHorror.start_count - 1} or ${countingHorror.wrong_count - 1} or any other numbers.
+   The ONLY two numbers for group size in this story are ${countingHorror.start_count} and ${countingHorror.wrong_count}.`;
+    console.log(`[STORY-CONTRACT] Number rule added to system prompt`);
+  }
+  
+  const contractSystemPrompt = `You are a master storyteller. Your task is to write a story that EXACTLY follows the contract specifications.
+
+CRITICAL RULES:
+1. You MUST include all beat tags exactly as specified: [BEAT_N:LABEL]
+2. You MUST include the motif at least ${contract.requiredMotifMentions} times
+3. You MUST include the final image in the last beat${contract.requiresFinalImage ? ' (REQUIRED)' : ''}
+4. You MUST stay within the word count range
+5. Do NOT add commentary or explanations
+6. Do NOT use markdown formatting${numberRule}
+
+Return ONLY valid JSON with this structure:
+{
+  "title": "Story title",
+  "story": "Full story with [BEAT_N:LABEL] tags",
+  "hook": "Opening hook (1-2 sentences)"
+}`;
+  
+  console.log(`[STORY-CONTRACT] Calling OpenAI with contract prompt...`);
+  
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${openaiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: contractSystemPrompt },
+          { role: "user", content: contractPrompt },
+        ],
+        temperature: 0.7,  // Slightly lower for contract adherence
+        response_format: { type: "json_object" },
+      }),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[STORY-CONTRACT] OpenAI error: ${response.status}`, errorText);
+      contractError = {
+        message: `OpenAI API error: ${response.status}`,
+        stage: "openai_generate",
+      };
+      throw new Error(`OpenAI API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const content = JSON.parse(data.choices[0].message.content);
+    
+    rawStory = content.story || "";
+    title = content.title || "Untitled";
+    hook = content.hook || "";
+    
+    const wordCount = rawStory.split(/\s+/).filter(w => w.length > 0).length;
+    console.log(`[STORY-CONTRACT] Generated: "${title}" (${wordCount} words)`);
+    
+    // Track initial attempt
+    contractAttempts.push({
+      stage: "initial",
+      word_count: wordCount,
+      had_tags: countBeatTags(rawStory) > 0,
+    });
+    
+    // =====================================================
+    // Step 6: Canonicalize beat tags before compliance check
+    // =====================================================
+    const canonResult = canonicalizeStory(rawStory, contract.expectedBeats);
+    if (canonResult.changed) {
+      console.log(`[STORY-CONTRACT] Canonicalized: ${canonResult.notes.join(', ')}`);
+      rawStory = canonResult.text;
+    }
+    canonicalization = {
+      changed: canonResult.changed,
+      notes: canonResult.notes,
+    };
+    
+    // =====================================================
+    // Step 7: COMPLIANCE & WORD COUNT ENFORCEMENT (v2.1)
+    // Deterministic pipeline: repair → truncate → shortening repair
+    // =====================================================
+    compliance = checkCompliance(rawStory, contract);
+    if (canonResult.changed) {
+      compliance.canonicalized = true;
+      compliance.canonicalizationNotes = canonResult.notes;
+    }
+    console.log(`[STORY-CONTRACT] Compliance: ${complianceToLog(compliance)}`);
+    
+    // Update initial attempt with compliance
+    if (contractAttempts.length > 0) {
+      contractAttempts[contractAttempts.length - 1].compliance_score = compliance.score;
+      contractAttempts[contractAttempts.length - 1].hard_failures = compliance.hardFailures;
+    }
+    
+    // Preserve best attempt (initial)
+    preserveBestAttempt(rawStory, compliance, "initial");
+    // Update canonical in best attempt after canonicalization
+    if (bestContractAttempt && canonResult.changed) {
+      bestContractAttempt.canonical_with_tags = rawStory;
+      bestContractAttempt.stripped_for_tts = stripContractTags(rawStory);
+    }
+    
+    // Build word range info (assign to outer scope variable)
+    wordRange = {
+      min: contract.wordRange.min,
+      max: contract.wordRange.max,
+      target: storyProfile.wordCount.target,
+      variance: storyProfile.wordCount.variance,
+    };
+    
+    // =====================================================
+    // Phase 1: Check if repair is needed
+    // =====================================================
+    const maxRepairAttempts = storyProfile.generation?.maxRepairAttempts ?? 1;
+    let repairAttempts = 0;
+    
+    // Collect repair reasons from hard failures
+    for (const failure of compliance.hardFailures) {
+      if (failure.startsWith('word_count_out_of_range')) {
+        repairReasons.push('word_count_out_of_range');
+      } else if (failure.startsWith('grounding_missing_beats')) {
+        repairReasons.push('grounding_missing_beats');
+      } else if (failure.startsWith('unique_element_below_min')) {
+        repairReasons.push('unique_element_below_min');
+      } else if (failure.startsWith('motif_below_min')) {
+        repairReasons.push('motif_below_min');
+      } else {
+        repairReasons.push(failure.split(':')[0]);
+      }
+    }
+    
+    // Check if repair is needed
+    if (needsRepair(compliance, 70)) {
+      console.log(`[STORY-CONTRACT] ⚠️ Repair needed - score=${compliance.score}, reasons=[${repairReasons.join(',')}]`);
+      
+      // Try repair pass(es) with profile-defined temperature
+      const repairTemp = storyProfile.generation?.repairTemperature ?? 0.15;
+      
+      while (repairAttempts < maxRepairAttempts) {
+        repairAttempts++;
+        console.log(`[STORY-CONTRACT] Repair attempt ${repairAttempts}/${maxRepairAttempts}...`);
+        
+        const repairResult = await attemptStoryRepair(
+          openaiKey,
+          rawStory,
+          contract,
+          compliance,
+          repairTemp
+        );
+        
+        // Track repair attempt
+        const repairWc = repairResult.story.split(/\s+/).filter(w => w.length > 0).length;
+        contractAttempts.push({
+          stage: `repair_${repairAttempts}` as ContractAttempt["stage"],
+          word_count: repairWc,
+          compliance_score: repairResult.compliance.score,
+          hard_failures: repairResult.compliance.hardFailures,
+          had_tags: countBeatTags(repairResult.story) > 0,
+        });
+        
+        if (repairResult.success) {
+          rawStory = repairResult.story;
+          compliance = repairResult.compliance;
+          generationMethod = "contract_repaired";
+          finalSourceText = "repaired";
+          postFixesApplied.push(`repair_pass_${repairAttempts}`);
+          preserveBestAttempt(rawStory, compliance, `repair_${repairAttempts}`);
+          console.log(`[STORY-CONTRACT] ✅ Repair ${repairAttempts} successful: ${complianceToLog(compliance)}`);
+          break;
+        } else {
+          console.log(`[STORY-CONTRACT] ⚠️ Repair ${repairAttempts} did not fully resolve issues`);
+          postFixesApplied.push(`repair_pass_${repairAttempts}_partial`);
+          // Still preserve if better than what we had
+          preserveBestAttempt(repairResult.story, repairResult.compliance, `repair_${repairAttempts}_partial`);
+        }
+      }
+    } else {
+      console.log(`[STORY-CONTRACT] ✅ Compliance passed on first attempt`);
+    }
+    
+    // =====================================================
+    // Phase 2: Enforce word count with truncation if needed
+    // This happens AFTER repair, regardless of repair success
+    // =====================================================
+    const currentWordCount = rawStory.split(/\s+/).filter(w => w.length > 0).length;
+    const wordCountInRange = currentWordCount >= contract.wordRange.min && currentWordCount <= contract.wordRange.max;
+    
+    if (!wordCountInRange && storyProfile.wordCount.strictEnforcement) {
+      console.log(`[STORY-CONTRACT] Word count ${currentWordCount} out of range [${contract.wordRange.min}-${contract.wordRange.max}]`);
+      
+      if (currentWordCount > contract.wordRange.max) {
+        // Need to truncate
+        console.log(`[STORY-CONTRACT] Attempting beat-preserving truncation...`);
+        
+        const truncResult = truncatePreservingBeats(
+          rawStory,
+          contract.wordRange.max,
+          contract.expectedBeats,
+          storyProfile.ending.enforceFinalImage
+        );
+        
+        if (truncResult.needsRepairInstead) {
+          // Truncation would corrupt structure - try shortening repair
+          console.log(`[STORY-CONTRACT] Truncation would corrupt structure, trying shortening repair...`);
+          
+          const shortenRepairResult = await attemptShorteningRepair(
+            openaiKey,
+            rawStory,
+            contract,
+            contract.wordRange.max
+          );
+          
+          if (shortenRepairResult.success) {
+            rawStory = shortenRepairResult.story;
+            truncation = {
+              truncated: true,
+              originalWordCount: currentWordCount,
+              finalWordCount: shortenRepairResult.story.split(/\s+/).filter(w => w.length > 0).length,
+              notes: ['shortening_repair'],
+            };
+            postFixesApplied.push('shortening_repair');
+            finalSourceText = "repaired";
+            console.log(`[STORY-CONTRACT] ✅ Shortening repair successful`);
+          } else {
+            // Last resort: simple truncation at sentence boundary
+            console.log(`[STORY-CONTRACT] ⚠️ Shortening repair failed, using simple truncation`);
+            const simpleResult = truncateAtSentenceBoundary(rawStory, contract.wordRange.max);
+            rawStory = simpleResult.text;
+            truncation = {
+              truncated: true,
+              originalWordCount: simpleResult.originalWordCount,
+              finalWordCount: simpleResult.finalWordCount,
+              notes: ['simple_truncation_fallback'],
+            };
+            postFixesApplied.push('truncation_sentence_boundary');
+            finalSourceText = "truncated";
+          }
+        } else if (truncResult.truncated) {
+          rawStory = truncResult.text;
+          truncation = {
+            truncated: true,
+            originalWordCount: truncResult.originalWordCount,
+            finalWordCount: truncResult.finalWordCount,
+            notes: truncResult.notes,
+          };
+          postFixesApplied.push('truncation_beat_preserving');
+          finalSourceText = "truncated";
+          console.log(`[STORY-CONTRACT] Truncated: ${truncResult.originalWordCount} → ${truncResult.finalWordCount} words (beats preserved: ${truncResult.beatsPreserved})`);
+        } else {
+          // Truncation didn't happen but should have - log error
+          console.log(`[STORY-CONTRACT] ⚠️ Truncation returned unchanged despite word count over max`);
+          truncation = {
+            truncated: false,
+            originalWordCount: currentWordCount,
+            finalWordCount: currentWordCount,
+            notes: ['truncation_failed_unexpectedly'],
+          };
+        }
+      } else {
+        // Word count too low - can't fix with truncation, log warning
+        console.log(`[STORY-CONTRACT] ⚠️ Word count too low (${currentWordCount} < ${contract.wordRange.min}), cannot fix with truncation`);
+        repairReasons.push('word_count_too_low_unfixable');
+      }
+    }
+    
+    // ALWAYS re-check compliance after any truncation attempt
+    // This ensures compliance reflects the current state
+    compliance = checkCompliance(rawStory, contract);
+    console.log(`[STORY-CONTRACT] Post-enforcement compliance: ${complianceToLog(compliance)}`);
+    
+    // Double-check word count enforcement succeeded
+    const postEnforcementWc = rawStory.split(/\s+/).filter(w => w.length > 0).length;
+    if (storyProfile.wordCount.strictEnforcement && postEnforcementWc > contract.wordRange.max) {
+      console.log(`[STORY-CONTRACT] ⚠️ Word count still over max after enforcement: ${postEnforcementWc} > ${contract.wordRange.max}`);
+      // Ensure hard failure is set
+      if (!compliance.hardFailures.some(f => f.startsWith('word_count_out_of_range'))) {
+        compliance.hardFailures.push(`word_count_out_of_range:${postEnforcementWc}>${contract.wordRange.max}`);
+        compliance.passed = false;
+      }
+    }
+    
+    // =====================================================
+    // Phase 3: Legacy fallback if still failing
+    // =====================================================
+    const allowFallback = storyProfile.generation?.allowLegacyFallback ?? true;
+    
+    // Preserve final state as best attempt before potential fallback
+    preserveBestAttempt(rawStory, compliance, "final_before_fallback");
+    
+    if (compliance && compliance.hardFailures.length > 0 && allowFallback) {
+      console.log(`[STORY-CONTRACT] Still has hard failures after repair/truncation, using legacy fallback...`);
+      
+      // Determine primary fallback reason from hard failures
+      fallbackReason = determineFallbackReason(compliance.hardFailures);
+      console.log(`[STORY-CONTRACT] Fallback reason: ${fallbackReason}`);
+      
+      const legacyResult = await generateStoryWithLegacyPrompt(
+        openaiKey,
+        dna,
+        config,
+        visualEnv,
+        negativeMemory
+      );
+      
+      rawStory = legacyResult.story;
+      title = legacyResult.title;
+      hook = legacyResult.hook;
+      // Note: Keep compliance as-is to preserve the last contract compliance for debugging
+      // We'll set a separate field for whether we used legacy
+      generationMethod = "legacy_fallback";
+      finalSourceText = "legacy";
+      postFixesApplied.push('legacy_fallback');
+      
+      console.log(`[STORY-CONTRACT] Legacy fallback generated: "${title}"`);
+    } else if (compliance && compliance.hardFailures.length > 0 && !allowFallback) {
+      // Strict mode: Don't use legacy fallback, return best contract attempt with failures
+      console.log(`[STORY-CONTRACT] ⚠️ Hard failures exist but legacy fallback disabled - returning best attempt`);
+      fallbackReason = determineFallbackReason(compliance.hardFailures);
+      
+      // Use best contract attempt if available
+      if (bestContractAttempt && bestContractAttempt.had_beat_tags) {
+        console.log(`[STORY-CONTRACT] Using best contract attempt with beat tags for output`);
+        rawStory = bestContractAttempt.raw_with_tags;
+      }
+      // Keep generationMethod as contract/contract_repaired to indicate we didn't fall back
+    }
+    
+    // Build word count check result (assign to outer scope variable)
+    const finalWc = rawStory.split(/\s+/).filter(w => w.length > 0).length;
+    wordCountCheck = {
+      in_range: finalWc >= contract.wordRange.min && finalWc <= contract.wordRange.max,
+      actual: finalWc,
+      reason: finalWc < contract.wordRange.min 
+        ? `below_min:${finalWc}<${contract.wordRange.min}`
+        : finalWc > contract.wordRange.max
+          ? `above_max:${finalWc}>${contract.wordRange.max}`
+          : 'in_range',
+    };
+    
+  } catch (error) {
+    console.error(`[STORY-CONTRACT] Contract generation failed:`, error);
+    
+    // Capture error details for autopsy
+    if (!contractError) {
+      contractError = {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        stage: "openai_generate", // Default stage if not set earlier
+      };
+    }
+    fallbackReason = "contract_exception";
+    
+    // Check if legacy fallback is allowed
+    const allowFallback = storyProfile.generation?.allowLegacyFallback ?? true;
+    
+    if (allowFallback) {
+      console.log(`[STORY-CONTRACT] Falling back to legacy generation...`);
+      
+      // Fallback to legacy on any error
+      const legacyResult = await generateStoryWithLegacyPrompt(
+        openaiKey,
+        dna,
+        config,
+        visualEnv,
+        negativeMemory
+      );
+      
+      rawStory = legacyResult.story;
+      title = legacyResult.title;
+      hook = legacyResult.hook;
+      // Keep compliance preserved from best attempt for debugging
+      generationMethod = "legacy_fallback";
+      finalSourceText = "legacy";
+    } else {
+      console.error(`[STORY-CONTRACT] ❌ Contract failed and legacy fallback disabled - throwing error`);
+      throw new Error(`Story contract generation failed: ${error}`);
+    }
+  }
+  
+  // =====================================================
+  // Step 8: Strip tags for final output
+  // =====================================================
+  const finalStory = generationMethod !== "legacy_fallback" 
+    ? stripContractTags(rawStory)
+    : rawStory;
+  
+  // =====================================================
+  // Step 9: TELEMETRY LOGGING
+  // Log generation method, compliance, canonicalization, truncation
+  // =====================================================
+  const telemetry = {
+    generation_method: generationMethod,
+    compliance_score: compliance?.score ?? null,
+    compliance_passed: compliance?.passed ?? null,
+    hard_failures: compliance?.hardFailures ?? [],
+    preset: vibePreset,
+    niche: niche,
+    profile_source: storyProfile.profile_source,
+    output_mode: storyProfile.outputMode?.mode ?? 'narrative',
+    allow_legacy_fallback: storyProfile.generation?.allowLegacyFallback ?? true,
+    canonicalized: canonicalization?.changed ?? false,
+    canonicalization_notes: canonicalization?.notes ?? [],
+    truncated: truncation?.truncated ?? false,
+    truncation_original_words: truncation?.originalWordCount ?? null,
+    truncation_final_words: truncation?.finalWordCount ?? null,
+  };
+  console.log(`[TELEMETRY] ${JSON.stringify(telemetry)}`);
+  
+  // =====================================================
+  // Step 10: Store both DNAs for tracking
+  // =====================================================
+  try {
+    await storeDNA(supabase, dna, undefined, jobId);
+    console.log(`[STORY-DNA] Story DNA stored successfully`);
+  } catch (e) {
+    console.error(`[STORY-DNA] Failed to store Story DNA:`, e);
+  }
+  
+  try {
+    await storeVisualDNA(supabase, visualDNA);
+    console.log(`[VISUAL-DNA] Visual DNA stored successfully`);
+  } catch (e) {
+    console.error(`[VISUAL-DNA] Failed to store Visual DNA:`, e);
+  }
+  
+  // Build display summaries for UI
+  const dnaDisplay = buildDNADisplaySummary(dna);
+  const visualDNADisplay = formatVisualDNADisplay(visualDNA);
+  
+  console.log(`[STORY-CONTRACT] Generation complete: method=${generationMethod}${fallbackReason ? `, fallback_reason=${fallbackReason}` : ''}`);
+  
+  return {
+    title,
+    story: finalStory,
+    raw_story: rawStory,
+    hook,
+    dna,
+    visual_dna: visualDNA,
+    dna_display: dnaDisplay,
+    visual_dna_display: visualDNADisplay,
+    story_profile: storyProfile,
+    compliance,
+    contract_summary: contractSummary,
+    generation_method: generationMethod,
+    canonicalization,
+    truncation,
+    // v2.0: Enhanced debug fields
+    word_range: wordRange,
+    word_count_check: wordCountCheck,
+    repair_reasons: repairReasons,
+    post_fixes_applied: postFixesApplied,
+    final_source_text: finalSourceText,
+    // v2.1: Fallback autopsy fields
+    fallback_reason: fallbackReason,
+    contract_error: contractError,
+    contract_attempts: contractAttempts.length > 0 ? contractAttempts : undefined,
+    best_contract_attempt: bestContractAttempt,
+  };
+}
+
+/**
+ * Determine the primary fallback reason from hard failures
+ */
+function determineFallbackReason(hardFailures: string[]): FallbackReason {
+  if (!hardFailures || hardFailures.length === 0) {
+    return "unknown";
+  }
+  
+  // Check each failure type in priority order
+  for (const failure of hardFailures) {
+    if (failure.startsWith('beat_count_mismatch') || failure.includes('missing_beats')) {
+      return "missing_beats";
+    }
+    if (failure.startsWith('beat_tag_mismatch')) {
+      return "beat_tag_mismatch";
+    }
+    if (failure.startsWith('word_count_out_of_range')) {
+      return "word_count_out_of_range";
+    }
+    if (failure.startsWith('unique_element_below_min')) {
+      return "unique_element_below_min";
+    }
+    if (failure.startsWith('grounding_missing_beats')) {
+      return "grounding_missing_beats";
+    }
+    if (failure.startsWith('motif_below_min')) {
+      return "motif_below_min";
+    }
+  }
+  
+  // If we went through repair but still have failures
+  return "repair_failed";
+}
+
+/**
+ * Attempt to repair a story that failed compliance
+ * Uses very low temperature for deterministic repairs
+ */
+async function attemptStoryRepair(
+  openaiKey: string,
+  rawStory: string,
+  contract: StoryContract,
+  compliance: ComplianceResult,
+  repairTemperature: number = 0.15
+): Promise<{ success: boolean; story: string; compliance: ComplianceResult }> {
+  console.log(`[STORY-REPAIR] Attempting repair pass (temp=${repairTemperature})...`);
+  
+  const repairPrompt = buildRepairPrompt(rawStory, contract, compliance);
+  
+  // System prompt with repeated beat tag rules for determinism
+  const repairSystemPrompt = `You are a precise story editor. Your ONLY task is to fix the compliance issues.
+
+=== CRITICAL RULES (READ CAREFULLY) ===
+
+⚠️ DO NOT add, remove, or rename ANY beat tags. ⚠️
+⚠️ DO NOT change the order of beat tags. ⚠️
+
+Your job is ONLY to:
+1. Edit text INSIDE existing beats
+2. Fix the specific compliance issues listed
+3. Return the full story with ALL beat tags intact
+
+UNIQUE ELEMENT RECURRENCE:
+- If unique element needs more mentions: add them naturally
+- Second mention MUST ESCALATE (worse, more specific, new implication)
+- Do NOT just repeat the same phrase - show PROGRESSION
+
+FORBIDDEN ACTIONS:
+- Adding new [BEAT_X:...] tags
+- Removing existing beat tags  
+- Renaming beat labels (e.g., changing OPENING to INTRO)
+- Reordering beats
+- Adding commentary or explanations
+- Using markdown formatting
+
+Return ONLY the repaired story text, no JSON.`;
+  
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${openaiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: repairSystemPrompt },
+          { role: "user", content: repairPrompt },
+        ],
+        temperature: repairTemperature,  // Very low for deterministic repair (0.1-0.2)
+        top_p: 0.9,  // Slightly constrained nucleus sampling
+      }),
+    });
+    
+    if (!response.ok) {
+      console.error(`[STORY-REPAIR] OpenAI error: ${response.status}`);
+      return { success: false, story: rawStory, compliance };
+    }
+    
+    const data = await response.json();
+    const repairedStory = data.choices[0].message.content.trim();
+    
+    // Re-check compliance
+    const newCompliance = checkCompliance(repairedStory, contract);
+    console.log(`[STORY-REPAIR] After repair: ${complianceToLog(newCompliance)}`);
+    
+    // Consider repair successful if score improved and no hard failures
+    const success = newCompliance.score >= 70 && newCompliance.hardFailures.length === 0;
+    
+    return {
+      success,
+      story: success ? repairedStory : rawStory,
+      compliance: success ? newCompliance : compliance,
+    };
+    
+  } catch (error) {
+    console.error(`[STORY-REPAIR] Repair failed:`, error);
+    return { success: false, story: rawStory, compliance };
+  }
+}
+
+/**
+ * Attempt to shorten a story to fit within word limit
+ * Uses explicit instruction to compress while preserving beat tags
+ * This is a second repair pass specifically for word count
+ */
+async function attemptShorteningRepair(
+  openaiKey: string,
+  rawStory: string,
+  contract: StoryContract,
+  maxWords: number
+): Promise<{ success: boolean; story: string }> {
+  const currentWordCount = rawStory.split(/\s+/).filter(w => w.length > 0).length;
+  console.log(`[STORY-SHORTEN] Attempting to shorten from ${currentWordCount} to ≤${maxWords} words...`);
+  
+  const shortenPrompt = `=== STORY SHORTENING REQUEST ===
+
+The following story is ${currentWordCount} words but MUST be ≤${maxWords} words.
+
+CRITICAL RULES:
+1. ⚠️ DO NOT add, remove, or rename ANY beat tags. ⚠️
+2. ⚠️ Keep ALL beat tags EXACTLY as they appear: ${contract.expectedBeats.join(', ')}
+3. Compress text WITHIN each beat (not across beats)
+4. Remove filler words, redundant phrases, unnecessary adjectives
+5. Keep essential story elements and narrative flow
+6. The final beat MUST remain intact and meaningful
+
+Target: Reduce to ${maxWords} words or fewer while keeping all beat tags.
+
+=== ORIGINAL STORY ===
+
+${rawStory}
+
+=== OUTPUT ===
+
+Return ONLY the shortened story with all beat tags preserved:`;
+
+  const systemPrompt = `You are a precise text editor. Shorten the story to fit the word limit WITHOUT changing beat tags. Beat tags look like [BEAT_N:LABEL] and MUST remain exactly as they appear.`;
+  
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${openaiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: shortenPrompt },
+        ],
+        temperature: 0.1,  // Very low for deterministic shortening
+        top_p: 0.9,
+      }),
+    });
+    
+    if (!response.ok) {
+      console.error(`[STORY-SHORTEN] OpenAI error: ${response.status}`);
+      return { success: false, story: rawStory };
+    }
+    
+    const data = await response.json();
+    const shortenedStory = data.choices[0].message.content.trim();
+    
+    // Verify word count and beat preservation
+    const newWordCount = shortenedStory.split(/\s+/).filter((w: string) => w.length > 0).length;
+    const beatsPreserved = contract.expectedBeats.every(tag => shortenedStory.includes(tag));
+    
+    console.log(`[STORY-SHORTEN] Result: ${newWordCount} words, beats preserved: ${beatsPreserved}`);
+    
+    const success = newWordCount <= maxWords && beatsPreserved;
+    
+    return {
+      success,
+      story: success ? shortenedStory : rawStory,
+    };
+    
+  } catch (error) {
+    console.error(`[STORY-SHORTEN] Shortening failed:`, error);
+    return { success: false, story: rawStory };
+  }
+}
+
+/**
+ * Legacy prompt generation (fallback when contract fails)
+ */
+async function generateStoryWithLegacyPrompt(
+  openaiKey: string,
+  dna: StoryDNA,
+  config: typeof LENGTH_CONFIG[keyof typeof LENGTH_CONFIG],
+  visualEnv: string,
+  negativeMemory: string | null
+): Promise<{ title: string; story: string; hook: string }> {
+  // Use the original buildPromptFromDNA
+  const prompt = buildPromptFromDNA(dna, { min: config.minWords, max: config.maxWords }, visualEnv);
   const fullPrompt = negativeMemory ? prompt + '\n' + negativeMemory : prompt;
   
-  // Step 5: Generate story via OpenAI
   const systemPrompt = "You are a horror story writer. You MUST follow the DNA specifications exactly. The DNA defines WHAT the story is about - you render it into compelling prose. Do not deviate from the DNA. Always respond with valid JSON.";
-  
-  console.log(`[STORY-DNA] Calling OpenAI with DNA-based prompt...`);
   
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -434,53 +1372,23 @@ export async function generateStoryWithDNA(
         { role: "system", content: systemPrompt },
         { role: "user", content: fullPrompt },
       ],
-      temperature: 0.75, // Lower temperature for DNA adherence
+      temperature: 0.75,
       response_format: { type: "json_object" },
     }),
   });
-
+  
   if (!response.ok) {
     const errorText = await response.text();
-    console.error(`[STORY-DNA] OpenAI error: ${response.status}`, errorText);
-    throw new Error(`OpenAI API error: ${response.status}`);
+    throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
   }
-
+  
   const data = await response.json();
   const content = JSON.parse(data.choices[0].message.content);
   
-  // Log word count for debugging
-  const wordCount = content.story?.split(/\s+/).length || 0;
-  console.log(`[STORY-DNA] Generated: "${content.title}" (${wordCount} words)`);
-  
-  // Step 6: Store both DNAs for tracking
-  try {
-    await storeDNA(supabase, dna, undefined, jobId);
-    console.log(`[STORY-DNA] Story DNA stored successfully`);
-  } catch (e) {
-    console.error(`[STORY-DNA] Failed to store Story DNA:`, e);
-    // Don't fail the story generation if DNA storage fails
-  }
-  
-  try {
-    await storeVisualDNA(supabase, visualDNA);
-    console.log(`[VISUAL-DNA] Visual DNA stored successfully`);
-  } catch (e) {
-    console.error(`[VISUAL-DNA] Failed to store Visual DNA:`, e);
-    // Don't fail if visual DNA storage fails (table might not exist yet)
-  }
-  
-  // Build display summaries for UI
-  const dnaDisplay = buildDNADisplaySummary(dna);
-  const visualDNADisplay = formatVisualDNADisplay(visualDNA);
-  
   return {
-    title: content.title,
-    story: content.story,
-    hook: content.hook,
-    dna,
-    visual_dna: visualDNA,
-    dna_display: dnaDisplay,
-    visual_dna_display: visualDNADisplay,
+    title: content.title || "Untitled",
+    story: content.story || "",
+    hook: content.hook || "",
   };
 }
 
@@ -1155,6 +2063,60 @@ export function calculateRecommendedSceneCount(
 // =====================================================
 
 /**
+ * Detect if the character description describes a GROUP of people
+ * rather than a single character. This is important because pattern
+ * extraction on multi-character descriptions creates garbled output.
+ * 
+ * @returns true if GROUP scenario (2+ characters)
+ */
+function detectGroupCharacters(description: string): boolean {
+  const lowerDesc = description.toLowerCase();
+  
+  // Explicit group indicators
+  const groupIndicators = [
+    /\b(\d+)\s*(people|persons|friends|characters|individuals)/i,  // "6 friends"
+    /\bgroup\s+of\b/i,                                              // "group of"
+    /\bseveral\s+(people|friends|characters)/i,                     // "several friends"
+    /\bmultiple\s+(people|characters)/i,                            // "multiple people"
+    /\bfriends?\s+include/i,                                        // "friends include"
+    /\bcharacters?\s+are\s*:/i,                                     // "characters are:"
+    /\bfirst\s+(person|character|friend)\s*[,.:]/i,                 // "first person:"
+    /\bsecond\s+(person|character|friend)\s*[,.:]/i,                // "second person:"
+    /\bthird\s+(person|character|friend)\s*[,.:]/i,                 // "third person:"
+    /\b(1|2|3|4|5|6|7|8|9|10)\.\s*(tall|short|male|female|woman|man)/i, // "1. Tall male..."
+  ];
+  
+  for (const pattern of groupIndicators) {
+    if (pattern.test(description)) {
+      console.log(`[detectGroupCharacters] Matched pattern: ${pattern}`);
+      return true;
+    }
+  }
+  
+  // Count distinct character descriptions by looking for numbered lists or "and" separators
+  const personMatches = description.match(/\b(tall|short|male|female|man|woman|person|friend)\s+with\b/gi);
+  if (personMatches && personMatches.length >= 3) {
+    console.log(`[detectGroupCharacters] Found ${personMatches.length} person descriptions`);
+    return true;
+  }
+  
+  // Count comma-separated character descriptions
+  const commaSegments = description.split(/[,;]/);
+  let descriptionCount = 0;
+  for (const segment of commaSegments) {
+    if (/\b(wearing|dressed|hair|eyes|tall|short|male|female)\b/i.test(segment)) {
+      descriptionCount++;
+    }
+  }
+  if (descriptionCount >= 4) {
+    console.log(`[detectGroupCharacters] Found ${descriptionCount} description segments`);
+    return true;
+  }
+  
+  return false;
+}
+
+/**
  * Generate a stable character ID from description
  */
 function generateCharacterId(description: string): string {
@@ -1355,16 +2317,38 @@ Return JSON:
     
     // ========== CREATE CHARACTER LOCK ==========
     // If character exists, create structured CharacterLock for consistency
+    // v5.6: Detect GROUP vs SINGLE character scenarios
     if (anchor.characterDescription) {
       const charDesc = anchor.characterDescription;
-      anchor.characterLock = {
-        id: generateCharacterId(charDesc),
-        face: extractCharacterFace(charDesc),
-        outfit: extractCharacterOutfit(charDesc),
-        silhouette: extractCharacterSilhouette(charDesc),
-        doNotChange: extractDoNotChange(charDesc),
-      };
-      console.log(`[createStoryAnchor] Created CharacterLock: ${anchor.characterLock.id}`);
+      
+      // Detect if this is a GROUP scenario (multiple characters)
+      const isGroupScenario = detectGroupCharacters(charDesc);
+      
+      if (isGroupScenario) {
+        // GROUP MODE: Use simplified description to avoid garbled output
+        // from pattern extraction on multi-character descriptions
+        console.log(`[createStoryAnchor] Detected GROUP scenario - using simplified lock`);
+        anchor.characterLock = {
+          id: generateCharacterId(charDesc),
+          face: "multiple characters - varied appearances",
+          outfit: "casual group attire as described in story",
+          silhouette: "group of people",
+          doNotChange: ["group composition", "overall appearance styles"],
+          isGroup: true,
+          groupDescription: charDesc,  // Store full description for reference
+        };
+      } else {
+        // SINGLE CHARACTER MODE: Use detailed extraction
+        anchor.characterLock = {
+          id: generateCharacterId(charDesc),
+          face: extractCharacterFace(charDesc),
+          outfit: extractCharacterOutfit(charDesc),
+          silhouette: extractCharacterSilhouette(charDesc),
+          doNotChange: extractDoNotChange(charDesc),
+          isGroup: false,
+        };
+      }
+      console.log(`[createStoryAnchor] Created CharacterLock: ${anchor.characterLock.id} (group: ${isGroupScenario})`);
     }
     
     // FORCE CUSTOM STYLE VERBATIM - don't let GPT invent style/camera language
@@ -1849,6 +2833,194 @@ export async function createSceneVisualContracts(
   return allContracts;
 }
 
+// =====================================================
+// GROUP COUNT EXTRACTION (One Too Many preset)
+// =====================================================
+
+/**
+ * Extract group count from scene text using regex patterns
+ * Returns the number mentioned, or null if no count found
+ * 
+ * v5.2: STRICT PATTERNS ONLY - avoid false positives like "one of us" meaning "someone"
+ */
+function detectRevealPhase(text: string): boolean {
+  const revealPatterns = [
+    /count(ed|ing)?\s+\d+/i,                          // "counted 5", "counting five"
+    /there\s+(were|was)\s+\d+\s+(faces|figures|people|heads)/i, // "there were 5 faces"
+    /\d+\s+(faces|figures|people|heads)\s+(in\s+the|visible)/i, // "5 faces in the photo"
+    /photo\s+show(s|ed)?\s+\d+/i,                     // "photo showed 5"
+    /(one|1)\s+(extra|more|too\s+many)/i,            // "one extra", "one too many"
+    /shouldn'?t\s+(be|have\s+been)\s+\d+/i,          // "shouldn't be 5"
+    /extra\s+(person|figure|face|one)/i,             // "extra person"
+    /wrong\s+(number|count)/i,                       // "wrong number"
+  ];
+  
+  const lowerText = text.toLowerCase();
+  return revealPatterns.some(p => p.test(lowerText));
+}
+
+/**
+ * Determine if a scene likely depicts a group photo/image viewing
+ * These scenes should show the WRONG count (extra person visible)
+ */
+function isPhotoViewingScene(text: string): boolean {
+  const lowerText = text.toLowerCase();
+  const photoPatterns = [
+    /look(ed|ing)?\s+(at|through)\s+(the\s+)?(photo|picture|image|footage)/i,
+    /stared?\s+at\s+(the\s+)?(photo|picture|image|footage)/i,
+    /in\s+the\s+(photo|picture|image|footage)/i,
+    /the\s+(photo|picture|image|footage)\s+show/i,
+    /reviewing?\s+(the\s+)?(photo|picture|footage)/i,
+    /check(ed|ing)?\s+(the\s+)?(photo|picture|footage|camera)/i,
+  ];
+  return photoPatterns.some(p => p.test(lowerText));
+}
+
+/**
+ * Determine if a scene shows the group physically together
+ * (not a photo, but the actual people)
+ */
+function isGroupTogetherScene(text: string): boolean {
+  const lowerText = text.toLowerCase();
+  // AVOID: "one of us" as this means "someone among us", not "1 person"
+  // AVOID: "the extra one" as this refers to the anomaly
+  const groupPatterns = [
+    /all\s+(\d+|four|five|six|seven)\s+of\s+us/i,   // "all 4 of us" (strict)
+    /the\s+(\d+|four|five|six|seven)\s+of\s+us/i,   // "the 4 of us" (strict)
+    /we\s+were\s+all\s+together/i,                   // group together
+    /stood\s+together/i,                             // physical grouping
+    /gathered\s+(around|together)/i,                 // physical grouping
+    /huddled\s+together/i,                           // physical grouping
+  ];
+  return groupPatterns.some(p => p.test(lowerText));
+}
+
+/**
+ * Check if scene mentions only IMPLIED presence (shadow, sound, feeling)
+ * not a VISIBLE extra person
+ */
+function isImpliedPresenceOnly(text: string): boolean {
+  const lowerText = text.toLowerCase();
+  const impliedPatterns = [
+    /felt?\s+(like\s+)?(someone|something)\s+(was\s+)?(watch|there|behind)/i,
+    /shadow\s+(in|at|near|behind)/i,
+    /heard\s+(a\s+)?sound/i,
+    /corner\s+of\s+(my|the)\s+eye/i,
+    /peripheral\s+vision/i,
+    /sense[d]?\s+(someone|something|a\s+presence)/i,
+    /couldn'?t\s+shake\s+the\s+feeling/i,
+  ];
+  
+  // If it's photo-viewing, it's NOT implied (it's shown in photo)
+  if (isPhotoViewingScene(lowerText)) return false;
+  
+  return impliedPatterns.some(p => p.test(lowerText));
+}
+
+/**
+ * Inject group counts into visual contracts based on story DNA counting_horror data
+ * 
+ * ARCHITECTURE-BASED APPROACH (v5.2):
+ * - Uses counting_horror.start_count and wrong_count from DNA (not re-parsed)
+ * - Determines reveal_phase_scene_index based on narrative patterns
+ * - Before reveal: show start_count people, no uncanny rules
+ * - After reveal: show wrong_count people, apply uncanny rules
+ * - Implied presence scenes: keep start_count visible, add "implied presence" note
+ */
+export function injectGroupCountsIntoContracts(
+  contracts: SceneVisualContract[],
+  scenes: StoryScene[],
+  countingHorror?: { start_count: number; wrong_count: number } | null
+): SceneVisualContract[] {
+  if (!countingHorror) {
+    console.log(`[GROUP COUNT] No counting_horror data - skipping group count injection`);
+    return contracts;
+  }
+  
+  const { start_count, wrong_count } = countingHorror;
+  console.log(`[GROUP COUNT] Architecture-based injection: expected=${start_count}, wrong=${wrong_count}`);
+  
+  // STEP 1: Determine the reveal scene index (first scene where extra is VISIBLE)
+  let revealSceneIndex = -1;
+  for (let i = 0; i < scenes.length; i++) {
+    const text = scenes[i]?.text || "";
+    if (detectRevealPhase(text) || isPhotoViewingScene(text)) {
+      revealSceneIndex = i;
+      console.log(`[GROUP COUNT] Reveal detected at scene ${i + 1}: "${text.substring(0, 60)}..."`);
+      break;
+    }
+  }
+  
+  // SAFE FALLBACK: If no clear reveal found, default to 65% through story
+  // This ensures photos/footage ALWAYS force wrong_count regardless
+  if (revealSceneIndex === -1) {
+    revealSceneIndex = Math.floor(scenes.length * 0.65);
+    console.log(`[GROUP COUNT] ⚠️ No explicit reveal found - defaulting to scene ${revealSceneIndex + 1} (65% mark)`);
+  }
+  
+  // STEP 2: Inject counts based on position relative to reveal
+  for (let i = 0; i < contracts.length; i++) {
+    const sceneText = scenes[i]?.text || "";
+    const isBeforeReveal = i < revealSceneIndex;
+    const isRevealOrAfter = i >= revealSceneIndex;
+    const isPhoto = isPhotoViewingScene(sceneText);
+    const isGroupScene = isGroupTogetherScene(sceneText);
+    const isImplied = isImpliedPresenceOnly(sceneText);
+    
+    // Skip scenes that don't need group count enforcement
+    if (!isPhoto && !isGroupScene && !isImplied) {
+      // Only inject for scenes that actually show or imply groups
+      continue;
+    }
+    
+    if (isImplied && isBeforeReveal) {
+      // BEFORE REVEAL + IMPLIED: Show EXACTLY start_count, NO human silhouettes
+      // Implied presence must be abstract (shadow distortion, not a person shape)
+      contracts[i].group_count = {
+        expected: start_count,
+        is_wrong: false,
+        extra_person_rules: [
+          `EXACTLY ${start_count} human figures visible. No more.`,
+          "IMPLIED presence ONLY: shadow distortion, light anomaly, or motion blur.",
+          "NO full head/torso outline, NO face, NO complete body shape.",
+          "The presence is felt, not seen as a human form.",
+        ].join(" "),
+      };
+      console.log(`[GROUP COUNT] Scene ${i + 1}: count=${start_count}, is_wrong=false (implied presence, NO human silhouette)`);
+      
+    } else if (isPhoto) {
+      // PHOTO SCENES: ALWAYS show wrong count regardless of reveal position
+      // Photos reveal the truth - this is the core horror mechanic
+      contracts[i].group_count = {
+        expected: wrong_count,
+        is_wrong: true,
+        extra_person_rules: "One figure in the photo is subtly wrong - posture off, standing too close to others, eyes fixed on camera while others look away. NOT monstrous or supernatural-looking.",
+      };
+      console.log(`[GROUP COUNT] Scene ${i + 1}: count=${wrong_count}, is_wrong=true (photo ALWAYS shows wrong count)`);
+      
+    } else if (isGroupScene && isBeforeReveal) {
+      // GROUP SCENE BEFORE REVEAL: Show correct count, no uncanny
+      contracts[i].group_count = {
+        expected: start_count,
+        is_wrong: false,
+        extra_person_rules: undefined, // No uncanny rules before reveal
+      };
+      console.log(`[GROUP COUNT] Scene ${i + 1}: count=${start_count}, is_wrong=false (group scene, before reveal)`);
+      
+    } else if (isGroupScene && isRevealOrAfter) {
+      // GROUP SCENE AFTER REVEAL: Show wrong count with uncanny
+      contracts[i].group_count = {
+        expected: wrong_count,
+        is_wrong: true,
+        extra_person_rules: "One figure is subtly wrong - posture off, smile frozen, eyes fixed on camera. NOT monstrous or supernatural-looking.",
+      };
+      console.log(`[GROUP COUNT] Scene ${i + 1}: count=${wrong_count}, is_wrong=true (group scene, after reveal)`);
+    }
+  }
+  
+  return contracts;
+}
+
 /**
  * Create visual contracts for a batch of scenes
  * Uses enhanced prompt to prevent abstraction/compression on later scenes
@@ -2159,6 +3331,230 @@ Remember: sceneIndex values must be ${sceneData.map(s => s.globalIndex).join(", 
 // =====================================================
 
 /**
+ * Sanitize prompt for uncanny-illustrated art style (Editorial Cartoon VHS)
+ * Removes ALL camera/cinematic/painterly vocabulary and replaces with cartoon terms
+ * 
+ * This is a FINAL PASS sanitizer applied to the complete prompt before sending to DALL-E
+ * v5.2: Expanded to remove painterly/film noir/realistic terms for true cartoon look
+ */
+function sanitizePromptForUncannyIllustrated(prompt: string): string {
+  // Camera/shot terminology → framing terminology
+  const cameraReplacements: [RegExp, string][] = [
+    // Camera: → Framing:
+    [/\bCamera:\s*/gi, "Framing: "],
+    // Shot types → framing types
+    [/\bwide\s+shot\b/gi, "wide framing"],
+    [/\bmedium\s+shot\b/gi, "medium framing"],
+    [/\bclose[\s-]?up\s*(shot)?\b/gi, "close framing"],
+    [/\bextreme\s+close[\s-]?up\b/gi, "extreme close framing"],
+    [/\bfull\s+shot\b/gi, "full figure framing"],
+    [/\bestablishing\s+shot\b/gi, "establishing view"],
+    [/\baerial\s+shot\b/gi, "overhead view"],
+    [/\bPOV\s*(shot)?\b/gi, "first-person view"],
+    [/\bpoint[\s-]of[\s-]view\s*(shot)?\b/gi, "first-person view"],
+    // Angle terminology
+    [/\blow\s+angle\b/gi, "low viewpoint"],
+    [/\bhigh\s+angle\b/gi, "high viewpoint"],
+    [/\bdutch\s+angle\b/gi, "tilted viewpoint"],
+    [/\bcanted\s+angle\b/gi, "tilted viewpoint"],
+    [/\bover[\s-]the[\s-]shoulder\b/gi, "behind-subject view"],
+    [/\btwo[\s-]shot\b/gi, "two-figure composition"],
+    // Camera equipment references
+    [/\bcamera\s+language\b/gi, "visual composition"],
+    [/\bcamera\s+angle\b/gi, "viewpoint"],
+    [/\bcamera\s+movement\b/gi, "visual flow"],
+    [/\bcamera\s+distance\b/gi, "subject distance"],
+  ];
+  
+  // Lighting terminology → illustration lighting
+  const lightingReplacements: [RegExp, string][] = [
+    [/\bfilm\s+noir\s+lighting\b/gi, "dramatic shadow illustration"],
+    [/\bnoir\s+lighting\b/gi, "high contrast shadows"],
+    [/\blow[\s-]key\s+(dramatic\s+)?lighting\b/gi, "dark cel-shaded lighting"],
+    [/\bcinematic\s+lighting\b/gi, "dramatic illustration lighting"],
+    [/\bprofessional\s+lighting\b/gi, "bold shadow contrast"],
+    [/\bstudio\s+lighting\b/gi, "flat cartoon lighting"],
+    [/\bnatural\s+lighting\b/gi, "simple ambient light"],
+    [/\brealistic\s+lighting\b/gi, "flat illustration lighting"],
+  ];
+  
+  // Texture terminology → illustration textures
+  const textureReplacements: [RegExp, string][] = [
+    [/\bfilm[\s_]grain\b/gi, "halftone texture"],
+    [/\bvignette[\s_]heavy\b/gi, "paper grain vignette"],
+    [/\bfog[\s_]bloom\b/gi, "soft glow effect"],
+    [/\bdust[\s_]scratches\b/gi, "analog noise"],
+    [/\bTextures:\s*film\s+grain/gi, "Textures: halftone, analog noise"],
+  ];
+  
+  // Terms to REMOVE entirely (cinematic, painterly, photographic)
+  const termsToRemove = [
+    // Cinematic terms
+    /\bcinematic\b/gi,
+    /\bcinematography\b/gi,
+    /\bcinematographer\b/gi,
+    /\bfilm\s+still\b/gi,
+    /\bmovie\s+screenshot\b/gi,
+    /\bmovie\s+still\b/gi,
+    /\bprofessional\s+cinematography\b/gi,
+    /\bcinematic\s+dark\s+photography\b/gi,
+    /\bfilm\s+noir\b/gi, // standalone "film noir"
+    // Photography terms
+    /\bDSLR\b/gi,
+    /\bcamera\s+lens\b/gi,
+    /\bphotography\b/gi,
+    /\bphotographic\b/gi,
+    /\bphoto[-\s]?realistic\b/gi,
+    /\bphotorealism\b/gi,
+    /\bphotograph\b/gi,
+    /\bbokeh\b/gi,
+    /\bdepth\s+of\s+field\b/gi,
+    /\blens\s+flare\b/gi,
+    /\brealistic\s+skin\s+texture\b/gi,
+    /\brealistic\s+skin\s+pores\b/gi,
+    /\bportrait\s+photography\b/gi,
+    // Painterly terms (we want cartoon, not painting)
+    /\bpainterly\s+realism\b/gi,
+    /\bpainterly\b/gi,
+    /\boil\s+painting\b/gi,
+    /\bwatercolor\b/gi,
+    /\bdigital\s+painting\b/gi,
+    /\bsoft\s+brush\s+texture\b/gi,
+    /\bsoft\s+brush\b/gi,
+    /\bairbrushed\b/gi,
+    /\bsmooth\s+blending\b/gi,
+    /\bsemi[-\s]realistic\b/gi,
+    // Realism terms
+    /\bhyper[-\s]?realistic\b/gi,
+    /\bhyper[-\s]?detailed\b/gi,
+    // GREEN COLOR TERMS (v5.4 - aggressive anti-green)
+    /\bsickly[\s_]?green\b/gi,
+    /\bolive[\s_]?(tint|tone|cast)?\b/gi,
+    /\bgreen[\s_]?(cast|tint|wash|tone)\b/gi,
+    /\bteal[\s_]?green\b/gi,
+    /\bforest[\s_]?green\b/gi,
+    /\bmoss[\s_]?green\b/gi,
+    /\byellow[\s_]?green\b/gi,
+    /\bgreenish\b/gi,
+    /\bdeep[\s_]shadow[\s_]contrast\b/gi,  // Visual DNA term that causes green
+    /\blow[\s_]key[\s_]shadow\b/gi,        // Visual DNA term  
+    /\bcinematic[\s_]dark\b/gi,            // Visual DNA term
+    /\bblue[\s_]black[\s_]void\b/gi,       // Visual DNA palette term
+  ];
+  
+  let sanitized = prompt;
+  
+  // Apply camera replacements
+  for (const [pattern, replacement] of cameraReplacements) {
+    sanitized = sanitized.replace(pattern, replacement);
+  }
+  
+  // Apply lighting replacements
+  for (const [pattern, replacement] of lightingReplacements) {
+    sanitized = sanitized.replace(pattern, replacement);
+  }
+  
+  // Apply texture replacements
+  for (const [pattern, replacement] of textureReplacements) {
+    sanitized = sanitized.replace(pattern, replacement);
+  }
+  
+  // ========== SMART TERM REMOVAL (v5.5) ==========
+  // Instead of just removing terms and leaving orphans, we remove the whole "NO X" or "NOT X" pattern
+  
+  // First, remove "NO <term>" and "NOT <term>" patterns completely
+  const termStrings = [
+    "cinematic", "cinematography", "cinematographer", "film still", "movie screenshot",
+    "movie still", "professional cinematography", "cinematic dark photography", "film noir",
+    "DSLR", "camera lens", "photography", "photographic", "photo-realistic", "photorealism",
+    "photograph", "bokeh", "depth of field", "lens flare", "realistic skin texture",
+    "realistic skin pores", "portrait photography", "painterly realism", "painterly",
+    "oil painting", "watercolor", "digital painting", "soft brush texture", "soft brush",
+    "airbrushed", "smooth blending", "semi-realistic", "hyper-realistic", "hyper-detailed",
+    "sickly green", "olive", "olive tint", "green cast", "green tint", "green wash",
+    "teal green", "teal-green", "forest green", "moss green", "yellow-green", "greenish",
+    "deep shadow contrast", "low key shadow", "cinematic dark", "blue black void",
+    "camera", "lens", "professional", "4K", "high definition", "portrait"
+  ];
+  
+  // Remove "NO <term>" patterns
+  for (const term of termStrings) {
+    const noPattern = new RegExp(`\\bNO\\s+${term.replace(/[-\s]/g, '[-\\s]?')}\\b`, 'gi');
+    sanitized = sanitized.replace(noPattern, "");
+  }
+  
+  // Remove "NOT <term>" patterns  
+  for (const term of termStrings) {
+    const notPattern = new RegExp(`\\bNOT\\s+${term.replace(/[-\s]/g, '[-\\s]?')}\\b`, 'gi');
+    sanitized = sanitized.replace(notPattern, "");
+  }
+  
+  // Now remove remaining standalone banned terms
+  for (const pattern of termsToRemove) {
+    sanitized = sanitized.replace(pattern, " ");
+  }
+  
+  // ========== THOROUGH CLEANUP (v5.6 - smarter orphan detection) ==========
+  // CRITICAL: Only remove truly ORPHANED "NO" and "NOT" tokens
+  // DO NOT remove legitimate phrases like "no gradients", "no text", etc.
+  
+  // Pattern: "NO" followed by comma (orphaned - no term after it)
+  // e.g., "NO, something" → ", something"
+  sanitized = sanitized.replace(/\bNO\s*,(?!\s*[a-z])/gi, ",");
+  
+  // Pattern: "NOT" followed by comma (orphaned)
+  sanitized = sanitized.replace(/\bNOT\s*,(?!\s*[a-z])/gi, ",");
+  
+  // Pattern: comma then "NO" then comma or end (truly orphaned)
+  // e.g., ", NO," or ", NO." but NOT ", no gradients"
+  sanitized = sanitized.replace(/,\s*NO\s*(?=[,\.\s]*$|[,\.])/gi, ",");
+  sanitized = sanitized.replace(/,\s*NOT\s*(?=[,\.\s]*$|[,\.])/gi, ",");
+  
+  // Remove sequences of "NO, NO" or "NOT, NOT" (garbled artifacts)
+  sanitized = sanitized.replace(/(\bNO\s*,?\s*){2,}/gi, "");
+  sanitized = sanitized.replace(/(\bNOT\s*,?\s*){2,}/gi, "");
+  
+  // Remove "NO" or "NOT" alone on a line
+  sanitized = sanitized.replace(/^\s*NO\s*$/gim, "");
+  sanitized = sanitized.replace(/^\s*NOT\s*$/gim, "");
+  
+  // Remove "NO" or "NOT" at start of line followed by comma (orphaned)
+  sanitized = sanitized.replace(/^\s*NO\s*,\s*/gim, "");
+  sanitized = sanitized.replace(/^\s*NOT\s*,\s*/gim, "");
+  
+  // Remove "NO" or "NOT" followed by period (orphaned at end of sentence)
+  // But NOT "no text." which is valid
+  sanitized = sanitized.replace(/\bNO\s+NO\s*\./gi, ".");  // "NO NO." → "."
+  sanitized = sanitized.replace(/\bNOT\s+NOT\s*\./gi, ".");  // "NOT NOT." → "."
+  
+  // Clean up consecutive commas (,, or , , ,)
+  sanitized = sanitized.replace(/,(\s*,)+/g, ",");
+  
+  // Clean up comma followed by period
+  sanitized = sanitized.replace(/,\s*\./g, ".");
+  
+  // Clean up leading commas on lines
+  sanitized = sanitized.replace(/^\s*,\s*/gm, "");
+  
+  // Clean up trailing commas on lines
+  sanitized = sanitized.replace(/,\s*$/gm, "");
+  
+  // Clean up space before comma
+  sanitized = sanitized.replace(/\s+,/g, ",");
+  
+  // Clean up double+ spaces
+  sanitized = sanitized.replace(/\s{2,}/g, " ");
+  
+  // Clean up "and and" or "with with" patterns
+  sanitized = sanitized.replace(/\b(and|with|or)\s+\1\b/gi, "$1");
+  
+  // Final trim
+  sanitized = sanitized.trim();
+  
+  return sanitized;
+}
+
+/**
  * Sanitize camera angles to be portrait-safe
  * Replaces landscape-implying terms with vertical equivalents
  */
@@ -2183,11 +3579,24 @@ function sanitizeCameraAngleForPortrait(cameraAngle: string): string {
 
 /**
  * Build Character Lock block for prompt
+ * v5.6: Handle GROUP scenarios with simplified description
  */
 function buildCharacterLockBlock(anchor: StoryAnchor): string {
   // Use new structured characterLock if available
   if (anchor.characterLock) {
     const lock = anchor.characterLock;
+    
+    // GROUP MODE: Use simplified block with full description
+    if (lock.isGroup) {
+      const lines = [
+        `CHARACTER LOCK (ID: ${lock.id}):`,
+        `GROUP: ${lock.groupDescription || "Multiple characters as described in story"}`,
+        `Style: Keep character appearances consistent throughout.`,
+      ];
+      return lines.join("\n");
+    }
+    
+    // SINGLE CHARACTER MODE: Use detailed extraction
     const lines = [
       `CHARACTER LOCK (ID: ${lock.id}):`,
       `Face: ${lock.face}`,
@@ -2221,6 +3630,7 @@ function buildCharacterLockBlock(anchor: StoryAnchor): string {
  * MAX LENGTH: ~2500 chars for stability
  * 
  * v5.0: Now accepts Visual DNA for deterministic style mapping
+ * v5.2: Art style protection - uncanny-illustrated cannot be overridden by Visual DNA
  */
 export function buildFinalDallePrompt(
   storyAnchor: StoryAnchor,
@@ -2230,15 +3640,23 @@ export function buildFinalDallePrompt(
   styleConfig: { name: string; negativePrompt?: string; basePrompt?: string; colorOverride?: string; technicalStyle?: string },
   isCustomStyle: boolean = false,
   visualPreset: string = "forest",
-  visualDNA?: VisualDNA | null
+  visualDNA?: VisualDNA | null,
+  artStyleOverride?: string // NEW: explicit art style to enforce
 ): string {
   const moodLevel = Math.max(1, Math.min(10, Math.round(beat.moodLevel)));
   const sanitizedCameraAngle = sanitizeCameraAngleForPortrait(beat.cameraAngle);
   const contract = beat.visualContract;
   
+  // ========== ART STYLE PROTECTION ==========
+  // When artStyleOverride is 'uncanny-illustrated', the art_style basePrompt
+  // takes ABSOLUTE priority over Visual DNA. This prevents photographic
+  // Visual DNA from contaminating illustrated horror styles.
+  const isUncannyIllustrated = artStyleOverride === 'uncanny-illustrated';
+  
   // ========== BUILD VISUAL DNA STYLE (if available) ==========
   let visualDNAStyleBlock = "";
-  if (visualDNA) {
+  if (visualDNA && !isUncannyIllustrated) {
+    // Only use Visual DNA when NOT in uncanny-illustrated mode
     const styleMap: Record<string, string> = {
       "VHS_degraded": "grainy VHS aesthetic with analog video distortion and worn tape quality",
       "cinematic_dark": "cinematic dark photography with film noir lighting and professional cinematography",
@@ -2290,12 +3708,28 @@ export function buildFinalDallePrompt(
     ].filter(Boolean).join("\n");
     
     console.log(`[DALLE-PROMPT] Using Visual DNA: ${visualDNA.visual_style} / ${visualDNA.color_palette}`);
+  } else if (visualDNA && isUncannyIllustrated) {
+    // UNCANNY ILLUSTRATED MODE: Visual DNA is OVERRIDDEN
+    // Extract only safe components (composition, some lighting) and replace style
+    console.log(`[DALLE-PROMPT] ⚠️ UNCANNY-ILLUSTRATED OVERRIDE: Suppressing ALL Visual DNA (style="${visualDNA.visual_style}", palette="${visualDNA.color_palette}", lighting="${visualDNA.lighting_profile}")`);
   }
   
   // ========== BUILD STYLE BLOCK ==========
   let styleBlock: string;
-  if (visualDNAStyleBlock) {
-    // Visual DNA takes priority
+  
+  if (isUncannyIllustrated) {
+    // UNCANNY ILLUSTRATED: Use styleConfig.basePrompt ALWAYS, ignore Visual DNA completely
+    // NOTE: Do NOT use "NO X" patterns here - they get mangled by sanitization
+    // Instead, use positive statements only. Bans go in AVOID block.
+    styleBlock = [
+      "ILLUSTRATION STYLE LOCK (MANDATORY):",
+      styleConfig.basePrompt || UNCANNY_ILLUSTRATED_STYLE_REPLACEMENT.join(", "),
+      styleConfig.colorOverride ? `Colors: ${styleConfig.colorOverride}` : "",
+      styleConfig.technicalStyle ? `Technique: ${styleConfig.technicalStyle}` : "",
+    ].filter(Boolean).join("\n");
+    console.log(`[DALLE-PROMPT] ✅ UNCANNY-ILLUSTRATED style enforced, Visual DNA FULLY suppressed`);
+  } else if (visualDNAStyleBlock) {
+    // Visual DNA takes priority (normal mode)
     styleBlock = visualDNAStyleBlock;
   } else if (isCustomStyle && styleConfig.basePrompt) {
     styleBlock = [
@@ -2356,10 +3790,151 @@ export function buildFinalDallePrompt(
     
     const compositionHint = beat.compositionHint || "";
     
-    // Use Visual DNA lighting if available
-    const lightingSource = visualDNA?.lighting_profile 
+    // v5.14: Use Visual DNA lighting ONLY if NOT in uncanny-illustrated mode
+    // When uncanny-illustrated is active, Visual DNA lighting must be suppressed
+    // to prevent cold blue/green tints from low_key_shadow or deep_shadow_contrast
+    const lightingSource = (visualDNA?.lighting_profile && !isUncannyIllustrated)
       ? visualDNA.lighting_profile.replace(/_/g, ' ')
-      : (contract.lightingSource || "dim ambient light");
+      : (contract.lightingSource || "soft warm ambient light");
+    
+    // ========== SIGN/TEXT CONTRADICTION FIX ==========
+    // If mustShow includes a sign/screen/paper, ensure text is blurred/unreadable
+    // instead of contradicting the "no text" rule
+    const signPatterns = /(sign|screen|paper|note|letter|document|newspaper|billboard|poster|menu)/i;
+    const hasSignProp = mustShowItems.some(item => signPatterns.test(item));
+    let signTextRule = "";
+    if (hasSignProp) {
+      // Add explicit rule for handling text on props
+      signTextRule = "\nSIGN/TEXT RULE: Any signs, screens, or papers must have BLURRED or UNREADABLE text - no legible words, letters cropped or motion-blurred.";
+      console.log(`[PROMPT] Scene ${sceneIndex + 1}: Sign/paper prop detected - adding blur rule`);
+    }
+    
+    // Remove date/timestamp requirements when text is banned
+    let evidenceRule = contract.evidenceRule || `Scene must clearly show ${contract.location}`;
+    if (evidenceRule.toLowerCase().includes('date') || evidenceRule.toLowerCase().includes('timestamp')) {
+      evidenceRule = evidenceRule.replace(/date\s+(visible|shown|displayed)/gi, 'analog elements visible');
+      evidenceRule = evidenceRule.replace(/timestamp/gi, 'time indicator');
+      console.log(`[PROMPT] Scene ${sceneIndex + 1}: Removed date/timestamp requirement from evidence rule`);
+    }
+    
+    // ========== GROUP COUNT ENFORCEMENT (One Too Many preset) ==========
+    let groupCountBlock = "";
+    if (contract.group_count) {
+      const { expected, is_wrong, extra_person_rules } = contract.group_count;
+      
+      // CRITICAL FIX: Only show "one figure is subtly wrong" when is_wrong=true
+      // Before reveal, expected=start_count and is_wrong=false
+      // After reveal, expected=wrong_count and is_wrong=true
+      const countLockLines = [
+        ``,
+        `COUNT LOCK (CRITICAL - DO NOT VIOLATE):`,
+        `EXACTLY ${expected} human figures must be visible in this image.`,
+        `No more. No fewer. Count them carefully before finalizing.`,
+      ];
+      
+      // ========== LAYOUT LOCK (v5.3) ==========
+      // Explicit spatial arrangement to prevent occlusion and cropping
+      const layoutLockLines = [
+        ``,
+        `LAYOUT LOCK (MANDATORY):`,
+        `Show EXACTLY ${expected} distinct people, all fully inside frame.`,
+      ];
+      
+      // Dynamic row arrangement based on count
+      if (expected <= 3) {
+        layoutLockLines.push(`Arrange them in a SINGLE ROW facing the viewer.`);
+      } else if (expected <= 5) {
+        const frontRow = Math.ceil(expected / 2);
+        const backRow = expected - frontRow;
+        layoutLockLines.push(`Arrange them in TWO ROWS: ${frontRow} in front, ${backRow} behind.`);
+      } else if (expected <= 7) {
+        // For 6-7 people, use 4 front, rest back
+        const frontRow = 4;
+        const backRow = expected - frontRow;
+        layoutLockLines.push(`Arrange them in TWO ROWS: ${frontRow} in front, ${backRow} behind.`);
+      } else {
+        // For 8+ people, use three rows
+        const frontRow = Math.ceil(expected / 3);
+        const middleRow = Math.ceil((expected - frontRow) / 2);
+        const backRow = expected - frontRow - middleRow;
+        layoutLockLines.push(`Arrange them in THREE ROWS: ${frontRow} front, ${middleRow} middle, ${backRow} back.`);
+      }
+      
+      layoutLockLines.push(
+        `Every face must be VISIBLE - no one blocked by another person.`,
+        `No cropping: all heads fully visible inside frame.`,
+        `Distinct hair/outfit per person (no duplicates).`
+      );
+      
+      // ========== UNIQUENESS ANCHORS (v5.3) ==========
+      // Give each person a quick identity tag to prevent merging
+      const identityTags = [
+        "curly dark hair",
+        "thick-framed glasses", 
+        "short bob haircut",
+        "buzz cut",
+        "hoodie",
+        "denim jacket",
+        "blonde hair",
+        "ponytail",
+        "beard",
+        "headband",
+        "bandana",
+        "cap",
+      ];
+      
+      // Pick N unique tags for the expected count
+      const shuffled = [...identityTags].sort(() => Math.random() - 0.5);
+      const personTags = shuffled.slice(0, expected);
+      
+      const uniquenessLines = [
+        ``,
+        `UNIQUENESS ANCHORS (each person must be distinct):`,
+        ...personTags.map((tag, i) => `Person ${i + 1}: ${tag}`),
+      ];
+      
+      // Only add uncanny rules when is_wrong is true (after reveal)
+      if (is_wrong) {
+        countLockLines.push(`One figure (NOT in center) is subtly wrong - posture off, smile frozen, eyes fixed at viewer.`);
+        countLockLines.push(`The extra person is NOT obviously supernatural or monstrous.`);
+      }
+      
+      if (extra_person_rules) {
+        countLockLines.push(extra_person_rules);
+      }
+      
+      // Combine COUNT LOCK + LAYOUT LOCK + UNIQUENESS
+      groupCountBlock = [...countLockLines, ...layoutLockLines, ...uniquenessLines].filter(Boolean).join("\n");
+      console.log(`[CONTRACT] Scene ${sceneIndex + 1}: GROUP COUNT LOCK = ${expected} people (is_wrong=${is_wrong}), LAYOUT LOCK applied`);
+    }
+    
+    // ========== MUST NOT contradiction fix ==========
+    // If group_count shows the correct (expected) count without extra,
+    // ensure "extra people" is in MUST NOT
+    // If group_count shows wrong count, remove "extra people" from MUST NOT
+    if (contract.group_count) {
+      // Always add count-safety items to MUST NOT
+      const countSafetyBans = ["cropped heads", "partial faces", "merged faces", "extra silhouettes"];
+      for (const ban of countSafetyBans) {
+        if (!mustNotItems.some(item => item.toLowerCase().includes(ban.split(' ')[0]))) {
+          mustNotItems.push(ban);
+        }
+      }
+      
+      if (contract.group_count.is_wrong) {
+        // AFTER REVEAL: extra person IS visible, remove from MUST NOT
+        mustNotItems = mustNotItems.filter(item => 
+          !item.toLowerCase().includes('extra people') && 
+          !item.toLowerCase().includes('additional people')
+        );
+        console.log(`[PROMPT] Scene ${sceneIndex + 1}: Removed "extra people" from MUST NOT (is_wrong=true)`);
+      } else {
+        // BEFORE REVEAL: extra person is NOT visible, keep/add to MUST NOT
+        if (!mustNotItems.some(item => item.toLowerCase().includes('extra people'))) {
+          mustNotItems.push('extra people or figures');
+        }
+      }
+    }
     
     sceneBlock = [
       `SCENE ${sceneIndex + 1}/${totalScenes} CONTRACT (MUST FOLLOW):`,
@@ -2369,9 +3944,11 @@ export function buildFinalDallePrompt(
       ``,
       `MUST NOT SHOW:`,
       `- ${mustNotItems.join(", ")}`,
+      signTextRule,
+      groupCountBlock,
       ``,
       `EVIDENCE:`,
-      `- ${contract.evidenceRule || `Scene must clearly show ${contract.location}`}`,
+      `- ${evidenceRule}`,
       ``,
       `Lighting: ${lightingSource}`,
       `Camera: ${contract.cameraDistance || "medium"} shot`,
@@ -2446,6 +4023,13 @@ export function buildFinalDallePrompt(
   
   let finalPrompt = promptParts.join("\n");
   
+  // ========== UNCANNY-ILLUSTRATED FINAL SANITIZATION ==========
+  // Remove ALL camera/cinematic vocabulary when uncanny-illustrated is active
+  if (isUncannyIllustrated) {
+    finalPrompt = sanitizePromptForUncannyIllustrated(finalPrompt);
+    console.log(`[PROMPT] Scene ${sceneIndex + 1}: Applied uncanny-illustrated sanitization`);
+  }
+  
   // ========== LENGTH CONTROL ==========
   // Keep under 2500 chars for stability
   if (finalPrompt.length > 2500) {
@@ -2458,8 +4042,51 @@ export function buildFinalDallePrompt(
     }
   }
   
-  // Final log with prompt length for debugging
-  console.log(`[PROMPT] Scene ${sceneIndex + 1} prompt built: ${isCustomStyle ? "custom" : "built-in"} style, ${finalPrompt.length} chars`);
+  // =====================================================
+  // COMPREHENSIVE PROMPT LOGGING (v5.4)
+  // Shows EVERYTHING that controls image generation
+  // =====================================================
+  console.log(`\n╔══════════════════════════════════════════════════════════════╗`);
+  console.log(`║ IMAGE GENERATION CONFIG - Scene ${sceneIndex + 1}/${totalScenes}`);
+  console.log(`╠══════════════════════════════════════════════════════════════╣`);
+  console.log(`║ ART STYLE OVERRIDE: ${artStyleOverride || 'NONE'}`);
+  console.log(`║ IS UNCANNY-ILLUSTRATED: ${isUncannyIllustrated ? '✅ YES (Visual DNA SUPPRESSED)' : '❌ NO'}`);
+  console.log(`╠══════════════════════════════════════════════════════════════╣`);
+  console.log(`║ STYLE CONFIG:`);
+  console.log(`║   Name: ${styleConfig.name}`);
+  console.log(`║   Base Prompt: ${(styleConfig.basePrompt || 'NONE').substring(0, 100)}...`);
+  console.log(`║   Color Override: ${(styleConfig.colorOverride || 'NONE').substring(0, 80)}...`);
+  console.log(`║   Technical Style: ${(styleConfig.technicalStyle || 'NONE').substring(0, 80)}...`);
+  console.log(`║   Negative Prompt: ${(styleConfig.negativePrompt || 'NONE').substring(0, 80)}...`);
+  console.log(`╠══════════════════════════════════════════════════════════════╣`);
+  console.log(`║ VISUAL DNA: ${visualDNA ? 'PRESENT' : 'NONE'}`);
+  if (visualDNA) {
+    console.log(`║   Visual Style: ${visualDNA.visual_style} ${isUncannyIllustrated ? '(IGNORED)' : '(ACTIVE)'}`);
+    console.log(`║   Color Palette: ${visualDNA.color_palette} ${isUncannyIllustrated ? '(IGNORED)' : '(ACTIVE)'}`);
+    console.log(`║   Lighting Profile: ${visualDNA.lighting_profile} ${isUncannyIllustrated ? '(IGNORED)' : '(ACTIVE)'}`);
+    console.log(`║   Frame Composition: ${visualDNA.frame_composition} ${isUncannyIllustrated ? '(IGNORED)' : '(ACTIVE)'}`);
+    console.log(`║   Texture Artifacts: ${visualDNA.texture_artifacts?.join(', ') || 'NONE'} ${isUncannyIllustrated ? '(IGNORED)' : '(ACTIVE)'}`);
+    console.log(`║   Camera Language: ${visualDNA.camera_language || 'NONE'} ${isUncannyIllustrated ? '(IGNORED)' : '(ACTIVE)'}`);
+    console.log(`║   Motion Profile: ${visualDNA.motion_profile || 'NONE'} ${isUncannyIllustrated ? '(IGNORED)' : '(ACTIVE)'}`);
+  }
+  console.log(`╠══════════════════════════════════════════════════════════════╣`);
+  console.log(`║ VISUAL CONTRACT: ${contract ? 'PRESENT' : 'NONE'}`);
+  if (contract) {
+    console.log(`║   Location: ${contract.location}`);
+    console.log(`║   Character Pose: ${contract.characterPose}`);
+    console.log(`║   Facial Expression: ${contract.facialExpression || 'NONE'}`);
+    console.log(`║   Visible Objects: ${contract.visibleObjects?.join(', ') || 'NONE'}`);
+    console.log(`║   Forbidden Elements: ${contract.forbiddenElements?.join(', ') || 'NONE'}`);
+    console.log(`║   GROUP COUNT: ${contract.group_count ? `${contract.group_count.expected} people (is_wrong: ${contract.group_count.is_wrong})` : 'NONE'}`);
+  }
+  console.log(`╠══════════════════════════════════════════════════════════════╣`);
+  console.log(`║ STYLE BLOCK USED:`);
+  console.log(`║ ${styleBlock.substring(0, 200).replace(/\n/g, ' | ')}...`);
+  console.log(`╠══════════════════════════════════════════════════════════════╣`);
+  console.log(`║ FINAL PROMPT LENGTH: ${finalPrompt.length} chars`);
+  console.log(`║ PROMPT PREVIEW: ${finalPrompt.substring(0, 300).replace(/\n/g, ' | ')}...`);
+  console.log(`╚══════════════════════════════════════════════════════════════╝\n`);
+  
   return finalPrompt;
 }
 
@@ -2486,15 +4113,20 @@ export function buildFluxPrompt(
   totalScenes: number,
   styleConfig: { name: string; negativePrompt?: string; basePrompt?: string; colorOverride?: string; technicalStyle?: string },
   isCustomStyle: boolean = false,
-  visualDNA?: VisualDNA | null
+  visualDNA?: VisualDNA | null,
+  artStyleOverride?: string // v5.7: Art style override for preset protection
 ): string {
   const contract = beat.visualContract;
   const moodLevel = Math.max(1, Math.min(10, Math.round(beat.moodLevel)));
   
-  // ========== VISUAL DNA STYLE (if available) ==========
-  // When Visual DNA is present, it takes priority for style decisions
+  // ========== ART STYLE PROTECTION (v5.7) ==========
+  // When artStyleOverride is 'uncanny-illustrated', suppress Visual DNA completely
+  const isUncannyIllustrated = artStyleOverride === 'uncanny-illustrated';
+  
+  // ========== VISUAL DNA STYLE (if available and NOT suppressed) ==========
+  // When Visual DNA is present and NOT in uncanny-illustrated mode, it takes priority
   let visualDNAStyle = "";
-  if (visualDNA) {
+  if (visualDNA && !isUncannyIllustrated) {
     const styleMap: Record<string, string> = {
       "VHS_degraded": "grainy VHS aesthetic, analog video distortion, worn tape quality",
       "cinematic_dark": "cinematic dark photography, film noir lighting, professional cinematography",
@@ -2549,14 +4181,22 @@ export function buildFluxPrompt(
     
     visualDNAStyle = parts.join(", ");
     console.log(`[FLUX-PROMPT] Using Visual DNA style: ${visualDNA.visual_style} / ${visualDNA.color_palette}`);
+  } else if (visualDNA && isUncannyIllustrated) {
+    // UNCANNY ILLUSTRATED MODE: Visual DNA is SUPPRESSED for FLUX too
+    console.log(`[FLUX-PROMPT] ⚠️ UNCANNY-ILLUSTRATED OVERRIDE: Suppressing ALL Visual DNA for FLUX (style="${visualDNA.visual_style}", palette="${visualDNA.color_palette}")`);
   }
   
   // ========== STYLE (SHORT!) ==========
   // FLUX bias: if style mentions "cartoon/webcomic/vector", it often ignores it
   // Best for: cinematic, photorealistic, dark atmospheric
+  // v5.7: For uncanny-illustrated, ALWAYS use styleConfig.basePrompt
   let styleShort: string;
-  // If Visual DNA is present, use it as the primary style
-  if (visualDNAStyle) {
+  if (isUncannyIllustrated) {
+    // UNCANNY ILLUSTRATED: Force the style config, ignore Visual DNA
+    styleShort = styleConfig.basePrompt || "editorial cartoon, graphic novel, cel-shaded horror, bold ink outlines, flat shading, muted cool grays, limited palette";
+    console.log(`[FLUX-PROMPT] ✅ UNCANNY-ILLUSTRATED style enforced for FLUX`);
+  } else if (visualDNAStyle) {
+    // If Visual DNA is present (and not suppressed), use it as the primary style
     styleShort = visualDNAStyle;
   } else if (isCustomStyle && styleConfig.basePrompt) {
     // Custom style: extract the core concept (first 100 chars)
@@ -3258,4 +4898,221 @@ REQUIREMENTS:
       evidenceRule: `Image must show: ${fallbackObjects[0]} and ${evidenceHint}`,
     };
   }
+}
+// =====================================================
+// HUMAN COUNT VERIFICATION (v5.2)
+// =====================================================
+// Uses GPT-4 Vision to count visible human figures in generated images
+// Returns verification result for COUNT LOCK enforcement
+
+export interface CountVerificationResult {
+  ok: boolean;
+  expectedCount: number;
+  detectedCount: number;
+  confidence: "high" | "medium" | "low";
+  notes: string;
+}
+
+/**
+ * Verify that an image contains exactly the expected number of human figures
+ * Uses GPT-4o vision to analyze the image
+ * 
+ * @param openaiKey - OpenAI API key
+ * @param imageUrl - URL of the image to verify (can be base64 data URL)
+ * @param expectedCount - Number of humans that should be visible
+ * @returns Verification result with detected count and confidence
+ */
+export async function verifyHumanCount(
+  openaiKey: string,
+  imageUrl: string,
+  expectedCount: number
+): Promise<CountVerificationResult> {
+  console.log(`[COUNT-VERIFY] Verifying image for ${expectedCount} humans...`);
+  
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${openaiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: `You are a precise image analyzer. Your ONLY job is to count the number of distinct human figures visible in an image. 
+Rules:
+- Count ONLY clearly visible human figures (head + at least partial body)
+- Each person must have a DISTINCT, separate head
+- Do NOT count reflections, shadows, or implied figures
+- Do NOT count partial figures where you cannot see a distinct head
+- Do NOT count silhouettes unless they clearly show a human head shape
+- If faces overlap or merge, count them as separate people if you can see distinct head shapes
+- Be conservative: if unsure whether something is a person, don't count it
+
+Respond ONLY with JSON: {"count": N, "confidence": "high|medium|low", "notes": "brief explanation"}`
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `Count the EXACT number of distinct human figures visible in this image. I expect ${expectedCount} people. Count carefully.`
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: imageUrl,
+                  detail: "high"
+                }
+              }
+            ]
+          }
+        ],
+        max_tokens: 150,
+        temperature: 0.1, // Low temperature for consistent counting
+      }),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[COUNT-VERIFY] Vision API error: ${response.status} - ${errorText}`);
+      return {
+        ok: true, // Fail open - don't block on API errors
+        expectedCount,
+        detectedCount: expectedCount,
+        confidence: "low",
+        notes: `Vision API error: ${response.status}. Assuming correct count.`,
+      };
+    }
+    
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || "";
+    
+    // Parse JSON response
+    let parsed: { count: number; confidence: string; notes: string };
+    try {
+      // Extract JSON from response (handle markdown code blocks)
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        parsed = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error("No JSON found in response");
+      }
+    } catch (parseError) {
+      console.error(`[COUNT-VERIFY] Failed to parse response: ${content}`);
+      // Try to extract just a number
+      const numMatch = content.match(/(\d+)/);
+      parsed = {
+        count: numMatch ? parseInt(numMatch[1]) : expectedCount,
+        confidence: "low",
+        notes: "Failed to parse structured response",
+      };
+    }
+    
+    const detectedCount = parsed.count;
+    const confidence = (parsed.confidence || "medium") as "high" | "medium" | "low";
+    const notes = parsed.notes || "";
+    
+    const ok = detectedCount === expectedCount;
+    
+    console.log(`[COUNT-VERIFY] Expected: ${expectedCount}, Detected: ${detectedCount}, OK: ${ok}, Confidence: ${confidence}`);
+    if (notes) {
+      console.log(`[COUNT-VERIFY] Notes: ${notes}`);
+    }
+    
+    return {
+      ok,
+      expectedCount,
+      detectedCount,
+      confidence,
+      notes,
+    };
+    
+  } catch (error) {
+    console.error(`[COUNT-VERIFY] Verification failed:`, error);
+    return {
+      ok: true, // Fail open
+      expectedCount,
+      detectedCount: expectedCount,
+      confidence: "low",
+      notes: `Verification error: ${error}. Assuming correct count.`,
+    };
+  }
+}
+
+/**
+ * Build a stricter "lineup" fallback prompt for COUNT LOCK retries
+ * When initial image has wrong count, use this simplified composition
+ * v5.3: Added LAYOUT LOCK + uniqueness anchors
+ */
+export function buildCountLockFallbackPrompt(
+  expectedCount: number,
+  location: string,
+  isWrong: boolean,
+  styleConfig: { basePrompt?: string; technicalStyle?: string; colorOverride?: string }
+): string {
+  const styleBlock = styleConfig.basePrompt || "Editorial cartoon illustration in graphic novel style with cel shading and bold outlines.";
+  const colorBlock = styleConfig.colorOverride || "muted cool grays, dirty blues, nicotine-brown highlights, desaturated skin tones, NO green color cast, NO olive tint";
+  
+  // Dynamic row arrangement based on count
+  let layoutArrangement: string;
+  if (expectedCount <= 3) {
+    layoutArrangement = `Arrange them in a SINGLE ROW facing the viewer.`;
+  } else if (expectedCount <= 5) {
+    const frontRow = Math.ceil(expectedCount / 2);
+    const backRow = expectedCount - frontRow;
+    layoutArrangement = `Arrange them in TWO ROWS: ${frontRow} in front, ${backRow} behind.`;
+  } else if (expectedCount <= 7) {
+    const frontRow = 4;
+    const backRow = expectedCount - frontRow;
+    layoutArrangement = `Arrange them in TWO ROWS: ${frontRow} in front, ${backRow} behind.`;
+  } else {
+    const frontRow = Math.ceil(expectedCount / 3);
+    const middleRow = Math.ceil((expectedCount - frontRow) / 2);
+    const backRow = expectedCount - frontRow - middleRow;
+    layoutArrangement = `Arrange them in THREE ROWS: ${frontRow} front, ${middleRow} middle, ${backRow} back.`;
+  }
+  
+  // Uniqueness anchors - randomized identity tags
+  const identityTags = [
+    "curly dark hair", "thick-framed glasses", "short bob haircut", "buzz cut",
+    "hoodie", "denim jacket", "blonde hair", "ponytail", "beard", "headband",
+    "bandana", "cap", "long straight hair", "red shirt", "striped sweater",
+  ];
+  const shuffled = [...identityTags].sort(() => Math.random() - 0.5);
+  const personTags = shuffled.slice(0, expectedCount);
+  const uniquenessBlock = personTags.map((tag, i) => `Person ${i + 1}: ${tag}`).join(", ");
+  
+  const uncannySuffix = isWrong 
+    ? `One figure (NOT in center) has a frozen smile and eyes staring at viewer. This person looks subtly wrong but not supernatural.`
+    : "";
+  
+  return [
+    `ORIENTATION LOCK: Upright portrait 9:16, not rotated.`,
+    ``,
+    `STYLE: ${styleBlock}`,
+    `Colors: ${colorBlock}`,
+    ``,
+    `SCENE: Group portrait composition showing EXACTLY ${expectedCount} people.`,
+    `Location: ${location}`,
+    ``,
+    `LAYOUT LOCK (MANDATORY):`,
+    `Show EXACTLY ${expectedCount} distinct people, all fully inside frame.`,
+    layoutArrangement,
+    `Every face must be VISIBLE - no one blocked by another person.`,
+    `No cropping: all heads fully visible inside frame.`,
+    ``,
+    `UNIQUENESS ANCHORS: ${uniquenessBlock}`,
+    ``,
+    `COUNT LOCK (ABSOLUTE REQUIREMENT):`,
+    `- Draw EXACTLY ${expectedCount} distinct human figures, no more, no fewer.`,
+    `- Every person's HEAD and FACE must be fully visible and distinct.`,
+    `- NO overlapping heads, NO cropped faces, NO hidden figures.`,
+    `- Clear spacing between each person.`,
+    uncannySuffix,
+    ``,
+    `MUST NOT: cropped heads, partial faces, merged figures, extra silhouettes, more than ${expectedCount} people, fewer than ${expectedCount} people, green color cast, olive tint, text, words, letters.`,
+  ].filter(Boolean).join("\n");
 }

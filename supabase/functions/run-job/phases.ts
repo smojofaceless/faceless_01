@@ -19,7 +19,7 @@ import {
   type VideoOptions,
 } from "./config.ts";
 
-import { generateStory, generateStoryWithDNA, buildStoryPromptForDisplay, extractSceneKeywordsForPreview, extractSceneKeywords, createStoryAnchor, createVisualBeats, createSceneVisualContracts, buildFinalDallePrompt, buildFluxPrompt, fuseIntoCoherentScenes, calculateRecommendedSceneCount, runAlignmentCheck, scorePromptRelevance, repairVisualContract, computePromptHash } from "./openai.ts";
+import { generateStory, generateStoryWithDNA, buildStoryPromptForDisplay, extractSceneKeywordsForPreview, extractSceneKeywords, createStoryAnchor, createVisualBeats, createSceneVisualContracts, buildFinalDallePrompt, buildFluxPrompt, fuseIntoCoherentScenes, calculateRecommendedSceneCount, runAlignmentCheck, scorePromptRelevance, repairVisualContract, computePromptHash, injectGroupCountsIntoContracts, verifyHumanCount, buildCountLockFallbackPrompt } from "./openai.ts";
 import { generateAudio } from "./audio.ts";
 import {
   getThemeGuidance,
@@ -49,6 +49,40 @@ import {
   type EffectsProfile,
 } from "./effects_profile.ts";
 
+import {
+  resolveStoryProfile,
+  sanitizeStoryProfile,
+  getTemplateDefaults,
+  getPresetProfile,
+  profileToSummary as storyProfileToSummary,
+  STORY_PROFILE_SCHEMA_VERSION,
+  type StoryProfile,
+  type PartialStoryProfile,
+} from "./story_profile.ts";
+
+import {
+  buildStoryContract,
+  checkCompliance,
+  stripContractTags,
+  processStoryOutput,
+  complianceToLog,
+  convertDNAToContract,
+  type StoryContract,
+  type ComplianceResult,
+  type StoryDNA as ContractStoryDNA,
+} from "./story_contract.ts";
+
+import {
+  buildStoryDebugPayload,
+  buildMinimalDebugPayload,
+  type StoryDebugPayload,
+} from "./story_debug.ts";
+
+import {
+  analyzeVisualReadiness,
+  type VisualReadinessReport,
+} from "./visual_readiness.ts";
+
 // =====================================================
 // PREVIEW MODE (Synchronous - returns story quickly)
 // =====================================================
@@ -69,16 +103,44 @@ export async function runPreviewMode(
   console.log(`[PREVIEW] Job vibe_preset: "${job.vibe_preset}"`);
   console.log(`Generating story (${job.length_preset}s preset, ${sceneCount} scenes, ${visualPreset} environment, vibe: ${job.vibe_preset})...`);
   
-  // Check if DNA-based generation is enabled (always use for urban_legend, optional for others)
-  const useDNA = job.vibe_preset === "urban_legend" || jobMeta.use_dna === true;
-  
-  // Map vibe_preset to genre profile (v3.1)
-  // Genre can also be specified explicitly in jobMeta
+  // DNA-based generation is ALWAYS enabled for guaranteed uniqueness
+  // The DNA system tracks component usage and applies rarity boosting + recency penalties
+  // to ensure every story has a unique combination of elements
+  const useDNA = jobMeta.use_dna !== false; // Only disable if explicitly set to false
   const genreProfile = jobMeta.genre || job.vibe_preset || 'urban_legend';
+  
+  console.log(`[PREVIEW] ===== GENERATION PATH DEBUG =====`);
+  console.log(`[PREVIEW] jobMeta.use_dna = ${jobMeta.use_dna}`);
+  console.log(`[PREVIEW] useDNA = ${useDNA}`);
+  console.log(`[PREVIEW] job.vibe_preset = ${job.vibe_preset}`);
+  console.log(`[PREVIEW] genreProfile = ${genreProfile}`);
+  console.log(`[PREVIEW] ===================================`);
   
   // Platform for Visual DNA tuning (v5.0)
   // Can be specified in jobMeta or defaults based on job settings
   const targetPlatform = jobMeta.platform || 'default';
+  
+  // =====================================================
+  // STORY PROFILE RESOLUTION (v1.0)
+  // Merge: system -> template -> preset -> brand -> user
+  // =====================================================
+  const storyMode = jobMeta.story_mode || "auto";
+  const niche = jobMeta.theme || "horror"; // Theme maps to niche for template selection
+  
+  // Resolve the story profile
+  const resolvedStoryProfile = resolveStoryProfile({
+    // System defaults are built into the resolver
+    template: getTemplateDefaults(niche),
+    preset: getPresetProfile(job.vibe_preset),
+    // Brand-level overrides would come from brand.settings.storyProfile (future)
+    user: storyMode === "custom" ? jobMeta.story_profile : undefined,
+  });
+  
+  // Sanitize to ensure valid values
+  const storyProfile = sanitizeStoryProfile(resolvedStoryProfile);
+  
+  console.log(`[STORY-PROFILE] Mode: ${storyMode}, Niche: ${niche}`);
+  console.log(`[STORY-PROFILE] ${storyProfileToSummary(storyProfile)}`);
   
   let storyData: { title: string; story: string; hook: string };
   let dnaInfo: { dna: any; visual_dna: any; dna_display: string; visual_dna_display: string } | null = null;
@@ -92,6 +154,14 @@ export async function runPreviewMode(
     console.log(`[PREVIEW] Genre profile: ${genreProfile}`);
     console.log(`[PREVIEW] Target platform: ${targetPlatform}`);
     
+    // Build story options from job config
+    const storyOptions = {
+      story_mode: (job as any).story_mode || 'auto',
+      story_profile: (job as any).story_profile,
+      niche: (job as any).niche || 'horror',
+      vibe_preset: job.vibe_preset || genreProfile,
+    };
+    
     const dnaResult = await generateStoryWithDNA(
       supabase,
       openaiKey,
@@ -99,7 +169,8 @@ export async function runPreviewMode(
       visualPreset,
       genreProfile,
       targetPlatform,
-      job_id
+      job_id,
+      storyOptions
     );
     
     storyData = {
@@ -115,9 +186,22 @@ export async function runPreviewMode(
       visual_dna_display: dnaResult.visual_dna_display,
     };
     
+    // Store contract system info
+    (dnaInfo as any).story_profile = dnaResult.story_profile;
+    (dnaInfo as any).compliance = dnaResult.compliance;
+    (dnaInfo as any).contract_summary = dnaResult.contract_summary;
+    (dnaInfo as any).generation_method = dnaResult.generation_method;
+    (dnaInfo as any).raw_story = dnaResult.raw_story;
+    (dnaInfo as any).canonicalization = dnaResult.canonicalization;
+    (dnaInfo as any).truncation = dnaResult.truncation;
+    
     console.log(`[PREVIEW] DNA story generated: "${storyData.title}"`);
     console.log(`[PREVIEW] Story DNA concept hash: ${dnaResult.dna.concept_hash}`);
     console.log(`[PREVIEW] Visual DNA: ${dnaResult.visual_dna.visual_style} / ${dnaResult.visual_dna.color_palette}`);
+    console.log(`[PREVIEW] Generation method: ${dnaResult.generation_method}`);
+    if (dnaResult.compliance) {
+      console.log(`[PREVIEW] Compliance score: ${dnaResult.compliance.score}`);
+    }
     
   } else {
     // === LEGACY GENERATION (with theme guidance) ===
@@ -163,6 +247,12 @@ export async function runPreviewMode(
 
   const wordCount = storyData.story.split(/\s+/).length;
   const estimatedDuration = Math.round((wordCount / 150) * 60);
+  
+  // Use the story profile from DNA generation if available (most accurate)
+  // Otherwise use the pre-resolved profile
+  const effectiveStoryProfile = dnaInfo && (dnaInfo as any).story_profile 
+    ? (dnaInfo as any).story_profile 
+    : storyProfile;
 
   await updateJob(supabase, job_id, {
     progress: 25,
@@ -170,11 +260,20 @@ export async function runPreviewMode(
     story_text: storyData.story,
     story_word_count: wordCount,
     duration_sec: estimatedDuration,
-    // Store Visual DNA in job meta for use in image generation phase
+    // Store Visual DNA and Story Profile in job meta for use in later phases
     meta: {
       ...jobMeta,
       visual_dna: dnaInfo?.visual_dna || null,
       story_dna: dnaInfo?.dna || null,
+      // Story Profile for narrative enforcement (from DNA generation or pre-resolved)
+      resolved_story_profile: effectiveStoryProfile,
+      // Contract system info (if available)
+      story_contract: dnaInfo ? {
+        generation_method: (dnaInfo as any).generation_method,
+        contract_summary: (dnaInfo as any).contract_summary,
+        compliance: (dnaInfo as any).compliance,
+        raw_story: (dnaInfo as any).raw_story,
+      } : null,
     },
   });
 
@@ -305,6 +404,125 @@ export async function runPreviewMode(
           most_similar_title: similarityInfo.mostSimilarTitle,
           is_likely_unique: similarityInfo.isLikelyUnique,
         } : null,
+        // Story Profile v1.0 - narrative structure settings
+        story_profile: {
+          version: effectiveStoryProfile.version,
+          schema_version: effectiveStoryProfile.schema_version,
+          profile_name: effectiveStoryProfile.profile_name,
+          profile_source: effectiveStoryProfile.profile_source,
+          voice_format: effectiveStoryProfile.voiceFormat.format,
+          motif_min_mentions: effectiveStoryProfile.motif.minMentions,
+          motif_escalates: effectiveStoryProfile.motif.shouldEscalate,
+          beat_count: effectiveStoryProfile.beatStructure.beatCount,
+          beat_labels: effectiveStoryProfile.beatStructure.beatLabels,
+          anti_closure: effectiveStoryProfile.ending.antiClosure,
+          enforce_final_image: effectiveStoryProfile.ending.enforceFinalImage,
+          ending_style: effectiveStoryProfile.ending.endingStyle,
+          word_target: effectiveStoryProfile.wordCount.target,
+          word_variance: effectiveStoryProfile.wordCount.variance,
+          grounding_required: effectiveStoryProfile.beatStructure.requireGroundingDetail,
+          era_level: effectiveStoryProfile.embodiment.eraLevel,
+          output_mode: effectiveStoryProfile.outputMode?.mode ?? 'narrative',
+        },
+        // Story Contract System v1.0 - compliance tracking
+        story_contract: (dnaInfo as any)?.compliance ? {
+          generation_method: (dnaInfo as any).generation_method,
+          contract_summary: (dnaInfo as any).contract_summary,
+          compliance_score: (dnaInfo as any).compliance?.score,
+          compliance_passed: (dnaInfo as any).compliance?.passed,
+          beats_found: (dnaInfo as any).compliance?.metrics?.beatCount,
+          beats_expected: effectiveStoryProfile.beatStructure.beatCount,
+          motif_count: (dnaInfo as any).compliance?.metrics?.motifMentions,
+          has_final_image: (dnaInfo as any).compliance?.metrics?.hasFinalImage,
+          hard_failures: (dnaInfo as any).compliance?.hardFailures || [],
+          issues: (dnaInfo as any).compliance?.issues || [],
+          canonicalized: (dnaInfo as any).compliance?.canonicalized ?? false,
+          canonicalization_notes: (dnaInfo as any).compliance?.canonicalizationNotes || [],
+        } : null,
+        // Pipeline metadata
+        pipeline_metadata: {
+          canonicalization: (dnaInfo as any)?.canonicalization ? {
+            changed: (dnaInfo as any).canonicalization.changed,
+            notes: (dnaInfo as any).canonicalization.notes,
+          } : null,
+          truncation: (dnaInfo as any)?.truncation ? {
+            truncated: (dnaInfo as any).truncation.truncated,
+            original_word_count: (dnaInfo as any).truncation.originalWordCount,
+            final_word_count: (dnaInfo as any).truncation.finalWordCount,
+          } : null,
+        },
+        // =====================================================
+        // STORY DEBUG PAYLOAD v1.0 - Comprehensive debug info
+        // =====================================================
+        story_debug: dnaInfo ? buildStoryDebugPayload({
+          niche: niche,
+          vibe_preset: job.vibe_preset || genreProfile,
+          story_mode: storyMode as 'auto' | 'custom',
+          resolved_profile: effectiveStoryProfile,
+          merge_sources: {
+            hasTemplate: !!getTemplateDefaults(niche),
+            hasPreset: !!getPresetProfile(job.vibe_preset),
+            hasBrand: false, // Brand overrides not yet implemented
+            hasUser: storyMode === 'custom',
+          },
+          contract: null, // Contract object not passed to response (too large)
+          contract_summary: (dnaInfo as any).contract_summary || '',
+          raw_story: (dnaInfo as any).raw_story || storyData.story,
+          canonical_story: (dnaInfo as any).canonicalization?.changed 
+            ? storyData.story // If canonicalized, the story is the canonical version
+            : (dnaInfo as any).raw_story || storyData.story,
+          final_story: storyData.story,
+          stripped_story: storyData.story, // Tags are stripped in final output
+          canonicalization: (dnaInfo as any).canonicalization,
+          truncation: (dnaInfo as any).truncation,
+          compliance: (dnaInfo as any).compliance,
+          generation_method: (dnaInfo as any).generation_method || 'legacy_fallback',
+          repair_attempted: (dnaInfo as any).generation_method === 'contract_repaired',
+          repair_succeeded: (dnaInfo as any).generation_method === 'contract_repaired' && (dnaInfo as any).compliance?.passed,
+          // v2.0: Pass word range and count check info
+          repair_reasons: (dnaInfo as any).repair_reasons,
+          post_fixes_applied: (dnaInfo as any).post_fixes_applied,
+          final_source_text: (dnaInfo as any).final_source_text,
+          word_range: (dnaInfo as any).word_range,
+          word_count_check: (dnaInfo as any).word_count_check,
+          // v2.1: Pass fallback autopsy fields
+          fallback_reason: (dnaInfo as any).fallback_reason,
+          contract_error: (dnaInfo as any).contract_error,
+          contract_attempts: (dnaInfo as any).contract_attempts,
+          best_contract_attempt: (dnaInfo as any).best_contract_attempt,
+        }) : buildMinimalDebugPayload(niche, job.vibe_preset || 'unknown'),
+        // Visual Readiness Analysis v2.1 - Use BEST available tagged text
+        // Priority: best_contract_attempt.raw_with_tags > raw_story > storyData.story
+        // Now uses profile-driven severity rules
+        visual_readiness: (() => {
+          // Determine best text source with tags for visual readiness
+          let textForAnalysis = storyData.story; // Default: stripped
+          let inputSource: 'canonical_with_tags' | 'raw_with_tags' | 'stripped' | 'unknown' | 'best_contract_attempt' = 'stripped';
+          
+          // Priority 1: best_contract_attempt.raw_with_tags (even if fallback occurred)
+          if ((dnaInfo as any)?.best_contract_attempt?.raw_with_tags && 
+              (dnaInfo as any)?.best_contract_attempt?.had_beat_tags) {
+            textForAnalysis = (dnaInfo as any).best_contract_attempt.raw_with_tags;
+            inputSource = 'best_contract_attempt';
+            console.log(`[VISUAL-READINESS] Using best_contract_attempt (${(dnaInfo as any).best_contract_attempt.beat_count} beats)`);
+          }
+          // Priority 2: raw_story (current output with tags)
+          else if ((dnaInfo as any)?.raw_story) {
+            textForAnalysis = (dnaInfo as any).raw_story;
+            inputSource = 'raw_with_tags';
+          }
+          
+          // Get visual readiness severity config from profile (if available)
+          const severityConfig = effectiveStoryProfile?.visualReadiness || undefined;
+          
+          return analyzeVisualReadiness(
+            textForAnalysis,
+            niche,
+            (dnaInfo as any)?.compliance?.metrics?.groundingPerBeat,
+            inputSource,
+            severityConfig
+          );
+        })(),
       },
       // SCENE ANALYSIS - helps user understand scene distribution
       scene_analysis: {
@@ -396,51 +614,113 @@ export async function runAudioPhase(
   if (job.story_text && job.title) {
     storyData = { title: job.title, story: job.story_text };
   } else {
-    console.log(`[AUDIO] Generating new story (${job.length_preset}s preset)...`);
+    console.log(`[AUDIO] No story found - generating with DNA system...`);
     
-    const uniquenessConfig = await getUniquenessConfig(supabase);
     const visualPreset = job.visual_preset || "forest";
     const artStyle = jobMeta.art_style || "cinematic-dark";
     
-    // Get theme guidance for diversity (NO retries)
-    let themeGuidance: ThemeGuidance | undefined;
-    if (uniquenessConfig.uniqueness_enabled) {
-      console.log(`[AUDIO] Getting theme guidance for diversity...`);
-      themeGuidance = await getThemeGuidance(supabase, visualPreset);
+    // =====================================================
+    // DNA-BASED GENERATION (Same as preview mode)
+    // This ensures audio phase also gets counting horror, etc.
+    // =====================================================
+    const useDNA = jobMeta.use_dna !== false;
+    const genreProfile = jobMeta.genre || job.vibe_preset || 'urban_legend';
+    const targetPlatform = jobMeta.platform || 'default';
+    
+    console.log(`[AUDIO] Generation path: ${useDNA ? 'DNA' : 'legacy'}, genre: ${genreProfile}`);
+    
+    if (useDNA) {
+      // DNA-based generation for guaranteed uniqueness and preset compliance
+      const storyOptions = {
+        story_mode: jobMeta.story_mode || 'auto',
+        story_profile: jobMeta.story_profile,
+        niche: jobMeta.theme || 'horror',
+        vibe_preset: job.vibe_preset || genreProfile,
+      };
+      
+      const dnaResult = await generateStoryWithDNA(
+        supabase,
+        openaiKey,
+        job.length_preset,
+        visualPreset,
+        genreProfile,
+        targetPlatform,
+        job_id,
+        storyOptions
+      );
+      
+      storyData = {
+        title: dnaResult.title,
+        story: dnaResult.story,
+      };
+      
+      // Store DNA info in job meta for later phases
+      const updatedMeta = {
+        ...jobMeta,
+        visual_dna: dnaResult.visual_dna || null,
+        story_dna: dnaResult.dna || null,
+        story_contract: {
+          generation_method: dnaResult.generation_method,
+          contract_summary: dnaResult.contract_summary,
+          compliance: dnaResult.compliance,
+        },
+      };
+      
+      // CRITICAL: Update local jobMeta reference so later spreads include DNA info
+      Object.assign(jobMeta, updatedMeta);
+      
+      await updateJob(supabase, job_id, {
+        progress: 25,
+        title: storyData.title,
+        story_text: storyData.story,
+        meta: updatedMeta,
+      });
+      
+      console.log(`[AUDIO] DNA story generated: "${storyData.title}" (method: ${dnaResult.generation_method})`);
+      
+    } else {
+      // Legacy fallback (only if DNA explicitly disabled)
+      const uniquenessConfig = await getUniquenessConfig(supabase);
+      
+      let themeGuidance: ThemeGuidance | undefined;
+      if (uniquenessConfig.uniqueness_enabled) {
+        console.log(`[AUDIO] Getting theme guidance for diversity...`);
+        themeGuidance = await getThemeGuidance(supabase, visualPreset);
+      }
+      
+      const generatedStory = await generateStory(
+        openaiKey,
+        job.vibe_preset,
+        job.length_preset,
+        visualPreset,
+        artStyle,
+        themeGuidance
+      );
+      
+      storyData = {
+        title: generatedStory.title,
+        story: generatedStory.story,
+      };
+      
+      if (uniquenessConfig.store_all_stories) {
+        const result = await storeAndAnalyzeStory(supabase, generatedStory, {
+          vibe_preset: job.vibe_preset,
+          length_preset: job.length_preset,
+          visual_preset: visualPreset,
+          art_style: artStyle,
+          job_id: job_id,
+        }, themeGuidance);
+        console.log(`[AUDIO] Story stored, similarity: ${(result.similarityScore * 100).toFixed(1)}%`);
+      }
+      
+      await updateJob(supabase, job_id, {
+        progress: 25,
+        title: storyData.title,
+        story_text: storyData.story,
+      });
+      
+      console.log(`[AUDIO] Legacy story generated: "${storyData.title}"`);
     }
-    
-    // Generate story with theme guidance (SINGLE API call)
-    const generatedStory = await generateStory(
-      openaiKey,
-      job.vibe_preset,
-      job.length_preset,
-      visualPreset,
-      artStyle,
-      themeGuidance
-    );
-    
-    storyData = {
-      title: generatedStory.title,
-      story: generatedStory.story,
-    };
-    
-    // Store and analyze (for tracking, not rejection)
-    if (uniquenessConfig.store_all_stories) {
-      const result = await storeAndAnalyzeStory(supabase, generatedStory, {
-        vibe_preset: job.vibe_preset,
-        length_preset: job.length_preset,
-        visual_preset: visualPreset,
-        art_style: artStyle,
-        job_id: job_id,
-      }, themeGuidance);
-      console.log(`[AUDIO] Story stored, similarity: ${(result.similarityScore * 100).toFixed(1)}%`);
-    }
-    
-    await updateJob(supabase, job_id, {
-      progress: 25,
-      title: storyData.title,
-      story_text: storyData.story,
-    });
   }
 
   const wordCount = storyData.story.split(/\s+/).length;
@@ -631,6 +911,24 @@ export async function runImagesPhase(
   imageModel?: string | null  // Optional: specific model selection from job
 ): Promise<{ status: string; nextPhase: string; message: string }> {
   console.log(`[IMAGES] Starting images phase for job ${job_id}`);
+  
+  // =====================================================
+  // ART STYLE PRESET OVERRIDE (v5.7 - ALWAYS FORCE)
+  // =====================================================
+  // Force specific art styles for certain presets to maintain visual identity
+  // v5.7: ALWAYS force uncanny-illustrated for one_too_many, regardless of 
+  // what art style was passed. This ensures Visual DNA is suppressed.
+  let effectiveArtStyle = artStyle;
+  if (job.vibe_preset === 'one_too_many') {
+    // One Too Many MUST ALWAYS use uncanny-illustrated to avoid photorealism
+    // This also triggers Visual DNA suppression in buildFinalDallePrompt
+    if (artStyle !== 'uncanny-illustrated') {
+      console.log(`[IMAGES] ⚡ FORCING art style override: one_too_many preset forces 'uncanny-illustrated' (was '${artStyle}')`);
+    }
+    effectiveArtStyle = 'uncanny-illustrated';
+  }
+  // Use the effective art style from here on
+  artStyle = effectiveArtStyle;
   
   // =====================================================
   // LEASE-BASED LOCK CHECK
@@ -851,7 +1149,8 @@ export async function runImagesPhase(
         meta: { 
           ...jobMeta, 
           story_anchor: storyAnchor,
-          images_phase_lease_until: null // Release lock
+          images_phase_running: false, // CRITICAL: Release the running flag!
+          images_phase_lease_until: new Date(0).toISOString() // Release lock
         }
       });
       console.log("[IMAGES] Story Anchor created. Releasing lock for next prep step.");
@@ -870,7 +1169,8 @@ export async function runImagesPhase(
           ...jobMeta, 
           story_anchor: storyAnchor, 
           visual_beats: visualBeats,
-          images_phase_lease_until: null // Release lock
+          images_phase_running: false, // CRITICAL: Release the running flag!
+          images_phase_lease_until: new Date(0).toISOString() // Release lock
         }
       });
       console.log("[IMAGES] Visual beats created. Releasing lock for next prep step.");
@@ -882,6 +1182,15 @@ export async function runImagesPhase(
     if (!visualContracts) {
       console.log("[IMAGES] PREP STEP 3/3: Creating visual contracts (prose → literal frames)...");
       visualContracts = await createSceneVisualContracts(openaiKey, scenes, storyAnchor, visualBeats);
+      
+      // ========== GROUP COUNT INJECTION (One Too Many preset) ==========
+      // If the story DNA has counting_horror data, inject group counts into contracts
+      const storyDNA = jobMeta.story_dna;
+      const countingHorror = storyDNA?.counting_horror;
+      if (countingHorror && job.vibe_preset === 'one_too_many') {
+        console.log(`[IMAGES] Injecting group counts for One Too Many preset...`);
+        visualContracts = injectGroupCountsIntoContracts(visualContracts, scenes, countingHorror);
+      }
       
       // ========== ALIGNMENT SELF-CHECK ==========
       // Verify contracts align with narration before proceeding
@@ -912,7 +1221,8 @@ export async function runImagesPhase(
           visual_beats: visualBeats, 
           visual_contracts: visualContracts,
           alignment_stats: alignmentStats,
-          images_phase_lease_until: null // Release lock
+          images_phase_running: false, // CRITICAL: Release the running flag!
+          images_phase_lease_until: new Date(0).toISOString() // Release lock
         }
       });
       console.log(`[IMAGES] Visual contracts created: ${visualContracts.length}. Releasing lock for image generation.`);
@@ -1007,6 +1317,10 @@ export async function runImagesPhase(
                   // Parallel server returns the prompt as dalle_prompt in meta
                   const savedPrompt = img.meta?.dalle_prompt || '';
                   
+                  // v5.6: Determine if Visual DNA was suppressed (uncanny-illustrated mode)
+                  const isUncannyIllustrated = artStyle === 'uncanny-illustrated';
+                  const visualDNASuppressed = isUncannyIllustrated && !!visualDNA;
+                  
                   await supabase.from("job_assets").insert({
                     job_id: job_id,
                     type: "dalle_image",
@@ -1021,6 +1335,14 @@ export async function runImagesPhase(
                       source: "parallel",
                       image_model: img.meta?.image_model || resolvedImageModel || "unknown",
                       art_style: img.meta?.art_style || styleConfig.name || "Unknown",
+                      // v5.6: Art style override and config details
+                      art_style_override: isUncannyIllustrated ? 'uncanny-illustrated' : null,
+                      style_config: {
+                        name: styleConfig.name,
+                        basePrompt_preview: (styleConfig.basePrompt || '').substring(0, 100),
+                        colorOverride_preview: (styleConfig.colorOverride || '').substring(0, 80),
+                        technicalStyle_preview: (styleConfig.technicalStyle || '').substring(0, 80),
+                      },
                       dalle_prompt: savedPrompt,
                       // PROMPT VERIFICATION FIELDS (Ground Truth from parallel server)
                       prompt_final: savedPrompt,
@@ -1031,7 +1353,14 @@ export async function runImagesPhase(
                       // Visual components
                       visual_beat: img.meta?.visual_beat || beat.visualBeat || null,
                       visual_contract: img.meta?.visual_contract || null,
-                      visual_dna: img.meta?.visual_dna || null,
+                      // v5.6: Visual DNA with suppression status
+                      visual_dna: visualDNA ? {
+                        style: visualDNA.visual_style,
+                        palette: visualDNA.color_palette,
+                        lighting: visualDNA.lighting_profile,
+                      } : (img.meta?.visual_dna || null),
+                      visual_dna_suppressed: visualDNASuppressed,
+                      visual_dna_suppressed_reason: visualDNASuppressed ? 'uncanny-illustrated mode overrides Visual DNA' : null,
                       mood_level: img.meta?.mood_level || beat.moodLevel || null,
                       camera_angle: img.meta?.camera_angle || beat.cameraAngle || null,
                       continuity_rules: storyAnchor.continuityRules || null,
@@ -1040,7 +1369,7 @@ export async function runImagesPhase(
                       is_permanent: true, // Parallel images are already uploaded to storage
                     },
                   });
-                  console.log(`[IMAGES] ✓ Saved parallel image for scene ${sceneIndex + 1}/${scenes.length}`);
+                  console.log(`[IMAGES] ✓ Saved parallel image for scene ${sceneIndex + 1}/${scenes.length} (art_override=${isUncannyIllustrated ? 'uncanny-illustrated' : 'none'}, dna_suppressed=${visualDNASuppressed})`);
                 }
               }
             }
@@ -1175,7 +1504,8 @@ export async function runImagesPhase(
               scenes.length,
               styleConfig,
               artStyle.startsWith('custom-'),
-              visualDNA
+              visualDNA,
+              artStyle // v5.7: Pass art style for uncanny-illustrated protection
             );
           } else {
             prompt = buildFinalDallePrompt(
@@ -1186,7 +1516,8 @@ export async function runImagesPhase(
               styleConfig,
               artStyle.startsWith('custom-'),
               job.visual_preset || "forest",
-              visualDNA
+              visualDNA,
+              artStyle // Pass art style for uncanny-illustrated protection
             );
           }
           
@@ -1389,7 +1720,8 @@ export async function runImagesPhase(
           scenes.length,
           styleConfig,
           isCustomStyle,
-          visualDNA
+          visualDNA,
+          artStyle // v5.7: Pass art style for uncanny-illustrated protection
         );
       } else {
         // DALL-E 3 / GPT-4o use the full detailed prompt
@@ -1401,7 +1733,8 @@ export async function runImagesPhase(
           styleConfig,
           isCustomStyle,
           visualPreset,
-          visualDNA
+          visualDNA,
+          artStyle // Pass art style for uncanny-illustrated protection
         );
       }
       
@@ -1478,9 +1811,9 @@ export async function runImagesPhase(
           
           // Rebuild prompt
           if (resolvedImageModel === "flux") {
-            imagePrompt = buildFluxPrompt(storyAnchor, beat, i, scenes.length, styleConfig, isCustomStyle, visualDNA);
+            imagePrompt = buildFluxPrompt(storyAnchor, beat, i, scenes.length, styleConfig, isCustomStyle, visualDNA, artStyle);
           } else {
-            imagePrompt = buildFinalDallePrompt(storyAnchor, beat, i, scenes.length, styleConfig, isCustomStyle, visualPreset, visualDNA);
+            imagePrompt = buildFinalDallePrompt(storyAnchor, beat, i, scenes.length, styleConfig, isCustomStyle, visualPreset, visualDNA, artStyle);
           }
           
           // Re-check mode
@@ -1563,7 +1896,8 @@ export async function runImagesPhase(
                 scenes.length,
                 styleConfig,
                 isCustomStyle,
-                visualDNA
+                visualDNA,
+                artStyle // v5.7: Pass art style for uncanny-illustrated protection
               );
             } else {
               imagePrompt = buildFinalDallePrompt(
@@ -1574,7 +1908,8 @@ export async function runImagesPhase(
                 styleConfig,
                 isCustomStyle,
                 visualPreset,
-                visualDNA
+                visualDNA,
+                artStyle // Pass art style for uncanny-illustrated protection
               );
             }
             
@@ -1671,6 +2006,108 @@ export async function runImagesPhase(
           }
         }
         
+        // =====================================================
+        // COUNT LOCK VERIFICATION + RETRY (v5.2)
+        // =====================================================
+        // If this scene has a group_count, verify the image shows the correct number
+        // Retry up to 2 more times with progressively stricter prompts if wrong
+        const groupCount = beat.visualContract?.group_count;
+        if (groupCount && imageUrl && resolvedImageModel !== "flux") {
+          const expectedCount = groupCount.expected;
+          const MAX_COUNT_RETRIES = 2;
+          let countVerified = false;
+          let bestImageUrl = imageUrl;
+          let bestDelta = Infinity;
+          
+          console.log(`[COUNT-VERIFY] Scene ${i + 1}: Verifying COUNT LOCK (expected=${expectedCount})`);
+          
+          // Verify initial image
+          const initialVerify = await verifyHumanCount(openaiKey, imageUrl, expectedCount);
+          const initialDelta = Math.abs(initialVerify.detectedCount - expectedCount);
+          
+          if (initialVerify.ok) {
+            console.log(`[COUNT-VERIFY] Scene ${i + 1}: ✅ Initial image PASSED (${initialVerify.detectedCount}/${expectedCount})`);
+            countVerified = true;
+          } else {
+            console.log(`[COUNT-VERIFY] Scene ${i + 1}: ❌ Initial image FAILED (detected=${initialVerify.detectedCount}, expected=${expectedCount})`);
+            bestDelta = initialDelta;
+            
+            // Retry with stricter prompts
+            for (let retry = 1; retry <= MAX_COUNT_RETRIES && !countVerified; retry++) {
+              console.log(`[COUNT-VERIFY] Scene ${i + 1}: Retry ${retry}/${MAX_COUNT_RETRIES} with stricter prompt...`);
+              
+              // Build fallback prompt with simplified composition
+              const fallbackPrompt = buildCountLockFallbackPrompt(
+                expectedCount,
+                beat.visualContract?.location || "interior scene",
+                groupCount.is_wrong,
+                styleConfig
+              );
+              
+              try {
+                // Generate new image with fallback prompt
+                const retryRawUrl = await generateImage(
+                  openaiKey,
+                  fallbackPrompt,
+                  i,
+                  resolvedImageModel,
+                  referenceImageUrl,
+                  false // Don't be strict on model for retries
+                );
+                
+                if (retryRawUrl) {
+                  // Upload retry image
+                  let retryImageUrl: string;
+                  try {
+                    retryImageUrl = await uploadRemoteImageToStorage(
+                      supabase,
+                      "story-videos",
+                      `${job_id}/images/scene_${i}_retry${retry}.webp`,
+                      retryRawUrl
+                    );
+                  } catch {
+                    retryImageUrl = retryRawUrl;
+                  }
+                  
+                  // Verify retry image
+                  const retryVerify = await verifyHumanCount(openaiKey, retryImageUrl, expectedCount);
+                  const retryDelta = Math.abs(retryVerify.detectedCount - expectedCount);
+                  
+                  if (retryVerify.ok) {
+                    console.log(`[COUNT-VERIFY] Scene ${i + 1}: ✅ Retry ${retry} PASSED (${retryVerify.detectedCount}/${expectedCount})`);
+                    imageUrl = retryImageUrl;
+                    countVerified = true;
+                  } else {
+                    console.log(`[COUNT-VERIFY] Scene ${i + 1}: ❌ Retry ${retry} FAILED (detected=${retryVerify.detectedCount})`);
+                    // Keep the image with smallest delta
+                    if (retryDelta < bestDelta) {
+                      bestDelta = retryDelta;
+                      bestImageUrl = retryImageUrl;
+                    }
+                  }
+                }
+              } catch (retryError) {
+                console.error(`[COUNT-VERIFY] Scene ${i + 1}: Retry ${retry} error:`, retryError);
+              }
+            }
+            
+            // If no retry passed, use the best candidate
+            if (!countVerified) {
+              console.log(`[COUNT-VERIFY] Scene ${i + 1}: ⚠️ All retries failed, using best candidate (delta=${bestDelta})`);
+              imageUrl = bestImageUrl;
+            }
+          }
+          
+          // Log verification result to job meta
+          await updateJobMeta(supabase, job_id, (meta) => ({
+            ...meta,
+            generation_logs: [
+              ...(meta.generation_logs || []),
+              `[${new Date().toISOString()}] [COUNT-VERIFY] Scene ${i + 1}: expected=${expectedCount}, verified=${countVerified}`
+            ]
+          }));
+        }
+        
         // Store first scene as reference if FLUX (use stored URL for stability)
         if (i === 0 && imageUrl && resolvedImageModel === "flux") {
           referenceImageUrl = imageUrl;
@@ -1736,6 +2173,10 @@ export async function runImagesPhase(
       // Check if URL is from Supabase Storage (permanent) vs temporary
       const isSupabaseUrl = imageUrl?.includes('supabase.co');
       
+      // Determine if Visual DNA was suppressed (uncanny-illustrated mode)
+      const isUncannyIllustrated = artStyle === 'uncanny-illustrated';
+      const visualDNASuppressed = isUncannyIllustrated && !!visualDNA;
+      
       // Build comprehensive meta with prompt verification fields
       // Compute final hash for ground-truth verification
       const finalPromptHash = await computePromptHash(imagePrompt);
@@ -1748,7 +2189,15 @@ export async function runImagesPhase(
         end_time: scene.endTime,
         source: "sequential",
         image_model: resolvedImageModel,
-        art_style: styleConfig.name,
+        art_style: artStyle,
+        art_style_override: isUncannyIllustrated ? 'uncanny-illustrated' : null,
+        // STYLE CONFIG (what was actually used)
+        style_config: {
+          name: styleConfig.name,
+          basePrompt_preview: (styleConfig.basePrompt || '').substring(0, 100),
+          colorOverride_preview: (styleConfig.colorOverride || '').substring(0, 80),
+          technicalStyle_preview: (styleConfig.technicalStyle || '').substring(0, 80),
+        },
         // PROMPT VERIFICATION FIELDS (Ground Truth v5.1)
         prompt_final: imagePrompt,  // FULL PROMPT - this is what was actually sent
         prompt_len: imagePrompt.length,
@@ -1765,13 +2214,20 @@ export async function runImagesPhase(
           visibleObjects: beat.visualContract.visibleObjects,
           forbiddenElements: beat.visualContract.forbiddenElements,
           evidenceRule: beat.visualContract.evidenceRule,
+          group_count: beat.visualContract.group_count || null,
         } : null,
+        // VISUAL DNA STATUS (v5.5)
         visual_dna: visualDNA ? {
           style: visualDNA.visual_style,
           palette: visualDNA.color_palette,
           lighting: visualDNA.lighting_profile,
           composition: visualDNA.frame_composition,
+          textures: visualDNA.texture_artifacts || [],
+          camera: visualDNA.camera_language || null,
+          motion: visualDNA.motion_profile || null,
         } : null,
+        visual_dna_suppressed: visualDNASuppressed,
+        visual_dna_suppressed_reason: visualDNASuppressed ? 'uncanny-illustrated mode overrides Visual DNA' : null,
         mood_level: beat.moodLevel,
         camera_angle: beat.cameraAngle,
         continuity_rules: storyAnchor.continuityRules || null,
@@ -1788,7 +2244,7 @@ export async function runImagesPhase(
         relevance_mismatched_fields: relevanceResult.mismatched_fields || [],
       };
       
-      console.log(`[GROUND-TRUTH] Scene ${i + 1} FINAL: hash=${finalPromptHash}, mode=${currentPromptMode}, relevance=${(relevanceResult.relevance_score * 100).toFixed(0)}%`);
+      console.log(`[GROUND-TRUTH] Scene ${i + 1} FINAL: hash=${finalPromptHash}, mode=${currentPromptMode}, relevance=${(relevanceResult.relevance_score * 100).toFixed(0)}%, visual_dna_suppressed=${visualDNASuppressed}`);
       
       const { error: insertError } = await supabase.from("job_assets").insert({
         job_id: job_id,
@@ -2078,20 +2534,29 @@ export async function runAssemblePhase(
   });
   console.log(`[ASSEMBLE] 🎭 Mood levels for Ken Burns: [${moodLevels.join(', ')}]`);
   
-  // v3.0: Extract Visual DNA from job meta for FFmpeg filter binding
-  const visualDNA = jobMeta.visual_dna || null;
-  if (visualDNA) {
-    console.log(`[ASSEMBLE] 🎨 Visual DNA detected:`);
-    console.log(`[ASSEMBLE]   Style: ${visualDNA.visual_style}`);
-    console.log(`[ASSEMBLE]   Palette: ${visualDNA.color_palette}`);
-    console.log(`[ASSEMBLE]   Motion: ${visualDNA.motion_profile}`);
-    console.log(`[ASSEMBLE]   Platform: ${visualDNA.platform}`);
-  }
-  
   // v3.1: Resolve effects profile with intensity controls
   // Priority: user overrides → preset defaults → art_style adjustments → system defaults
   const vibePreset = job.vibe_preset || "slow_creepy";
   const artStyle = jobMeta.art_style || "cinematic-dark";
+  
+  // v5.14: Extract Visual DNA from job meta for FFmpeg filter binding
+  // CRITICAL: Suppress Visual DNA for uncanny-illustrated to prevent color tint
+  // The illustrated style should NOT have Visual DNA color grading applied
+  const rawVisualDNA = jobMeta.visual_dna || null;
+  const isUncannyIllustrated = artStyle === 'uncanny-illustrated';
+  const visualDNA = isUncannyIllustrated ? null : rawVisualDNA;
+  
+  if (rawVisualDNA) {
+    console.log(`[ASSEMBLE] 🎨 Visual DNA detected:`);
+    console.log(`[ASSEMBLE]   Style: ${rawVisualDNA.visual_style}`);
+    console.log(`[ASSEMBLE]   Palette: ${rawVisualDNA.color_palette}`);
+    console.log(`[ASSEMBLE]   Motion: ${rawVisualDNA.motion_profile}`);
+    console.log(`[ASSEMBLE]   Platform: ${rawVisualDNA.platform}`);
+    if (isUncannyIllustrated) {
+      console.log(`[ASSEMBLE] ⚠️ UNCANNY-ILLUSTRATED OVERRIDE: Suppressing Visual DNA for video render`);
+      console.log(`[ASSEMBLE]   Reason: Illustrated style should not have photographic color grading`);
+    }
+  }
   const effectsMode = jobMeta.effects_mode || "auto";
   
   // Get user overrides if custom mode, sanitize to prevent FFmpeg crashes

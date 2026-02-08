@@ -2542,10 +2542,24 @@ async function processImageGeneration(imageJobId, supabaseJobId, scenes, model, 
             const storagePath = `${supabaseJobId}/images/scene_${sceneIndex}.webp`;
             imageUrl = await uploadImageToSupabase(imageUrl, 'story-videos', storagePath);
             
-            // v5.13: Save directly to job_assets for durability
+            // v5.14: Save directly to job_assets for durability
             // This ensures images survive server restarts and race conditions
+            // NOTE: Use delete-then-insert pattern because Supabase upsert doesn't
+            // support JSONB path expressions in onConflict
             try {
-              const { error: assetError } = await supabase.from('job_assets').upsert({
+              // First, delete any existing row for this scene
+              const { error: deleteError } = await supabase.from('job_assets')
+                .delete()
+                .eq('job_id', supabaseJobId)
+                .eq('type', 'dalle_image')
+                .filter('meta->>scene_index', 'eq', String(sceneIndex));
+              
+              if (deleteError) {
+                console.log(`  [IMG-${imageJobId}] Warning: delete before insert failed: ${deleteError.message}`);
+              }
+              
+              // Then insert the new row
+              const { error: assetError } = await supabase.from('job_assets').insert({
                 job_id: supabaseJobId,
                 type: 'dalle_image',
                 storage_path: imageUrl,
@@ -2571,9 +2585,6 @@ async function processImageGeneration(imageJobId, supabaseJobId, scenes, model, 
                   generated_at: new Date().toISOString(),
                   is_permanent: true,
                 },
-              }, {
-                onConflict: 'job_id,type,meta->scene_index',
-                ignoreDuplicates: false
               });
               
               if (assetError) {

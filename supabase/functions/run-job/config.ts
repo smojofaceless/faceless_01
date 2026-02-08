@@ -90,6 +90,92 @@ export const ART_STYLE_CONFIG: Record<string, ArtStyleConfig> = {
     technicalStyle: "surrealist art, nightmare imagery, biomechanical horror, Beksiński style, dreamlike, impossible architecture",
     negativePrompt: "realistic, normal, cheerful, bright colors, cartoon, text, words, letters",
   },
+  
+  // =====================================================
+  // UNCANNY ILLUSTRATED - One Too Many Preset
+  // =====================================================
+  // Designed for counting horror where group photos show
+  // an extra person. Must look like EDITORIAL CARTOON / GRAPHIC NOVEL
+  // with VHS artifacts. NOT painterly realism. NOT photographic.
+  // Think: cursed animated frame, lo-fi cartoon horror, cel-shaded VHS.
+  "uncanny-illustrated": {
+    name: "Uncanny Illustrated",
+    basePrompt: "Editorial cartoon illustration in graphic novel style. Cel-shaded horror scene with bold black ink outlines. Flat shading with limited color palette. Posterized tones like a vintage comic panel. Faces are uncanny - smiles too wide, eyes too white and empty, proportions slightly wrong. Cursed animated frame aesthetic. Lo-fi cartoon horror like a lost VHS recording of a cartoon. Characters have thick outlines and simplified but disturbing features. CRITICAL: Use NEUTRAL COOL colors only - grays, blues, browns.",
+    colorOverride: "MANDATORY COLOR PALETTE: muted cool grays, dirty steel blues, nicotine-brown highlights, desaturated pale skin tones, subtle magenta and teal VHS fringing. Palette must be NEUTRAL with blue and gray and brown bias ONLY. Flat color fills, no gradients.",
+    technicalStyle: "editorial cartoon, graphic novel panel, cel shading, bold ink outlines, flat shading, limited palette, posterized, slight halftone texture, VHS scanlines, chromatic aberration RGB edge split, analog noise, lo-fi horror cartoon, thick black outlines, simplified shapes",
+    negativePrompt: "painterly realism, oil painting, watercolor, photorealism, cinematic, DSLR, film still, realistic skin texture, realistic skin pores, professional photography, photograph, camera, bokeh, lens flare, depth of field, studio lighting, natural lighting, smooth gradients, soft blending, airbrushed, hyper-detailed, 4K, high definition, movie screenshot, portrait photography, green color cast, olive tint, sickly green, monochrome green, green wash, teal green, forest green, moss green, yellow-green, greenish, text, words, letters",
+  },
+};
+
+// =====================================================
+// UNCANNY ILLUSTRATED STYLE PROTECTION
+// =====================================================
+// When art_style is uncanny-illustrated, these tokens must be
+// stripped from ANY Visual DNA or other style injection.
+// This prevents photographic/painterly Visual DNA from contaminating
+// the editorial cartoon horror style.
+export const UNCANNY_ILLUSTRATED_BANNED_TOKENS = [
+  // Photography terms
+  "photography", "photographic", "photograph", "photo",
+  "DSLR", "camera", "lens", "bokeh", "depth of field",
+  "film still", "movie screenshot", "movie still",
+  "professional cinematography", "realistic skin texture", "realistic skin pores",
+  "cinematic dark photography", "portrait photography", "studio lighting",
+  // Cinematic terms
+  "cinematic", "cinematography", "cinematographer",
+  "film noir", "film noir lighting", "noir lighting",
+  // Painterly terms (we want cartoon, not painting)
+  "painterly realism", "painterly", "oil painting", "watercolor",
+  "digital painting", "soft brush", "airbrushed", "smooth blending",
+  // Realism terms
+  "photorealistic", "photoreal", "photo-realistic", "hyper-realistic",
+  "realistic lighting", "natural lighting",
+];
+
+// Safe style modifiers for uncanny-illustrated (editorial cartoon VHS)
+// These replace photographic/painterly Visual DNA
+export const UNCANNY_ILLUSTRATED_STYLE_REPLACEMENT = [
+  "editorial cartoon illustration",
+  "graphic novel panel style",
+  "cel shading with flat colors",
+  "bold black ink outlines",
+  "limited color palette",
+  "posterized tones",
+  "VHS scanlines overlay",
+  "chromatic aberration RGB split",
+  "analog noise texture",
+  "lo-fi horror cartoon aesthetic",
+];
+
+// Texture replacements for uncanny-illustrated
+// Replace film/photo textures with illustration textures
+export const UNCANNY_ILLUSTRATED_TEXTURE_REPLACEMENT = {
+  "film grain": "halftone texture",
+  "film_grain": "halftone texture",
+  "vignette heavy": "paper grain vignette",
+  "vignette_heavy": "paper grain vignette",
+  "fog bloom": "soft glow",
+  "fog_bloom": "soft glow",
+  "dust scratches": "analog noise",
+  "dust_scratches": "analog noise",
+};
+
+export const UNCANNY_EXTRA_RULES = {
+  // When the extra person appears, they should have these traits:
+  extraPersonTraits: [
+    "slightly off posture, standing at wrong angle",
+    "delayed or frozen smile that doesn't reach the eyes",
+    "eyes looking at camera when others look away",
+    "subtle clothing mismatch with group",
+    "limbs at unnatural angles, too long or positioned wrong",
+    "face in partial shadow, features unclear",
+    "standing too close or too far from group",
+    "reflection doesn't match pose",
+  ],
+  // What to add to the prompt when extra person is present:
+  extraPersonPrompt: "One figure in the group is subtly wrong - their posture slightly off, smile frozen, eyes fixed on camera while others look away. NOT overtly monstrous, just uncanny. Almost human but fundamentally wrong.",
+  // What to ban when extra person is present:
+  extraPersonBan: "the extra figure must NOT be: obviously supernatural, transparent, glowing, monstrous, zombie-like, bloody, injured, or clearly identified as different",
 };
 
 // =====================================================
@@ -214,6 +300,13 @@ export interface SceneVisualContract {
     main_character: string | null; // Character description if present
     time_of_day: string;         // "night", "twilight", "dawn" - carries forward
     camera_language: string;     // Consistent visual style ("handheld", "static", "surveillance")
+  };
+  // NEW: Group Count Enforcement (One Too Many preset)
+  // When set, the image MUST show exactly this many people
+  group_count?: {
+    expected: number;            // Number of people that MUST be visible
+    is_wrong: boolean;           // If true, the count is "wrong" (extra person present)
+    extra_person_rules?: string; // Special rules for depicting the extra person
   };
 }
 

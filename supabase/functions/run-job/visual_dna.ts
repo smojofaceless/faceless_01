@@ -1171,26 +1171,24 @@ function recencyWeight(ageHours: number, halfLifeHours: number = RECENCY_HALF_LI
 
 // =====================================================
 // GENRE LOCK MAPPINGS (cannot violate these)
+// v4.0: Only urban_legend and one_too_many are active engines
+// Deprecated presets map to urban_legend at the DNA layer
 // =====================================================
 
 const GENRE_LOCKED_STYLES: Record<string, VisualStyle> = {
-  "analog_horror": "VHS_degraded",
-  // Other genres allow rotation
+  // v4.0: No hard style locks - allow rotation for variety
+  // Deprecated: "analog_horror" was VHS_degraded locked
 };
 
 const GENRE_ALLOWED_PALETTES: Record<string, ColorPalette[]> = {
-  "analog_horror": ["sickly_green", "cold_desaturated", "muted_gray", "amber_decay"],
-  "cosmic_horror": ["cold_desaturated", "blue_black_void", "muted_gray"],
-  "urban_legend": ["deep_shadow_contrast", "cold_desaturated", "amber_decay", "muted_gray"],
-  "true_crime": ["muted_gray", "deep_shadow_contrast", "cold_desaturated", "monochrome_harsh"],
+  "urban_legend": ["deep_shadow_contrast", "cold_desaturated", "amber_decay", "muted_gray", "sickly_green"],
+  "one_too_many": ["cold_desaturated", "muted_gray", "deep_shadow_contrast", "blue_black_void"],
   // Default allows all
 };
 
 const GENRE_ALLOWED_MOTIONS: Record<string, MotionProfile[]> = {
-  "analog_horror": ["micro_jitter", "none", "slow_drift", "tracking_stutter"],
-  "cosmic_horror": ["slow_drift", "none", "subtle_zoom"],
-  "urban_legend": ["slow_pan", "subtle_zoom", "none", "slow_drift"],
-  "true_crime": ["none", "slow_pan", "subtle_zoom"],
+  "urban_legend": ["slow_pan", "subtle_zoom", "none", "slow_drift", "micro_jitter"],
+  "one_too_many": ["none", "slow_pan", "subtle_zoom", "slow_drift"],
 };
 
 /**
@@ -1912,38 +1910,26 @@ export interface BrandShadowProfileConfig {
 }
 
 // Default shadow profiles by genre
+// v4.0: Only two active engines - urban_legend and one_too_many
+// Deprecated presets map to urban_legend at DNA layer
 const GENRE_SHADOW_PROFILES: Record<string, Omit<BrandShadowProfileConfig, 'brand_id'>> = {
-  analog_horror: {
-    genre: "analog_horror",
-    locked_visual_style: "VHS_degraded",
-    allowed_palettes: ["sickly_green", "cold_desaturated", "muted_gray", "amber_decay"],
-    allowed_motions: ["micro_jitter", "none", "slow_drift", "tracking_stutter"],
-    allowed_lightings: ["fluorescent_flat", "deep_darkness", "single_source_harsh"],
-    texture_pool: ["scanlines", "tracking_noise", "film_grain", "vignette_heavy"],
-  },
-  cosmic_horror: {
-    genre: "cosmic_horror",
-    locked_visual_style: "cinematic_minimal",
-    allowed_palettes: ["cold_desaturated", "blue_black_void", "muted_gray", "monochrome_harsh"],
-    allowed_motions: ["slow_drift", "none", "subtle_zoom"],
-    allowed_lightings: ["moonlit_fog", "deep_darkness", "low_key_shadow"],
-    texture_pool: ["fog_bloom", "film_grain", "vignette_heavy"],
-  },
+  // Primary engine: broad folklore documentary horror
   urban_legend: {
     genre: "urban_legend",
     locked_visual_style: null,
-    allowed_palettes: ["deep_shadow_contrast", "cold_desaturated", "amber_decay", "muted_gray"],
-    allowed_motions: ["slow_pan", "subtle_zoom", "none", "slow_drift"],
-    allowed_lightings: ["low_key_shadow", "twilight_amber", "single_source_harsh", "moonlit_fog"],
-    texture_pool: ["film_grain", "dust_scratches", "vignette_heavy"],
+    allowed_palettes: ["deep_shadow_contrast", "cold_desaturated", "amber_decay", "muted_gray", "sickly_green"],
+    allowed_motions: ["slow_pan", "subtle_zoom", "none", "slow_drift", "micro_jitter"],
+    allowed_lightings: ["low_key_shadow", "twilight_amber", "single_source_harsh", "moonlit_fog", "fluorescent_flat"],
+    texture_pool: ["film_grain", "dust_scratches", "vignette_heavy", "scanlines"],
   },
-  true_crime: {
-    genre: "true_crime",
+  // Specialized engine: counting horror (group has extra person)
+  one_too_many: {
+    genre: "one_too_many",
     locked_visual_style: null,
-    allowed_palettes: ["muted_gray", "deep_shadow_contrast", "cold_desaturated", "monochrome_harsh"],
-    allowed_motions: ["none", "slow_pan", "subtle_zoom"],
-    allowed_lightings: ["fluorescent_flat", "low_key_shadow", "single_source_harsh"],
-    texture_pool: ["compression_noise", "dust_scratches", "vignette_heavy"],
+    allowed_palettes: ["cold_desaturated", "muted_gray", "deep_shadow_contrast", "blue_black_void"],
+    allowed_motions: ["none", "slow_pan", "subtle_zoom", "slow_drift"],
+    allowed_lightings: ["low_key_shadow", "fluorescent_flat", "single_source_harsh"],
+    texture_pool: ["film_grain", "compression_noise", "vignette_heavy"],
   },
 };
 
