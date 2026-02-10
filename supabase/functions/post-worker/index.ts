@@ -4,13 +4,14 @@
 // 
 // Reference: POST_QUEUE.md, ROADMAP.md Item #9
 // 
+// v2.0 - 2026-02-10: Real YouTube adapter with OAuth token refresh
 // v1.0 - 2026-02-23: Initial implementation with stub adapters
 // 
 // This function:
 // 1. Checks global kill switch
 // 2. Receives post_id (or claims from queue)
 // 3. Validates post ownership (lease)
-// 4. Calls platform adapter (stubbed for now)
+// 4. Calls platform adapter (YouTube = real, others = stubbed)
 // 5. Updates post status (posted/failed)
 // =====================================================
 
@@ -20,7 +21,7 @@ import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2.39.3";
 // =====================================================
 // VERSION
 // =====================================================
-const VERSION = "1.0";
+const VERSION = "2.0";
 
 // =====================================================
 // CONFIGURATION
@@ -95,13 +96,15 @@ interface PlatformAdapter {
     title: string,
     description: string | null,
     tags: string[] | null,
-    meta: Record<string, unknown>
+    meta: Record<string, unknown>,
+    supabase?: SupabaseClient,
+    brandId?: string
   ): Promise<PlatformResult>;
 }
 
 /**
  * Stub adapter that simulates successful posting
- * In production, this would make actual API calls
+ * Used for platforms not yet implemented
  */
 class StubAdapter implements PlatformAdapter {
   name: string;
@@ -115,7 +118,9 @@ class StubAdapter implements PlatformAdapter {
     title: string,
     description: string | null,
     tags: string[] | null,
-    meta: Record<string, unknown>
+    meta: Record<string, unknown>,
+    _supabase?: SupabaseClient,
+    _brandId?: string
   ): Promise<PlatformResult> {
     // Simulate network delay
     await new Promise(r => setTimeout(r, 500));
@@ -149,7 +154,9 @@ class TikTokAdapter extends StubAdapter {
     title: string,
     description: string | null,
     tags: string[] | null,
-    meta: Record<string, unknown>
+    meta: Record<string, unknown>,
+    supabase?: SupabaseClient,
+    brandId?: string
   ): Promise<PlatformResult> {
     // TikTok-specific validation
     if (!videoUrl) {
@@ -160,36 +167,303 @@ class TikTokAdapter extends StubAdapter {
       };
     }
     
-    // Delegate to stub
-    return super.post(videoUrl, title, description, tags, meta);
+    // Delegate to stub (TODO: implement real TikTok upload)
+    return super.post(videoUrl, title, description, tags, meta, supabase, brandId);
   }
 }
 
+// =====================================================
+// REAL YOUTUBE ADAPTER
+// Uses YouTube Data API v3 with resumable uploads
+// =====================================================
+
+interface PlatformToken {
+  id: string;
+  brand_id: string;
+  platform: string;
+  access_token: string;
+  refresh_token: string;
+  token_expires_at: string;
+  platform_channel_id: string | null;
+  platform_channel_name: string | null;
+  is_valid: boolean;
+}
+
 /**
- * YouTube adapter (stubbed)
+ * Refresh YouTube access token using refresh_token
  */
-class YouTubeAdapter extends StubAdapter {
-  constructor() {
-    super('youtube');
+async function refreshYouTubeToken(
+  supabase: SupabaseClient,
+  tokenData: PlatformToken
+): Promise<string> {
+  console.log('[YouTube] Refreshing access token...');
+
+  const clientId = Deno.env.get('YOUTUBE_CLIENT_ID');
+  const clientSecret = Deno.env.get('YOUTUBE_CLIENT_SECRET');
+
+  if (!clientId || !clientSecret) {
+    throw new Error('YouTube OAuth credentials not configured (YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET)');
   }
+
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: tokenData.refresh_token,
+      grant_type: 'refresh_token'
+    })
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error('[YouTube] Token refresh failed:', errorBody);
+    
+    // Mark token as invalid
+    await supabase
+      .from('platform_tokens')
+      .update({ is_valid: false, last_error: `Token refresh failed: ${response.status}` })
+      .eq('id', tokenData.id);
+    
+    throw new Error(`YouTube token refresh failed: ${response.status}`);
+  }
+
+  const tokens = await response.json();
+
+  // Update token in database
+  const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+  
+  await supabase
+    .from('platform_tokens')
+    .update({
+      access_token: tokens.access_token,
+      token_expires_at: expiresAt,
+      is_valid: true,
+      last_error: null,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', tokenData.id);
+
+  console.log('[YouTube] Token refreshed successfully, expires:', expiresAt);
+  return tokens.access_token;
+}
+
+/**
+ * Real YouTube adapter - uploads to YouTube via Data API v3
+ */
+class YouTubeAdapter implements PlatformAdapter {
+  name = 'youtube';
   
   async post(
     videoUrl: string,
     title: string,
     description: string | null,
     tags: string[] | null,
-    meta: Record<string, unknown>
+    meta: Record<string, unknown>,
+    supabase?: SupabaseClient,
+    brandId?: string
   ): Promise<PlatformResult> {
-    // YouTube-specific validation
-    if (!title || title.length > 100) {
+    console.log(`[YouTube] Starting upload: "${title?.slice(0, 50)}"`);
+    
+    // Validation
+    if (!videoUrl) {
       return {
         success: false,
         error_class: 'misconfig',
-        error_message: 'YouTube requires a title under 100 characters',
+        error_message: 'YouTube requires a video URL',
       };
     }
     
-    return super.post(videoUrl, title, description, tags, meta);
+    if (!title) {
+      return {
+        success: false,
+        error_class: 'misconfig',
+        error_message: 'YouTube requires a title',
+      };
+    }
+    
+    // Title length limit (100 chars)
+    const safeTitle = title.length > 100 ? title.slice(0, 97) + '...' : title;
+    
+    if (!supabase || !brandId) {
+      return {
+        success: false,
+        error_class: 'misconfig',
+        error_message: 'YouTube adapter requires supabase client and brand_id',
+      };
+    }
+    
+    try {
+      // Get platform token for this brand
+      const { data: tokenData, error: tokenError } = await supabase
+        .from('platform_tokens')
+        .select('*')
+        .eq('brand_id', brandId)
+        .eq('platform', 'youtube')
+        .single();
+
+      if (tokenError || !tokenData) {
+        console.error('[YouTube] Token lookup failed:', tokenError?.message);
+        return {
+          success: false,
+          error_class: 'misconfig',
+          error_message: 'YouTube not connected for this brand. Please connect in Settings.',
+        };
+      }
+      
+      if (!tokenData.is_valid) {
+        return {
+          success: false,
+          error_class: 'misconfig',
+          error_message: 'YouTube token is invalid. Please reconnect in Settings.',
+        };
+      }
+
+      // Check if token needs refresh (expired or within 5 min of expiry)
+      let accessToken = tokenData.access_token;
+      const expiresAt = new Date(tokenData.token_expires_at);
+      const now = new Date();
+      const fiveMinutes = 5 * 60 * 1000;
+      
+      if (expiresAt.getTime() - now.getTime() < fiveMinutes) {
+        console.log('[YouTube] Token expired or expiring soon, refreshing...');
+        accessToken = await refreshYouTubeToken(supabase, tokenData as PlatformToken);
+      }
+
+      // Download video from storage
+      console.log(`[YouTube] Downloading video from: ${videoUrl.slice(0, 80)}...`);
+      const videoResponse = await fetch(videoUrl);
+      if (!videoResponse.ok) {
+        return {
+          success: false,
+          error_class: 'dependency',
+          error_message: `Failed to fetch video: ${videoResponse.status}`,
+        };
+      }
+      
+      const videoBlob = await videoResponse.blob();
+      console.log(`[YouTube] Video size: ${(videoBlob.size / 1024 / 1024).toFixed(2)} MB`);
+
+      // Prepare metadata
+      const isShort = meta?.isShort === true || (videoBlob.size < 60 * 1024 * 1024); // Assume short if < 60MB
+      const youtubeMetadata = {
+        snippet: {
+          title: safeTitle,
+          description: description || '',
+          tags: tags || [],
+          categoryId: '22' // People & Blogs (good for stories)
+        },
+        status: {
+          privacyStatus: (meta?.privacyStatus as string) || 'public',
+          selfDeclaredMadeForKids: false,
+          madeForKids: false
+        }
+      };
+
+      console.log('[YouTube] Initiating resumable upload...');
+      console.log('[YouTube] Metadata:', JSON.stringify(youtubeMetadata, null, 2));
+      
+      // Initiate resumable upload
+      const initResponse = await fetch(
+        'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            'X-Upload-Content-Type': 'video/mp4',
+            'X-Upload-Content-Length': videoBlob.size.toString()
+          },
+          body: JSON.stringify(youtubeMetadata)
+        }
+      );
+
+      if (!initResponse.ok) {
+        const errorBody = await initResponse.text();
+        console.error('[YouTube] Upload init error:', errorBody);
+        
+        // Parse error for classification
+        let errorClass: 'transient' | 'dependency' | 'misconfig' | 'permanent' = 'transient';
+        if (initResponse.status === 401 || initResponse.status === 403) {
+          errorClass = 'misconfig'; // Token issue
+        } else if (initResponse.status === 400) {
+          errorClass = 'permanent'; // Bad request, won't retry
+        } else if (initResponse.status >= 500) {
+          errorClass = 'dependency'; // YouTube is down
+        }
+        
+        return {
+          success: false,
+          error_class: errorClass,
+          error_message: `YouTube upload init failed: ${initResponse.status} - ${errorBody.slice(0, 200)}`,
+        };
+      }
+
+      const uploadUrl = initResponse.headers.get('Location');
+      if (!uploadUrl) {
+        return {
+          success: false,
+          error_class: 'dependency',
+          error_message: 'No upload URL returned from YouTube',
+        };
+      }
+
+      // Upload video data
+      console.log('[YouTube] Uploading video data...');
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'video/mp4',
+          'Content-Length': videoBlob.size.toString()
+        },
+        body: videoBlob
+      });
+
+      if (!uploadResponse.ok) {
+        const errorBody = await uploadResponse.text();
+        console.error('[YouTube] Upload error:', errorBody);
+        
+        return {
+          success: false,
+          error_class: uploadResponse.status >= 500 ? 'dependency' : 'transient',
+          error_message: `YouTube upload failed: ${uploadResponse.status}`,
+        };
+      }
+
+      const result = await uploadResponse.json();
+      const videoId = result.id;
+      const platformUrl = isShort 
+        ? `https://youtube.com/shorts/${videoId}`
+        : `https://youtube.com/watch?v=${videoId}`;
+      
+      console.log(`[YouTube] ✅ Upload complete! Video ID: ${videoId}`);
+      console.log(`[YouTube] URL: ${platformUrl}`);
+      
+      // Update last_used_at
+      await supabase
+        .from('platform_tokens')
+        .update({ last_used_at: new Date().toISOString() })
+        .eq('id', tokenData.id);
+
+      return {
+        success: true,
+        platform_post_id: videoId,
+        platform_url: platformUrl,
+      };
+      
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[YouTube] Unexpected error:', message);
+      
+      return {
+        success: false,
+        error_class: 'transient',
+        error_message: message,
+      };
+    }
   }
 }
 
@@ -258,13 +532,15 @@ async function processPost(
     // Get platform adapter
     const adapter = getAdapter(post.platform);
     
-    // Call platform API (stubbed)
+    // Call platform API (passes supabase and brandId for real adapters)
     const result = await adapter.post(
       post.video_url,
       post.title || 'Untitled',
       post.description,
       post.tags,
-      post.meta || {}
+      post.meta || {},
+      supabase,
+      post.brand_id
     );
     
     if (result.success) {
@@ -277,7 +553,7 @@ async function processPost(
         p_meta: {
           posted_by: workerId,
           adapter: adapter.name,
-          adapter_version: 'stub_1.0',
+          adapter_version: adapter.name === 'youtube' ? 'real_1.0' : 'stub_1.0',
         },
       });
       
