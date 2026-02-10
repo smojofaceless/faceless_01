@@ -11,164 +11,7 @@
     <link rel="stylesheet" href="../css/core/components.css">
     <link rel="stylesheet" href="../css/core/layout.css">
     <link rel="stylesheet" href="../css/dashboard.css">
-    
-    <style>
-        .settings-section {
-            background: var(--color-bg-surface);
-            border: 1px solid var(--color-border-subtle);
-            border-radius: var(--radius-xl);
-            padding: var(--space-6);
-            margin-bottom: var(--space-6);
-        }
-        
-        .settings-section__header {
-            display: flex;
-            align-items: center;
-            gap: var(--space-3);
-            margin-bottom: var(--space-4);
-            padding-bottom: var(--space-4);
-            border-bottom: 1px solid var(--color-border-subtle);
-        }
-        
-        .settings-section__icon {
-            width: 40px;
-            height: 40px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: var(--color-primary);
-            border-radius: var(--radius-lg);
-            color: white;
-        }
-        
-        .settings-section__icon svg {
-            width: 20px;
-            height: 20px;
-        }
-        
-        .settings-section__title {
-            font-size: var(--text-lg);
-            font-weight: 600;
-            color: var(--color-text-primary);
-            margin: 0;
-        }
-        
-        .settings-section__desc {
-            font-size: var(--text-sm);
-            color: var(--color-text-tertiary);
-            margin: 0;
-        }
-        
-        .setting-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: var(--space-4) 0;
-            border-bottom: 1px solid var(--color-border-subtle);
-        }
-        
-        .setting-item:last-child {
-            border-bottom: none;
-            padding-bottom: 0;
-        }
-        
-        .setting-item__info {
-            flex: 1;
-        }
-        
-        .setting-item__label {
-            font-weight: 500;
-            color: var(--color-text-primary);
-            margin-bottom: var(--space-1);
-        }
-        
-        .setting-item__hint {
-            font-size: var(--text-sm);
-            color: var(--color-text-tertiary);
-        }
-        
-        .setting-item__control {
-            flex-shrink: 0;
-            margin-left: var(--space-4);
-        }
-        
-        /* Toggle Switch */
-        .toggle {
-            position: relative;
-            display: inline-block;
-            width: 48px;
-            height: 26px;
-            background: var(--color-bg-muted);
-            border-radius: 13px;
-            cursor: pointer;
-            transition: background 0.2s;
-            border: none;
-            padding: 0;
-            overflow: visible;
-        }
-        
-        .toggle input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-            position: absolute;
-        }
-        
-        .toggle::after {
-            content: '';
-            position: absolute;
-            top: 3px;
-            left: 3px;
-            width: 20px;
-            height: 20px;
-            background: white;
-            border-radius: 50%;
-            transition: transform 0.2s;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        }
-        
-        .toggle.active {
-            background: var(--color-primary);
-        }
-        
-        .toggle.active::after {
-            transform: translateX(22px);
-        }
-        
-        .api-key-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: var(--space-4);
-        }
-        
-        @media (max-width: 768px) {
-            .api-key-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-        
-        .api-key-status {
-            display: flex;
-            align-items: center;
-            gap: var(--space-2);
-            font-size: var(--text-sm);
-        }
-        
-        .api-key-status--configured {
-            color: var(--color-success);
-        }
-        
-        .api-key-status--missing {
-            color: var(--color-text-tertiary);
-        }
-        
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: currentColor;
-        }
-    </style>
+    <link rel="stylesheet" href="../css/settings.css">
 </head>
 <body>
     <div class="app">
@@ -327,7 +170,7 @@
                         </div>
                     </div>
                     
-                    <div style="margin-top: var(--space-4)">
+                    <div class="settings-actions">
                         <button class="btn btn--primary" id="save-api-keys">Save API Keys</button>
                     </div>
                 </section>
@@ -422,9 +265,9 @@
                 </section>
 
                 <!-- Danger Zone -->
-                <section class="settings-section" style="border-color: var(--color-error);">
+                <section class="settings-section settings-section--danger">
                     <div class="settings-section__header">
-                        <div class="settings-section__icon" style="background: var(--color-error);">
+                        <div class="settings-section__icon">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
                                 <line x1="12" y1="9" x2="12" y2="13"/>
@@ -443,7 +286,7 @@
                             <div class="setting-item__hint">Delete all brands, posts, and settings from local storage</div>
                         </div>
                         <div class="setting-item__control">
-                            <button class="btn btn--sm" style="background: var(--color-error); color: white;" id="clear-data">Clear Data</button>
+                            <button class="btn btn--sm btn--danger" id="clear-data">Clear Data</button>
                         </div>
                     </div>
                 </section>

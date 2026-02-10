@@ -553,15 +553,18 @@
   padding: var(--space-3);
   color: var(--color-text-secondary);
   border-radius: var(--radius-lg);
-  transition: all var(--transition-fast);
+  transition: all 0.2s ease;
   text-decoration: none;
   margin-bottom: var(--space-1);
+  position: relative;
+  font-weight: 500;
 }
 
 .nav-link svg {
   width: 20px;
   height: 20px;
   flex-shrink: 0;
+  transition: transform 0.2s ease;
 }
 
 .nav-link:hover {
@@ -569,9 +572,26 @@
   color: var(--color-text-primary);
 }
 
+.nav-link:hover svg {
+  transform: scale(1.1);
+}
+
 .nav-link.active {
   background: var(--brand-primary-muted);
   color: var(--brand-primary);
+  font-weight: 600;
+}
+
+.nav-link.active::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 20px;
+  background: var(--brand-primary);
+  border-radius: var(--radius-full);
 }
 
 /* Main Content Area - BEM */
@@ -618,9 +638,10 @@
 
 .header__title {
   font-size: var(--text-xl);
-  font-weight: var(--font-semibold);
+  font-weight: 700;
   color: var(--color-text-primary);
   margin: 0;
+  letter-spacing: -0.02em;
 }
 
 /* Content Area */

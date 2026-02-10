@@ -212,6 +212,12 @@
     border-radius: var(--radius-2xl);
     padding: var(--space-6);
     margin-bottom: var(--space-6);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.create-card:hover {
+    border-color: var(--color-border-default);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
 }
 
 @media (min-width: 768px) {
@@ -486,11 +492,15 @@
 .step-navigation {
     display: flex;
     gap: var(--space-4);
-    margin-top: var(--space-6);
+    margin-top: var(--space-8);
+    padding-top: var(--space-6);
+    border-top: 1px solid var(--color-border-subtle);
 }
 
 .step-navigation .btn {
     flex: 1;
+    padding: var(--space-3) var(--space-5);
+    font-weight: 600;
 }
 
 /* ==========================================================================
