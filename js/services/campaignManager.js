@@ -251,9 +251,16 @@ class CampaignManager {
      * Get jobs for a campaign
      */
     async getCampaignJobs(campaignId) {
+        // Fetch jobs with their video URLs from job_assets
         const { data, error } = await supabaseClient
             .from('jobs')
-            .select('*')
+            .select(`
+                *,
+                job_assets!job_assets_job_id_fkey (
+                    public_url,
+                    type
+                )
+            `)
             .eq('batch_id', campaignId)
             .order('scheduled_post_at', { ascending: true });
 
@@ -261,7 +268,15 @@ class CampaignManager {
             throw new Error(`Failed to get campaign jobs: ${error.message}`);
         }
 
-        return data;
+        // Map video_url from job_assets to each job
+        return data.map(job => {
+            const videoAsset = job.job_assets?.find(a => a.type === 'final_mp4');
+            return {
+                ...job,
+                video_url: videoAsset?.public_url || null,
+                job_assets: undefined // Remove the raw assets from the response
+            };
+        });
     }
 
     // ==================== Campaign Lifecycle ====================
