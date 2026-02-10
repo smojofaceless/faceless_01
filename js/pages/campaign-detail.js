@@ -870,15 +870,16 @@ class CampaignDetailPage {
             const step = log.step_name;
             if (!step) return;
             
-            // Track latest status per step
-            if (log.log_type === 'step_complete') {
+            // Track latest status per step (database uses event_type, not log_type)
+            const eventType = log.event_type || log.log_type;
+            if (eventType === 'completed') {
                 stepStatus[step] = 'completed';
-                if (log.duration_ms) {
-                    stepDuration[step] = log.duration_ms;
+                if (log.meta?.duration_ms || log.duration_ms) {
+                    stepDuration[step] = log.meta?.duration_ms || log.duration_ms;
                 }
-            } else if (log.log_type === 'step_start' && !stepStatus[step]) {
+            } else if (eventType === 'started' && !stepStatus[step]) {
                 stepStatus[step] = 'running';
-            } else if (log.log_type === 'error') {
+            } else if (eventType === 'failed') {
                 stepStatus[step] = 'failed';
             }
         });
@@ -945,8 +946,9 @@ class CampaignDetailPage {
         const showProgress = this.logShowProgress?.checked ?? true;
         
         const filteredLogs = this.currentLogs.filter(log => {
-            if (!showSnapshots && log.log_type === 'snapshot') return false;
-            if (!showProgress && log.log_type === 'progress') return false;
+            const eventType = log.event_type || log.log_type;
+            if (!showSnapshots && eventType === 'snapshot') return false;
+            if (!showProgress && eventType === 'progress') return false;
             return true;
         });
         
@@ -968,30 +970,33 @@ class CampaignDetailPage {
      */
     renderLogEntry(log) {
         const timestamp = new Date(log.created_at).toLocaleTimeString();
-        const typeLabel = this.getLogTypeLabel(log.log_type);
-        const typeClass = this.getLogTypeClass(log.log_type);
+        const eventType = log.event_type || log.log_type; // Database uses event_type
+        const typeLabel = this.getLogTypeLabel(eventType);
+        const typeClass = this.getLogTypeClass(eventType);
         
         // Format message - make it more readable
         let message = log.message || '';
         
         // Simplify common messages
-        if (log.log_type === 'step_start') {
+        if (eventType === 'started') {
             message = `Starting ${log.step_name || 'step'}...`;
-        } else if (log.log_type === 'step_complete') {
-            const duration = log.duration_ms ? ` in ${this.formatDuration(log.duration_ms)}` : '';
+        } else if (eventType === 'completed') {
+            const duration = log.meta?.duration_ms ? ` in ${this.formatDuration(log.meta.duration_ms)}` : '';
             message = `✓ Completed${duration}`;
         }
         
         let details = '';
-        if (log.details && log.log_type !== 'step_start' && log.log_type !== 'step_complete') {
+        // Show meta data for non-trivial logs (use 'meta' from db, fallback to 'details')
+        const metaData = log.meta || log.details;
+        if (metaData && eventType !== 'started' && eventType !== 'completed') {
             try {
-                const detailsObj = typeof log.details === 'string' ? JSON.parse(log.details) : log.details;
+                const detailsObj = typeof metaData === 'string' ? JSON.parse(metaData) : metaData;
                 // Only show non-empty details
                 if (Object.keys(detailsObj).length > 0) {
                     details = `<div class="log-entry__meta">${JSON.stringify(detailsObj, null, 2)}</div>`;
                 }
             } catch {
-                details = `<div class="log-entry__meta">${log.details}</div>`;
+                details = `<div class="log-entry__meta">${metaData}</div>`;
             }
         }
         
@@ -1009,33 +1014,33 @@ class CampaignDetailPage {
     /**
      * Get CSS class for log type
      */
-    getLogTypeClass(logType) {
+    getLogTypeClass(eventType) {
         const classes = {
-            'step_start': 'started',
-            'step_complete': 'completed',
+            'started': 'started',
+            'completed': 'completed',
             'progress': 'progress',
             'snapshot': 'snapshot',
-            'error': 'failed',
+            'failed': 'failed',
             'warning': 'warning',
             'info': 'info'
         };
-        return classes[logType] || 'info';
+        return classes[eventType] || 'info';
     }
 
     /**
      * Get human-readable label for log type
      */
-    getLogTypeLabel(logType) {
+    getLogTypeLabel(eventType) {
         const labels = {
-            'step_start': 'STARTED',
-            'step_complete': 'DONE',
+            'started': 'STARTED',
+            'completed': 'DONE',
             'progress': 'PROGRESS',
             'snapshot': 'SNAPSHOT',
-            'error': 'ERROR',
+            'failed': 'ERROR',
             'warning': 'WARN',
             'info': 'INFO'
         };
-        return labels[logType] || 'LOG';
+        return labels[eventType] || 'LOG';
     }
 
     /**
@@ -1047,12 +1052,18 @@ class CampaignDetailPage {
             return;
         }
         
-        // Format logs for clipboard
+        // Format logs for clipboard (use log_line from RPC if available, otherwise format manually)
         const formattedLogs = this.currentLogs.map(log => {
+            // RPC provides pre-formatted log_line
+            if (log.log_line) {
+                return log.log_line;
+            }
+            
             const time = new Date(log.created_at).toISOString();
+            const eventType = log.event_type || 'LOG';
             const step = log.step_name || 'system';
-            const message = log.message || log.log_type;
-            let line = `[${time}] [${log.log_type}] [${step}] ${message}`;
+            const message = log.message || eventType;
+            let line = `[${time}] [${eventType.toUpperCase()}] [${step}] ${message}`;
             
             if (log.details) {
                 try {
