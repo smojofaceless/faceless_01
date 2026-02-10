@@ -1,9 +1,9 @@
 # Campaign System Architecture & Scheduling Design
 
-> **Document Version:** 2.4  
-> **Last Updated:** February 8, 2026  
+> **Document Version:** 2.5  
+> **Last Updated:** February 10, 2026  
 > **Author:** System Architect  
-> **Status:** ✅ V1 COMPLETE (with Job Scheduler + Claim/Lease System)
+> **Status:** ✅ V1 COMPLETE + END-TO-END VERIFIED
 
 ---
 
@@ -11,6 +11,7 @@
 
 | Date | Version | Changes |
 |------|---------|--------|
+| Feb 10, 2026 | 2.5 | **End-to-End Verified**: worker-v1 (--no-verify-jwt), video-renderer, auto-import trigger, subtitles, UI auto-refresh, video preview button. Full automated pipeline working. |
 | Feb 8, 2026 | 2.4 | UI compatibility fixes: schedule preview, brand loading, campaign detail page |
 | Feb 8, 2026 | 2.3 | Job Claim + Lease system integrated: atomic claims, heartbeat, stale sweeper |
 | Feb 8, 2026 | 2.2 | Status canonicalization: `pending` is canonical not-started; `queued` for backwards compatibility |
@@ -43,6 +44,11 @@
 | **Job Claim + Lease** | ✅ Done | `20260219_job_claim_lease_system.sql` |
 | **Stale Job Sweeper** | ✅ Done | `sweep_stale_jobs` RPC |
 | **run-job Integration** | ✅ Done | Heartbeat, release on complete/fail |
+| **worker-v1** | ✅ Done | Deployed with `--no-verify-jwt` for service auth |
+| **video-renderer** | ✅ Done | FFmpeg on Render.com, supports subtitles |
+| **Auto-Import Trigger** | ✅ Done | `auto_import_video_to_posts` on job_assets INSERT |
+| **UI Auto-Refresh** | ✅ Done | 15s refresh while jobs processing |
+| **Video Preview** | ✅ Done | Fetches URL from job_assets |
 | Sidebar Integration | ✅ Done | All admin pages have Campaigns link |
 | BrandSwitcher Integration | ✅ Done | Navbar brand dropdown functional |
 | Smoke Tests | ✅ Done | `/docs/CAMPAIGN_SMOKE_TESTS.md` |

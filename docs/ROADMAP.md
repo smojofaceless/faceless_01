@@ -1,7 +1,7 @@
 # Project Roadmap
 
-> **Document Version:** 2.4  
-> **Last Updated:** February 23, 2026  
+> **Document Version:** 2.5  
+> **Last Updated:** February 10, 2026  
 > **Author:** System Architect  
 > **Status:** Active Development
 
@@ -11,6 +11,7 @@
 
 | Date | Version | Changes |
 |------|---------|--------|
+| Feb 10, 2026 | 2.5 | **End-to-End Verified**: worker-v1 auth fix (--no-verify-jwt), subtitles fix (captions passed to renderer), auto-import trigger (video→posts), UI auto-refresh, video preview button fix |
 | Feb 23, 2026 | 2.4 | **Post Queue System Complete**: Automated posting pipeline, claim/lease mechanism, platform adapters (stubbed), retry with backoff, campaign gating |
 | Feb 22, 2026 | 2.3 | **Asset Storage + Naming Convention Complete**: Standardized paths to `brands/{brand_id}/jobs/{job_id}/{category}/`, path builder helpers, ASSET_NAMING_CONVENTION.md documentation |
 | Feb 22, 2026 | 2.2 | **Visual Logs + Step Timeline Complete**: job_step_logs table, timeline view, snapshot logging, StepLogger class, worker-v1 v2.3 |
@@ -33,21 +34,17 @@
 
 | Item | Date | Notes |
 |------|------|-------|
-| **Post Queue System** | Feb 23, 2026 | Automated posting: claim_due_posts, mark_post_posted/failed, schedule-posts + post-worker functions, retry backoff, DLQ view. **Verified Feb 10, 2026** |
+| **End-to-End Pipeline Verified** | Feb 10, 2026 | Full automated flow working: schedule-jobs → worker-v1 → video-renderer → auto-import to posts. Subtitles rendering, UI updates, video preview all functional. |
+| **Auto-Import Trigger** | Feb 10, 2026 | Database trigger `auto_import_video_to_posts` creates posts automatically when video completes (on `job_assets` INSERT where type='final_mp4') |
+| **Subtitles/Captions Fix** | Feb 10, 2026 | `audio_timestamps` (word-level timing) now passed to video-renderer as captions. Videos render with burned-in subtitles. |
+| **Worker-v1 Auth Fix** | Feb 10, 2026 | Deployed with `--no-verify-jwt` to allow service-to-service calls from schedule-jobs |
+| **Campaign UI Auto-Refresh** | Feb 10, 2026 | Campaign detail page auto-refreshes every 15s while jobs are processing. Realtime subscription configured. |
+| **Video Preview Button** | Feb 10, 2026 | Fixed `getCampaignJobs()` to fetch `video_url` from `job_assets` (JOIN with type='final_mp4'). Preview button now appears for completed jobs. |
+| **Post Queue System** | Feb 23, 2026 | Automated posting: claim_due_posts, mark_post_posted/failed, schedule-posts + post-worker functions, retry backoff, DLQ view. |
 | **Asset Storage + Naming Convention** | Feb 22, 2026 | Standardized paths: `brands/{brand_id}/jobs/{job_id}/{category}/`. Path builder helpers. ASSET_NAMING_CONVENTION.md. Worker-v1 v1.2. |
 | **Visual Logs + Step Timeline** | Feb 22, 2026 | Per-job step logs, timeline view, snapshot logging, copy-friendly output. Worker-v1 v2.3. |
 | **Failure Cluster Protection + DLQ** | Feb 22, 2026 | Error classification, auto-pause, kill switch, DLQ view, bulk requeue. Worker-v1 v2.2, schedule-jobs v2.1. |
 | **Worker V1 End-to-End** | Feb 10, 2026 | Full pipeline verified: Story→Scenes→Voice→Music→Images→Subtitles→Assemble→Upload. FFmpeg renderer working. |
-| **FFmpeg Renderer Integration** | Feb 10, 2026 | `FFMPEG_RENDERER_URL` support in worker-v1, async polling for render completion (5min timeout) |
-| **Duration Format Fix** | Feb 10, 2026 | Scenes/Assemble steps now handle `{minSeconds, maxSeconds}` object format (uses average) |
-| **Job Claim + Lease System** | Feb 19, 2026 | Atomic claims, heartbeat extension, stale sweeper, scheduler & run-job integrated |
-| **Status Canonicalization** | Feb 8, 2026 | `pending` = canonical not-started; `queued` = legacy backwards compat; scheduler handles both |
-| **Job Scheduler Validation** | Feb 8, 2026 | Verified atomic claim, campaign gating, generate_by column is authoritative |
-| **Job Scheduler** | Feb 10, 2026 | Automatic job triggering based on `generate_by`, campaign pause gating |
-| **Campaign System V1** | Feb 10, 2026 | UI (campaign.html, campaign-detail.html), RPCs (create/update/summary), weighted presets, scheduling |
-| Story DNA / Visual DNA Fix | Feb 8, 2026 | RLS + schema fixes; tables now populate |
-| Preset Source of Truth Unified | Feb 8, 2026 | `brand_templates` is DB-driven; create.js loads from DB with fallback |
-| DB-Driven Templates | Feb 8, 2026 | Weight column added; Horror brand seeded |
 
 **Reference:** [PRESET_SOURCE_OF_TRUTH.md](PRESET_SOURCE_OF_TRUTH.md), [DNA_AND_DB_OPTION1_IMPLEMENTATION_PLAN.md](DNA_AND_DB_OPTION1_IMPLEMENTATION_PLAN.md), [CAMPAIGN_SYSTEM.md](CAMPAIGN_SYSTEM.md), [JOB_SCHEDULER.md](JOB_SCHEDULER.md)
 

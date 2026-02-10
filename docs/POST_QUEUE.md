@@ -1,22 +1,52 @@
 # Post Queue System
 
-> **Version:** 1.0  
-> **Date:** February 23, 2026  
+> **Version:** 1.1  
+> **Date:** February 10, 2026  
 > **Status:** ✅ Production Ready  
-> **Verified:** February 10, 2026 (Smoke Tests Passed)  
+> **Verified:** February 10, 2026 (Full End-to-End Verified)  
 > **Related:** ROADMAP.md Item #9
 
 ---
 
 ## Overview
 
-The Post Queue System automates video publishing to social media platforms. When a job completes, posts are automatically queued for publishing based on `scheduled_post_at`. A scheduler processes due posts and dispatches them to platform adapters.
+The Post Queue System automates video publishing to social media platforms. When a job completes, posts are **automatically created** via a database trigger. A scheduler processes due posts and dispatches them to platform adapters.
 
 **Key Design Goals:**
 1. **Single Queue:** `posts` table is the only source of truth for publishing
-2. **No Manual Import:** Worker-v1 writes posts directly; no intermediate step needed
+2. **Automatic Import:** Database trigger creates posts when video completes (no manual step)
 3. **Idempotency:** Never double-create or double-post
 4. **Safety:** Respects kill switch, campaign pause, and retry limits
+
+---
+
+## Video → Post Flow
+
+```
+                         ┌─────────────────────────┐
+                         │     video-renderer      │
+                         │   (FFmpeg on Render)    │
+                         └───────────┬─────────────┘
+                                     │ uploads video
+                                     ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│                          job_assets INSERT                            │
+│                      (type = 'final_mp4')                             │
+└───────────────────────────────────────┬───────────────────────────────┘
+                                        │
+                                        ▼ TRIGGER: auto_import_video_to_posts
+┌───────────────────────────────────────────────────────────────────────┐
+│                            posts INSERT                               │
+│  Creates one post per platform in job.meta.platforms[]                │
+│  status = 'scheduled', scheduled_at = job.scheduled_post_at           │
+└───────────────────────────────────────┬───────────────────────────────┘
+                                        │
+                                        ▼ schedule-posts (cron every 1 min)
+┌───────────────────────────────────────────────────────────────────────┐
+│                          post-worker                                  │
+│  Claims due posts, uploads to YouTube/TikTok/Instagram                │
+└───────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
