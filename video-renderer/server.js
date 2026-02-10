@@ -110,7 +110,6 @@ async function downloadFile(url, outputPath) {
   
   // Handle base64 data URLs (common for AI-generated images)
   if (url.startsWith('data:')) {
-  if (url.startsWith('data:')) {
     console.log(`  → Decoding base64 image to ${path.basename(outputPath)}`);
     const matches = url.match(/^data:([^;]+);base64,(.+)$/);
     if (!matches) {
