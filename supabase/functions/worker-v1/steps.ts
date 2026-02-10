@@ -1335,6 +1335,10 @@ async function assembleWithRenderer(
   const sceneDuration = duration / imageUrls.length;
   const durations = imageUrls.map(() => sceneDuration);
 
+  // Get word-level timestamps for captions (from voice synthesis step)
+  const captions = Array.isArray(meta?.audio_timestamps) ? meta.audio_timestamps : [];
+  console.log(`[ASSEMBLE] Sending ${captions.length} word timestamps for captions`);
+
   // Start the render job
   const response = await fetchWithError(
     `${rendererUrl}/render`,
@@ -1346,7 +1350,7 @@ async function assembleWithRenderer(
         images: imageUrls,
         audio_url: audioUrl,
         durations: durations,
-        captions: [], // Captions handled separately
+        captions: captions,
         effects: {
           kenBurns: true,
           fadeTransitions: true,
