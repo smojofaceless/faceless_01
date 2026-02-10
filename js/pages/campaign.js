@@ -4,6 +4,102 @@
 // =====================================================
 
 /**
+ * Preset metadata for the gallery
+ * Each preset has: id, name, icon, tagline, description, defaults, visual theme
+ */
+const PRESET_CATALOG = {
+    urban_legend: {
+        id: 'urban_legend',
+        name: 'Urban Legend',
+        icon: '📜',
+        tagline: 'Documentary folklore',
+        description: 'Classic creepypasta with authority denial, repeating motifs, and ambiguous endings. Stories feel like suppressed local news — the kind whispered about at gas stations late at night.',
+        defaults: {
+            vibe_preset: 'urban_legend',
+            era: '1990s',
+            tone: 0.6,
+            ending: 'unresolved',
+            visual_style: 'VHS_degraded',
+            color_palette: 'sickly_green',
+            motion_profile: 'micro_jitter'
+        },
+        visual: {
+            gradient: 'linear-gradient(145deg, #1a2a1a 0%, #0d1f0d 30%, #2d1b00 70%, #0a0a0a 100%)',
+            overlay: 'radial-gradient(ellipse at 30% 80%, rgba(34, 197, 94, 0.15), transparent 60%)',
+            accentColor: '#22c55e',
+            accentBg: 'rgba(34, 197, 94, 0.15)',
+            artStyle: 'VHS Degraded',
+            colorPalette: 'Sickly Green',
+            motionProfile: 'Micro Jitter'
+        },
+        details: {
+            era: '1990s',
+            ending: 'Unresolved',
+            effects: ['Strong edge vignette', 'Subtle film grain', 'Cool night tones', 'Moderate Ken Burns'],
+            bestFor: 'Folklore retellings, "based on true events" stories, small-town mysteries',
+            exampleHook: '"In 1997, a gas station attendant in rural Ohio started keeping a logbook..."'
+        }
+    },
+    one_too_many: {
+        id: 'one_too_many',
+        name: 'One Too Many',
+        icon: '👥',
+        tagline: 'Counting horror',
+        description: 'N friends went on a trip... but the photo shows N+1. The extra person is never explained. Stories exploit the uncanny valley of group dynamics.',
+        defaults: {
+            vibe_preset: 'one_too_many',
+            era: 'modern',
+            tone: 0.7,
+            ending: 'unresolved',
+            art_style: 'uncanny-illustrated',
+            visual_style: 'documentary',
+            color_palette: 'cold_blue',
+            motion_profile: 'static_tension'
+        },
+        visual: {
+            gradient: 'linear-gradient(145deg, #0c1929 0%, #1a0a2e 40%, #0d1b2a 70%, #050510 100%)',
+            overlay: 'radial-gradient(ellipse at 70% 20%, rgba(99, 102, 241, 0.2), transparent 60%)',
+            accentColor: '#6366f1',
+            accentBg: 'rgba(99, 102, 241, 0.15)',
+            artStyle: 'Uncanny Illustrated',
+            colorPalette: 'Cold Blue',
+            motionProfile: 'Static Tension'
+        },
+        details: {
+            era: 'Modern',
+            ending: 'Unresolved',
+            effects: ['Uncanny illustration style', 'Cold blue grading', 'Static tension motion', 'Documentary feel'],
+            bestFor: 'Group photos gone wrong, counting anomalies, "who is the extra person" mysteries',
+            exampleHook: '"Six of us went camping that weekend. But when we got the photos developed..."'
+        }
+    },
+    custom: {
+        id: 'custom',
+        name: 'Custom DNA',
+        icon: '🧬',
+        tagline: 'Full control',
+        description: 'Advanced users only. Define your own visual DNA parameters — art style, color palette, motion profile, era, and ending type.',
+        defaults: {},
+        visual: {
+            gradient: 'linear-gradient(145deg, #1a1a2e 0%, #16213e 40%, #0f3460 70%, #1a1a2e 100%)',
+            overlay: 'radial-gradient(ellipse at 50% 50%, rgba(139, 92, 246, 0.15), transparent 60%)',
+            accentColor: '#8b5cf6',
+            accentBg: 'rgba(139, 92, 246, 0.15)',
+            artStyle: 'User Defined',
+            colorPalette: 'User Defined',
+            motionProfile: 'User Defined'
+        },
+        details: {
+            era: 'Any',
+            ending: 'Any',
+            effects: ['Fully customizable effect stack'],
+            bestFor: 'Experienced creators who want complete narrative and visual control',
+            exampleHook: '"Your story, your rules."'
+        }
+    }
+};
+
+/**
  * Campaign Page Controller
  * Handles campaign creation UI, schedule preview, and form submission
  */
@@ -66,6 +162,13 @@ class CampaignPage {
         this.noBrandState = document.getElementById('no-brand-state');
         this.campaignForm = document.getElementById('campaign-form');
         this.campaignsListSection = document.getElementById('campaigns-list');
+        
+        // Preset gallery
+        this.presetGallery = document.getElementById('preset-gallery');
+        this.presetGalleryGrid = document.getElementById('preset-gallery-grid');
+        this.presetDetailModal = document.getElementById('preset-detail-modal');
+        this.presetModalContent = document.getElementById('preset-modal-content');
+        this.presetModalClose = document.getElementById('preset-modal-close');
         
         // Brand display
         this.brandEmoji = document.getElementById('brand-emoji');
@@ -160,6 +263,22 @@ class CampaignPage {
         this.createCampaignBtn?.addEventListener('click', () => this.createCampaign());
         this.newCampaignBtn?.addEventListener('click', () => this.showCreateForm());
         
+        // Preset gallery click
+        this.presetGalleryGrid?.addEventListener('click', (e) => {
+            const card = e.target.closest('.preset-card');
+            if (card) {
+                const presetId = card.dataset.preset;
+                this.showPresetDetail(presetId);
+            }
+        });
+        
+        // Preset modal close
+        this.presetModalClose?.addEventListener('click', () => this.closePresetModal());
+        this.presetDetailModal?.querySelector('.preset-modal__overlay')?.addEventListener('click', () => this.closePresetModal());
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') this.closePresetModal();
+        });
+        
         // Listen for brand changes
         if (typeof brandManager !== 'undefined') {
             brandManager.on('brand:activated', (brand) => this.loadBrand(brand));
@@ -216,8 +335,12 @@ class CampaignPage {
         
         // Show form and hide loading
         this.hideAllStates();
+        this.presetGallery?.classList.remove('hidden');
         this.campaignForm.classList.remove('hidden');
         this.campaignsListSection.classList.remove('hidden');
+        
+        // Render preset gallery
+        this.renderPresetGallery();
         
         // Generate initial preview
         this.onFormChange();
@@ -239,6 +362,7 @@ class CampaignPage {
         this.noBrandState?.classList.add('hidden');
         this.campaignForm?.classList.add('hidden');
         this.campaignsListSection?.classList.add('hidden');
+        this.presetGallery?.classList.add('hidden');
     }
 
     /**
@@ -582,6 +706,175 @@ class CampaignPage {
     showCreateForm() {
         // Already showing form, just scroll to top
         window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // ==================== Preset Gallery ====================
+
+    /**
+     * Render the preset gallery cards
+     */
+    renderPresetGallery() {
+        const grid = this.presetGalleryGrid;
+        if (!grid) return;
+
+        // Get active presets from weight data (or defaults)
+        const activePresets = Object.keys(this.presetWeights);
+        
+        // Build cards for all presets in catalog
+        const presetIds = Object.keys(PRESET_CATALOG);
+        
+        grid.innerHTML = presetIds.map(id => {
+            const preset = PRESET_CATALOG[id];
+            if (!preset) return '';
+            
+            const weight = this.presetWeights[id];
+            const isActive = weight > 0;
+            const weightPercent = weight ? Math.round(weight * 100) : (weight || 0);
+            // Normalize: if weights are decimals (0.6) vs integers (60)
+            const displayWeight = weightPercent > 1 ? weightPercent : Math.round((weight || 0) * 100);
+            
+            return `
+                <div class="preset-card ${isActive ? 'preset-card--active' : ''}" 
+                     data-preset="${id}" 
+                     tabindex="0"
+                     role="button"
+                     aria-label="View ${preset.name} preset details">
+                    <div class="preset-card__bg" style="background: ${preset.visual.gradient}">
+                        <div class="preset-card__overlay" style="background: ${preset.visual.overlay}"></div>
+                        <div class="preset-card__scanlines"></div>
+                        <div class="preset-card__noise"></div>
+                    </div>
+                    <div class="preset-card__content">
+                        <div class="preset-card__icon">${preset.icon}</div>
+                        <h3 class="preset-card__name">${preset.name}</h3>
+                        <p class="preset-card__tagline">${preset.tagline}</p>
+                        ${isActive ? `<div class="preset-card__weight" style="color: ${preset.visual.accentColor}">${displayWeight}%</div>` : ''}
+                    </div>
+                    ${isActive ? `<div class="preset-card__active-indicator" style="background: ${preset.visual.accentColor}"></div>` : ''}
+                </div>
+            `;
+        }).join('');
+    }
+
+    /**
+     * Show preset detail modal
+     */
+    showPresetDetail(presetId) {
+        const preset = PRESET_CATALOG[presetId];
+        if (!preset || !this.presetDetailModal) return;
+
+        const weight = this.presetWeights[presetId];
+        const isActive = weight > 0;
+        const displayWeight = weight > 1 ? weight : Math.round((weight || 0) * 100);
+        
+        this.presetModalContent.innerHTML = `
+            <div class="preset-detail">
+                <!-- Header with background -->
+                <div class="preset-detail__hero" style="background: ${preset.visual.gradient}">
+                    <div class="preset-detail__hero-overlay" style="background: ${preset.visual.overlay}"></div>
+                    <div class="preset-detail__hero-scanlines"></div>
+                    <div class="preset-detail__hero-content">
+                        <span class="preset-detail__icon">${preset.icon}</span>
+                        <h2 class="preset-detail__name">${preset.name}</h2>
+                        <span class="preset-detail__tagline">${preset.tagline}</span>
+                        ${isActive ? `<span class="preset-detail__weight-badge" style="background: ${preset.visual.accentBg}; color: ${preset.visual.accentColor}">
+                            Active · ${displayWeight}% weight
+                        </span>` : `<span class="preset-detail__weight-badge preset-detail__weight-badge--inactive">Inactive</span>`}
+                    </div>
+                </div>
+
+                <!-- Description -->
+                <div class="preset-detail__section">
+                    <p class="preset-detail__description">${preset.description}</p>
+                </div>
+
+                <!-- Visual DNA -->
+                <div class="preset-detail__section">
+                    <h4 class="preset-detail__section-title">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/>
+                        </svg>
+                        Visual DNA
+                    </h4>
+                    <div class="preset-detail__dna-grid">
+                        <div class="dna-item">
+                            <span class="dna-item__label">Art Style</span>
+                            <span class="dna-item__value" style="color: ${preset.visual.accentColor}">${preset.visual.artStyle}</span>
+                        </div>
+                        <div class="dna-item">
+                            <span class="dna-item__label">Color Palette</span>
+                            <span class="dna-item__value" style="color: ${preset.visual.accentColor}">${preset.visual.colorPalette}</span>
+                        </div>
+                        <div class="dna-item">
+                            <span class="dna-item__label">Motion</span>
+                            <span class="dna-item__value" style="color: ${preset.visual.accentColor}">${preset.visual.motionProfile}</span>
+                        </div>
+                        <div class="dna-item">
+                            <span class="dna-item__label">Era</span>
+                            <span class="dna-item__value" style="color: ${preset.visual.accentColor}">${preset.details.era}</span>
+                        </div>
+                        <div class="dna-item">
+                            <span class="dna-item__label">Ending</span>
+                            <span class="dna-item__value" style="color: ${preset.visual.accentColor}">${preset.details.ending}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Effects Stack -->
+                <div class="preset-detail__section">
+                    <h4 class="preset-detail__section-title">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                        </svg>
+                        Effects Stack
+                    </h4>
+                    <div class="preset-detail__effects">
+                        ${preset.details.effects.map(e => `
+                            <span class="effect-tag" style="border-color: ${preset.visual.accentColor}40; color: ${preset.visual.accentColor}">
+                                ${e}
+                            </span>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <!-- Best For -->
+                <div class="preset-detail__section">
+                    <h4 class="preset-detail__section-title">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                            <polyline points="22 4 12 14.01 9 11.01"/>
+                        </svg>
+                        Best For
+                    </h4>
+                    <p class="preset-detail__best-for">${preset.details.bestFor}</p>
+                </div>
+
+                <!-- Example Hook -->
+                <div class="preset-detail__section preset-detail__section--hook">
+                    <h4 class="preset-detail__section-title">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+                        </svg>
+                        Example Hook
+                    </h4>
+                    <blockquote class="preset-detail__hook" style="border-left-color: ${preset.visual.accentColor}">
+                        ${preset.details.exampleHook}
+                    </blockquote>
+                </div>
+            </div>
+        `;
+
+        this.presetDetailModal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+
+    /**
+     * Close preset detail modal
+     */
+    closePresetModal() {
+        this.presetDetailModal?.classList.remove('active');
+        document.body.style.overflow = '';
     }
 
     /**
