@@ -699,6 +699,11 @@ class CampaignDetailPage {
             if (index !== -1) {
                 this.jobs[index] = newJob;
             }
+            
+            // If this is the currently selected job, update the step timeline
+            if (this.selectedJobId === newJob.id) {
+                this.renderStepTimeline(this.currentLogs, newJob.status);
+            }
         } else if (eventType === 'DELETE') {
             // Remove job
             this.jobs = this.jobs.filter(j => j.id !== oldJob.id);
@@ -826,7 +831,10 @@ class CampaignDetailPage {
             if (error) throw error;
             
             this.currentLogs = data || [];
-            this.renderStepTimeline(this.currentLogs);
+            
+            // Get current job status to handle completed jobs with incomplete logs
+            const currentJob = this.jobs?.find(j => j.id === jobId);
+            this.renderStepTimeline(this.currentLogs, currentJob?.status);
             this.renderLogs();
             
         } catch (error) {
@@ -843,7 +851,10 @@ class CampaignDetailPage {
                 if (queryError) throw queryError;
                 
                 this.currentLogs = data || [];
-                this.renderStepTimeline(this.currentLogs);
+                
+                // Get current job status to handle completed jobs with incomplete logs
+                const currentJob = this.jobs?.find(j => j.id === jobId);
+                this.renderStepTimeline(this.currentLogs, currentJob?.status);
                 this.renderLogs();
                 
             } catch (fallbackError) {
@@ -858,9 +869,14 @@ class CampaignDetailPage {
 
     /**
      * Render the step timeline visualization
+     * @param {Array} logs - The step logs
+     * @param {string} jobStatus - The overall job status (complete, failed, etc)
      */
-    renderStepTimeline(logs) {
+    renderStepTimeline(logs, jobStatus = null) {
         if (!this.stepTimeline) return;
+        
+        // If job is complete/completed, mark all steps as completed
+        const jobIsComplete = jobStatus === 'complete' || jobStatus === 'completed';
         
         // Build step status map
         const stepStatus = {};
@@ -883,6 +899,16 @@ class CampaignDetailPage {
                 stepStatus[step] = 'failed';
             }
         });
+        
+        // If job is complete but some steps show as running/pending, mark them complete
+        // This handles cases where the worker timed out but the video-renderer succeeded
+        if (jobIsComplete) {
+            this.pipelineSteps.forEach(step => {
+                if (!stepStatus[step] || stepStatus[step] === 'running' || stepStatus[step] === 'pending') {
+                    stepStatus[step] = 'completed';
+                }
+            });
+        }
         
         // Generate timeline HTML using CSS classes
         const timelineHtml = this.pipelineSteps.map((step, index) => {
