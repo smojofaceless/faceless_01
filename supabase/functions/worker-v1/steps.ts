@@ -1165,6 +1165,52 @@ export async function executeAssembleStep(
   console.log(`[ASSEMBLE] Env check: VIDEO_RENDERER_URL=${env.VIDEO_RENDERER_URL ? 'SET' : 'UNSET'}, FFMPEG_RENDERER_URL=${env.FFMPEG_RENDERER_URL ? 'SET' : 'UNSET'}, CREATOMATE_API_KEY=${creatomateKey ? 'SET' : 'UNSET'}`);
   console.log(`[ASSEMBLE] Will use: ${videoRendererUrl ? 'FFmpeg @ ' + videoRendererUrl : (creatomateKey ? 'Creatomate' : 'NONE!')}`);
 
+  // Check if there's a pending render job from a previous attempt (for retry scenarios)
+  // The video-renderer uses job_id as the render job ID for idempotency
+  if (videoRendererUrl) {
+    try {
+      const statusResponse = await fetch(`${videoRendererUrl}/status/${job.id}`);
+      if (statusResponse.ok) {
+        const statusData = await statusResponse.json();
+        console.log(`[ASSEMBLE] Found existing render job: status=${statusData.status}, progress=${statusData.progress || 0}%`);
+        
+        if (statusData.status === 'complete' || statusData.status === 'succeeded') {
+          const videoUrl = statusData.supabase_url || (statusData.url ? `${videoRendererUrl}${statusData.url}` : null);
+          if (videoUrl) {
+            console.log(`[ASSEMBLE] ✓ Using existing completed render: ${videoUrl}`);
+            
+            // Store asset
+            await upsertAsset(supabase, job.id, idempotencyKey, 'final_mp4', '', videoUrl, {
+              source: 'existing_render_job',
+              image_count: 0,
+              duration: 0,
+              assembly_method: 'video-renderer',
+            });
+            
+            return { success: true, data: { video_url: videoUrl } };
+          }
+        } else if (statusData.status === 'processing' || statusData.status === 'queued') {
+          // Render still in progress from previous attempt - poll for completion
+          console.log(`[ASSEMBLE] Resuming polling for in-progress render job`);
+          const videoUrl = await pollRendererForCompletion(videoRendererUrl, job.id);
+          
+          // Store asset
+          await upsertAsset(supabase, job.id, idempotencyKey, 'final_mp4', '', videoUrl, {
+            source: 'resumed_render_job',
+            image_count: 0,
+            duration: 0,
+            assembly_method: 'video-renderer',
+          });
+          
+          return { success: true, data: { video_url: videoUrl } };
+        }
+        // If failed or unknown status, fall through to start new render
+      }
+    } catch (checkError) {
+      console.log(`[ASSEMBLE] No existing render job found, starting fresh`);
+    }
+  }
+
   // Gather required assets
   const audioAsset = await getAssetByKey(supabase, job.id, `${job.id}:voice_synthesis`);
   if (!audioAsset?.public_url) {
@@ -1272,6 +1318,10 @@ export async function executeAssembleStep(
 /**
  * Assemble video using video-renderer service (FFmpeg)
  * The renderer is async - we start a job, then poll for completion
+ * 
+ * NOTE: Edge Functions have a ~2 min timeout. We poll for max 90 seconds,
+ * leaving time for other steps and cleanup. If rendering takes longer,
+ * the job can be retried and will skip to checking the render job status.
  */
 async function assembleWithRenderer(
   rendererUrl: string,
@@ -1324,8 +1374,10 @@ async function assembleWithRenderer(
 
   console.log(`[ASSEMBLE] Render job started: ${renderJobId}, polling for completion...`);
 
-  // Poll for completion (max 5 minutes)
-  const maxWaitMs = 5 * 60 * 1000;
+  // Poll for completion (max 90 seconds - fits within Edge Function's 2 min limit)
+  // If rendering takes longer, the worker will timeout and the job can be retried.
+  // On retry, assemble will check for existing asset first, then check render status.
+  const maxWaitMs = 90 * 1000;  // 90 seconds (reduced from 5 minutes)
   const pollIntervalMs = 5000;
   const startTime = Date.now();
 
@@ -1363,7 +1415,54 @@ async function assembleWithRenderer(
     }
   }
 
-  throw new Error(`Video render timed out after ${maxWaitMs / 1000}s`);
+  throw new Error(`Video render timed out after ${maxWaitMs / 1000}s - job ${renderJobId} may still be rendering. Retry this job to check status.`);
+}
+
+/**
+ * Poll for completion of an in-progress render job
+ * Used when resuming from a previous timed-out attempt
+ */
+async function pollRendererForCompletion(
+  rendererUrl: string,
+  renderJobId: string
+): Promise<string> {
+  const maxWaitMs = 90 * 1000;  // 90 seconds
+  const pollIntervalMs = 5000;
+  const startTime = Date.now();
+
+  console.log(`[ASSEMBLE] Polling for existing render job: ${renderJobId}`);
+
+  while (Date.now() - startTime < maxWaitMs) {
+    await new Promise(r => setTimeout(r, pollIntervalMs));
+
+    try {
+      const statusResponse = await fetch(`${rendererUrl}/status/${renderJobId}`);
+      if (!statusResponse.ok) {
+        console.log(`[ASSEMBLE] Status check returned ${statusResponse.status}, retrying...`);
+        continue;
+      }
+
+      const statusData = await statusResponse.json();
+      console.log(`[ASSEMBLE] Render status: ${statusData.status}, progress: ${statusData.progress || 0}%`);
+
+      if (statusData.status === 'complete' || statusData.status === 'succeeded') {
+        const videoUrl = statusData.supabase_url || (statusData.url ? `${rendererUrl}${statusData.url}` : null);
+        if (!videoUrl) {
+          throw new Error('Render complete but no video URL returned');
+        }
+        console.log(`[ASSEMBLE] ✓ Video ready: ${videoUrl}`);
+        return videoUrl;
+      }
+
+      if (statusData.status === 'failed') {
+        throw new Error(`Video render failed: ${statusData.error || 'Unknown error'}`);
+      }
+    } catch (pollError) {
+      console.log(`[ASSEMBLE] Poll error: ${pollError instanceof Error ? pollError.message : pollError}`);
+    }
+  }
+
+  throw new Error(`Video render timed out after ${maxWaitMs / 1000}s - job may still be rendering. Retry again.`);
 }
 
 /**

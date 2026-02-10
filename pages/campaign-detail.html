@@ -313,6 +313,59 @@
                             <p>No jobs match the current filter.</p>
                         </div>
                     </div>
+
+                    <!-- Job Logs Panel -->
+                    <div class="card" id="job-logs-section">
+                        <div class="card-header">
+                            <h3 class="card-title">📜 Job Execution Logs</h3>
+                            <div class="logs-controls">
+                                <select id="log-job-select" class="input input--sm">
+                                    <option value="">Select a job...</option>
+                                    <!-- Populated by JS -->
+                                </select>
+                                <button type="button" class="btn btn--ghost btn--sm" id="btn-copy-logs" title="Copy logs to clipboard" disabled>
+                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                    </svg>
+                                    Copy
+                                </button>
+                                <button type="button" class="btn btn--ghost btn--sm" id="btn-refresh-logs" title="Refresh logs">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M23 4v6h-6M1 20v-6h6"/>
+                                        <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Step Timeline -->
+                        <div class="step-timeline" id="step-timeline">
+                            <div class="step-timeline__empty">
+                                <p>Select a job above to view its execution timeline</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Detailed Logs -->
+                        <div class="logs-viewer" id="logs-viewer">
+                            <div class="logs-viewer__header">
+                                <span class="logs-viewer__title">Detailed Log Output</span>
+                                <div class="logs-viewer__filters">
+                                    <label class="checkbox-inline">
+                                        <input type="checkbox" id="log-show-snapshots" checked>
+                                        <span>Snapshots</span>
+                                    </label>
+                                    <label class="checkbox-inline">
+                                        <input type="checkbox" id="log-show-progress">
+                                        <span>Progress</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="logs-viewer__content" id="logs-content">
+                                <pre class="logs-output">No logs loaded</pre>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </main>

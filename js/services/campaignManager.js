@@ -202,11 +202,31 @@ class CampaignManager {
     }
 
     /**
-     * Get all campaigns for a brand
+     * Get all campaigns for a brand with statistics
+     * Uses RPC for enriched data with job/post counts
      */
     async getCampaignsByBrand(brandId, options = {}) {
         const { limit = 20, status = null } = options;
 
+        // Try to use the enriched RPC first
+        const { data: rpcData, error: rpcError } = await supabaseClient.rpc(
+            'get_campaign_stats_by_brand',
+            {
+                p_brand_id: brandId,
+                p_limit: limit,
+                p_status: status
+            }
+        );
+
+        // If RPC works, return enriched data
+        if (!rpcError && rpcData) {
+            console.log('[CampaignManager] Loaded campaigns with stats:', rpcData.length);
+            return rpcData;
+        }
+
+        // Fallback to basic query if RPC not available
+        console.warn('[CampaignManager] RPC not available, using fallback:', rpcError?.message);
+        
         let query = supabaseClient
             .from('generation_batches')
             .select('*')

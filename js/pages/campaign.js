@@ -687,7 +687,7 @@ class CampaignPage {
     }
 
     /**
-     * Render campaigns list
+     * Render campaigns list with enriched statistics
      */
     renderCampaignsList(campaigns) {
         if (!this.campaignsTbody) return;
@@ -700,43 +700,149 @@ class CampaignPage {
         
         this.noCampaignsMsg?.classList.add('hidden');
         
+        // Status badge helper
         const statusBadge = (status) => {
-            const statusClasses = {
-                draft: 'job-status--pending',
-                planned: 'job-status--pending',
-                active: 'job-status--completed',
-                paused: 'job-status--processing',
-                complete: 'job-status--completed',
-                cancelled: 'job-status--cancelled'
+            const statusConfig = {
+                setup: { class: 'job-status--pending', icon: '⚙️', label: 'Setup' },
+                stories: { class: 'job-status--pending', icon: '📖', label: 'Stories' },
+                planned: { class: 'job-status--pending', icon: '📋', label: 'Planned' },
+                active: { class: 'job-status--processing', icon: '▶️', label: 'Active' },
+                generating: { class: 'job-status--processing', icon: '🔄', label: 'Generating' },
+                reviewing: { class: 'job-status--processing', icon: '👁️', label: 'Reviewing' },
+                scheduling: { class: 'job-status--processing', icon: '📅', label: 'Scheduling' },
+                paused: { class: 'job-status--pending', icon: '⏸️', label: 'Paused' },
+                completed: { class: 'job-status--completed', icon: '✅', label: 'Completed' },
+                cancelled: { class: 'job-status--cancelled', icon: '❌', label: 'Cancelled' }
             };
-            return `<span class="job-status ${statusClasses[status] || ''}">${status}</span>`;
+            const config = statusConfig[status] || { class: '', icon: '❓', label: status };
+            return `<span class="job-status ${config.class}">${config.icon} ${config.label}</span>`;
+        };
+        
+        // Job stats helper - handles both RPC data and fallback data
+        const jobStats = (c) => {
+            // If using fallback (no RPC), we don't have job counts
+            // Check if we have the enriched data
+            const hasStats = c.total_jobs !== undefined;
+            
+            if (!hasStats) {
+                // Fallback mode - just show video count as indicator
+                return `<span class="stat-muted">${c.video_count || 0} planned</span>`;
+            }
+            
+            const total = c.total_jobs || 0;
+            const complete = c.complete_jobs || 0;
+            const processing = c.processing_jobs || 0;
+            const failed = c.failed_jobs || 0;
+            
+            if (total === 0) return `<span class="stat-muted">No jobs</span>`;
+            
+            const parts = [];
+            if (complete > 0) parts.push(`<span class="stat-success">${complete}✓</span>`);
+            if (processing > 0) parts.push(`<span class="stat-processing">${processing}⏳</span>`);
+            if (failed > 0) parts.push(`<span class="stat-error">${failed}✗</span>`);
+            
+            const pending = total - complete - processing - failed;
+            if (pending > 0) parts.push(`<span class="stat-muted">${pending}○</span>`);
+            
+            return `<div class="stats-inline">${parts.join(' ')}</div>`;
+        };
+        
+        // Post stats helper  
+        const postStats = (c) => {
+            // If using fallback, we don't have post counts
+            const hasStats = c.total_posts !== undefined;
+            if (!hasStats) return `<span class="stat-muted">—</span>`;
+            
+            const published = c.published_posts || 0;
+            const scheduled = c.scheduled_posts || 0;
+            const queued = c.queued_posts || 0;
+            const draft = c.draft_posts || 0;
+            const failed = c.failed_posts || 0;
+            const total = c.total_posts || 0;
+            
+            if (total === 0) return `<span class="stat-muted">—</span>`;
+            
+            const parts = [];
+            if (published > 0) parts.push(`<span class="stat-success">${published}📤</span>`);
+            if (scheduled > 0) parts.push(`<span class="stat-info">${scheduled}📅</span>`);
+            if (queued > 0) parts.push(`<span class="stat-processing">${queued}🔜</span>`);
+            if (draft > 0) parts.push(`<span class="stat-muted">${draft}📝</span>`);
+            if (failed > 0) parts.push(`<span class="stat-error">${failed}✗</span>`);
+            
+            return `<div class="stats-inline">${parts.join(' ')}</div>`;
+        };
+        
+        // Progress bar helper
+        const progressBar = (c) => {
+            // Check if we have enriched data
+            const hasStats = c.total_jobs !== undefined;
+            
+            // Use progress_percent from RPC, or calculate from complete_jobs/total_jobs
+            let percent = c.progress_percent || 0;
+            if (!percent && hasStats && c.total_jobs > 0) {
+                percent = Math.round(((c.complete_jobs || 0) / c.total_jobs) * 100);
+            }
+            
+            // In fallback mode without stats, show placeholder
+            if (!hasStats) {
+                return `<span class="stat-muted">—</span>`;
+            }
+            
+            const progressClass = percent >= 100 ? 'mini-progress--complete' :
+                                  percent >= 50 ? 'mini-progress--half' : '';
+            
+            return `
+                <div class="mini-progress ${progressClass}">
+                    <div class="mini-progress__bar" style="width: ${percent}%"></div>
+                </div>
+                <span class="progress-label">${percent}%</span>
+            `;
+        };
+        
+        // Next scheduled helper
+        const nextScheduled = (c) => {
+            if (!c.next_scheduled_at) {
+                if (c.status === 'completed') return `<span class="stat-muted">Done</span>`;
+                return `<span class="stat-muted">—</span>`;
+            }
+            
+            const next = new Date(c.next_scheduled_at);
+            const now = new Date();
+            const diffMs = next - now;
+            const diffHours = Math.round(diffMs / (1000 * 60 * 60));
+            
+            if (diffHours < 0) {
+                return `<span class="stat-warning">Overdue</span>`;
+            } else if (diffHours < 1) {
+                const diffMins = Math.round(diffMs / (1000 * 60));
+                return `<span class="stat-info">${diffMins}m</span>`;
+            } else if (diffHours < 24) {
+                return `<span class="stat-info">${diffHours}h</span>`;
+            } else {
+                const diffDays = Math.round(diffHours / 24);
+                return `<span class="stat-muted">${diffDays}d</span>`;
+            }
         };
         
         this.campaignsTbody.innerHTML = campaigns.map(c => {
             const created = new Date(c.created_at).toLocaleDateString();
-            const progress = c.total_jobs > 0 
-                ? Math.round((c.completed_jobs / c.total_jobs) * 100) 
-                : 0;
             
             return `
-                <tr data-campaign-id="${c.id}">
-                    <td>
+                <tr data-campaign-id="${c.id}" class="campaign-row campaign-row--${c.status}">
+                    <td class="campaign-cell--name">
                         <a href="campaign-detail.html?id=${c.id}" class="campaign-link">
                             Campaign #${c.id.slice(0, 8)}
                         </a>
-                        <div style="font-size: 12px; color: var(--color-text-tertiary);">
-                            ${c.video_count || 0} videos
+                        <div class="campaign-meta">
+                            ${c.video_count || 0} videos • ${created}
                         </div>
                     </td>
-                    <td>${statusBadge(c.status)}</td>
-                    <td>
-                        <div class="mini-progress">
-                            <div class="mini-progress__bar" style="width: ${progress}%"></div>
-                        </div>
-                        <span style="font-size: 12px;">${progress}%</span>
-                    </td>
-                    <td>${created}</td>
-                    <td>
+                    <td class="campaign-cell--status">${statusBadge(c.status)}</td>
+                    <td class="campaign-cell--jobs">${jobStats(c)}</td>
+                    <td class="campaign-cell--posts">${postStats(c)}</td>
+                    <td class="campaign-cell--progress">${progressBar(c)}</td>
+                    <td class="campaign-cell--next">${nextScheduled(c)}</td>
+                    <td class="campaign-cell--actions">
                         <a href="campaign-detail.html?id=${c.id}" class="btn btn--ghost btn--sm">View</a>
                     </td>
                 </tr>

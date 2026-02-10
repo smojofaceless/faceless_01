@@ -15,6 +15,10 @@ class CampaignDetailPage {
         this.statusFilter = '';
         this.refreshInterval = null;
         this.confirmCallback = null;
+        
+        // Logs state
+        this.selectedJobId = null;
+        this.currentLogs = [];
     }
 
     /**
@@ -85,6 +89,15 @@ class CampaignDetailPage {
         this.jobsTbody = document.getElementById('jobs-tbody');
         this.noJobsMsg = document.getElementById('no-jobs');
         
+        // Job Logs
+        this.logJobSelect = document.getElementById('log-job-select');
+        this.btnCopyLogs = document.getElementById('btn-copy-logs');
+        this.btnRefreshLogs = document.getElementById('btn-refresh-logs');
+        this.stepTimeline = document.getElementById('step-timeline');
+        this.logsContent = document.getElementById('logs-content');
+        this.logShowSnapshots = document.getElementById('log-show-snapshots');
+        this.logShowProgress = document.getElementById('log-show-progress');
+        
         // Modal
         this.confirmModal = document.getElementById('confirm-modal');
         this.confirmTitle = document.getElementById('confirm-title');
@@ -107,6 +120,13 @@ class CampaignDetailPage {
             this.statusFilter = e.target.value;
             this.renderJobs();
         });
+        
+        // Job Logs
+        this.logJobSelect?.addEventListener('change', (e) => this.loadJobLogs(e.target.value));
+        this.btnCopyLogs?.addEventListener('click', () => this.copyLogsToClipboard());
+        this.btnRefreshLogs?.addEventListener('click', () => this.loadJobLogs(this.selectedJobId));
+        this.logShowSnapshots?.addEventListener('change', () => this.renderLogs());
+        this.logShowProgress?.addEventListener('change', () => this.renderLogs());
         
         // Modal
         this.confirmOkBtn?.addEventListener('click', () => this.executeConfirmedAction());
@@ -137,6 +157,7 @@ class CampaignDetailPage {
             
             this.renderCampaign();
             this.renderJobs();
+            this.populateJobSelect();
             
             // Hide loading, show detail
             this.hideAllStates();
@@ -350,17 +371,23 @@ class CampaignDetailPage {
                 `<span title="${p}">${platformIcons[p] || '📺'}</span>`
             ).join(' ');
             
+            // Build action buttons
+            const actions = [];
+            if (job.video_url) {
+                actions.push(`<button class="btn btn--ghost btn--sm" onclick="campaignDetailPage.previewVideo('${job.video_url}')" title="Watch Video">▶️</button>`);
+            }
+            if (job.status === 'failed') {
+                actions.push(`<button class="btn btn--ghost btn--sm" onclick="campaignDetailPage.retryJob('${job.id}')">Retry</button>`);
+            }
+            
             return `
                 <tr>
                     <td>${scheduledAt}</td>
                     <td>${this.formatPresetName(preset)}</td>
                     <td>${platformsHtml || '-'}</td>
                     <td>${this.renderJobStatus(job.status)}</td>
-                    <td>
-                        ${job.status === 'failed' 
-                            ? `<button class="btn btn--ghost btn--sm" onclick="campaignDetailPage.retryJob('${job.id}')">Retry</button>`
-                            : '-'
-                        }
+                    <td class="job-actions">
+                        ${actions.length ? actions.join(' ') : '-'}
                     </td>
                 </tr>
             `;
@@ -374,12 +401,22 @@ class CampaignDetailPage {
         const statusClasses = {
             pending: 'job-status--pending',
             processing: 'job-status--processing',
+            complete: 'job-status--completed',
             completed: 'job-status--completed',
             failed: 'job-status--failed',
             cancelled: 'job-status--cancelled'
         };
         
-        return `<span class="job-status ${statusClasses[status] || ''}">${status}</span>`;
+        const displayNames = {
+            pending: 'Pending',
+            processing: 'Processing',
+            complete: 'Complete',
+            completed: 'Complete',
+            failed: 'Failed',
+            cancelled: 'Cancelled'
+        };
+        
+        return `<span class="job-status ${statusClasses[status] || ''}">${displayNames[status] || status}</span>`;
     }
 
     /**
@@ -486,6 +523,19 @@ class CampaignDetailPage {
     }
 
     /**
+     * Preview video in modal or new tab
+     */
+    previewVideo(videoUrl) {
+        if (!videoUrl) {
+            this.showToast('No video available', 'warning');
+            return;
+        }
+        
+        // Open in new tab for now (can add modal player later)
+        window.open(videoUrl, '_blank');
+    }
+
+    /**
      * Open modal
      */
     openModal() {
@@ -535,6 +585,326 @@ class CampaignDetailPage {
         } else {
             console.log(`[${type.toUpperCase()}] ${message}`);
             alert(message);
+        }
+    }
+
+    // ==========================================
+    // JOB LOGS SECTION
+    // ==========================================
+
+    /**
+     * Pipeline steps in order
+     */
+    get pipelineSteps() {
+        return ['story', 'uniqueness', 'scenes', 'voice', 'music', 'images', 'subtitles', 'assemble', 'upload', 'schedule'];
+    }
+
+    /**
+     * Populate job select dropdown with jobs from current campaign
+     */
+    populateJobSelect() {
+        if (!this.logJobSelect || !this.jobs?.length) return;
+        
+        // Clear existing options
+        this.logJobSelect.innerHTML = '<option value="">Select a job to view logs...</option>';
+        
+        // Sort jobs by created_at descending (newest first)
+        const sortedJobs = [...this.jobs].sort((a, b) => 
+            new Date(b.created_at) - new Date(a.created_at)
+        );
+        
+        // Add job options
+        sortedJobs.forEach((job, index) => {
+            const option = document.createElement('option');
+            option.value = job.id;
+            const statusIcon = this.getJobStatusIcon(job.status);
+            const title = job.story_seed?.substring(0, 40) || `Job ${index + 1}`;
+            option.textContent = `${statusIcon} ${title}${title.length >= 40 ? '...' : ''} (${job.status})`;
+            this.logJobSelect.appendChild(option);
+        });
+    }
+
+    /**
+     * Get status icon for job
+     */
+    getJobStatusIcon(status) {
+        const icons = {
+            pending: '⏳',
+            processing: '⚡',
+            complete: '✅',
+            failed: '❌',
+            cancelled: '🚫'
+        };
+        return icons[status] || '❓';
+    }
+
+    /**
+     * Load logs for a specific job
+     */
+    async loadJobLogs(jobId) {
+        if (!jobId) {
+            this.currentLogs = [];
+            this.selectedJobId = null;
+            this.renderStepTimeline([]);
+            this.renderLogs();
+            return;
+        }
+        
+        this.selectedJobId = jobId;
+        
+        // Show loading state
+        if (this.logsContent) {
+            this.logsContent.innerHTML = '<div class="log-entry log-entry--info"><span class="log-entry__message">Loading logs...</span></div>';
+        }
+        
+        try {
+            // Try the RPC first
+            const { data, error } = await supabaseClient.rpc('get_job_step_logs', { p_job_id: jobId });
+            
+            if (error) throw error;
+            
+            this.currentLogs = data || [];
+            this.renderStepTimeline(this.currentLogs);
+            this.renderLogs();
+            
+        } catch (error) {
+            console.error('Failed to load job logs:', error);
+            
+            // Fallback: direct query
+            try {
+                const { data, error: queryError } = await supabaseClient
+                    .from('job_step_logs')
+                    .select('*')
+                    .eq('job_id', jobId)
+                    .order('created_at', { ascending: true });
+                
+                if (queryError) throw queryError;
+                
+                this.currentLogs = data || [];
+                this.renderStepTimeline(this.currentLogs);
+                this.renderLogs();
+                
+            } catch (fallbackError) {
+                console.error('Fallback query also failed:', fallbackError);
+                this.currentLogs = [];
+                if (this.logsContent) {
+                    this.logsContent.innerHTML = '<div class="log-entry log-entry--error"><span class="log-entry__message">Failed to load logs. Check console for details.</span></div>';
+                }
+            }
+        }
+    }
+
+    /**
+     * Render the step timeline visualization
+     */
+    renderStepTimeline(logs) {
+        if (!this.stepTimeline) return;
+        
+        // Build step status map
+        const stepStatus = {};
+        const stepDuration = {};
+        
+        logs.forEach(log => {
+            const step = log.step_name;
+            if (!step) return;
+            
+            // Track latest status per step
+            if (log.log_type === 'step_complete') {
+                stepStatus[step] = 'completed';
+                if (log.duration_ms) {
+                    stepDuration[step] = log.duration_ms;
+                }
+            } else if (log.log_type === 'step_start' && !stepStatus[step]) {
+                stepStatus[step] = 'running';
+            } else if (log.log_type === 'error') {
+                stepStatus[step] = 'failed';
+            }
+        });
+        
+        // Generate timeline HTML using CSS classes
+        const timelineHtml = this.pipelineSteps.map((step, index) => {
+            const status = stepStatus[step] || 'pending';
+            const duration = stepDuration[step];
+            const durationText = duration ? this.formatDuration(duration) : '';
+            
+            const statusIcons = {
+                pending: '⏸',
+                running: '⚡',
+                completed: '✓',
+                failed: '✕'
+            };
+            
+            const nextStep = this.pipelineSteps[index + 1];
+            const nextStatus = nextStep ? (stepStatus[nextStep] || 'pending') : null;
+            const connectorActive = status === 'completed' || status === 'running';
+            
+            return `
+                <div class="step-timeline__step step-timeline__step--${status}" title="${step}: ${status}${durationText ? ` (${durationText})` : ''}">
+                    <div class="step-timeline__icon">${statusIcons[status]}</div>
+                    <div class="step-timeline__name">${step}</div>
+                    ${durationText ? `<div class="step-timeline__duration">${durationText}</div>` : ''}
+                </div>
+                ${nextStep ? `<div class="step-timeline__connector ${connectorActive ? 'step-timeline__connector--active' : ''}">→</div>` : ''}
+            `;
+        }).join('');
+        
+        this.stepTimeline.innerHTML = timelineHtml || '<div class="step-timeline__empty">Select a job to view pipeline status</div>';
+    }
+
+    /**
+     * Format duration from ms to human readable
+     */
+    formatDuration(ms) {
+        if (ms < 1000) return `${ms}ms`;
+        if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+        const mins = Math.floor(ms / 60000);
+        const secs = Math.floor((ms % 60000) / 1000);
+        return `${mins}m ${secs}s`;
+    }
+
+    /**
+     * Render log entries
+     */
+    renderLogs() {
+        if (!this.logsContent) return;
+        
+        if (!this.currentLogs?.length) {
+            this.logsContent.innerHTML = '<div class="log-entry log-entry--info"><span class="log-entry__message">No logs available for this job.</span></div>';
+            return;
+        }
+        
+        // Apply filters
+        const showSnapshots = this.logShowSnapshots?.checked ?? true;
+        const showProgress = this.logShowProgress?.checked ?? true;
+        
+        const filteredLogs = this.currentLogs.filter(log => {
+            if (!showSnapshots && log.log_type === 'snapshot') return false;
+            if (!showProgress && log.log_type === 'progress') return false;
+            return true;
+        });
+        
+        if (!filteredLogs.length) {
+            this.logsContent.innerHTML = '<div class="log-entry log-entry--info"><span class="log-entry__message">No logs match current filters.</span></div>';
+            return;
+        }
+        
+        // Render logs
+        const logsHtml = filteredLogs.map(log => this.renderLogEntry(log)).join('');
+        this.logsContent.innerHTML = logsHtml;
+        
+        // Auto-scroll to bottom
+        this.logsContent.scrollTop = this.logsContent.scrollHeight;
+    }
+
+    /**
+     * Render a single log entry
+     */
+    renderLogEntry(log) {
+        const timestamp = new Date(log.created_at).toLocaleTimeString();
+        const typeLabel = this.getLogTypeLabel(log.log_type);
+        const typeClass = this.getLogTypeClass(log.log_type);
+        
+        // Format message - make it more readable
+        let message = log.message || '';
+        
+        // Simplify common messages
+        if (log.log_type === 'step_start') {
+            message = `Starting ${log.step_name || 'step'}...`;
+        } else if (log.log_type === 'step_complete') {
+            const duration = log.duration_ms ? ` in ${this.formatDuration(log.duration_ms)}` : '';
+            message = `✓ Completed${duration}`;
+        }
+        
+        let details = '';
+        if (log.details && log.log_type !== 'step_start' && log.log_type !== 'step_complete') {
+            try {
+                const detailsObj = typeof log.details === 'string' ? JSON.parse(log.details) : log.details;
+                // Only show non-empty details
+                if (Object.keys(detailsObj).length > 0) {
+                    details = `<div class="log-entry__meta">${JSON.stringify(detailsObj, null, 2)}</div>`;
+                }
+            } catch {
+                details = `<div class="log-entry__meta">${log.details}</div>`;
+            }
+        }
+        
+        return `
+            <div class="log-entry">
+                <span class="log-entry__time">${timestamp}</span>
+                <span class="log-entry__type log-entry__type--${typeClass}">${typeLabel}</span>
+                <span class="log-entry__step">[${log.step_name || 'system'}]</span>
+                <span class="log-entry__message">${message}</span>
+                ${details}
+            </div>
+        `;
+    }
+
+    /**
+     * Get CSS class for log type
+     */
+    getLogTypeClass(logType) {
+        const classes = {
+            'step_start': 'started',
+            'step_complete': 'completed',
+            'progress': 'progress',
+            'snapshot': 'snapshot',
+            'error': 'failed',
+            'warning': 'warning',
+            'info': 'info'
+        };
+        return classes[logType] || 'info';
+    }
+
+    /**
+     * Get human-readable label for log type
+     */
+    getLogTypeLabel(logType) {
+        const labels = {
+            'step_start': 'STARTED',
+            'step_complete': 'DONE',
+            'progress': 'PROGRESS',
+            'snapshot': 'SNAPSHOT',
+            'error': 'ERROR',
+            'warning': 'WARN',
+            'info': 'INFO'
+        };
+        return labels[logType] || 'LOG';
+    }
+
+    /**
+     * Copy logs to clipboard
+     */
+    async copyLogsToClipboard() {
+        if (!this.currentLogs?.length) {
+            this.showToast('No logs to copy', 'warning');
+            return;
+        }
+        
+        // Format logs for clipboard
+        const formattedLogs = this.currentLogs.map(log => {
+            const time = new Date(log.created_at).toISOString();
+            const step = log.step_name || 'system';
+            const message = log.message || log.log_type;
+            let line = `[${time}] [${log.log_type}] [${step}] ${message}`;
+            
+            if (log.details) {
+                try {
+                    const details = typeof log.details === 'string' ? JSON.parse(log.details) : log.details;
+                    line += `\n    ${JSON.stringify(details, null, 2).replace(/\n/g, '\n    ')}`;
+                } catch {
+                    line += `\n    ${log.details}`;
+                }
+            }
+            
+            return line;
+        }).join('\n');
+        
+        try {
+            await navigator.clipboard.writeText(formattedLogs);
+            this.showToast('Logs copied to clipboard', 'success');
+        } catch (error) {
+            console.error('Failed to copy logs:', error);
+            this.showToast('Failed to copy logs', 'error');
         }
     }
 
