@@ -166,6 +166,11 @@ class CampaignDetailPage {
             this.renderCampaign();
             this.renderJobs();
             this.populateJobSelect();
+            this.updateStats();
+            this.updateProgress();
+            
+            // Restart auto-refresh based on current job states
+            this.startAutoRefresh();
             
             // Hide loading, show detail
             this.hideAllStates();
@@ -566,11 +571,17 @@ class CampaignDetailPage {
             clearInterval(this.refreshInterval);
         }
         
-        // Only auto-refresh for active campaigns
-        if (this.campaign?.status === 'active' || this.campaign?.status === 'processing') {
+        // Auto-refresh if campaign is active OR any jobs are still processing
+        const hasProcessingJobs = this.jobs?.some(j => 
+            ['pending', 'queued', 'generating', 'assembling', 'rendering'].includes(j.status)
+        );
+        
+        if (this.campaign?.status === 'active' || this.campaign?.status === 'processing' || hasProcessingJobs) {
+            console.log('📡 Starting auto-refresh (30s interval)');
             this.refreshInterval = setInterval(() => {
+                console.log('📡 Auto-refreshing campaign data...');
                 this.loadCampaign();
-            }, 30000); // Refresh every 30 seconds
+            }, 15000); // Refresh every 15 seconds when jobs are processing
         }
     }
 
