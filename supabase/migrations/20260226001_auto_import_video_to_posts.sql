@@ -25,9 +25,17 @@ DECLARE
     v_title TEXT;
     v_description TEXT;
 BEGIN
-    -- Only run when video_url is newly set (was NULL, now has value)
-    IF OLD.video_url IS NOT NULL OR NEW.video_url IS NULL THEN
-        RETURN NEW;
+    -- Only run when video_url is newly set
+    -- For UPDATE: was NULL, now has value
+    -- For INSERT: has value and status is complete
+    IF TG_OP = 'UPDATE' THEN
+        IF OLD.video_url IS NOT NULL OR NEW.video_url IS NULL THEN
+            RETURN NEW;
+        END IF;
+    ELSIF TG_OP = 'INSERT' THEN
+        IF NEW.video_url IS NULL OR NEW.status NOT IN ('complete', 'completed') THEN
+            RETURN NEW;
+        END IF;
     END IF;
     
     -- Only for completed jobs
@@ -133,7 +141,6 @@ DROP TRIGGER IF EXISTS trg_auto_import_video_to_posts ON jobs;
 CREATE TRIGGER trg_auto_import_video_to_posts
     AFTER UPDATE OF video_url ON jobs
     FOR EACH ROW
-    WHEN (OLD.video_url IS NULL AND NEW.video_url IS NOT NULL)
     EXECUTE FUNCTION auto_import_job_to_posts();
 
 -- Also handle INSERT with video_url already set (rare but possible)
@@ -141,7 +148,6 @@ DROP TRIGGER IF EXISTS trg_auto_import_video_to_posts_insert ON jobs;
 CREATE TRIGGER trg_auto_import_video_to_posts_insert
     AFTER INSERT ON jobs
     FOR EACH ROW
-    WHEN (NEW.video_url IS NOT NULL AND NEW.status IN ('complete', 'completed'))
     EXECUTE FUNCTION auto_import_job_to_posts();
 
 -- =====================================================
