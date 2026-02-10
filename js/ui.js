@@ -722,10 +722,27 @@ async function showHistoryDetails(jobId) {
         
         const videoAsset = assets.find(a => a.type === 'final_mp4');
         const sceneAssets = assets.filter(a => a.type === 'dalle_image' || a.type === 'bg_video');
+        const musicAsset = assets.find(a => a.type === 'music');
         
         const isDalle = sceneAssets.some(a => a.type === 'dalle_image');
         const imageCost = isDalle ? sceneAssets.length * 0.08 : 0;
         const totalCost = (0.01 + 0.05 + imageCost).toFixed(2);
+        
+        // Build music status badge
+        let musicBadge = '';
+        if (musicAsset) {
+            const mm = musicAsset.meta || {};
+            if (mm.source === 'error') {
+                musicBadge = `<span class="inline-flex items-center gap-1 bg-red-900/60 text-red-400 px-2 py-0.5 rounded text-xs cursor-help" title="${escapeHtml(mm.error || 'Music selection failed')}">🎵 Skipped (error)</span>`;
+            } else if (mm.source === 'brand_config_disabled' || mm.music_enabled === false) {
+                musicBadge = `<span class="inline-flex items-center gap-1 bg-gray-700/60 text-gray-400 px-2 py-0.5 rounded text-xs">🎵 Disabled</span>`;
+            } else if (!mm.music_url) {
+                musicBadge = `<span class="inline-flex items-center gap-1 bg-yellow-900/60 text-yellow-400 px-2 py-0.5 rounded text-xs cursor-help" title="Track selected but MP3 file missing from storage">🎵 Missing file</span>`;
+            } else {
+                const trackName = mm.display_name || mm.track_id || 'Unknown';
+                musicBadge = `<span class="inline-flex items-center gap-1 bg-purple-900/60 text-purple-400 px-2 py-0.5 rounded text-xs cursor-help" title="Track: ${escapeHtml(trackName)}${mm.source === 'fallback_hardcoded' ? ' (fallback)' : ''}">🎵 ${escapeHtml(trackName)}</span>`;
+            }
+        }
         
         const date = new Date(job.created_at).toLocaleString();
         
@@ -752,6 +769,8 @@ async function showHistoryDetails(jobId) {
                     <p class="text-gray-400 text-sm">Cost</p>
                 </div>
             </div>
+            
+            ${musicBadge ? `<div class="mb-4 flex items-center gap-2"><span class="text-gray-400 text-xs">Music:</span>${musicBadge}</div>` : ''}
             
             <div class="mb-6">
                 <h3 class="font-semibold mb-2">📖 Story</h3>

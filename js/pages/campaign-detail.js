@@ -163,6 +163,9 @@ class CampaignDetailPage {
                 return;
             }
             
+            // Fetch failure info for failed jobs (DLQ data)
+            await this.loadFailureInfo();
+            
             this.renderCampaign();
             this.renderJobs();
             this.populateJobSelect();
@@ -179,6 +182,69 @@ class CampaignDetailPage {
         } catch (error) {
             console.error('Failed to load campaign:', error);
             this.showNotFoundState();
+        }
+    }
+
+    /**
+     * Load failure info for failed jobs from DLQ view
+     */
+    async loadFailureInfo() {
+        const failedJobs = this.jobs.filter(j => j.status === 'failed');
+        if (failedJobs.length === 0) {
+            this.failureInfoMap = {};
+            return;
+        }
+
+        try {
+            // Query the DLQ view for this campaign's failed jobs
+            const { data, error } = await supabaseClient
+                .rpc('get_failed_jobs_dlq', {
+                    p_limit: 100,
+                    p_offset: 0,
+                    p_filters: { campaign_id: this.campaignId }
+                });
+
+            if (error) {
+                console.warn('Failed to load failure info:', error);
+                this.failureInfoMap = {};
+                return;
+            }
+
+            // Create a map of job_id -> failure info
+            this.failureInfoMap = {};
+            for (const row of (data || [])) {
+                this.failureInfoMap[row.job_id] = {
+                    step: row.last_failure_step,
+                    failureClass: row.last_failure_class,
+                    error: row.last_failure_error,
+                    failedAt: row.failed_at,
+                    canRetry: row.can_retry,
+                    recommendedAction: row.recommended_action,
+                    attemptCount: row.attempt_count,
+                    stepAttempts: row.step_attempt_number,
+                    stepMaxAttempts: row.step_max_attempts,
+                    failureCount: row.total_failure_count
+                };
+            }
+        } catch (err) {
+            console.warn('Error loading failure info:', err);
+            this.failureInfoMap = {};
+        }
+    }
+
+    /**
+     * Get failure history for a specific job
+     */
+    async getJobFailures(jobId) {
+        try {
+            const { data, error } = await supabaseClient
+                .rpc('get_job_failures', { p_job_id: jobId });
+
+            if (error) throw error;
+            return data || [];
+        } catch (err) {
+            console.error('Failed to get job failures:', err);
+            return [];
         }
     }
 
@@ -384,21 +450,52 @@ class CampaignDetailPage {
                 `<span title="${p}">${platformIcons[p] || '📺'}</span>`
             ).join(' ');
             
+            // Get failure info if this job is failed
+            const failureInfo = this.failureInfoMap?.[job.id];
+            
             // Build action buttons
             const actions = [];
             if (job.video_url) {
                 actions.push(`<button class="btn btn--ghost btn--sm" onclick="campaignDetailPage.previewVideo('${job.video_url}')" title="Watch Video">▶️</button>`);
             }
             if (job.status === 'failed') {
-                actions.push(`<button class="btn btn--ghost btn--sm" onclick="campaignDetailPage.retryJob('${job.id}')">Retry</button>`);
+                // Show failure history button
+                actions.push(`<button class="btn btn--ghost btn--sm" onclick="campaignDetailPage.showFailureHistory('${job.id}')" title="View failure history">📋</button>`);
+                
+                if (failureInfo?.canRetry) {
+                    // Can retry - show Requeue button
+                    actions.push(`<button class="btn btn--primary btn--sm" onclick="campaignDetailPage.retryJob('${job.id}')">Requeue</button>`);
+                } else {
+                    // Cannot auto-retry - show Force Retry (with warning)
+                    actions.push(`<button class="btn btn--ghost btn--sm btn--warning" onclick="campaignDetailPage.forceRetryJob('${job.id}')" title="Force retry (bypasses policies)">⚠️ Force</button>`);
+                }
+            }
+            
+            // Build status cell with failure info
+            let statusHtml = this.renderJobStatus(job.status);
+            if (job.status === 'failed' && failureInfo) {
+                const stepLabel = failureInfo.step ? `@ ${failureInfo.step}` : '';
+                const classEmoji = {
+                    'transient': '⚡',
+                    'dependency': '🔌',
+                    'misconfig': '⚙️',
+                    'permanent': '🚫',
+                    'unknown': '❓'
+                }[failureInfo.failureClass] || '❓';
+                
+                statusHtml += `<div class="failure-info">
+                    <span class="failure-info__class" title="${failureInfo.failureClass}">${classEmoji} ${failureInfo.failureClass}</span>
+                    ${stepLabel ? `<span class="failure-info__step">${stepLabel}</span>` : ''}
+                    <span class="failure-info__attempts">#${failureInfo.attemptCount || 1}</span>
+                </div>`;
             }
             
             return `
-                <tr>
+                <tr class="${job.status === 'failed' ? 'job-row--failed' : ''}">
                     <td>${scheduledAt}</td>
                     <td>${this.formatPresetName(preset)}</td>
                     <td>${platformsHtml || '-'}</td>
-                    <td>${this.renderJobStatus(job.status)}</td>
+                    <td>${statusHtml}</td>
                     <td class="job-actions">
                         ${actions.length ? actions.join(' ') : '-'}
                     </td>
@@ -514,25 +611,134 @@ class CampaignDetailPage {
     }
 
     /**
-     * Retry a failed job
+     * Retry a failed job using the DLQ requeue RPC
+     * Uses proper backoff and respects retry policies
      */
-    async retryJob(jobId) {
+    async retryJob(jobId, force = false) {
         try {
-            // Reset job status to pending
-            const { error } = await supabaseClient
-                .from('jobs')
-                .update({ status: 'pending', error_message: null })
-                .eq('id', jobId);
+            // Call the requeue_failed_job RPC
+            const { data, error } = await supabaseClient
+                .rpc('requeue_failed_job', {
+                    p_job_id: jobId,
+                    p_force: force
+                });
             
             if (error) throw error;
             
-            this.showToast('Job queued for retry', 'success');
+            // Check RPC response
+            if (!data?.success) {
+                // RPC returned an error condition
+                const errorMsg = data?.error || 'Unknown error';
+                const recommendation = data?.recommendation;
+                
+                if (recommendation) {
+                    this.showToast(`Cannot retry: ${errorMsg}. ${recommendation}`, 'error');
+                } else {
+                    this.showToast(`Cannot retry: ${errorMsg}`, 'error');
+                }
+                return;
+            }
+            
+            // Success - show when job will run
+            const generateBy = data.generate_by ? new Date(data.generate_by) : null;
+            const now = new Date();
+            
+            if (generateBy && generateBy > now) {
+                const waitMinutes = Math.round((generateBy - now) / 60000);
+                this.showToast(`Job requeued (attempt #${data.attempt_count}). Will retry in ~${waitMinutes} min`, 'success');
+            } else {
+                this.showToast(`Job requeued for immediate retry (attempt #${data.attempt_count})`, 'success');
+            }
+            
             await this.loadCampaign();
             
         } catch (error) {
             console.error('Failed to retry job:', error);
             this.showToast(`Failed to retry job: ${error.message}`, 'error');
         }
+    }
+
+    /**
+     * Force retry a job, bypassing retry policies
+     * Used for permanent/misconfig errors when admin wants to override
+     */
+    async forceRetryJob(jobId) {
+        if (!confirm('Force retry bypasses retry policies. The job may fail again immediately. Continue?')) {
+            return;
+        }
+        await this.retryJob(jobId, true);
+    }
+
+    /**
+     * Show failure history for a job in a modal/panel
+     */
+    async showFailureHistory(jobId) {
+        const failures = await this.getJobFailures(jobId);
+        
+        if (failures.length === 0) {
+            this.showToast('No failure history found', 'info');
+            return;
+        }
+        
+        // Build failure history HTML
+        const failuresHtml = failures.map((f, i) => {
+            const time = new Date(f.created_at).toLocaleString();
+            const classEmoji = {
+                'transient': '⚡',
+                'dependency': '🔌',
+                'misconfig': '⚙️',
+                'permanent': '🚫',
+                'unknown': '❓'
+            }[f.failure_class] || '❓';
+            
+            return `
+                <div class="failure-entry">
+                    <div class="failure-entry__header">
+                        <span class="failure-entry__num">#${failures.length - i}</span>
+                        <span class="failure-entry__step">@ ${f.step_name}</span>
+                        <span class="failure-entry__class">${classEmoji} ${f.failure_class}</span>
+                        <span class="failure-entry__time">${time}</span>
+                    </div>
+                    <div class="failure-entry__body">
+                        <div class="failure-entry__error">${this.escapeHtml(f.error_message || 'No error message')}</div>
+                        ${f.error_signature ? `<div class="failure-entry__signature">Signature: ${f.error_signature}</div>` : ''}
+                        <div class="failure-entry__meta">
+                            Job attempt: ${f.job_attempt_number} | Step attempt: ${f.step_attempt_number}
+                            ${f.retry_eligible ? ' | ✅ Retryable' : ' | ❌ Not retryable'}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        // Show in modal
+        this.confirmTitle.textContent = '📋 Failure History';
+        this.confirmMessage.innerHTML = `
+            <div class="failure-history">
+                <div class="failure-history__summary">
+                    Total failures: ${failures.length}
+                </div>
+                <div class="failure-history__list">
+                    ${failuresHtml}
+                </div>
+            </div>
+        `;
+        
+        // Hide confirm button, just show close
+        this.confirmOkBtn.classList.add('hidden');
+        this.confirmCancelBtn.textContent = 'Close';
+        
+        this.confirmCallback = null;
+        this.openModal();
+    }
+
+    /**
+     * Escape HTML to prevent XSS
+     */
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     /**
@@ -556,10 +762,16 @@ class CampaignDetailPage {
     }
 
     /**
-     * Close modal
+     * Close modal and reset state
      */
     closeModal() {
         this.confirmModal?.classList.remove('active');
+        
+        // Reset confirm button visibility and text (in case failure history changed it)
+        this.confirmOkBtn?.classList.remove('hidden');
+        if (this.confirmCancelBtn) {
+            this.confirmCancelBtn.textContent = 'Cancel';
+        }
     }
 
     /**

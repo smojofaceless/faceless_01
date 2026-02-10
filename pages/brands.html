@@ -170,6 +170,9 @@
                     </div>
                 </div>
 
+                <!-- Summary Stats Bar -->
+                <div class="brands-summary" id="brands-summary"></div>
+
                 <!-- Brands Grid -->
                 <div class="brands-grid" id="brands-grid">
                     <!-- Brands will be rendered here -->
@@ -311,6 +314,84 @@
         </div>
     </div>
 
+    <!-- Music Tracks Modal -->
+    <div class="modal" id="music-modal">
+        <div class="modal__overlay"></div>
+        <div class="modal__content modal__content--lg">
+            <div class="modal__header">
+                <h3 class="modal__title">🎵 Music Tracks — <span id="music-brand-name"></span></h3>
+                <button class="modal__close" onclick="closeMusicModal()">&times;</button>
+            </div>
+            <div class="modal__body">
+                <!-- Upload Section -->
+                <div class="music-upload-section">
+                    <div class="music-upload-dropzone" id="music-dropzone">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        <p>Drop MP3 files here or <label for="music-file-input" class="music-upload-link">browse</label></p>
+                        <p class="text-xs text-gray-500">MP3 format, max 10MB per file</p>
+                        <input type="file" id="music-file-input" accept=".mp3,audio/mpeg" multiple hidden>
+                    </div>
+                </div>
+
+                <!-- Upload Options (shown after file selected) -->
+                <div class="music-upload-form" id="music-upload-form" style="display:none">
+                    <div class="form-grid form-grid--3">
+                        <div class="form-group">
+                            <label class="form-label">Display Name</label>
+                            <input type="text" class="form-control" id="music-track-name" placeholder="e.g. Dark Ambient Drone">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Mood</label>
+                            <select class="form-control" id="music-track-mood">
+                                <option value="dark">Dark</option>
+                                <option value="tense">Tense</option>
+                                <option value="eerie">Eerie</option>
+                                <option value="ambient">Ambient</option>
+                                <option value="dramatic">Dramatic</option>
+                                <option value="melancholic">Melancholic</option>
+                                <option value="upbeat">Upbeat</option>
+                                <option value="calm">Calm</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Energy</label>
+                            <select class="form-control" id="music-track-energy">
+                                <option value="low">Low</option>
+                                <option value="medium">Medium</option>
+                                <option value="high">High</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group" style="display:flex;align-items:center;gap:12px;">
+                            <label class="form-label" style="margin:0">Loopable</label>
+                            <input type="checkbox" id="music-track-loopable" checked>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:8px;margin-top:8px;">
+                        <button class="btn btn--primary btn--sm" id="music-upload-confirm">Upload Track</button>
+                        <button class="btn btn--secondary btn--sm" id="music-upload-cancel">Cancel</button>
+                    </div>
+                    <div id="music-upload-progress" style="display:none;margin-top:8px;">
+                        <div class="text-sm text-gray-400">Uploading... <span id="music-upload-filename"></span></div>
+                    </div>
+                </div>
+
+                <!-- Tracks List -->
+                <div class="music-tracks-list" id="music-tracks-list">
+                    <div class="text-gray-400 text-center py-4">Loading...</div>
+                </div>
+            </div>
+            <div class="modal__footer">
+                <button class="btn btn--secondary" onclick="closeMusicModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Supabase SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
@@ -396,7 +477,24 @@
             console.log('Brands page: init() complete');
         }
 
-        function loadBrands() {
+        // Niche emojis for card avatars
+        const NICHE_EMOJIS = {
+            horror: '🎃', crime: '🔍', mystery: '🕵️', scifi: '🚀',
+            gaming: '🎮', food: '🍳', fitness: '💪', travel: '✈️',
+            fashion: '👗', diy: '🔨', science: '🔬', tech: '💻',
+            finance: '💰', history: '📜', cars: '🚗', motorcycles: '🏍️',
+            pets: '🐾', motivation: '🌟', other: '📝'
+        };
+
+        // All supported platforms for badge display
+        const PLATFORM_DEFS = [
+            { key: 'youtube',   label: 'YT', title: 'YouTube' },
+            { key: 'tiktok',    label: 'TT', title: 'TikTok' },
+            { key: 'instagram', label: 'IG', title: 'Instagram' },
+            { key: 'twitter',   label: 'X',  title: 'Twitter / X' }
+        ];
+
+        async function loadBrands() {
             const container = document.getElementById('brands-grid');
             const brands = brandManager.getAll();
 
@@ -408,25 +506,69 @@
                             <line x1="7" y1="7" x2="7.01" y2="7"/>
                         </svg>
                         <h3>No Brands Yet</h3>
-                        <p>Create your first brand to start organizing your content</p>
-                        <button class="btn btn--primary" onclick="openCreateModal()">Create Brand</button>
+                        <p>Create your first brand to start building your content empire</p>
+                        <button class="btn btn--primary" onclick="openCreateModal()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                <line x1="12" y1="5" x2="12" y2="19"/>
+                                <line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                            Create Your First Brand
+                        </button>
                     </div>
                 `;
+                renderSummary(brands, {});
                 return;
             }
 
-            container.innerHTML = brands.map(brand => renderBrandCard(brand)).join('');
+            // Show loading skeleton while fetching
+            container.innerHTML = brands.map(() => `
+                <div class="brand-card" style="opacity:0.5;pointer-events:none">
+                    <div class="brand-card__header" style="background:var(--surface-secondary);height:100px"></div>
+                    <div class="brand-card__body" style="padding:20px">
+                        <div style="height:20px;width:60%;background:var(--border-subtle);border-radius:4px;margin-bottom:12px"></div>
+                        <div style="height:14px;width:80%;background:var(--border-subtle);border-radius:4px"></div>
+                    </div>
+                </div>
+            `).join('');
+
+            // Fetch enrichment data (credentials, music counts, post stats) in parallel
+            const enrichments = {};
+            await Promise.all(brands.map(async (brand) => {
+                try {
+                    const [creds, tracks, postStats] = await Promise.all([
+                        brandManager.getAllCredentials(brand.id).catch(() => []),
+                        brandManager.getMusicTracks(brand.id).catch(() => []),
+                        // Real post counts from Supabase
+                        (async () => {
+                            try {
+                                const { count: total } = await supabaseClient
+                                    .from('posts').select('*', { count: 'exact', head: true })
+                                    .eq('brand_id', brand.id);
+                                const { count: scheduled } = await supabaseClient
+                                    .from('posts').select('*', { count: 'exact', head: true })
+                                    .eq('brand_id', brand.id).eq('status', 'scheduled');
+                                return { totalPosts: total || 0, scheduledPosts: scheduled || 0 };
+                            } catch { return { totalPosts: 0, scheduledPosts: 0 }; }
+                        })()
+                    ]);
+                    enrichments[brand.id] = {
+                        credentials: creds || [],
+                        musicCount: (tracks || []).length,
+                        ...postStats
+                    };
+                } catch (e) {
+                    enrichments[brand.id] = { credentials: [], musicCount: 0, totalPosts: 0, scheduledPosts: 0 };
+                }
+            }));
+
+            container.innerHTML = brands.map(brand => renderBrandCard(brand, enrichments[brand.id] || { credentials: [], musicCount: 0, totalPosts: 0, scheduledPosts: 0 })).join('');
+            renderSummary(brands, enrichments);
 
             // Attach event listeners
-            const editBtns = container.querySelectorAll('.brand-card__action--edit');
-            console.log('Found edit buttons:', editBtns.length);
-            editBtns.forEach(btn => {
-                console.log('Attaching edit listener to button with id:', btn.dataset.id);
+            container.querySelectorAll('.brand-card__action--edit').forEach(btn => {
                 btn.addEventListener('click', (e) => {
-                    console.log('Edit button clicked for id:', btn.dataset.id);
                     e.stopPropagation();
                     const brand = brandManager.get(btn.dataset.id);
-                    console.log('Brand found:', brand);
                     if (brand) openEditModal(brand);
                 });
             });
@@ -446,6 +588,67 @@
                     toast.success('Brand activated');
                 });
             });
+
+            container.querySelectorAll('.brand-card__action--music').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openMusicModal(btn.dataset.id);
+                });
+            });
+        }
+
+        function renderSummary(brands, enrichments) {
+            const summaryEl = document.getElementById('brands-summary');
+            if (!summaryEl || brands.length === 0) {
+                if (summaryEl) summaryEl.innerHTML = '';
+                return;
+            }
+
+            let totalPosts = 0;
+            let totalScheduled = 0;
+            let totalPlatforms = 0;
+            let totalMusic = 0;
+
+            brands.forEach(brand => {
+                const enr = enrichments[brand.id];
+                if (enr) {
+                    totalPosts += enr.totalPosts || 0;
+                    totalScheduled += enr.scheduledPosts || 0;
+                    totalPlatforms += enr.credentials.filter(c => c.is_connected).length;
+                    totalMusic += enr.musicCount;
+                }
+            });
+
+            summaryEl.innerHTML = `
+                <div class="summary-stat">
+                    <div class="summary-stat__icon" style="background:rgba(99,102,241,0.15);color:#818cf8">📦</div>
+                    <div class="summary-stat__info">
+                        <span class="summary-stat__value">${brands.length}</span>
+                        <span class="summary-stat__label">Brands</span>
+                    </div>
+                </div>
+                <div class="summary-stat">
+                    <div class="summary-stat__icon" style="background:rgba(34,197,94,0.15);color:#4ade80">📝</div>
+                    <div class="summary-stat__info">
+                        <span class="summary-stat__value">${totalPosts}</span>
+                        <span class="summary-stat__label">Total Posts</span>
+                    </div>
+                </div>
+                <div class="summary-stat">
+                    <div class="summary-stat__icon" style="background:rgba(59,130,246,0.15);color:#60a5fa">🔗</div>
+                    <div class="summary-stat__info">
+                        <span class="summary-stat__value">${totalPlatforms}</span>
+                        <span class="summary-stat__label">Connected Platforms</span>
+                    </div>
+                </div>
+                <div class="summary-stat">
+                    <div class="summary-stat__icon" style="background:rgba(139,92,246,0.15);color:#a78bfa">🎵</div>
+                    <div class="summary-stat__info">
+                        <span class="summary-stat__value">${totalMusic}</span>
+                        <span class="summary-stat__label">Music Tracks</span>
+                    </div>
+                </div>
+            `;
         }
 
         // Niche labels with emojis
@@ -471,41 +674,68 @@
             other: '📝 Other'
         };
 
-        function renderBrandCard(brand) {
-            const stats = brandManager.getStats(brand.id);
+        function renderBrandCard(brand, enrichment) {
             const isActive = brandManager.getActive()?.id === brand.id;
-            const connectedPlatforms = Object.keys(brand.platformConnections || {}).length;
             const nicheLabel = NICHE_LABELS[brand.niche] || brand.niche;
+            const nicheEmoji = NICHE_EMOJIS[brand.niche] || '📝';
+            const { credentials = [], musicCount = 0, totalPosts = 0, scheduledPosts = 0 } = enrichment || {};
+
+            // Build a set of connected platform keys
+            const connectedSet = new Set(
+                credentials.filter(c => c.is_connected).map(c => c.platform)
+            );
+            const connectedCount = connectedSet.size;
+
+            // Platform badges HTML
+            const platformBadges = PLATFORM_DEFS.map(p => {
+                const connected = connectedSet.has(p.key);
+                return `<span class="platform-badge platform-badge--${p.key} ${connected ? 'platform-badge--connected' : ''}"
+                    title="${p.title}${connected ? ' — Connected' : ' — Not connected'}">${p.label}</span>`;
+            }).join('');
 
             return `
                 <div class="brand-card ${isActive ? 'brand-card--active' : ''}" data-brand="${brand.id}">
-                    <div class="brand-card__header" style="background: linear-gradient(135deg, ${brand.theme.primaryColor}, ${brand.theme.accentColor})">
-                        <span class="brand-card__niche">${nicheLabel}</span>
+                    <div class="brand-card__header" style="background: linear-gradient(135deg, ${brand.theme.primaryColor}, ${brand.theme.accentColor || brand.theme.secondaryColor})">
+                        <div class="brand-card__avatar">${nicheEmoji}</div>
                         ${isActive ? '<span class="brand-card__badge">Active</span>' : ''}
                     </div>
                     <div class="brand-card__body">
-                        <h3 class="brand-card__name">${brand.name}</h3>
-                        ${brand.description ? `<p class="brand-card__desc">${brand.description}</p>` : ''}
-                        
+                        <div class="brand-card__title-row">
+                            <h3 class="brand-card__name">${escapeHtml(brand.name)}</h3>
+                            <span class="brand-card__niche">${nicheLabel}</span>
+                        </div>
+                        ${brand.description ? `<p class="brand-card__desc">${escapeHtml(brand.description)}</p>` : ''}
+
+                        <div class="brand-card__platforms">
+                            <span class="brand-card__platforms-label">Platforms</span>
+                            ${platformBadges}
+                            <a href="connections.html" class="platform-badge platform-badge--add" title="Manage connections">+</a>
+                        </div>
+
                         <div class="brand-card__stats">
                             <div class="brand-stat">
-                                <span class="brand-stat__value">${stats.totalPosts}</span>
+                                <span class="brand-stat__value">${totalPosts}</span>
                                 <span class="brand-stat__label">Posts</span>
                             </div>
                             <div class="brand-stat">
-                                <span class="brand-stat__value">${stats.scheduledPosts}</span>
+                                <span class="brand-stat__value">${scheduledPosts}</span>
                                 <span class="brand-stat__label">Scheduled</span>
                             </div>
                             <div class="brand-stat">
-                                <span class="brand-stat__value">${connectedPlatforms}</span>
+                                <span class="brand-stat__value">${connectedCount}</span>
                                 <span class="brand-stat__label">Platforms</span>
+                            </div>
+                            <div class="brand-stat">
+                                <span class="brand-stat__value">${musicCount}</span>
+                                <span class="brand-stat__label">🎵 Tracks</span>
                             </div>
                         </div>
 
                         <div class="brand-card__theme">
-                            <span class="theme-swatch" style="background: ${brand.theme.primaryColor}"></span>
-                            <span class="theme-swatch" style="background: ${brand.theme.secondaryColor}"></span>
-                            <span class="theme-swatch" style="background: ${brand.theme.accentColor}"></span>
+                            <span class="brand-card__theme-label">Theme</span>
+                            <span class="theme-swatch" style="background: ${brand.theme.primaryColor}" title="Primary"></span>
+                            <span class="theme-swatch" style="background: ${brand.theme.secondaryColor}" title="Secondary"></span>
+                            <span class="theme-swatch" style="background: ${brand.theme.accentColor}" title="Accent"></span>
                         </div>
                     </div>
                     <div class="brand-card__footer">
@@ -513,16 +743,23 @@
                             <button class="btn btn--sm btn--secondary brand-card__action--activate" data-id="${brand.id}">
                                 Set Active
                             </button>
-                        ` : '<span class="text-muted">Currently Active</span>'}
+                        ` : '<span class="brand-card__active-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg> Active</span>'}
                         <div class="brand-card__actions">
-                            <button class="btn btn--icon btn--sm brand-card__action--edit" data-id="${brand.id}" title="Edit">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <button class="btn btn--icon btn--sm brand-card__action--music" data-id="${brand.id}" title="Music Tracks">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                    <path d="M9 18V5l12-2v13"/>
+                                    <circle cx="6" cy="18" r="3"/>
+                                    <circle cx="18" cy="16" r="3"/>
+                                </svg>
+                            </button>
+                            <button class="btn btn--icon btn--sm brand-card__action--edit" data-id="${brand.id}" title="Edit Brand">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                                     <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                                 </svg>
                             </button>
-                            <button class="btn btn--icon btn--sm brand-card__action--delete" data-id="${brand.id}" title="Delete">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <button class="btn btn--icon btn--sm brand-card__action--delete" data-id="${brand.id}" title="Delete Brand">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                                     <polyline points="3 6 5 6 21 6"/>
                                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
                                 </svg>
@@ -723,6 +960,241 @@
                 loadBrands();
                 toast.success('Brand deleted');
             }
+        }
+
+        // =====================================================
+        // MUSIC TRACKS MODAL
+        // =====================================================
+
+        let musicBrandId = null;
+        let pendingMusicFile = null;
+        let currentAudioPreview = null;
+
+        function openMusicModal(brandId) {
+            musicBrandId = brandId;
+            const brand = brandManager.get(brandId);
+            document.getElementById('music-brand-name').textContent = brand?.name || brandId;
+            document.getElementById('music-modal').classList.add('active');
+            document.getElementById('music-upload-form').style.display = 'none';
+            pendingMusicFile = null;
+            loadMusicTracks();
+            setupMusicDropzone();
+        }
+
+        function closeMusicModal() {
+            document.getElementById('music-modal').classList.remove('active');
+            musicBrandId = null;
+            pendingMusicFile = null;
+            stopPreview();
+        }
+
+        function setupMusicDropzone() {
+            const dropzone = document.getElementById('music-dropzone');
+            const fileInput = document.getElementById('music-file-input');
+
+            // Drag & drop
+            dropzone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropzone.classList.add('dragover');
+            });
+            dropzone.addEventListener('dragleave', () => {
+                dropzone.classList.remove('dragover');
+            });
+            dropzone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropzone.classList.remove('dragover');
+                const file = e.dataTransfer.files[0];
+                if (file && file.type === 'audio/mpeg') {
+                    prepareUpload(file);
+                } else {
+                    toast.error('Please drop an MP3 file');
+                }
+            });
+
+            // Click to browse
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files[0]) prepareUpload(e.target.files[0]);
+            });
+
+            // Upload confirm/cancel
+            document.getElementById('music-upload-confirm').addEventListener('click', confirmUpload);
+            document.getElementById('music-upload-cancel').addEventListener('click', () => {
+                document.getElementById('music-upload-form').style.display = 'none';
+                pendingMusicFile = null;
+            });
+        }
+
+        function prepareUpload(file) {
+            if (file.size > 10 * 1024 * 1024) {
+                toast.error('File too large (max 10MB)');
+                return;
+            }
+            pendingMusicFile = file;
+            const baseName = file.name.replace(/\.[^.]+$/, '').replace(/_/g, ' ');
+            document.getElementById('music-track-name').value = baseName;
+            document.getElementById('music-upload-form').style.display = 'block';
+        }
+
+        async function confirmUpload() {
+            if (!pendingMusicFile || !musicBrandId) return;
+
+            const displayName = document.getElementById('music-track-name').value.trim() || pendingMusicFile.name;
+            const mood = document.getElementById('music-track-mood').value;
+            const energy = document.getElementById('music-track-energy').value;
+            const loopable = document.getElementById('music-track-loopable').checked;
+
+            const progressEl = document.getElementById('music-upload-progress');
+            const filenameEl = document.getElementById('music-upload-filename');
+            progressEl.style.display = 'block';
+            filenameEl.textContent = pendingMusicFile.name;
+
+            try {
+                await brandManager.uploadMusicTrack(musicBrandId, pendingMusicFile, {
+                    display_name: displayName,
+                    mood,
+                    energy,
+                    loopable,
+                });
+                toast.success(`Uploaded "${displayName}"`);
+                pendingMusicFile = null;
+                document.getElementById('music-upload-form').style.display = 'none';
+                document.getElementById('music-file-input').value = '';
+                loadMusicTracks();
+            } catch (e) {
+                console.error('Upload failed:', e);
+                toast.error(`Upload failed: ${e.message}`);
+            } finally {
+                progressEl.style.display = 'none';
+            }
+        }
+
+        async function loadMusicTracks() {
+            const container = document.getElementById('music-tracks-list');
+            if (!musicBrandId) return;
+
+            try {
+                const tracks = await brandManager.getMusicTracks(musicBrandId);
+                if (tracks.length === 0) {
+                    container.innerHTML = `
+                        <div class="music-empty">
+                            <p class="text-gray-400">No music tracks yet</p>
+                            <p class="text-gray-500 text-xs">Upload an MP3 above to add background music to your videos</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                container.innerHTML = tracks.map(track => renderMusicTrack(track)).join('');
+
+                // Attach listeners
+                container.querySelectorAll('.music-track__toggle').forEach(btn => {
+                    btn.addEventListener('click', async () => {
+                        const trackId = btn.dataset.trackId;
+                        const isActive = btn.dataset.active === 'true';
+                        try {
+                            await brandManager.toggleMusicTrack(musicBrandId, trackId, !isActive);
+                            toast.success(isActive ? 'Track disabled' : 'Track enabled');
+                            loadMusicTracks();
+                        } catch (e) {
+                            toast.error('Failed to toggle track');
+                        }
+                    });
+                });
+
+                container.querySelectorAll('.music-track__delete').forEach(btn => {
+                    btn.addEventListener('click', async () => {
+                        const trackId = btn.dataset.trackId;
+                        const name = btn.dataset.trackName;
+                        if (!confirm(`Delete track "${name}"? This cannot be undone.`)) return;
+                        try {
+                            await brandManager.deleteMusicTrack(musicBrandId, trackId);
+                            await brandManager.removeMusicFile(musicBrandId, trackId);
+                            toast.success('Track deleted');
+                            loadMusicTracks();
+                        } catch (e) {
+                            toast.error('Failed to delete track');
+                        }
+                    });
+                });
+
+                container.querySelectorAll('.music-track__play').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const url = btn.dataset.url;
+                        if (currentAudioPreview && !currentAudioPreview.paused) {
+                            stopPreview();
+                            btn.textContent = '▶';
+                        } else {
+                            stopPreview();
+                            currentAudioPreview = new Audio(url);
+                            currentAudioPreview.volume = 0.4;
+                            currentAudioPreview.play().catch(() => {});
+                            btn.textContent = '⏸';
+                            currentAudioPreview.addEventListener('ended', () => {
+                                btn.textContent = '▶';
+                            });
+                        }
+                    });
+                });
+            } catch (e) {
+                console.error('Failed to load tracks:', e);
+                container.innerHTML = `<div class="text-red-400 text-center py-4">Failed to load tracks</div>`;
+            }
+        }
+
+        function stopPreview() {
+            if (currentAudioPreview) {
+                currentAudioPreview.pause();
+                currentAudioPreview = null;
+            }
+            document.querySelectorAll('.music-track__play').forEach(b => b.textContent = '▶');
+        }
+
+        function renderMusicTrack(track) {
+            const url = brandManager.getMusicTrackUrl(musicBrandId, track.id);
+            const moodColors = {
+                dark: '#8B5CF6', tense: '#EF4444', eerie: '#10B981',
+                ambient: '#3B82F6', dramatic: '#F97316', melancholic: '#6366F1',
+                upbeat: '#FBBF24', calm: '#06B6D4'
+            };
+            const moodColor = moodColors[track.mood] || '#6B7280';
+            const isActive = track.is_active;
+
+            return `
+                <div class="music-track ${!isActive ? 'music-track--disabled' : ''}">
+                    <div class="music-track__info">
+                        <button class="music-track__play" data-url="${url}" title="Preview">▶</button>
+                        <div>
+                            <div class="music-track__name">${escapeHtml(track.display_name)}</div>
+                            <div class="music-track__meta">
+                                <span class="music-track__mood" style="color:${moodColor}">${track.mood}</span>
+                                <span class="music-track__energy">${track.energy}</span>
+                                ${track.duration_seconds ? `<span>${track.duration_seconds}s</span>` : ''}
+                                ${track.loopable ? '<span title="Loopable">🔁</span>' : ''}
+                                ${!isActive ? '<span class="text-yellow-400">disabled</span>' : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="music-track__actions">
+                        <button class="btn btn--icon btn--xs music-track__toggle" data-track-id="${track.id}" data-active="${isActive}" title="${isActive ? 'Disable' : 'Enable'}">
+                            ${isActive ? '🔇' : '🔊'}
+                        </button>
+                        <button class="btn btn--icon btn--xs music-track__delete" data-track-id="${track.id}" data-track-name="${escapeHtml(track.display_name)}" title="Delete">
+                            🗑️
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function escapeHtml(str) {
+            // Use global if available (from utils.js), else simple fallback
+            if (typeof window.escapeHtml === 'function' && window.escapeHtml !== escapeHtml) {
+                return window.escapeHtml(str);
+            }
+            if (!str) return '';
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
         }
     </script>
 </body>

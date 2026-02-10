@@ -674,6 +674,186 @@ class BrandManager {
             }
         });
     }
+
+    // ==================== Music Track Management ====================
+
+    /**
+     * Get all music tracks for a brand
+     * @param {string} brandId
+     * @returns {Promise<Array>}
+     */
+    async getMusicTracks(brandId) {
+        if (!this.useSupabase) {
+            console.warn('Music tracks require Supabase');
+            return [];
+        }
+        const { data, error } = await supabaseClient
+            .from('music_tracks')
+            .select('*')
+            .eq('brand_id', brandId)
+            .order('created_at', { ascending: true });
+
+        if (error) {
+            console.error('Failed to load music tracks:', error);
+            throw error;
+        }
+        return data || [];
+    }
+
+    /**
+     * Add a music track record to the DB (file should already be uploaded to storage)
+     * @param {string} brandId
+     * @param {Object} trackData - { id, display_name, file_path, duration_seconds, loopable, mood, energy, tags, vibe_presets }
+     * @returns {Promise<Object>}
+     */
+    async addMusicTrack(brandId, trackData) {
+        if (!this.useSupabase) throw new Error('Music tracks require Supabase');
+
+        const row = {
+            id: trackData.id,
+            brand_id: brandId,
+            display_name: trackData.display_name,
+            file_path: trackData.file_path,
+            duration_seconds: trackData.duration_seconds || 0,
+            loopable: trackData.loopable !== false,
+            mood: trackData.mood || 'dark',
+            energy: trackData.energy || 'low',
+            tags: trackData.tags || [],
+            vibe_presets: trackData.vibe_presets || [],
+            is_active: true,
+        };
+
+        const { data, error } = await supabaseClient
+            .from('music_tracks')
+            .upsert(row, { onConflict: 'id,brand_id' })
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Failed to add music track:', error);
+            throw error;
+        }
+        this.emit('musicTrackChanged', { brandId, track: data });
+        return data;
+    }
+
+    /**
+     * Toggle a music track active/inactive (soft delete)
+     * @param {string} brandId
+     * @param {string} trackId
+     * @param {boolean} isActive
+     */
+    async toggleMusicTrack(brandId, trackId, isActive) {
+        if (!this.useSupabase) throw new Error('Music tracks require Supabase');
+
+        const { error } = await supabaseClient
+            .from('music_tracks')
+            .update({ is_active: isActive, updated_at: new Date().toISOString() })
+            .eq('id', trackId)
+            .eq('brand_id', brandId);
+
+        if (error) {
+            console.error('Failed to toggle music track:', error);
+            throw error;
+        }
+        this.emit('musicTrackChanged', { brandId, trackId, isActive });
+    }
+
+    /**
+     * Delete a music track from DB (does NOT remove storage file)
+     * @param {string} brandId
+     * @param {string} trackId
+     */
+    async deleteMusicTrack(brandId, trackId) {
+        if (!this.useSupabase) throw new Error('Music tracks require Supabase');
+
+        const { error } = await supabaseClient
+            .from('music_tracks')
+            .delete()
+            .eq('id', trackId)
+            .eq('brand_id', brandId);
+
+        if (error) {
+            console.error('Failed to delete music track:', error);
+            throw error;
+        }
+        this.emit('musicTrackChanged', { brandId, trackId, deleted: true });
+    }
+
+    /**
+     * Upload a music file to Supabase Storage and create/update the DB record
+     * @param {string} brandId
+     * @param {File} file - The audio file
+     * @param {Object} meta - Additional metadata { display_name, mood, energy, loopable, tags, vibe_presets }
+     * @returns {Promise<Object>} The created track record
+     */
+    async uploadMusicTrack(brandId, file, meta = {}) {
+        if (!this.useSupabase) throw new Error('Music tracks require Supabase');
+
+        // Generate track ID from filename (sanitize)
+        const baseName = file.name.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+        const trackId = baseName;
+        const storagePath = `brands/${brandId}/music/${trackId}.mp3`;
+
+        // 1. Upload file to storage
+        const { error: uploadError } = await supabaseClient.storage
+            .from('story-videos')
+            .upload(storagePath, file, {
+                cacheControl: '3600',
+                upsert: true,
+                contentType: file.type || 'audio/mpeg',
+            });
+
+        if (uploadError) {
+            console.error('Failed to upload music file:', uploadError);
+            throw new Error(`Upload failed: ${uploadError.message}`);
+        }
+
+        // 2. Create DB record
+        const trackData = {
+            id: trackId,
+            display_name: meta.display_name || baseName.replace(/_/g, ' '),
+            file_path: storagePath,
+            duration_seconds: meta.duration_seconds || 0,
+            loopable: meta.loopable !== false,
+            mood: meta.mood || 'dark',
+            energy: meta.energy || 'low',
+            tags: meta.tags || [],
+            vibe_presets: meta.vibe_presets || [],
+        };
+
+        return await this.addMusicTrack(brandId, trackData);
+    }
+
+    /**
+     * Remove a music file from Storage (call after deleteMusicTrack if you want to clean up)
+     * @param {string} brandId
+     * @param {string} trackId
+     */
+    async removeMusicFile(brandId, trackId) {
+        if (!this.useSupabase) throw new Error('Music tracks require Supabase');
+
+        const path = `brands/${brandId}/music/${trackId}.mp3`;
+        const { error } = await supabaseClient.storage
+            .from('story-videos')
+            .remove([path]);
+
+        if (error) {
+            console.error('Failed to remove music file from storage:', error);
+            // Don't throw — DB record is already deleted
+        }
+    }
+
+    /**
+     * Get the public URL for a music track
+     * @param {string} brandId
+     * @param {string} trackId
+     * @returns {string}
+     */
+    getMusicTrackUrl(brandId, trackId) {
+        const supabaseUrl = typeof CONFIG !== 'undefined' ? CONFIG.SUPABASE_URL : '';
+        return `${supabaseUrl}/storage/v1/object/public/story-videos/brands/${brandId}/music/${trackId}.mp3`;
+    }
 }
 
 // Create singleton instance
