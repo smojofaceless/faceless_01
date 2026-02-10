@@ -210,15 +210,24 @@ Health check endpoint.
 
 ## 🔗 Wiring to Supabase Edge Functions
 
-In your Supabase project, set these environment variables:
+### For worker-v1 (Campaign Pipeline)
+
+Worker-v1 supports both `FFMPEG_RENDERER_URL` and `VIDEO_RENDERER_URL`:
 
 ```bash
 # In Supabase Dashboard → Project Settings → Edge Functions → Secrets
-FFMPEG_RENDERER_URL=https://your-renderer.onrender.com
-USE_FFMPEG_RENDERER=true
+npx supabase secrets set FFMPEG_RENDERER_URL=https://your-renderer.onrender.com
 ```
 
-Or via CLI:
+**How worker-v1 uses this renderer:**
+1. Starts render job: `POST /render` with images, audio, durations
+2. Gets back `job_id` immediately
+3. Polls `GET /status/{job_id}` every 5 seconds
+4. Waits up to 5 minutes for completion
+5. Uses `supabase_url` from response (permanent storage link)
+
+### For run-job (Legacy Pipeline)
+
 ```bash
 npx supabase secrets set FFMPEG_RENDERER_URL=https://your-renderer.onrender.com
 npx supabase secrets set USE_FFMPEG_RENDERER=true

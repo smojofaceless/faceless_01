@@ -1,5 +1,7 @@
 # Effects Profile System v1.0
 
+> **Last Updated:** February 8, 2026
+
 This document describes the intensity-based effects system for video generation.
 
 ## Overview
@@ -115,48 +117,69 @@ interface EffectsProfile {
 
 ## Preset Effects Profiles
 
-Each vibe_preset maps to a default effects profile:
+Each vibe_preset maps to a default effects profile.
 
-### `slow_creepy` (Default)
-- Subtle Ken Burns (1.1x zoom)
-- Gentle vignette (30%)
+> **Note:** As of v4.0, only **two active story engines** are used in production:
+> - `urban_legend` - Documentary folklore style (60% campaign weight)
+> - `one_too_many` - Counting horror style (40% campaign weight)
+>
+> Legacy presets (`slow_creepy`, `analog_horror`, `cosmic_horror`, etc.) still exist in the effects system for backwards compatibility but are deprecated in the UI.
+
+> **DB-Driven Configuration (Option 1):** Preset assignments and weights are stored in 
+> `brand_templates` table. Each brand has its own set of templates with selection weights.
+> See [DNA_AND_DB_OPTION1_IMPLEMENTATION_PLAN.md](DNA_AND_DB_OPTION1_IMPLEMENTATION_PLAN.md).
+
+### `urban_legend` (Primary Active)
+- Strong vignette (60%)
+- Cool color temperature (-0.15)
+- Moderate grain (20%)
+- Edge darkening (30%)
+- Alternating Ken Burns (1.1x zoom)
+- Cinematic dark color grade
+
+### `one_too_many` (Primary Active)
+- Cold desaturated color palette
+- Subtle vignette (50%)
+- Minimal motion (static tension)
+- **Forces `uncanny-illustrated` art style**
+- Designed for counting horror visuals
+
+### `slow_creepy` (Legacy)
+- Subtle Ken Burns (1.08x zoom)
+- Gentle vignette (50%)
 - Cold color grade (70%)
-- Light film grain (15%)
+- Light film grain (25%)
 - Slow, methodical atmosphere
 
-### `analog_horror`
-- VHS effects (60% tracking, color bleed)
-- Heavy scanlines (70%)
-- Occasional glitches (40%)
+### `analog_horror` (Legacy)
+- VHS effects (40% tracking, 30% color bleed)
+- Scanlines enabled
+- Film grain (45%)
 - Dated, corrupted footage feel
 
-### `found_footage`
+### `found_footage` (Legacy)
 - Handheld shake (via Ken Burns jitter)
 - Heavy film grain (50%)
 - Light flicker (40%)
 - Amateur camera aesthetic
 
-### `urban_legend`
-- Strong vignette (60%)
-- Cool color temperature
-- Moderate grain (25%)
-- Street-lit atmosphere
+### `psychological` (Legacy)
+- Edge darkening (50%)
+- Heavy desaturation (65%)
+- Strong vignette (80%)
+- Heartbeat zoom effect
+- Negative flash effects
 
-### `psychological`
-- Edge darkening (40%)
-- Desaturated colors
-- Subtle pulsing effects
-- Mind-bending distortions
-
-### `cosmic_horror`
-- Deep darkness (strong vignette)
-- Extreme cold color grade
-- Subtle chromatic aberration
-- Unknowable vastness
+### `cosmic_horror` (Legacy)
+- Deep darkness (85% vignette)
+- Extreme cold color grade (-0.4 temp)
+- Subtle glitch effects (25%)
+- Low saturation (50%)
 
 ### `clean`
 - Minimal effects
-- Light transitions only
+- Light crossfade transitions
+- Natural color grade
 - No grain, glitch, or distortion
 - Modern, polished look
 
@@ -230,16 +253,26 @@ Final Profile = merge(
 
 ## FFmpeg Integration
 
-Effects are applied via FFmpeg filters in the video-renderer:
+Effects are applied via FFmpeg filters in the self-hosted **video-renderer** service (replaces Creatomate):
 
 | Effect | FFmpeg Filter |
 |--------|---------------|
 | Vignette | `vignette=PI/4*intensity:1-radius` |
 | Film Grain | `noise=alls=intensity*50:allf=t+u` |
 | Scanlines | `drawbox` with alternating rows |
-| VHS | Custom shader with chromatic aberration |
+| VHS | Custom tracking noise + color bleed |
 | Glitch | `rgbashift` + `noise` combo |
 | Color Grade | `eq` + `colorbalance` filters |
+| Ken Burns | `zoompan` with motion profiles |
+
+### Visual DNA → FFmpeg Binding
+
+The `ffmpeg_presets.js` file in `video-renderer/` maps Visual DNA dimensions directly to FFmpeg filter graphs:
+
+- **Visual Style** → Base filters (VHS_degraded, cinematic_dark, documentary_archival)
+- **Motion Profile** → Ken Burns animation (micro_jitter, slow_drift, subtle_zoom)
+- **Color Palette** → Color grading (cold_desaturated, sickly_green, amber_decay)
+- **Texture Artifacts** → Overlay filters (film_grain, scanlines, tracking_noise)
 
 ## Backwards Compatibility
 

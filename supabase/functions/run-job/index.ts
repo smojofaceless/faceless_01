@@ -1,7 +1,7 @@
 // =====================================================
 // RUN-JOB EDGE FUNCTION - MAIN HANDLER (Slim)
 // All heavy logic is in separate modules
-// v77.4 - 2026-02-05 (check-job: clear parallel flag when complete, trigger images phase to save to DB)
+// v78.0 - 2026-02-08 (Added lease-based claim/heartbeat/release system)
 // =====================================================
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -15,6 +15,13 @@ import {
   runImagesPhase,
   runAssemblePhase,
 } from "./phases.ts";
+import {
+  tryClaimOrVerify,
+  heartbeatJob,
+  releaseJob,
+  generateWorkerId,
+  DEFAULT_LEASE_SECONDS,
+} from "./lease.ts";
 
 // Declare EdgeRuntime for TypeScript
 declare const EdgeRuntime: {
@@ -45,6 +52,10 @@ serve(async (req) => {
       headers: localCorsHeaders 
     });
   }
+
+  // Generate worker ID for this run
+  const workerId = generateWorkerId();
+  let claimedJobId: string | null = null;
 
   // Wrap EVERYTHING in try-catch to ensure CORS headers on all responses
   try {
@@ -148,6 +159,34 @@ serve(async (req) => {
           status: 404,
         }
       );
+    }
+
+    // =====================================================
+    // CLAIM OR VERIFY JOB (Lease System)
+    // =====================================================
+    // For non-preview jobs, we need to claim or verify we can process
+    // This prevents double-processing and handles scheduler-triggered jobs
+    if (!body.preview_only) {
+      const claimResult = await tryClaimOrVerify(supabase, job_id, workerId);
+      
+      if (!claimResult.canProceed) {
+        console.log(`[RUN-JOB] Cannot proceed with job ${job_id}: ${claimResult.error || claimResult.status}`);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: claimResult.error || `Job not processable (status: ${claimResult.status})`,
+            job_id,
+            status: claimResult.status,
+          }),
+          {
+            headers: { ...localCorsHeaders, "Content-Type": "application/json" },
+            status: 409, // Conflict
+          }
+        );
+      }
+      
+      claimedJobId = job_id;
+      console.log(`[RUN-JOB] Claimed/verified job ${job_id} (worker=${workerId}, attempt=${claimResult.attemptCount || 1})`);
     }
 
     // Get effect options (with defaults from job meta or request)
@@ -254,59 +293,105 @@ serve(async (req) => {
       console.log(`Auto-detected phase: ${currentPhase} (progress: ${progress}%)`);
     }
 
-    await updateJob(supabase, job_id, { status: "generating" });
+    // Heartbeat with status update (extends lease)
+    if (claimedJobId) {
+      await heartbeatJob(supabase, job_id, workerId, DEFAULT_LEASE_SECONDS, undefined, "generating");
+    } else {
+      await updateJob(supabase, job_id, { status: "generating" });
+    }
 
     let result;
+    let phaseError: Error | null = null;
 
-    if (currentPhase === "audio") {
-      // Re-fetch job to ensure we have latest data (preview might have just updated it)
-      console.log(`[RUN-JOB] Re-fetching job for audio phase to get latest story data...`);
-      const { data: freshJob, error: freshError } = await supabase
-        .from("jobs")
-        .select("*")
-        .eq("id", job_id)
-        .single();
-      
-      if (freshError || !freshJob) {
-        console.error(`[RUN-JOB] Failed to re-fetch job:`, freshError);
-        return new Response(
-          JSON.stringify({
-            success: false,
-            error: `Failed to fetch job for audio phase: ${freshError?.message || "Unknown error"}`,
-          }),
-          {
-            headers: { ...localCorsHeaders, "Content-Type": "application/json" },
-            status: 500,
-          }
+    try {
+      if (currentPhase === "audio") {
+        // Heartbeat before audio phase
+        if (claimedJobId) {
+          await heartbeatJob(supabase, job_id, workerId, DEFAULT_LEASE_SECONDS, 5, "generating");
+        }
+        
+        // Re-fetch job to ensure we have latest data (preview might have just updated it)
+        console.log(`[RUN-JOB] Re-fetching job for audio phase to get latest story data...`);
+        const { data: freshJob, error: freshError } = await supabase
+          .from("jobs")
+          .select("*")
+          .eq("id", job_id)
+          .single();
+        
+        if (freshError || !freshJob) {
+          throw new Error(`Failed to fetch job for audio phase: ${freshError?.message || "Unknown error"}`);
+        }
+        
+        console.log(`[RUN-JOB] Fresh job data: story_text=${!!freshJob.story_text}, title=${freshJob.title}`);
+        result = await runAudioPhase(supabase, openaiKey, elevenLabsKey, freshJob, job_id, freshJob.meta || jobMeta);
+        
+        // Heartbeat after audio phase
+        if (claimedJobId) {
+          await heartbeatJob(supabase, job_id, workerId, DEFAULT_LEASE_SECONDS, 50);
+        }
+      } else if (currentPhase === "images") {
+        // Heartbeat before images phase
+        if (claimedJobId) {
+          await heartbeatJob(supabase, job_id, workerId, DEFAULT_LEASE_SECONDS, 50, "generating");
+        }
+        
+        result = await runImagesPhase(
+          supabase,
+          openaiKey,
+          pexelsKey,
+          job,
+          job_id,
+          jobMeta,
+          visualSource,
+          artStyle,
+          customStyle,
+          imageModel
         );
+        
+        // Heartbeat after images phase
+        if (claimedJobId) {
+          await heartbeatJob(supabase, job_id, workerId, DEFAULT_LEASE_SECONDS, 70);
+        }
+      } else if (currentPhase === "assemble") {
+        // Heartbeat before assemble phase (status = assembling)
+        if (claimedJobId) {
+          await heartbeatJob(supabase, job_id, workerId, DEFAULT_LEASE_SECONDS, 70, "assembling");
+        }
+        
+        result = await runAssemblePhase(supabase, creatomateKey, job, job_id, jobMeta, effectOptions);
+        
+        // If assemble phase completed successfully, release the job as complete
+        if (result?.status === "complete" && claimedJobId) {
+          console.log(`[RUN-JOB] Job ${job_id} completed successfully, releasing lock`);
+          await releaseJob(supabase, job_id, workerId, "complete", undefined, 100);
+          claimedJobId = null; // Mark as released
+        }
+      } else {
+        throw new Error(`Unknown phase: ${currentPhase}`);
+      }
+    } catch (err) {
+      phaseError = err instanceof Error ? err : new Error(String(err));
+      console.error(`[RUN-JOB] Phase ${currentPhase} error:`, phaseError.message);
+    }
+
+    // Handle phase error - release with failed status
+    if (phaseError) {
+      if (claimedJobId) {
+        console.log(`[RUN-JOB] Releasing job ${job_id} as failed due to phase error`);
+        await releaseJob(supabase, job_id, workerId, "failed", phaseError.message);
+        claimedJobId = null;
       }
       
-      console.log(`[RUN-JOB] Fresh job data: story_text=${!!freshJob.story_text}, title=${freshJob.title}`);
-      result = await runAudioPhase(supabase, openaiKey, elevenLabsKey, freshJob, job_id, freshJob.meta || jobMeta);
-    } else if (currentPhase === "images") {
-      result = await runImagesPhase(
-        supabase,
-        openaiKey,
-        pexelsKey,
-        job,
-        job_id,
-        jobMeta,
-        visualSource,
-        artStyle,
-        customStyle,
-        imageModel
-      );
-    } else if (currentPhase === "assemble") {
-      result = await runAssemblePhase(supabase, creatomateKey, job, job_id, jobMeta, effectOptions);
-    } else {
       return new Response(
         JSON.stringify({
           success: false,
-          error: `Unknown phase: ${currentPhase}`,
+          job_id,
+          phase: currentPhase,
+          error: phaseError.message,
         }),
         {
           headers: { ...localCorsHeaders, "Content-Type": "application/json" },
-          status: 400,
+          status: 500,
         }
       );
     }
@@ -319,6 +404,7 @@ serve(async (req) => {
         next_phase: result?.nextPhase || null,
         status: result?.status || "generating",
         message: result?.message || "Phase complete",
+        worker_id: workerId,
       }),
       {
         headers: { ...localCorsHeaders, "Content-Type": "application/json" },
@@ -335,6 +421,11 @@ serve(async (req) => {
     
     const errorMessage = error instanceof Error ? error.message : String(error);
     const errorStack = error?.stack?.split('\n').slice(0, 8).join('\n');
+    
+    // Attempt to release job on fatal error
+    // Note: claimedJobId may not be available here if error occurred early
+    // The sweeper will eventually clean up orphaned claims
+    console.log(`[RUN-JOB] Fatal error occurred, sweeper will clean up any orphaned claims`);
 
     return new Response(
       JSON.stringify({

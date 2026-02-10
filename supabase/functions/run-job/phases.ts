@@ -2503,12 +2503,14 @@ export async function runAssemblePhase(
   console.log(`[ASSEMBLE] Image indices: ${sortedImages.map(i => i.meta?.scene_index).join(', ')}`);
 
   // Build scenes with visuals - match by scene_index, not array position
+  const missingImages: number[] = [];
   const scenes: StoryScene[] = sortedScenes.map((s: any) => {
     const sceneIndex = s.meta?.scene_index ?? 0;
     const matchingImage = imageBySceneIndex.get(sceneIndex);
     
-    if (!matchingImage) {
+    if (!matchingImage || !matchingImage.storage_path) {
       console.warn(`[ASSEMBLE] ⚠️ No image found for scene ${sceneIndex}: "${s.meta?.scene_text?.substring(0, 50)}..."`);
+      missingImages.push(sceneIndex);
     } else {
       console.log(`[ASSEMBLE] Scene ${sceneIndex} → Image: ${matchingImage.storage_path?.substring(0, 60)}...`);
     }
@@ -2521,6 +2523,13 @@ export async function runAssemblePhase(
       videoUrl: matchingImage?.storage_path || "",
     };
   });
+
+  // v5.8: FAIL EARLY if any images are missing - prevents ERR_INVALID_URL in renderer
+  if (missingImages.length > 0) {
+    const errorMsg = `Missing images for scenes: ${missingImages.join(', ')}. Total: ${missingImages.length}/${sortedScenes.length} scenes have no image.`;
+    console.error(`[ASSEMBLE] ❌ ${errorMsg}`);
+    throw new Error(errorMsg);
+  }
 
   const visualSource = imageAssets[0]?.type === "dalle_image" ? "dalle" : "pexels";
   

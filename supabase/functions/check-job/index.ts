@@ -595,11 +595,15 @@ serve(async (req) => {
 
     // CRITICAL: Deduplicate scenes by index - keep only the LATEST image for each scene
     // This handles cases where duplicate API calls created multiple images per scene
+    // v5.8: Also validate that storage_path is not empty
     const sceneMap = new Map<number, any>();
     for (const asset of (partialAssets || [])) {
       const idx = asset.meta?.scene_index ?? -1;
-      if (idx >= 0 && !sceneMap.has(idx)) {
+      const hasValidUrl = asset.storage_path && asset.storage_path.length > 0;
+      if (idx >= 0 && hasValidUrl && !sceneMap.has(idx)) {
         sceneMap.set(idx, asset);  // First one wins (newest due to order)
+      } else if (idx >= 0 && !hasValidUrl) {
+        console.warn(`[CHECK] ⚠️ Scene ${idx} has empty/null storage_path - excluding from count`);
       }
     }
     
@@ -624,7 +628,8 @@ serve(async (req) => {
     // CRITICAL: Use fused scene count if available (after audio phase fusion)
     // Order: scene_count_final (canonical) > scene_count_after_fusion (legacy) > scenes_created (legacy) > scene_count (original request) > fallback
     const totalScenes = jobMeta.scene_count_final || jobMeta.scene_count_after_fusion || jobMeta.scenes_created || jobMeta.scene_count || sceneCount || 4;
-    const imagesReady = partialAssets?.length || 0;
+    // v5.8: Use deduplicated count (sceneMap.size) not raw array length
+    const imagesReady = sceneMap.size;
     
     console.log(`[CHECK] Scene count resolution: final=${jobMeta.scene_count_final}, after_fusion=${jobMeta.scene_count_after_fusion}, scenes_created=${jobMeta.scenes_created}, scene_count=${jobMeta.scene_count}, db_count=${sceneCount}, resolved=${totalScenes}`);
     
@@ -635,129 +640,140 @@ serve(async (req) => {
     
     console.log(`[CHECK] Job ${job_id}: progress=${progress}, images=${imagesReady}/${totalScenes}, parallelInProgress=${parallelInProgress}, parallelStatus=${parallelStatus}`);
     
+    // Track parallel scenes at outer scope so we can use them in the final response
+    // even after parallel completes but before DB is populated
+    let cachedParallelScenes: any[] = [];
+    let parallelJustCompleted = false;
+    
+    // Check if parallel completed but images not yet saved to DB
+    // This happens in the transition period after parallel completes
+    const parallelGenerationComplete = jobMeta.parallel_generation_complete === true;
+    const dbHasAllImages = imagesReady >= totalScenes;
+    
     if (status === "generating") {
       // CRITICAL: If parallel generation is in progress, DON'T trigger another images phase
       // UNLESS all images are complete - then we need to trigger to save to database
       let allParallelImagesComplete = false;
       
-      if (parallelInProgress) {
-        console.log(`[CHECK] Parallel generation in progress (${parallelStatus}/${totalScenes}), checking completion status...`);
+      // Also fetch parallel images if generation is complete but DB doesn't have all images yet
+      const shouldFetchParallel = parallelInProgress || (parallelGenerationComplete && !dbHasAllImages);
+      
+      if (shouldFetchParallel && parallelImageJobId) {
+        console.log(`[CHECK] Fetching parallel images (inProgress=${parallelInProgress}, complete=${parallelGenerationComplete}, dbImages=${imagesReady}/${totalScenes})`);
         
         // Fetch actual image URLs from parallel server so frontend can display them
         let parallelScenes: any[] = [];
         let actualCompleted = parallelStatus;
         let sourceDetail = "parallel_meta_only"; // Default if no live poll
         
-        if (parallelImageJobId) {
-          const parallelStatusData = await getParallelImageStatus(parallelImageJobId);
-          if (parallelStatusData) {
-            actualCompleted = parallelStatusData.completed;
-            sourceDetail = "parallel_status_poll"; // We got live data from server
+        const parallelStatusData = await getParallelImageStatus(parallelImageJobId);
+        if (parallelStatusData) {
+          actualCompleted = parallelStatusData.completed;
+          sourceDetail = "parallel_status_poll"; // We got live data from server
+          
+          // v77.4: CRITICAL FIX - When all parallel images are complete, clear the flag
+          // so the images phase gets re-triggered to save them to job_assets database
+          allParallelImagesComplete = parallelStatusData.status === 'complete' || 
+                                       parallelStatusData.completed >= totalScenes;
+          
+          if (allParallelImagesComplete && parallelInProgress) {
+            console.log(`[CHECK] ✅ ALL ${parallelStatusData.completed}/${totalScenes} parallel images complete! Clearing flag to trigger images phase save.`);
             
-            // v77.4: CRITICAL FIX - When all parallel images are complete, clear the flag
-            // so the images phase gets re-triggered to save them to job_assets database
-            allParallelImagesComplete = parallelStatusData.status === 'complete' || 
-                                         parallelStatusData.completed >= totalScenes;
+            // Clear the parallel_image_in_progress flag so images phase runs again
+            // The images phase will detect the complete parallel job and save to job_assets
+            await supabase
+              .from("jobs")
+              .update({ 
+                meta: { 
+                  ...jobMeta, 
+                  parallel_image_in_progress: false, // Clear flag!
+                  parallel_generation_complete: true, // Mark as complete
+                  parallel_images_ready_to_save: true, // Signal to images phase
+                  last_parallel_check_at: new Date().toISOString()
+                },
+                updated_at: new Date().toISOString()
+              })
+              .eq("id", job_id);
             
-            if (allParallelImagesComplete) {
-              console.log(`[CHECK] ✅ ALL ${parallelStatusData.completed}/${totalScenes} parallel images complete! Clearing flag to trigger images phase save.`);
-              
-              // Clear the parallel_image_in_progress flag so images phase runs again
-              // The images phase will detect the complete parallel job and save to job_assets
-              await supabase
-                .from("jobs")
-                .update({ 
-                  meta: { 
-                    ...jobMeta, 
-                    parallel_image_in_progress: false, // Clear flag!
-                    parallel_generation_complete: true, // Mark as complete
-                    parallel_images_ready_to_save: true, // Signal to images phase
-                    last_parallel_check_at: new Date().toISOString()
-                  },
-                  updated_at: new Date().toISOString()
-                })
-                .eq("id", job_id);
-              
-              // DON'T return early - fall through to trigger images phase
-              // This will cause images phase to run and save to job_assets
-            }
+            // DON'T return early - fall through to trigger images phase
+            // This will cause images phase to run and save to job_assets
+          }
+          
+          // Convert parallel images to scene format for frontend WITH full image_details
+          parallelScenes = parallelStatusData.images
+            .filter(img => img.success && img.url)
+            .map(img => {
+              const meta = img.meta || {};
+              return {
+                index: img.index,
+                imageUrl: img.url, // Canonical field
+                videoUrl: img.url, // Legacy compatibility
+                text: meta.scene_text || "",
+                keywords: meta.keywords || [],
+                source: "parallel",
+                startTime: meta.start_time ?? 0,
+                endTime: meta.end_time ?? 0,
+                // CRITICAL: Include image_details for frontend prompt display
+                image_details: {
+                  prompt: meta.dalle_prompt || null,
+                  prompt_len: meta.prompt_len || null,
+                  prompt_hash: meta.prompt_hash || null,  // v5.1: Ground-truth hash
+                  prompt_preview_start: meta.dalle_prompt?.substring(0, 150) || null,
+                  prompt_mode: meta.prompt_mode || null,
+                  model: meta.image_model || null,
+                  art_style: meta.art_style || null,
+                  visual_beat: meta.visual_beat || null,
+                  visual_contract: meta.visual_contract || null,
+                  visual_dna: meta.visual_dna || null,
+                  mood_level: meta.mood_level || null,
+                  camera_angle: meta.camera_angle || null,
+                  generated_at: meta.generated_at || null,
+                  generation_source: "parallel",
+                  // RELEVANCE SCORING (v5.1 - hardened)
+                  relevance_score: meta.relevance_score || null,
+                  relevance_missing: meta.relevance_missing || null,
+                  relevance_reason: meta.relevance_reason || null,
+                  relevance_repaired: meta.relevance_repaired || false,
+                },
+                // Legacy fields
+                dallePrompt: meta.dalle_prompt || null,
+                visualBeat: meta.visual_beat || null,
+                moodLevel: meta.mood_level || null,
+                cameraAngle: meta.camera_angle || null,
+                artStyle: meta.art_style || null,
+              };
+            });
+          console.log(`[CHECK] Got ${parallelScenes.length} image URLs from parallel server (with prompt meta)`);
+          
+          // PROOF BUNDLE: Log Scene 1 and Scene last for verification
+          if (parallelScenes.length > 0) {
+            const scene1 = parallelScenes[0];
+            const d1 = scene1.image_details || {};
+            console.log(`\n========== PROOF BUNDLE: CHECK-JOB SCENE 1 ==========`);
+            console.log(`[PROOF] prompt_hash: ${d1.prompt_hash}`);
+            console.log(`[PROOF] prompt_mode: ${d1.prompt_mode}`);
+            console.log(`[PROOF] prompt_len: ${d1.prompt_len}`);
+            console.log(`[PROOF] prompt_preview: "${d1.prompt_preview_start?.substring(0, 200)}..."`);
+            console.log(`[PROOF] relevance_score: ${d1.relevance_score}`);
+            console.log(`==========================================================\n`);
             
-            // Convert parallel images to scene format for frontend WITH full image_details
-            parallelScenes = parallelStatusData.images
-              .filter(img => img.success && img.url)
-              .map(img => {
-                const meta = img.meta || {};
-                return {
-                  index: img.index,
-                  imageUrl: img.url, // Canonical field
-                  videoUrl: img.url, // Legacy compatibility
-                  text: meta.scene_text || "",
-                  keywords: meta.keywords || [],
-                  source: "parallel",
-                  startTime: meta.start_time ?? 0,
-                  endTime: meta.end_time ?? 0,
-                  // CRITICAL: Include image_details for frontend prompt display
-                  image_details: {
-                    prompt: meta.dalle_prompt || null,
-                    prompt_len: meta.prompt_len || null,
-                    prompt_hash: meta.prompt_hash || null,  // v5.1: Ground-truth hash
-                    prompt_preview_start: meta.dalle_prompt?.substring(0, 150) || null,
-                    prompt_mode: meta.prompt_mode || null,
-                    model: meta.image_model || null,
-                    art_style: meta.art_style || null,
-                    visual_beat: meta.visual_beat || null,
-                    visual_contract: meta.visual_contract || null,
-                    visual_dna: meta.visual_dna || null,
-                    mood_level: meta.mood_level || null,
-                    camera_angle: meta.camera_angle || null,
-                    generated_at: meta.generated_at || null,
-                    generation_source: "parallel",
-                    // RELEVANCE SCORING (v5.1 - hardened)
-                    relevance_score: meta.relevance_score || null,
-                    relevance_missing: meta.relevance_missing || null,
-                    relevance_reason: meta.relevance_reason || null,
-                    relevance_repaired: meta.relevance_repaired || false,
-                  },
-                  // Legacy fields
-                  dallePrompt: meta.dalle_prompt || null,
-                  visualBeat: meta.visual_beat || null,
-                  moodLevel: meta.mood_level || null,
-                  cameraAngle: meta.camera_angle || null,
-                  artStyle: meta.art_style || null,
-                };
-              });
-            console.log(`[CHECK] Got ${parallelScenes.length} image URLs from parallel server (with prompt meta)`);
-            
-            // PROOF BUNDLE: Log Scene 1 and Scene last for verification
-            if (parallelScenes.length > 0) {
-              const scene1 = parallelScenes[0];
-              const d1 = scene1.image_details || {};
-              console.log(`\n========== PROOF BUNDLE: CHECK-JOB SCENE 1 ==========`);
-              console.log(`[PROOF] prompt_hash: ${d1.prompt_hash}`);
-              console.log(`[PROOF] prompt_mode: ${d1.prompt_mode}`);
-              console.log(`[PROOF] prompt_len: ${d1.prompt_len}`);
-              console.log(`[PROOF] prompt_preview: "${d1.prompt_preview_start?.substring(0, 200)}..."`);
-              console.log(`[PROOF] relevance_score: ${d1.relevance_score}`);
+            if (parallelScenes.length > 1) {
+              const sceneLast = parallelScenes[parallelScenes.length - 1];
+              const dL = sceneLast.image_details || {};
+              console.log(`\n========== PROOF BUNDLE: CHECK-JOB SCENE ${parallelScenes.length} (LAST) ==========`);
+              console.log(`[PROOF] prompt_hash: ${dL.prompt_hash}`);
+              console.log(`[PROOF] prompt_mode: ${dL.prompt_mode}`);
+              console.log(`[PROOF] prompt_len: ${dL.prompt_len}`);
+              console.log(`[PROOF] prompt_preview: "${dL.prompt_preview_start?.substring(0, 200)}..."`);
+              console.log(`[PROOF] relevance_score: ${dL.relevance_score}`);
               console.log(`==========================================================\n`);
-              
-              if (parallelScenes.length > 1) {
-                const sceneLast = parallelScenes[parallelScenes.length - 1];
-                const dL = sceneLast.image_details || {};
-                console.log(`\n========== PROOF BUNDLE: CHECK-JOB SCENE ${parallelScenes.length} (LAST) ==========`);
-                console.log(`[PROOF] prompt_hash: ${dL.prompt_hash}`);
-                console.log(`[PROOF] prompt_mode: ${dL.prompt_mode}`);
-                console.log(`[PROOF] prompt_len: ${dL.prompt_len}`);
-                console.log(`[PROOF] prompt_preview: "${dL.prompt_preview_start?.substring(0, 200)}..."`);
-                console.log(`[PROOF] relevance_score: ${dL.relevance_score}`);
-                console.log(`==========================================================\n`);
-              }
             }
           }
         }
         
         // v77.4: If all images are complete, DON'T return early!
         // Fall through to trigger images phase which will save to job_assets
-        if (!allParallelImagesComplete) {
+        if (!allParallelImagesComplete && parallelInProgress) {
           // Return status with parallel progress info AND actual image URLs
           return new Response(
             JSON.stringify({
@@ -786,8 +802,12 @@ serve(async (req) => {
               status: 200,
             }
           );
-        } else {
-          console.log(`[CHECK] 🚀 Parallel complete! NOT returning early - will trigger images phase to save to database`);
+        } else if (parallelScenes.length > 0) {
+          console.log(`[CHECK] 🚀 Caching ${parallelScenes.length} parallel scenes (complete=${allParallelImagesComplete}, dbHasAll=${dbHasAllImages})...`);
+          // Cache the parallel scenes so we can return them in the final response
+          // even while waiting for DB to be populated
+          cachedParallelScenes = parallelScenes;
+          parallelJustCompleted = allParallelImagesComplete || parallelGenerationComplete;
         }
       }
       
@@ -944,6 +964,26 @@ serve(async (req) => {
       }
     }
 
+    // Determine best scenes to return:
+    // 1. If parallel just completed, use cached parallel scenes (more images than DB)
+    // 2. Otherwise use database scenes (partialScenes)
+    const bestScenes = (parallelJustCompleted && cachedParallelScenes.length > partialScenes.length) 
+      ? cachedParallelScenes 
+      : partialScenes;
+    
+    // Determine accurate image count and source
+    const bestImagesGenerated = parallelJustCompleted && cachedParallelScenes.length > partialScenes.length
+      ? cachedParallelScenes.length
+      : (parallelInProgress ? (parallelStatus || 0) : partialScenes.length);
+    
+    const bestSource = (parallelJustCompleted && cachedParallelScenes.length > partialScenes.length) 
+      ? "parallel" 
+      : (parallelInProgress ? "parallel" : "database");
+    
+    const bestSourceDetail = (parallelJustCompleted && cachedParallelScenes.length > partialScenes.length)
+      ? "parallel_complete_pending_save"
+      : (parallelInProgress ? "parallel_meta_only" : "job_assets_db");
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -954,25 +994,25 @@ serve(async (req) => {
         story_text: job.story_text,
         duration_sec: job.duration_sec,
         error: job.error,
-        // Include partial scenes/images generated so far
-        scenes: partialScenes,
-        // Show parallel progress if available, otherwise DB count
-        images_generated: parallelInProgress ? (parallelStatus || 0) : partialScenes.length,
+        // Include best available scenes (parallel cache if more complete than DB)
+        scenes: bestScenes,
+        // Show accurate image count based on best source
+        images_generated: bestImagesGenerated,
         total_images: totalScenes,
         // Scene integrity checksum - allows frontend to detect mismatches
         scene_count_expected: totalScenes,
-        scene_count_returned: partialScenes.length,
+        scene_count_returned: bestScenes.length,
         // Explicit phase for UI rendering
         phase: progress < 50 ? "audio" : progress < 70 ? "images" : progress < 100 ? "assemble" : "complete",
         // Source indicator for UI (parallel vs database)
-        source: parallelInProgress ? "parallel" : "database",
-        source_detail: parallelInProgress ? "parallel_meta_only" : "job_assets_db",
+        source: bestSource,
+        source_detail: bestSourceDetail,
         // Phase continuation info
         next_phase: nextPhase,
         phase_triggered: phaseTriggered,
         scene_count: sceneCount || 0,
         // Parallel generation status
-        parallel_in_progress: parallelInProgress,
+        parallel_in_progress: parallelInProgress || parallelJustCompleted,
         parallel_progress: parallelStatus || 0,
         // === ASSEMBLY STATUS FIELDS (v3.2) ===
         // These help UI track assembly progress even if original request timed out

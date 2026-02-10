@@ -1,6 +1,6 @@
 // =====================================================
 // OPENAI MODULE - Story Generation, Scene Analysis, Anchors
-// VERSION: 5.5.0 - 2026-02-08 - Fixed NO/NOT cleanup, clean prompts
+// VERSION: 5.6.0 - 2026-02-08 - New baseline prompt system with scene contracts
 // =====================================================
 
 import {
@@ -9,10 +9,13 @@ import {
   ART_STYLE_CONFIG,
   VISUAL_KEYWORDS,
   ORIENTATION_LOCK,
+  GLOBAL_STYLE_LOCK,
+  GLOBAL_NEGATIVE,
   FORBIDDEN_STYLE_TERMS,
   UNCANNY_ILLUSTRATED_BANNED_TOKENS,
   UNCANNY_ILLUSTRATED_STYLE_REPLACEMENT,
   UNCANNY_ILLUSTRATED_TEXTURE_REPLACEMENT,
+  UNCANNY_EXTRA_RULES,
   rewriteToContentOnly,
   type StoryAnchor,
   type VisualBeat,
@@ -1089,19 +1092,39 @@ Return ONLY valid JSON with this structure:
   
   // =====================================================
   // Step 10: Store both DNAs for tracking
+  // IMPORTANT: DNA storage failures now HALT the job (no silent failures)
   // =====================================================
   try {
     await storeDNA(supabase, dna, undefined, jobId);
-    console.log(`[STORY-DNA] Story DNA stored successfully`);
-  } catch (e) {
-    console.error(`[STORY-DNA] Failed to store Story DNA:`, e);
+    console.log(`[STORY-DNA] Story DNA stored successfully: ${dna.dna_id}`);
+  } catch (e: any) {
+    const errorDetails = {
+      table: 'story_dna',
+      job_id: jobId,
+      dna_id: dna.dna_id,
+      error_code: e?.code || 'UNKNOWN',
+      error_message: e?.message || String(e),
+      timestamp: new Date().toISOString(),
+    };
+    console.error(`[DNA-STORAGE-FAILURE] ${JSON.stringify(errorDetails)}`);
+    throw new Error(`DNA storage failed for story_dna: ${e?.message || e}`);
   }
   
   try {
     await storeVisualDNA(supabase, visualDNA);
-    console.log(`[VISUAL-DNA] Visual DNA stored successfully`);
-  } catch (e) {
-    console.error(`[VISUAL-DNA] Failed to store Visual DNA:`, e);
+    console.log(`[VISUAL-DNA] Visual DNA stored successfully: ${visualDNA.visual_dna_id}`);
+  } catch (e: any) {
+    const errorDetails = {
+      table: 'visual_dna',
+      job_id: jobId,
+      visual_dna_id: visualDNA.visual_dna_id,
+      story_dna_id: visualDNA.story_dna_id,
+      error_code: e?.code || 'UNKNOWN',
+      error_message: e?.message || String(e),
+      timestamp: new Date().toISOString(),
+    };
+    console.error(`[DNA-STORAGE-FAILURE] ${JSON.stringify(errorDetails)}`);
+    throw new Error(`DNA storage failed for visual_dna: ${e?.message || e}`);
   }
   
   // Build display summaries for UI
@@ -2670,8 +2693,9 @@ export async function createSceneVisualContracts(
     location: baseLocation,
     characterPose: "standing, tense posture",
     facialExpression: "fear, wide eyes",
-    visibleObjects: ["walls", "shadows", "fog"],
-    supernaturalElement: i > 2 ? "unnatural shadows moving" : null,
+    visibleObjects: ["walls", "fog", "dim light source"],
+    // v5.8: NO separate ghost - use subtle group wrongness
+    supernaturalElement: i > 2 ? "all faces have subtly wrong expressions - smiles too wide, eyes slightly off" : null,
     cameraDistance: i === 0 ? "wide" : "medium" as const,
     lightingSource: "dim ambient light",
     actionFrozen: scene.text.substring(0, 80),
@@ -2681,7 +2705,7 @@ export async function createSceneVisualContracts(
     // Initialize continuity with story anchor defaults
     continuity: {
       location: baseLocation,
-      threat_manifestation: "unnatural presence",
+      threat_manifestation: "subtle wrongness in expressions",
       main_character: baseCharacter,
       time_of_day: baseTimeOfDay,
       camera_language: "cinematic",
@@ -2986,7 +3010,9 @@ export function injectGroupCountsIntoContracts(
           "The presence is felt, not seen as a human form.",
         ].join(" "),
       };
-      console.log(`[GROUP COUNT] Scene ${i + 1}: count=${start_count}, is_wrong=false (implied presence, NO human silhouette)`);
+      // v5.8: CLEAR supernaturalElement for implied - no person visible
+      contracts[i].supernaturalElement = null;
+      console.log(`[GROUP COUNT] Scene ${i + 1}: count=${start_count}, is_wrong=false (implied presence - CLEARED supernatural)`);
       
     } else if (isPhoto) {
       // PHOTO SCENES: ALWAYS show wrong count regardless of reveal position
@@ -2994,8 +3020,10 @@ export function injectGroupCountsIntoContracts(
       contracts[i].group_count = {
         expected: wrong_count,
         is_wrong: true,
-        extra_person_rules: "One figure in the photo is subtly wrong - posture off, standing too close to others, eyes fixed on camera while others look away. NOT monstrous or supernatural-looking.",
+        extra_person_rules: UNCANNY_EXTRA_RULES.extraPersonPrompt,
       };
+      // v5.8: Set supernaturalElement for photo reveal (all faces wrong)
+      contracts[i].supernaturalElement = "all faces have subtly unsettling expressions - smiles slightly too wide, eyes just a bit off";
       console.log(`[GROUP COUNT] Scene ${i + 1}: count=${wrong_count}, is_wrong=true (photo ALWAYS shows wrong count)`);
       
     } else if (isGroupScene && isBeforeReveal) {
@@ -3005,15 +3033,19 @@ export function injectGroupCountsIntoContracts(
         is_wrong: false,
         extra_person_rules: undefined, // No uncanny rules before reveal
       };
-      console.log(`[GROUP COUNT] Scene ${i + 1}: count=${start_count}, is_wrong=false (group scene, before reveal)`);
+      // v5.8: CLEAR supernaturalElement - before reveal, everyone looks NORMAL
+      contracts[i].supernaturalElement = null;
+      console.log(`[GROUP COUNT] Scene ${i + 1}: count=${start_count}, is_wrong=false (group scene, before reveal - CLEARED supernatural)`);
       
     } else if (isGroupScene && isRevealOrAfter) {
       // GROUP SCENE AFTER REVEAL: Show wrong count with uncanny
       contracts[i].group_count = {
         expected: wrong_count,
         is_wrong: true,
-        extra_person_rules: "One figure is subtly wrong - posture off, smile frozen, eyes fixed on camera. NOT monstrous or supernatural-looking.",
+        extra_person_rules: UNCANNY_EXTRA_RULES.extraPersonPrompt,
       };
+      // v5.8: Set supernaturalElement for post-reveal (all faces wrong)
+      contracts[i].supernaturalElement = "all faces have subtly unsettling expressions - smiles slightly too wide, eyes just a bit off";
       console.log(`[GROUP COUNT] Scene ${i + 1}: count=${wrong_count}, is_wrong=true (group scene, after reveal)`);
     }
   }
@@ -3238,7 +3270,7 @@ For EACH scene, return a contract with these fields:
   "characterPose": "body position and action",
   "facialExpression": "visible emotion",
   "visibleObjects": ["object1", "object2", "object3"] - at least 3 RELEVANT items,
-  "supernaturalElement": "the horror visual (or null)",
+  "supernaturalElement": "the horror visual (or null) - SEE CRITICAL RULES BELOW",
   "cameraDistance": "close-up" | "medium" | "wide" | "extreme-close-up" | "POV",
   "lightingSource": "specific light source",
   "actionFrozen": "DETAILED description (20+ words) - be CREATIVE!",
@@ -3246,6 +3278,38 @@ For EACH scene, return a contract with these fields:
   "continuityFromPrev": "what must match previous",
   "evidenceRule": "how this visual represents the narration"
 }
+
+═══════════════════════════════════════
+🚨 CRITICAL: supernaturalElement RULES ("ONE TOO MANY" STYLE)
+═══════════════════════════════════════
+The horror is SUBTLE - you have to COUNT to notice something's wrong.
+The extra person must BLEND INTO the group, not stand apart!
+
+When writing the "supernaturalElement" field:
+✅ The extra person sits/stands WITHIN the group, not behind
+✅ Same lighting as everyone else - NOT pale, NOT glowing
+✅ Dressed similarly to others (casual clothing)
+✅ Has the same subtle "wrongness" as everyone - smile too wide, eyes off
+✅ Looks like they belong - until you count
+
+The entity MUST NEVER be:
+❌ Standing APART from the group or in the background
+❌ Glowing, pale, or lit differently than others
+❌ A "shadowy figure" or "ghost" or "apparition"
+❌ Transparent, ethereal, or obviously supernatural
+❌ The only one with a creepy expression (ALL should be subtly off)
+
+GOOD supernaturalElement examples:
+• "all faces have slightly too-wide smiles, eyes subtly wrong - count them and there's one extra"
+• "group seated together, everyone lit by firelight, all expressions subtly unsettling"
+• "unified group with matching wrongness in their smiles - one more than expected"
+• null (when showing the group before reveal - just show normal people)
+
+BAD supernaturalElement examples (NEVER WRITE THESE):
+• "pale figure standing in background" ❌
+• "ghostly person behind the group" ❌
+• "glowing figure at edge of frame" ❌
+• "ethereal presence watching" ❌
 
 RULES:
 1. sceneIndex MUST match the GLOBAL scene number
@@ -3318,12 +3382,30 @@ Remember: sceneIndex values must be ${sceneData.map(s => s.globalIndex).join(", 
   
   console.log(`[VISUAL CONTRACTS] Batch returned ${contracts.length} contracts for scenes ${startIndex + 1}-${startIndex + scenes.length}`);
   
-  // Log what we got back
-  contracts.forEach((c: any) => {
-    console.log(`[VISUAL CONTRACTS] Raw: sceneIndex=${c.sceneIndex}, location="${c.location}", actionFrozen="${c.actionFrozen?.substring(0, 50)}..."`);
+  // v5.7: SANITIZE supernatural elements - remove ghost/background/apart descriptions
+  const sanitizedContracts = contracts.map((c: any) => {
+    if (c.supernaturalElement && typeof c.supernaturalElement === 'string') {
+      const original = c.supernaturalElement;
+      
+      // Check for forbidden terms that suggest separate/background ghost
+      const hasForbiddenTerms = /\b(shadow|shadowy|silhouette|hollow|void|faceless|featureless|dark\s+figure|black\s+shape|absorbing\s+light|standing\s+behind|in\s+the\s+background|pale\s+figure|glowing|ethereal|ghostly|apparition|watching\s+from|apart\s+from)\b/i.test(original);
+      
+      if (hasForbiddenTerms) {
+        // Replace with proper "blend into group" description
+        const sanitized = "all faces have subtly unsettling expressions - smiles slightly too wide, eyes just a bit off - count them carefully";
+        console.log(`[VISUAL CONTRACTS] ⚠️ SANITIZED supernaturalElement: "${original.substring(0, 60)}..." → blended group`);
+        return { ...c, supernaturalElement: sanitized };
+      }
+    }
+    return c;
   });
   
-  return contracts;
+  // Log what we got back
+  sanitizedContracts.forEach((c: any) => {
+    console.log(`[VISUAL CONTRACTS] Final: sceneIndex=${c.sceneIndex}, location="${c.location}", supernatural="${c.supernaturalElement?.substring(0, 50) || 'null'}..."`);
+  });
+  
+  return sanitizedContracts;
 }
 
 // =====================================================
@@ -3895,8 +3977,19 @@ export function buildFinalDallePrompt(
       
       // Only add uncanny rules when is_wrong is true (after reveal)
       if (is_wrong) {
-        countLockLines.push(`One figure (NOT in center) is subtly wrong - posture off, smile frozen, eyes fixed at viewer.`);
-        countLockLines.push(`The extra person is NOT obviously supernatural or monstrous.`);
+        // v5.8: "ONE TOO MANY" style - extra person BLENDS IN, not apart
+        countLockLines.push(``);
+        countLockLines.push(`"ONE TOO MANY" RULE (CRITICAL - READ CAREFULLY):`);
+        countLockLines.push(UNCANNY_EXTRA_RULES.extraPersonPrompt);
+        countLockLines.push(``);
+        countLockLines.push(`ALL ${expected} PEOPLE must:`);
+        countLockLines.push(`- Be seated/standing TOGETHER as a unified group`);
+        countLockLines.push(`- Have the SAME lighting (no pale/glowing individual)`);
+        countLockLines.push(`- ALL have subtly unsettling expressions (smiles too wide, eyes off)`);
+        countLockLines.push(`- Wear similar casual clothing`);
+        countLockLines.push(``);
+        countLockLines.push(`The horror is that you have to COUNT to notice - NOT an obvious ghost!`);
+        countLockLines.push(`NO separate figure in background. NO ghostly apparition. NO glowing person.`);
       }
       
       if (extra_person_rules) {
@@ -3913,8 +4006,8 @@ export function buildFinalDallePrompt(
     // ensure "extra people" is in MUST NOT
     // If group_count shows wrong count, remove "extra people" from MUST NOT
     if (contract.group_count) {
-      // Always add count-safety items to MUST NOT
-      const countSafetyBans = ["cropped heads", "partial faces", "merged faces", "extra silhouettes"];
+      // v5.8: Updated bans to prevent background/separate ghost
+      const countSafetyBans = ["cropped heads", "partial faces", "merged faces", "ghost in background", "figure standing apart", "glowing figure", "pale apparition"];
       for (const ban of countSafetyBans) {
         if (!mustNotItems.some(item => item.toLowerCase().includes(ban.split(' ')[0]))) {
           mustNotItems.push(ban);
@@ -3922,12 +4015,15 @@ export function buildFinalDallePrompt(
       }
       
       if (contract.group_count.is_wrong) {
-        // AFTER REVEAL: extra person IS visible, remove from MUST NOT
+        // AFTER REVEAL: extra person IS visible (but blended in), remove from MUST NOT
+        // Also add the UNCANNY_EXTRA_RULES ban items
         mustNotItems = mustNotItems.filter(item => 
           !item.toLowerCase().includes('extra people') && 
           !item.toLowerCase().includes('additional people')
         );
-        console.log(`[PROMPT] Scene ${sceneIndex + 1}: Removed "extra people" from MUST NOT (is_wrong=true)`);
+        // v5.8: Add bans for separate/background ghost style
+        mustNotItems.push(...UNCANNY_EXTRA_RULES.extraPersonBan.split(', '));
+        console.log(`[PROMPT] Scene ${sceneIndex + 1}: Removed "extra people" from MUST NOT (is_wrong=true), added blend-in bans`);
       } else {
         // BEFORE REVEAL: extra person is NOT visible, keep/add to MUST NOT
         if (!mustNotItems.some(item => item.toLowerCase().includes('extra people'))) {
@@ -3998,27 +4094,32 @@ export function buildFinalDallePrompt(
     console.log(`[PROMPT] No visual contract, using fallback for scene ${sceneIndex + 1}`);
   }
   
-  // ========== BUILD AVOID BLOCK ==========
-  const negativePrompt = styleConfig.negativePrompt || "text, words, letters, watermarks, signatures";
-  const avoidBlock = `AVOID:\n${negativePrompt}\nAbsolutely no text, letters, captions, watermarks anywhere in image.`;
+  // ========== BUILD AVOID BLOCK (v5.6 - use GLOBAL_NEGATIVE) ==========
+  // Merge style-specific negatives with global negatives
+  const negativePrompt = styleConfig.negativePrompt || "";
+  const avoidBlock = [
+    GLOBAL_NEGATIVE,
+    negativePrompt ? `Additional style bans: ${negativePrompt}` : "",
+  ].filter(Boolean).join("\n");
   
-  // ========== ASSEMBLE FINAL PROMPT ==========
+  // ========== ASSEMBLE FINAL PROMPT (v5.6 - new baseline structure) ==========
   // Order matters! DALL-E prioritizes the beginning
+  // Use GLOBAL constants for consistent baseline across all images
   const promptParts = [
-    // 1. ORIENTATION LOCK (most critical - simplified to avoid hallway/stair bias)
+    // 1. ORIENTATION LOCK (most critical)
     ORIENTATION_LOCK,
     
-    // 2. STYLE (second most important)
-    `\nSTYLE LOCK:\n${styleBlock}`,
+    // 2. GLOBAL STYLE LOCK (mandatory baseline for illustrated horror)
+    isUncannyIllustrated ? `\n${GLOBAL_STYLE_LOCK}` : `\nSTYLE LOCK:\n${styleBlock}`,
     
-    // 3. CHARACTER (must be consistent)
+    // 3. GLOBAL NEGATIVE (always include)
+    `\n${avoidBlock}`,
+    
+    // 4. CHARACTER ANCHORS (must be consistent)
     characterBlock ? `\n${characterBlock}` : "",
     
-    // 4. SCENE CONTRACT with MUST/MUST NOT
+    // 5. SCENE CONTRACT with MUST/MUST NOT (scene-specific)
     `\n${sceneBlock}`,
-    
-    // 5. AVOID (last)
-    `\n${avoidBlock}`,
   ].filter(Boolean);
   
   let finalPrompt = promptParts.join("\n");

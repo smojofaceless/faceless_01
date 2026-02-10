@@ -1,5 +1,7 @@
 # Story Profile System v1.0
 
+> **Last Updated:** February 8, 2026
+
 A brand-agnostic narrative enforcement system for story generation. This system mirrors the Effects Profile system but controls narrative structure, motif recurrence, voice format compliance, and closure behavior.
 
 ## Overview
@@ -148,14 +150,39 @@ interface StoryProfile {
 
 ## Preset Profiles (Vibe-Based)
 
+> **Note (Feb 2026):** As of v4.0, only **two story engines** are actively used in production:
+> - `urban_legend` - Documentary folklore style
+> - `one_too_many` - Counting horror style
+>
+> Legacy presets are deprecated and map to `urban_legend` for backwards compatibility.
+
 | Preset | Anti-Closure | Motif | Beat Count | Key Feature |
 |--------|--------------|-------|------------|-------------|
-| `urban_legend` | 90% | 3+ | 5 | Documentary voice |
-| `radio_transcript` | 95% | 3+ | 5 | Structural markers [STATIC], [PAUSE] |
-| `police_report` | 85% | 2+ | 5 | Official document format |
-| `slow_creepy` | 80% | 3+ | 5 | Atmospheric buildup |
-| `punchy_shock` | 60% | 2+ | 4 | Rapid escalation |
-| `analog_horror` | 95% | 2+ | 5 | VHS aesthetic [TAPE DAMAGE] |
+| `urban_legend` | 90% | 3+ | 5 | Documentary voice, ACTIVE |
+| `one_too_many` | 90% | 3+ | 5 | Counting horror (N+1), ACTIVE |
+| `radio_transcript` | 95% | 3+ | 5 | Structural markers [STATIC] (deprecated) |
+| `police_report` | 85% | 2+ | 5 | Official document format (deprecated) |
+| `slow_creepy` | 80% | 3+ | 5 | Atmospheric buildup (deprecated) |
+| `punchy_shock` | 60% | 2+ | 4 | Rapid escalation (deprecated) |
+| `analog_horror` | 95% | 2+ | 5 | VHS aesthetic (deprecated) |
+
+### One Too Many Preset (Counting Horror)
+
+The `one_too_many` preset is a highly constrained "micro-preset" with explicit numeric logic:
+
+**Structural Rules:**
+- Explicit group size (N people) established early
+- Wrong count always N+1 (never varies)
+- Container math: seats, rooms, faces, photos
+- Mandatory final proof (photo/receipt/recording showing N+1)
+- Escalation MUST worsen the count inconsistency
+
+**Failure Modes (story is rejected if):**
+- Numbers drift (N→N+2 or N-1→N)
+- Vague numbers ("a few", "several")
+- Missing final proof image
+- Extra person explained/identified
+- Counting mechanic removable from story
 
 ## Contract Prompts
 

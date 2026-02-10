@@ -1,7 +1,7 @@
 # Image Generation: Debugging & Data Flow
 
 > **Internal Documentation** — For debugging the image generation pipeline.  
-> Last updated: January 27, 2026
+> Last updated: February 8, 2026
 
 ---
 
@@ -59,8 +59,9 @@
                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  4. POST /run-job (phase: assemble)                                         │
-│     → Builds Creatomate template with images + audio + captions             │
-│     → Submits render job                                                    │
+│     → Builds video template with images + audio + captions                  │
+│     → Submits to FFmpeg renderer (primary) or Creatomate (legacy)           │
+│     → FFmpeg renderer: self-hosted at video-renderer/server.js              │
 │     → Polls for completion                                                  │
 │     → Saves final video URL to job_assets (type: final_mp4)                 │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -1033,7 +1034,7 @@ WHERE job_id = 'xxx' AND type = 'dalle_image';
 
 **Cause:** DALL-E URLs expire in ~2 hours.
 
-**Current Handling:** Images used immediately in Creatomate render. If delay > 2 hours between image gen and assembly, URLs will 404.
+**Current Handling:** Images are downloaded immediately by the FFmpeg renderer service. The renderer downloads all images to local temp storage before assembly, so expiration is rarely an issue. If using Creatomate fallback, URLs must be valid at render time.
 
 ### 8. Images Generated Sideways/Rotated
 
@@ -1291,6 +1292,8 @@ curl -X POST https://api.openai.com/v1/images/generations \
 
 | Date | Change |
 |------|--------|
+| Feb 8, 2026 | Updated documentation for FFmpeg renderer (primary), Creatomate (legacy fallback) |
+| Feb 8, 2026 | Updated active vibe presets: only `urban_legend` and `one_too_many` are production |
 | Jan 27, 2026 | **MAJOR:** Added anti-drift fields to SceneVisualContract: `forbiddenElements`, `continuityFromPrev`, `evidenceRule` |
 | Jan 27, 2026 | **MAJOR:** Switched prompt format to MUST SHOW / MUST NOT SHOW blocks |
 | Jan 27, 2026 | Simplified ORIENTATION LOCK - removed forced one-point perspective that caused hallway/stair drift |
@@ -1321,3 +1324,16 @@ curl -X POST https://api.openai.com/v1/images/generations \
 | Jan 2026 | Added deterministic mood level mapping |
 | Jan 2026 | Changed `characterDescription` to mandatory when humans present |
 | Jan 2026 | Added `negativePrompt` as "Avoid:" line (DALL-E 3 has no native negative_prompt) |
+
+---
+
+## Active Vibe Presets
+
+> **Note (Feb 2026):** As of v4.0, only **two story engines** are actively used in production:
+> 
+> | Preset | Description | Art Style |
+> |--------|-------------|-----------|
+> | `urban_legend` | Documentary folklore, creepypasta style | cinematic-dark (default) |
+> | `one_too_many` | Counting horror (N+1 pattern) | **uncanny-illustrated** (forced) |
+>
+> Legacy presets (`slow_creepy`, `analog_horror`, `cosmic_horror`, etc.) still exist for backwards compatibility but are deprecated in the UI.

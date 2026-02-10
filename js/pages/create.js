@@ -96,6 +96,11 @@ class CreatePageController {
         // NEW: Console timing
         this.startTime = null;
         
+        // NEW: Preset source tracking (DB-driven vs hardcoded fallback)
+        // See docs/PRESET_SOURCE_OF_TRUTH.md for rationale
+        this.presetSource = 'unknown'; // 'database' | 'fallback' | 'unknown'
+        this.dbPresets = null; // Presets loaded from brand_templates
+        
         // Debug state - check URL param or localStorage
         this.debugMode = this._checkDebugMode();
         this.verboseMode = false;
@@ -292,6 +297,10 @@ class CreatePageController {
         this.visualDNA = null;
         this.dnaLocked = false;
         
+        // Reset preset source tracking (will be set by loadPresetsFromDB)
+        this.presetSource = 'unknown';
+        this.dbPresets = null;
+        
         await this.loadTemplate(brand);
     }
 
@@ -313,6 +322,13 @@ class CreatePageController {
             if (!this.template) {
                 throw new Error('No template returned for niche: ' + brand.niche);
             }
+            
+            // =====================================================
+            // DB-DRIVEN PRESETS (Option 1 Implementation)
+            // Load presets from brand_templates, fallback to hardcoded
+            // See docs/PRESET_SOURCE_OF_TRUTH.md for rationale
+            // =====================================================
+            await this.loadPresetsFromDB(brand);
             
             // Initialize generator with template
             console.log('CreatePageController: Creating VideoGenerator...');
@@ -338,6 +354,105 @@ class CreatePageController {
         } catch (error) {
             console.error('Error loading template:', error);
             this.showError('Failed to load template: ' + error.message);
+        }
+    }
+
+    /**
+     * Load presets from brand_templates (DB source of truth)
+     * Falls back to hardcoded template.presets if DB returns no rows
+     * 
+     * INVARIANT: The presets shown in UI must come from brand_templates when available.
+     * This ensures manual generation and campaign generation use the same preset logic.
+     * 
+     * See docs/PRESET_SOURCE_OF_TRUTH.md for architecture rationale.
+     * 
+     * @param {Brand} brand - The active brand
+     */
+    async loadPresetsFromDB(brand) {
+        // Reset preset source state
+        this.presetSource = 'unknown';
+        this.dbPresets = null;
+        
+        // Check if Supabase is available
+        if (typeof supabaseClient === 'undefined' || !supabaseClient) {
+            console.warn('[PRESETS] Supabase not available, using hardcoded fallback');
+            this.presetSource = 'fallback';
+            return;
+        }
+        
+        try {
+            console.log(`[PRESETS] Loading presets from brand_templates for brand: ${brand.id}`);
+            
+            const { data: templates, error } = await supabaseClient
+                .from('brand_templates')
+                .select('*')
+                .eq('brand_id', brand.id)
+                .order('is_default', { ascending: false })  // Default first
+                .order('name', { ascending: true });        // Then alphabetical
+            
+            if (error) {
+                console.error('[PRESETS] DB query failed:', error);
+                this.presetSource = 'fallback';
+                return;
+            }
+            
+            if (!templates || templates.length === 0) {
+                // No templates in DB for this brand - use fallback
+                console.warn(`[PRESETS] No templates found in brand_templates for brand "${brand.name}". Using hardcoded fallback.`);
+                this.presetSource = 'fallback';
+                return;
+            }
+            
+            // Transform DB rows to preset format expected by UI
+            console.log(`[PRESETS] Found ${templates.length} templates in DB:`, templates.map(t => t.template_type));
+            
+            // Get hardcoded presets for metadata (icons, descriptions, defaults)
+            const hardcodedPresets = this.template.presets || [];
+            
+            // Map DB templates to UI presets
+            this.dbPresets = templates.map(dbTemplate => {
+                // Find matching hardcoded preset for metadata
+                const hardcoded = hardcodedPresets.find(p => p.id === dbTemplate.template_type);
+                
+                return {
+                    id: dbTemplate.template_type,
+                    name: dbTemplate.name,
+                    icon: hardcoded?.icon || '🎯',
+                    tagline: hardcoded?.tagline || dbTemplate.name,
+                    description: hardcoded?.description || `${dbTemplate.name} preset`,
+                    weight: parseFloat(dbTemplate.weight) || 1.0,
+                    is_default: dbTemplate.is_default,
+                    // Merge config_overrides with hardcoded defaults
+                    defaults: {
+                        ...hardcoded?.defaults,
+                        ...(dbTemplate.config_overrides || {}),
+                        vibe_preset: dbTemplate.template_type
+                    },
+                    requiresAdvanced: hardcoded?.requiresAdvanced || false,
+                    // Mark source for UI
+                    _source: 'database',
+                    _dbId: dbTemplate.id
+                };
+            });
+            
+            // Always include Custom DNA option if advanced mode exists in hardcoded
+            const customPreset = hardcodedPresets.find(p => p.id === 'custom');
+            if (customPreset) {
+                this.dbPresets.push({
+                    ...customPreset,
+                    _source: 'system'
+                });
+            }
+            
+            // Replace template.presets with DB-driven presets
+            this.template.presets = this.dbPresets;
+            this.presetSource = 'database';
+            
+            console.log(`[PRESETS] ✅ Loaded ${this.dbPresets.length} presets from database`);
+            
+        } catch (err) {
+            console.error('[PRESETS] Unexpected error loading from DB:', err);
+            this.presetSource = 'fallback';
         }
     }
 
@@ -708,13 +823,42 @@ class CreatePageController {
     
     renderPresetStep(container) {
         const presets = this.template.presets || [];
+        const isFallback = this.presetSource === 'fallback';
+        const isDatabase = this.presetSource === 'database';
         
         container.innerHTML = `
             <div class="create-card create-card--preset">
+                ${isFallback ? `
+                <div class="preset-fallback-warning">
+                    <span class="preset-fallback-warning__icon">⚠️</span>
+                    <span class="preset-fallback-warning__text">
+                        This brand has no templates configured. Using system defaults.
+                        <a href="/pages/brands.html" class="preset-fallback-warning__link">Configure templates →</a>
+                    </span>
+                </div>
+                ` : ''}
+                
+                ${isDatabase ? `
+                <div class="preset-source-info">
+                    <span class="preset-source-info__badge preset-source-info__badge--db">🏷️ Brand Presets</span>
+                </div>
+                ` : ''}
+                
                 <div class="preset-grid">
-                    ${presets.map(preset => `
+                    ${presets.map(preset => {
+                        const sourceClass = preset._source === 'database' ? 'preset-card--brand' : 'preset-card--system';
+                        const sourceBadge = preset._source === 'database' 
+                            ? `<span class="preset-card__source" title="Configured for this brand">Brand</span>`
+                            : preset._source === 'system' || isFallback
+                                ? `<span class="preset-card__source preset-card__source--system" title="System default">System</span>`
+                                : '';
+                        const weightBadge = preset.weight && preset._source === 'database'
+                            ? `<span class="preset-card__weight" title="Campaign selection weight">${Math.round(preset.weight * 100)}%</span>`
+                            : '';
+                        
+                        return `
                         <button type="button" 
-                            class="preset-card ${this.selectedPreset?.id === preset.id ? 'preset-card--selected' : ''} ${preset.requiresAdvanced && !this.advancedMode ? 'preset-card--locked' : ''}"
+                            class="preset-card ${sourceClass} ${this.selectedPreset?.id === preset.id ? 'preset-card--selected' : ''} ${preset.requiresAdvanced && !this.advancedMode ? 'preset-card--locked' : ''}"
                             data-preset="${preset.id}"
                             ${preset.requiresAdvanced && !this.advancedMode ? 'disabled' : ''}>
                             <div class="preset-card__icon">${preset.icon}</div>
@@ -722,10 +866,15 @@ class CreatePageController {
                                 <h3 class="preset-card__name">${preset.name}</h3>
                                 <span class="preset-card__tagline">${preset.tagline}</span>
                             </div>
+                            <div class="preset-card__badges">
+                                ${sourceBadge}
+                                ${weightBadge}
+                                ${preset.is_default ? '<span class="preset-card__default" title="Default preset">★</span>' : ''}
+                            </div>
                             ${preset.requiresAdvanced ? '<span class="preset-card__lock" title="Enable Advanced Mode to unlock">🔒</span>' : ''}
                             ${this.selectedPreset?.id === preset.id ? '<span class="preset-card__check">✓</span>' : ''}
                         </button>
-                    `).join('')}
+                    `}).join('')}
                 </div>
                 
                 ${this.selectedPreset ? `

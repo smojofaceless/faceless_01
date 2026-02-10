@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Campaign Details - ContentEngine</title>
+    
+    <!-- Core Design System -->
+    <link rel="stylesheet" href="../css/core/tokens.css">
+    <link rel="stylesheet" href="../css/core/base.css">
+    <link rel="stylesheet" href="../css/core/components.css">
+    <link rel="stylesheet" href="../css/core/layout.css">
+    <link rel="stylesheet" href="../css/styles.css">
+    <link rel="stylesheet" href="../css/dashboard.css">
+    <link rel="stylesheet" href="../css/campaign.css">
+    
+    <!-- Favicon -->
+    <link id="favicon" rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+</head>
+<body class="vibe-dark">
+    <div class="app">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar__header">
+                <a href="../index.html" class="logo">
+                    <svg class="logo__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                        <polyline points="2 17 12 22 22 17"/>
+                        <polyline points="2 12 12 17 22 12"/>
+                    </svg>
+                    <span class="logo__text">ContentEngine</span>
+                </a>
+            </div>
+
+            <nav class="sidebar__nav">
+                <div class="nav-section">
+                    <span class="nav-section__title">Overview</span>
+                    <a href="../index.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="7" height="7"/>
+                            <rect x="14" y="3" width="7" height="7"/>
+                            <rect x="14" y="14" width="7" height="7"/>
+                            <rect x="3" y="14" width="7" height="7"/>
+                        </svg>
+                        <span>Dashboard</span>
+                    </a>
+                    <a href="create.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="23 7 16 12 23 17 23 7"/>
+                            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                        </svg>
+                        <span>Create Video</span>
+                    </a>
+                    <a href="campaign.html" class="nav-link active">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                            <line x1="16" y1="2" x2="16" y2="6"/>
+                            <line x1="8" y1="2" x2="8" y2="6"/>
+                            <line x1="3" y1="10" x2="21" y2="10"/>
+                            <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>
+                        </svg>
+                        <span>Campaigns</span>
+                    </a>
+                    <a href="calendar.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                            <line x1="16" y1="2" x2="16" y2="6"/>
+                            <line x1="8" y1="2" x2="8" y2="6"/>
+                            <line x1="3" y1="10" x2="21" y2="10"/>
+                        </svg>
+                        <span>Calendar</span>
+                    </a>
+                    <a href="posts.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="16" y1="13" x2="8" y2="13"/>
+                            <line x1="16" y1="17" x2="8" y2="17"/>
+                        </svg>
+                        <span>Posts Queue</span>
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <span class="nav-section__title">Management</span>
+                    <a href="brands.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                            <line x1="7" y1="7" x2="7.01" y2="7"/>
+                        </svg>
+                        <span>Brands</span>
+                    </a>
+                    <a href="connections.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                        </svg>
+                        <span>Connections</span>
+                    </a>
+                </div>
+            </nav>
+
+            <div class="sidebar__footer">
+                <a href="settings.html" class="nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+                    </svg>
+                    <span>Settings</span>
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main">
+            <header class="header">
+                <div class="header__left">
+                    <button class="sidebar-toggle btn btn--icon btn--ghost">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="3" y1="12" x2="21" y2="12"/>
+                            <line x1="3" y1="6" x2="21" y2="6"/>
+                            <line x1="3" y1="18" x2="21" y2="18"/>
+                        </svg>
+                    </button>
+                    <a href="campaign.html" class="btn btn--ghost btn--sm back-link">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 12H5M12 19l-7-7 7-7"/>
+                        </svg>
+                        Back
+                    </a>
+                    <div class="header__title-area">
+                        <span class="header__icon">📊</span>
+                        <h1 class="header__title" id="campaign-title">Campaign Details</h1>
+                    </div>
+                </div>
+                <div class="header__right">
+                    <div id="brand-switcher"></div>
+                </div>
+            </header>
+
+            <div class="content">
+                <!-- Loading State -->
+                <div id="loading-state" class="campaign-loading">
+                    <div class="campaign-loading__spinner"></div>
+                    <p class="campaign-loading__text">Loading campaign...</p>
+                </div>
+
+                <!-- Campaign Not Found -->
+                <div id="not-found-state" class="campaign-empty hidden">
+                    <div class="campaign-empty__icon">🔍</div>
+                    <h2 class="campaign-empty__title">Campaign Not Found</h2>
+                    <p class="campaign-empty__text">The campaign you're looking for doesn't exist or was deleted.</p>
+                    <a href="campaign.html" class="btn btn--primary">Back to Campaigns</a>
+                </div>
+
+                <!-- Campaign Detail View -->
+                <div id="campaign-detail" class="campaign-detail hidden">
+                    <!-- Status Header -->
+                    <div class="campaign-status-bar">
+                        <div class="status-badge" id="status-badge">
+                            <span class="status-badge__dot"></span>
+                            <span class="status-badge__text">Active</span>
+                        </div>
+                        <div class="campaign-meta">
+                            <span class="campaign-meta__item">
+                                <strong>Created:</strong> <span id="meta-created">-</span>
+                            </span>
+                            <span class="campaign-meta__item">
+                                <strong>Brand:</strong> <span id="meta-brand">-</span>
+                            </span>
+                        </div>
+                        <div class="campaign-controls">
+                            <button type="button" class="btn btn--secondary btn--sm" id="btn-pause" title="Pause campaign">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="6" y="4" width="4" height="16"/>
+                                    <rect x="14" y="4" width="4" height="16"/>
+                                </svg>
+                                Pause
+                            </button>
+                            <button type="button" class="btn btn--primary btn--sm hidden" id="btn-resume" title="Resume campaign">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polygon points="5 3 19 12 5 21 5 3"/>
+                                </svg>
+                                Resume
+                            </button>
+                            <button type="button" class="btn btn--ghost btn--sm btn--danger" id="btn-cancel" title="Cancel campaign">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <line x1="15" y1="9" x2="9" y2="15"/>
+                                    <line x1="9" y1="9" x2="15" y2="15"/>
+                                </svg>
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Progress Overview -->
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-card__icon stat-card__icon--primary">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M14.5 10c-.83 0-1.5-.67-1.5-1.5v-5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5z"/>
+                                    <path d="M20.5 10H19V8.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+                                    <path d="M9.5 14c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5S8 21.33 8 20.5v-5c0-.83.67-1.5 1.5-1.5z"/>
+                                    <path d="M3.5 14H5v1.5c0 .83-.67 1.5-1.5 1.5S2 16.33 2 15.5 2.67 14 3.5 14z"/>
+                                    <path d="M14 14.5c0-.83.67-1.5 1.5-1.5h5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5h-5c-.83 0-1.5-.67-1.5-1.5z"/>
+                                    <path d="M15.5 19H14v1.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5-.67-1.5-1.5-1.5z"/>
+                                    <path d="M10 9.5C10 10.33 9.33 11 8.5 11h-5C2.67 11 2 10.33 2 9.5S2.67 8 3.5 8h5c.83 0 1.5.67 1.5 1.5z"/>
+                                    <path d="M8.5 5H10V3.5C10 2.67 9.33 2 8.5 2S7 2.67 7 3.5 7.67 5 8.5 5z"/>
+                                </svg>
+                            </div>
+                            <div class="stat-card__content">
+                                <span class="stat-card__value" id="stat-total">0</span>
+                                <span class="stat-card__label">Total Jobs</span>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-card__icon stat-card__icon--warning">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <polyline points="12 6 12 12 16 14"/>
+                                </svg>
+                            </div>
+                            <div class="stat-card__content">
+                                <span class="stat-card__value" id="stat-pending">0</span>
+                                <span class="stat-card__label">Pending</span>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-card__icon stat-card__icon--success">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                                    <polyline points="22 4 12 14.01 9 11.01"/>
+                                </svg>
+                            </div>
+                            <div class="stat-card__content">
+                                <span class="stat-card__value" id="stat-completed">0</span>
+                                <span class="stat-card__label">Completed</span>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-card__icon stat-card__icon--error">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <line x1="15" y1="9" x2="9" y2="15"/>
+                                    <line x1="9" y1="9" x2="15" y2="15"/>
+                                </svg>
+                            </div>
+                            <div class="stat-card__content">
+                                <span class="stat-card__value" id="stat-failed">0</span>
+                                <span class="stat-card__label">Failed</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Progress Bar -->
+                    <div class="card campaign-progress-card">
+                        <div class="card-header">
+                            <h3 class="card-title">📈 Progress</h3>
+                            <span class="progress-percentage" id="progress-percentage">0%</span>
+                        </div>
+                        <div class="progress-bar-wrapper">
+                            <div class="progress-bar">
+                                <div class="progress-bar__fill progress-bar__fill--completed" id="progress-completed" style="width: 0%"></div>
+                                <div class="progress-bar__fill progress-bar__fill--processing" id="progress-processing" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <div class="progress-legend">
+                            <span class="legend-item legend-item--completed">
+                                <span class="legend-dot"></span> Completed
+                            </span>
+                            <span class="legend-item legend-item--processing">
+                                <span class="legend-dot"></span> Processing
+                            </span>
+                            <span class="legend-item legend-item--pending">
+                                <span class="legend-dot"></span> Pending
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Jobs List -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">📋 Scheduled Jobs</h3>
+                            <div class="jobs-filters">
+                                <select id="filter-status" class="input input--sm">
+                                    <option value="">All Status</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="processing">Processing</option>
+                                    <option value="completed">Completed</option>
+                                    <option value="failed">Failed</option>
+                                    <option value="cancelled">Cancelled</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="jobs-table-wrapper">
+                            <table class="jobs-table">
+                                <thead>
+                                    <tr>
+                                        <th>Scheduled Time</th>
+                                        <th>Preset</th>
+                                        <th>Platforms</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="jobs-tbody">
+                                    <!-- Populated by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="no-jobs" class="jobs-empty hidden">
+                            <p>No jobs match the current filter.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirm-modal" class="modal">
+        <div class="modal__overlay"></div>
+        <div class="modal__container">
+            <div class="modal__header">
+                <h3 class="modal__title" id="confirm-title">Confirm Action</h3>
+                <button class="modal__close btn btn--icon btn--ghost">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal__body">
+                <p id="confirm-message">Are you sure?</p>
+            </div>
+            <div class="modal__footer">
+                <button class="btn btn--secondary" id="confirm-cancel">Cancel</button>
+                <button class="btn btn--primary" id="confirm-ok">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="../js/supabase.js"></script>
+    
+    <!-- Core -->
+    <script src="../js/config.js"></script>
+    <script src="../js/core/utils.js"></script>
+    
+    <!-- Models -->
+    <script src="../js/models/Brand.js"></script>
+    
+    <!-- Services -->
+    <script src="../js/services/apiKeys.js"></script>
+    <script src="../js/services/brandManager.js"></script>
+    <script src="../js/services/campaignManager.js"></script>
+    
+    <!-- Components -->
+    <script src="../js/components/brand-switcher.js"></script>
+    <script src="../js/components/toast.js"></script>
+    
+    <!-- Page Controller -->
+    <script src="../js/pages/campaign-detail.js"></script>
+</body>
+</html>

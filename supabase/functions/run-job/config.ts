@@ -164,20 +164,20 @@ export const UNCANNY_ILLUSTRATED_TEXTURE_REPLACEMENT = {
 
 export const UNCANNY_EXTRA_RULES = {
   // When the extra person appears, they should have these traits:
+  // CRITICAL: They must BLEND INTO the group, not stand apart!
   extraPersonTraits: [
-    "slightly off posture, standing at wrong angle",
-    "delayed or frozen smile that doesn't reach the eyes",
-    "eyes looking at camera when others look away",
-    "subtle clothing mismatch with group",
-    "limbs at unnatural angles, too long or positioned wrong",
-    "face in partial shadow, features unclear",
-    "standing too close or too far from group",
-    "reflection doesn't match pose",
+    "seated or standing WITHIN the group, not behind or apart",
+    "same lighting as everyone else - not pale, not glowing",
+    "smile slightly too wide, like everyone else",
+    "eyes with subtle wrongness, same as group",
+    "wearing similar casual clothing to the group",
+    "you have to COUNT to notice the extra - not obvious",
   ],
   // What to add to the prompt when extra person is present:
-  extraPersonPrompt: "One figure in the group is subtly wrong - their posture slightly off, smile frozen, eyes fixed on camera while others look away. NOT overtly monstrous, just uncanny. Almost human but fundamentally wrong.",
+  // CRITICAL: Extra person must be PART OF the group, not a background ghost!
+  extraPersonPrompt: "IMPORTANT: Show exactly the specified count of people SEATED OR STANDING TOGETHER as a unified group. Everyone has the same lighting. Everyone has slightly unsettling expressions - smiles too wide, eyes slightly off. The extra person is NOT separate, NOT in the background, NOT glowing or pale. They sit/stand WITH the others, dressed similarly, lit the same. The horror is that when you COUNT, there's one too many - not an obvious ghost.",
   // What to ban when extra person is present:
-  extraPersonBan: "the extra figure must NOT be: obviously supernatural, transparent, glowing, monstrous, zombie-like, bloody, injured, or clearly identified as different",
+  extraPersonBan: "ghost in background, pale figure standing apart, glowing figure, transparent person, figure in shadows, person standing behind group, obvious supernatural entity, person with different lighting than group",
 };
 
 // =====================================================
@@ -441,10 +441,20 @@ export const MOOD_DESCRIPTORS: Record<number, string> = {
 };
 
 // ORIENTATION LOCK (simplified - no forced symmetry to avoid hallway/stair bias)
-export const ORIENTATION_LOCK = `ORIENTATION LOCK:
-Upright portrait 9:16, not rotated.
+export const ORIENTATION_LOCK = `GLOBAL ORIENTATION LOCK:
+Upright 9:16 portrait frame. No tilt. Horizon level.
 Top=ceiling/sky, bottom=floor/ground.
-No dutch angle. No tilted horizon.`;
+No dutch angle. No tilted viewpoint.`;
+
+// GLOBAL STYLE LOCK - Editorial graphic-novel horror style (v2.0)
+// This is the new baseline for all illustrated horror content
+export const GLOBAL_STYLE_LOCK = `GLOBAL STYLE LOCK (MANDATORY):
+Editorial graphic-novel illustration. Thick bold black ink outlines. Cel shading with flat posterized color blocks. Slight halftone texture. Subtle VHS edge aberration + light analog noise (edges only). Deep blue night shadows + warm orange firelight accent.
+FACE CLARITY LOCK: crisp inked eyelids, clear irises + pupils, sharp facial linework, no painterly blending on faces.`;
+
+// GLOBAL NEGATIVE - What to always avoid
+export const GLOBAL_NEGATIVE = `GLOBAL NEGATIVE:
+No text, letters, captions, watermarks. No blurry faces. No smeared eyes. No melted pupils. No fused features. No warped anatomy. No extra limbs. No shadow-blob people. No faceless figures. No glowing supernatural eyes.`;
 
 // Terms that contaminate custom styles (RENDERING keywords only, not horror tone words)
 export const FORBIDDEN_STYLE_TERMS = [
