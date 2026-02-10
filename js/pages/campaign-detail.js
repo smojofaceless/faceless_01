@@ -19,6 +19,11 @@ class CampaignDetailPage {
         // Logs state
         this.selectedJobId = null;
         this.currentLogs = [];
+        
+        // Real-time subscriptions
+        this.jobsSubscription = null;
+        this.logsSubscription = null;
+        this.campaignSubscription = null;
     }
 
     /**
@@ -47,7 +52,10 @@ class CampaignDetailPage {
         // Load campaign data
         await this.loadCampaign();
         
-        // Start auto-refresh for active campaigns
+        // Start real-time subscriptions
+        this.setupRealtimeSubscriptions();
+        
+        // Start auto-refresh for active campaigns (fallback)
         this.startAutoRefresh();
     }
 
@@ -577,6 +585,152 @@ class CampaignDetailPage {
     }
 
     /**
+     * Setup real-time subscriptions for live updates
+     */
+    setupRealtimeSubscriptions() {
+        if (typeof supabaseClient === 'undefined') {
+            console.warn('Supabase client not available for real-time');
+            this.updateRealtimeIndicator(false);
+            return;
+        }
+        
+        console.log('📡 Setting up real-time subscriptions...');
+        
+        // Subscribe to campaign changes
+        this.campaignSubscription = supabaseClient
+            .channel(`campaign-${this.campaignId}`)
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'generation_batches',
+                filter: `id=eq.${this.campaignId}`
+            }, (payload) => {
+                console.log('📡 Campaign updated:', payload);
+                if (payload.new) {
+                    this.campaign = payload.new;
+                    this.renderCampaign();
+                }
+            })
+            .subscribe((status) => {
+                console.log('📡 Campaign subscription status:', status);
+                this.updateRealtimeIndicator(status === 'SUBSCRIBED');
+            });
+        
+        // Subscribe to job changes for this campaign
+        this.jobsSubscription = supabaseClient
+            .channel(`jobs-${this.campaignId}`)
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'jobs',
+                filter: `batch_id=eq.${this.campaignId}`
+            }, (payload) => {
+                console.log('📡 Job updated:', payload);
+                this.handleJobUpdate(payload);
+            })
+            .subscribe();
+        
+        console.log('✅ Real-time subscriptions active');
+    }
+
+    /**
+     * Update the real-time indicator in the UI
+     */
+    updateRealtimeIndicator(connected) {
+        const indicator = document.getElementById('realtime-indicator');
+        if (indicator) {
+            if (connected) {
+                indicator.textContent = '🟢 LIVE';
+                indicator.classList.add('connected');
+                indicator.title = 'Live updates active - logs will appear automatically';
+            } else {
+                indicator.textContent = '⚫ OFFLINE';
+                indicator.classList.remove('connected');
+                indicator.title = 'Live updates unavailable - use refresh button';
+            }
+        }
+    }
+
+    /**
+     * Subscribe to logs for a specific job
+     */
+    subscribeToJobLogs(jobId) {
+        // Unsubscribe from previous job logs
+        if (this.logsSubscription) {
+            supabaseClient.removeChannel(this.logsSubscription);
+            this.logsSubscription = null;
+        }
+        
+        if (!jobId || typeof supabaseClient === 'undefined') return;
+        
+        console.log(`📡 Subscribing to logs for job ${jobId}`);
+        
+        this.logsSubscription = supabaseClient
+            .channel(`logs-${jobId}`)
+            .on('postgres_changes', {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'job_step_logs',
+                filter: `job_id=eq.${jobId}`
+            }, (payload) => {
+                console.log('📡 New log entry:', payload);
+                if (payload.new) {
+                    // Add to current logs and re-render
+                    this.currentLogs.push(payload.new);
+                    this.renderStepTimeline(this.currentLogs);
+                    this.renderLogs();
+                }
+            })
+            .subscribe();
+    }
+
+    /**
+     * Handle real-time job updates
+     */
+    handleJobUpdate(payload) {
+        const { eventType, new: newJob, old: oldJob } = payload;
+        
+        if (eventType === 'INSERT') {
+            // New job added
+            this.jobs.push(newJob);
+        } else if (eventType === 'UPDATE') {
+            // Update existing job
+            const index = this.jobs.findIndex(j => j.id === newJob.id);
+            if (index !== -1) {
+                this.jobs[index] = newJob;
+            }
+        } else if (eventType === 'DELETE') {
+            // Remove job
+            this.jobs = this.jobs.filter(j => j.id !== oldJob.id);
+        }
+        
+        // Re-render jobs and update stats
+        this.renderJobs();
+        this.populateJobSelect();
+        this.updateStats();
+        this.updateProgress();
+    }
+
+    /**
+     * Cleanup all subscriptions
+     */
+    cleanupSubscriptions() {
+        if (this.campaignSubscription) {
+            supabaseClient.removeChannel(this.campaignSubscription);
+            this.campaignSubscription = null;
+        }
+        if (this.jobsSubscription) {
+            supabaseClient.removeChannel(this.jobsSubscription);
+            this.jobsSubscription = null;
+        }
+        if (this.logsSubscription) {
+            supabaseClient.removeChannel(this.logsSubscription);
+            this.logsSubscription = null;
+        }
+        console.log('📡 Real-time subscriptions cleaned up');
+    }
+
+    /**
      * Show toast notification
      */
     showToast(message, type = 'info') {
@@ -647,10 +801,18 @@ class CampaignDetailPage {
             this.selectedJobId = null;
             this.renderStepTimeline([]);
             this.renderLogs();
+            // Unsubscribe from logs
+            if (this.logsSubscription) {
+                supabaseClient.removeChannel(this.logsSubscription);
+                this.logsSubscription = null;
+            }
             return;
         }
         
         this.selectedJobId = jobId;
+        
+        // Subscribe to real-time log updates for this job
+        this.subscribeToJobLogs(jobId);
         
         // Show loading state
         if (this.logsContent) {
@@ -767,6 +929,11 @@ class CampaignDetailPage {
      */
     renderLogs() {
         if (!this.logsContent) return;
+        
+        // Enable/disable copy button based on logs availability
+        if (this.btnCopyLogs) {
+            this.btnCopyLogs.disabled = !this.currentLogs?.length;
+        }
         
         if (!this.currentLogs?.length) {
             this.logsContent.innerHTML = '<div class="log-entry log-entry--info"><span class="log-entry__message">No logs available for this job.</span></div>';
@@ -913,6 +1080,7 @@ class CampaignDetailPage {
      */
     destroy() {
         this.stopAutoRefresh();
+        this.cleanupSubscriptions();
     }
 }
 

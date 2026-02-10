@@ -990,6 +990,32 @@
     margin-top: var(--space-6);
 }
 
+/* Real-time indicator */
+.realtime-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: var(--text-xs);
+    font-weight: var(--font-semibold);
+    color: var(--color-error);
+    padding: 2px 8px;
+    background: rgba(239, 68, 68, 0.1);
+    border-radius: var(--radius-full);
+    margin-left: var(--space-2);
+    animation: pulse-live 2s ease-in-out infinite;
+    vertical-align: middle;
+}
+
+.realtime-indicator.connected {
+    color: var(--color-success);
+    background: rgba(34, 197, 94, 0.1);
+}
+
+@keyframes pulse-live {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
 .logs-controls {
     display: flex;
     gap: var(--space-2);
