@@ -669,18 +669,22 @@ GRANT EXECUTE ON FUNCTION get_step_retry_policies() TO service_role;
 -- RLS policies for job_failures
 ALTER TABLE job_failures ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Service role can do everything on job_failures" ON job_failures;
 CREATE POLICY "Service role can do everything on job_failures" ON job_failures
     FOR ALL TO service_role USING (true) WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Authenticated users can view job_failures" ON job_failures;
 CREATE POLICY "Authenticated users can view job_failures" ON job_failures
     FOR SELECT TO authenticated USING (true);
 
 -- RLS for job_step_retry_policies (read-only for most users)
 ALTER TABLE job_step_retry_policies ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Anyone can read retry policies" ON job_step_retry_policies;
 CREATE POLICY "Anyone can read retry policies" ON job_step_retry_policies
     FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Service role can manage retry policies" ON job_step_retry_policies;
 CREATE POLICY "Service role can manage retry policies" ON job_step_retry_policies
     FOR ALL TO service_role USING (true) WITH CHECK (true);
 
