@@ -1675,6 +1675,10 @@ app.post('/render', async (req, res) => {
           if (safeEffectsConfig.vignette?.enabled) ecParts.push(`vignette(${((safeEffectsConfig.vignette.intensity || 0) * 100).toFixed(0)}%)`);
           if (safeEffectsConfig.color_grade?.enabled) ecParts.push(`cg(${safeEffectsConfig.color_grade.preset || 'auto'})`);
           console.log(`[${jobId}]   Active: ${ecParts.join(', ') || 'none (all disabled)'}`);
+          // Log brand-level ceilings if any were applied
+          if (safeEffectsConfig._limits_applied?.length > 0) {
+            console.log(`[${jobId}]   🔒 Brand ceilings applied: ${safeEffectsConfig._limits_applied.join(', ')}`);
+          }
         } else {
           console.warn(`[${jobId}] ⚠️ Invalid effects_config format, ignoring`);
         }

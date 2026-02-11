@@ -1023,17 +1023,23 @@ function safeClamp(value, defaultVal, min = 0, max = 1) {
  * Guarantees every numeric field is a finite number within safe FFmpeg ranges.
  * Call once at the renderer entry point — individual builders can then trust the values.
  *
- * Safe ranges (chosen to prevent visible artefacts or FFmpeg errors):
- *   intensity:         0 – 1
- *   kenburns.zoom_range: each element 1.0 – 1.5
- *   kenburns.pan_speed:  0 – 0.6    (above 0.4 is already very noticeable)
- *   grain.intensity:     0 – 0.5    (above 0.35 is heavy noise)
- *   grain.size:          0.5 – 2.0
- *   flicker.intensity:   0 – 0.5
- *   flicker.frequency:   0.05 – 2.0
- *   vignette.intensity:  0 – 1
- *   color_grade.intensity: 0 – 1
- *   fade.duration:       0.1 – 5.0
+ * Two-pass clamping:
+ *   Pass 1 — System-level safe ranges (hard limits, never exceeded):
+ *     intensity:           0 – 1
+ *     kenburns.zoom_range: each element 1.0 – 1.5
+ *     kenburns.pan_speed:  0 – 0.6
+ *     grain.intensity:     0 – 0.5
+ *     grain.size:          0.5 – 2.0
+ *     flicker.intensity:   0 – 0.5
+ *     flicker.frequency:   0.05 – 2.0
+ *     vignette.intensity:  0 – 1
+ *     color_grade.intensity: 0 – 1
+ *     fade.duration:       0.1 – 5.0
+ *
+ *   Pass 2 — Brand-level ceilings (optional, always tighter than system):
+ *     Extracted from raw.limits — presets can request effects, brand caps them.
+ *     Example: { "limits": { "grain": { "max_intensity": 0.25 } } }
+ *     The brand says "no matter the preset, grain never exceeds 25%."
  *
  * @param {Object} raw - The effects_config object (may be from untrusted worker payload)
  * @returns {Object} A deep-cloned config with every numeric field clamped to safe ranges
@@ -1041,7 +1047,12 @@ function safeClamp(value, defaultVal, min = 0, max = 1) {
 function normalizeEffectsConfig(raw) {
   if (!raw || typeof raw !== 'object') return null;
 
+  // Extract brand-level ceilings (applied AFTER system clamping)
+  const limits = (raw.limits && typeof raw.limits === 'object') ? raw.limits : null;
+
   const cfg = {};
+
+  // ── Pass 1: System-level safe ranges ──────────────────────────────────
 
   // Top-level
   cfg.enabled = raw.enabled === true;
@@ -1118,6 +1129,71 @@ function normalizeEffectsConfig(raw) {
     };
   } else {
     cfg.fade = { fade_in: true, fade_out: true, duration: 1.5 };
+  }
+
+  // ── Pass 2: Brand-level ceilings ──────────────────────────────────────
+  // Ceilings are tighter caps set by the brand. They never RAISE a value,
+  // only lower it. Presets request effects → brand caps them → safe output.
+  if (limits) {
+    const capped = [];
+
+    // Helper: apply a ceiling, track if it actually capped
+    const cap = (obj, key, limitVal, label) => {
+      if (limitVal === undefined || limitVal === null) return;
+      const max = Number(limitVal);
+      if (isNaN(max)) return;
+      if (obj[key] > max) {
+        obj[key] = Math.max(0, max);
+        capped.push(label);
+      }
+    };
+
+    // Ken Burns ceilings
+    if (limits.kenburns && typeof limits.kenburns === 'object') {
+      cap(cfg.kenburns, 'pan_speed', limits.kenburns.max_pan_speed, 'kb.pan_speed');
+      if (limits.kenburns.max_zoom_range !== undefined) {
+        const maxZ = Math.max(1.0, Number(limits.kenburns.max_zoom_range) || 1.0);
+        if (cfg.kenburns.zoom_range[0] > maxZ) { cfg.kenburns.zoom_range[0] = maxZ; capped.push('kb.zoom[0]'); }
+        if (cfg.kenburns.zoom_range[1] > maxZ) { cfg.kenburns.zoom_range[1] = maxZ; capped.push('kb.zoom[1]'); }
+      }
+    }
+
+    // Grain ceilings
+    if (limits.grain && typeof limits.grain === 'object') {
+      cap(cfg.grain, 'intensity', limits.grain.max_intensity, 'grain.intensity');
+      cap(cfg.grain, 'size', limits.grain.max_size, 'grain.size');
+    }
+
+    // Flicker ceilings
+    if (limits.flicker && typeof limits.flicker === 'object') {
+      cap(cfg.flicker, 'intensity', limits.flicker.max_intensity, 'flicker.intensity');
+      cap(cfg.flicker, 'frequency', limits.flicker.max_frequency, 'flicker.frequency');
+    }
+
+    // Vignette ceiling
+    if (limits.vignette && typeof limits.vignette === 'object') {
+      cap(cfg.vignette, 'intensity', limits.vignette.max_intensity, 'vignette.intensity');
+    }
+
+    // Color grade ceiling
+    if (limits.color_grade && typeof limits.color_grade === 'object') {
+      cap(cfg.color_grade, 'intensity', limits.color_grade.max_intensity, 'color_grade.intensity');
+    }
+
+    // Fade ceiling
+    if (limits.fade && typeof limits.fade === 'object') {
+      cap(cfg.fade, 'duration', limits.fade.max_duration, 'fade.duration');
+    }
+
+    // Master intensity ceiling
+    if (limits.max_intensity !== undefined) {
+      cap(cfg, 'intensity', limits.max_intensity, 'master_intensity');
+    }
+
+    // Attach for observability (not forwarded to builders)
+    if (capped.length > 0) {
+      cfg._limits_applied = capped;
+    }
   }
 
   return cfg;

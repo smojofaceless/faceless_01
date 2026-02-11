@@ -1,6 +1,6 @@
 # Effects Profile System v1.0
 
-> **Last Updated:** February 8, 2026
+> **Last Updated:** February 10, 2026
 
 This document describes the intensity-based effects system for video generation.
 
@@ -250,6 +250,55 @@ Final Profile = merge(
   user_effects_profile
 )
 ```
+
+### Two-Pass Normalization (v4.1)
+
+Before any builder sees the merged config, `normalizeEffectsConfig()` runs two passes:
+
+| Pass | Purpose | Example |
+|------|---------|---------|
+| **1. System clamp** | Hard FFmpeg-safe ranges that can never be exceeded | `grain.intensity` capped at 0.5 |
+| **2. Brand ceilings** | Optional per-brand caps — tighter than system ranges | Brand says "grain never exceeds 25%" |
+
+### Brand-Level Effect Ceilings
+
+Brands can define `limits` in their `config_overrides.effects` to cap any effect —
+regardless of what presets request. Ceilings are **not targets**: they only lower values, never raise them.
+
+```json
+{
+  "enabled": true,
+  "intensity": 0.6,
+  "limits": {
+    "max_intensity": 0.7,
+    "kenburns": { "max_pan_speed": 0.4, "max_zoom_range": 1.3 },
+    "grain":    { "max_intensity": 0.25, "max_size": 1.5 },
+    "flicker":  { "max_intensity": 0.15, "max_frequency": 1.0 },
+    "vignette": { "max_intensity": 0.7 },
+    "color_grade": { "max_intensity": 0.8 },
+    "fade":     { "max_duration": 3.0 }
+  }
+}
+```
+
+**Flow:** Preset requests grain at 0.4 → system clamps to 0.4 (within 0–0.5) → brand ceiling caps to 0.25.
+
+Available ceiling keys:
+
+| Ceiling | Caps | System Max |
+|---------|------|-----------|
+| `max_intensity` | Master intensity | 1.0 |
+| `kenburns.max_pan_speed` | Pan speed | 0.6 |
+| `kenburns.max_zoom_range` | Both zoom_range elements | 1.5 |
+| `grain.max_intensity` | Grain strength | 0.5 |
+| `grain.max_size` | Grain particle size | 2.0 |
+| `flicker.max_intensity` | Flicker strength | 0.5 |
+| `flicker.max_frequency` | Flicker Hz | 2.0 |
+| `vignette.max_intensity` | Vignette darkening | 1.0 |
+| `color_grade.max_intensity` | Color grade strength | 1.0 |
+| `fade.max_duration` | Fade in/out seconds | 5.0 |
+
+When a ceiling is applied, the renderer logs `🔒 Brand ceilings applied: grain.intensity, flicker.intensity` for auditability.
 
 ## FFmpeg Integration
 
