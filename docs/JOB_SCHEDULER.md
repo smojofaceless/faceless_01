@@ -1,9 +1,9 @@
 # Job Scheduler
 
-> **Document Version:** 2.0  
-> **Last Updated:** February 8, 2026  
+> **Document Version:** 2.1  
+> **Last Updated:** February 10, 2026  
 > **Author:** System Architect  
-> **Status:** ✅ Implemented (with Job Claim + Lease System)
+> **Status:** ✅ Implemented (with Job Claim + Lease System + Cost Controls)
 
 ---
 
@@ -191,7 +191,26 @@ WHERE (
 )
 ```
 
-### 3. Stampede Prevention
+### 4. Global Budget Gate (Cost Controls)
+
+Before claiming any jobs, the scheduler checks the global daily budget:
+
+```typescript
+// In schedule-jobs, after kill switch check:
+const { data: budget } = await supabase.rpc('check_global_budget');
+if (budget && !budget.can_proceed) {
+  return new Response(JSON.stringify({
+    message: 'Global daily budget exceeded - scheduler paused',
+    budget
+  }), { status: 200 });
+}
+```
+
+This prevents new jobs from being claimed when daily spend reaches the global cap ($200/day default). The gate checks `api_usage` for today's total `estimated_cost_cents` against `cost_limits` where `scope='system' AND service IS NULL`.
+
+**Related:** [COST_CONTROLS.md](COST_CONTROLS.md)
+
+### 5. Stampede Prevention
 
 Maximum jobs per scheduler run: **3** (configurable)
 
@@ -498,6 +517,5 @@ AND (
 ## Version History
 
 | Date | Version | Changes |
-|------|---------|---------|
-| Feb 19, 2026 | 2.0 | Job Claim + Lease System: atomic claims, heartbeat, stale sweeper |
+|------|---------|---------|| Feb 10, 2026 | 2.1 | Cost Controls integration: global budget gate, `check_global_budget` RPC call before claiming jobs || Feb 19, 2026 | 2.0 | Job Claim + Lease System: atomic claims, heartbeat, stale sweeper |
 | Feb 10, 2026 | 1.0 | Initial implementation |

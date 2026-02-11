@@ -1,7 +1,8 @@
 # Failure Cluster Protection + Dead Letter Queue (DLQ)
 
-> **Version:** 1.0  
+> **Version:** 1.1  
 > **Implemented:** February 22, 2026  
+> **Updated:** February 10, 2026  
 > **Status:** ✅ Production Ready
 
 ---
@@ -68,8 +69,10 @@ This system protects the video generation pipeline from cascading failures when 
 |-------|-------------|--------|--------|
 | `dependency` | External service down (OpenAI, ElevenLabs, FFmpeg, storage) - 5xx from known services | ✅ Yes | Auto-pause campaign, wait for recovery |
 | `transient` | Network hiccups, 429 rate limits, timeouts where vendor is unclear | ✅ Yes | Auto-retry with backoff |
-| `misconfig` | Configuration errors (bad API key, missing secrets) | ❌ No | Operator must fix |
+| `misconfig` | Configuration errors (bad API key, missing secrets, **cost limit exceeded**) | ❌ No | Operator must fix |
 | `permanent` | Unrecoverable (invalid input, 4xx client errors) | ❌ No | Manual review required |
+
+> **Note:** Cost limit failures (budget exceeded, max calls per job reached) are classified as `misconfig` because they require operator action (adjust limits in `cost_limits` table). They are NOT auto-retried. See [COST_CONTROLS.md](COST_CONTROLS.md) for details.
 
 ### Classification Logic
 
@@ -490,7 +493,7 @@ Includes:
 1. **Dashboard UI** - Visual DLQ management page
 2. **Alerting** - Email/Slack notifications for clusters
 3. **Service Health** - Pre-flight checks before job start
-4. **Cost Tracking** - Estimate wasted spend during outages
+4. ~~**Cost Tracking** - Estimate wasted spend during outages~~ → **Delivered** in Cost Controls (Item #6)
 5. **Auto-Resume** - Detect when services recover, unpause campaigns
 
 ---
@@ -500,3 +503,4 @@ Includes:
 - [ROADMAP.md](ROADMAP.md) - Item #4 (Level 1)
 - [JOB_SCHEDULER.md](JOB_SCHEDULER.md) - Scheduler integration
 - [CAMPAIGN_SYSTEM.md](CAMPAIGN_SYSTEM.md) - Campaign pause/resume
+- [COST_CONTROLS.md](COST_CONTROLS.md) - Cost limit failures use `misconfig` class

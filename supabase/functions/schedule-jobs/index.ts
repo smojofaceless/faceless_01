@@ -327,6 +327,35 @@ serve(async (req) => {
     }
     
     // =========================================
+    // GLOBAL BUDGET CHECK (Cost Controls)
+    // =========================================
+    
+    const { data: globalBudget, error: budgetError } = await supabase.rpc('check_global_budget');
+    
+    if (budgetError) {
+      console.warn(`[SCHEDULER] ⚠️ Could not check global budget: ${budgetError.message}`);
+      // Continue anyway - budget check is a guardrail, not a hard gate
+    } else if (globalBudget && !globalBudget.can_proceed) {
+      console.log(`[SCHEDULER] 💰 Global budget exceeded ($${(globalBudget.daily_spend_cents / 100).toFixed(2)}/$${(globalBudget.daily_budget_cents / 100).toFixed(2)}) - pausing scheduler`);
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: 'Global daily budget exceeded - scheduler paused',
+          budget_exceeded: true,
+          daily_spend_cents: globalBudget.daily_spend_cents,
+          daily_budget_cents: globalBudget.daily_budget_cents,
+          pct_used: globalBudget.pct_used,
+          scheduler_run_id: schedulerRunId,
+          duration_ms: Date.now() - startTime
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    } else if (globalBudget?.reason) {
+      // Log warning if approaching limit
+      console.log(`[SCHEDULER] 💰 Budget warning: ${globalBudget.reason} (${globalBudget.pct_used}% used)`);
+    }
+    
+    // =========================================
     // AUTO-PAUSE FAILURE CLUSTERS
     // =========================================
     

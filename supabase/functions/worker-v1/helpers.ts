@@ -126,6 +126,22 @@ export function pathForFinalVideo(brandId: string, jobId: string): string {
   return `brands/${brandId}/jobs/${jobId}/video/final.mp4`;
 }
 
+/**
+ * Build storage path for brand-level music track
+ * @returns Path like "brands/abc/music/ambient_dark_01.mp3"
+ */
+export function pathForBrandMusic(brandId: string, trackId: string): string {
+  return `brands/${brandId}/music/${trackId}.mp3`;
+}
+
+/**
+ * Build storage path for per-job music copy (cached for renderer)
+ * @returns Path like "brands/abc/jobs/xyz/audio/music.mp3"
+ */
+export function pathForJobMusic(brandId: string, jobId: string): string {
+  return `brands/${brandId}/jobs/${jobId}/audio/music.mp3`;
+}
+
 // =====================================================
 // TELEMETRY LOGGING
 // Structured logs for debugging and monitoring
@@ -920,4 +936,92 @@ export async function fetchWithError(
   }
   
   return response;
+}
+
+// =====================================================
+// EFFECTS CONFIG HELPER (Roadmap #15 — Controlled Motion)
+// =====================================================
+
+/**
+ * Effects config shape returned by get_effects_config_for_job() RPC.
+ * See: supabase/migrations/20260211_effects_config.sql
+ */
+export interface EffectsConfig {
+  enabled: boolean;
+  intensity: number;  // 0-1 master knob
+  kenburns: {
+    enabled: boolean;
+    zoom_range: [number, number];
+    pan_speed: number;
+    direction: 'in' | 'out' | 'alternate' | 'random';
+  };
+  grain: {
+    enabled: boolean;
+    intensity: number;
+    size: number;
+  };
+  flicker: {
+    enabled: boolean;
+    intensity: number;
+    frequency: number;
+  };
+  vignette: {
+    enabled: boolean;
+    intensity: number;
+  };
+  color_grade: {
+    enabled: boolean;
+    preset: string;
+    intensity: number;
+  };
+  fade: {
+    fade_in: boolean;
+    fade_out: boolean;
+    duration: number;
+  };
+}
+
+/**
+ * Resolve the final effects_config for a job by calling the DB RPC
+ * which deep-merges: system defaults → preset profile → brand overrides → job meta.
+ *
+ * Falls back to a hardcoded minimal config if the RPC is unavailable
+ * (soft failure — never blocks rendering).
+ *
+ * @param supabase - Supabase client
+ * @param brandId  - Brand UUID
+ * @param vibePreset - e.g. 'urban_legend', 'one_too_many'
+ * @param jobMeta  - job.meta (may contain effects_config overrides)
+ * @returns EffectsConfig or null on error
+ */
+export async function getEffectsConfigForJob(
+  supabase: SupabaseClient,
+  brandId: string,
+  vibePreset: string | null,
+  jobMeta: Record<string, unknown> = {}
+): Promise<EffectsConfig | null> {
+  try {
+    const { data, error } = await supabase.rpc('get_effects_config_for_job', {
+      p_brand_id: brandId,
+      p_vibe_preset: vibePreset || 'urban_legend',
+      p_job_meta: jobMeta,
+    });
+
+    if (error) {
+      console.warn(`[EFFECTS] RPC get_effects_config_for_job failed: ${error.message}`);
+      // Soft fallback: return null → renderer will use legacy pipeline
+      return null;
+    }
+
+    if (data && typeof data === 'object') {
+      console.log(`[EFFECTS] ✓ Resolved effects_config: enabled=${data.enabled}, intensity=${data.intensity}`);
+      return data as EffectsConfig;
+    }
+
+    console.warn('[EFFECTS] RPC returned unexpected data shape, using fallback');
+    return null;
+  } catch (err) {
+    console.warn(`[EFFECTS] getEffectsConfigForJob exception: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
 }

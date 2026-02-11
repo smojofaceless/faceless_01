@@ -1,6 +1,8 @@
 // =====================================================
 // WORKER V1 STEP IMPLEMENTATIONS
 // Real work for each pipeline step
+// v1.4 - 2026-02-10 (Background Music V1: DB-driven track selection, ducking config)
+// v1.3 - 2026-02-10 (Cost controls integration)
 // v1.2 - 2026-02-22 (Standardized asset paths)
 // v1.1 - 2026-02-22 (Added step logging)
 // v1.0 - 2026-02-20
@@ -24,6 +26,7 @@ import {
   computeHash,
   computePipelineHash,
   fetchWithError,
+  getEffectsConfigForJob,
   ELEVENLABS_VOICE_ID,
   STORAGE_BUCKET,
   updateStepStatus,
@@ -33,9 +36,17 @@ import {
   pathForSubtitles,
   pathForAssembledVideo,
   pathForFinalVideo,
+  pathForBrandMusic,
+  pathForJobMusic,
 } from "./helpers.ts";
 
 import { StepLogger } from "./stepLogger.ts";
+import { 
+  CostControlHelper, 
+  ServiceType, 
+  isCostLimitError,
+  assertCanSpend 
+} from "./costControl.ts";
 
 // =====================================================
 // STEP 1: STORY GENERATION
@@ -531,9 +542,32 @@ export async function executeVoiceStep(
 
   console.log(`[VOICE] Synthesizing ${job.story_text.split(/\s+/).length} words with ElevenLabs`);
 
+  // Character count for cost tracking
+  const charCount = job.story_text.length;
+
   try {
     // === LEASE GRACE CHECK: Verify enough time before expensive API call ===
     await requireLeaseGrace(supabase, job.id, workerId, 'ElevenLabs TTS');
+
+    // === COST CONTROL: Check budget + acquire slot before ElevenLabs call ===
+    const costHelper = new CostControlHelper(supabase, job.id, workerId);
+    try {
+      await assertCanSpend(costHelper, 'elevenlabs', 'voice_synthesis', 1);
+    } catch (costError) {
+      if (isCostLimitError(costError)) {
+        console.error(`[VOICE] ❌ Cost limit hit: ${costError instanceof Error ? costError.message : costError}`);
+        return { 
+          success: false, 
+          error: `cost_limit_exceeded: elevenlabs - ${costError instanceof Error ? costError.message : 'budget reached'}`,
+          data: { 
+            chars: charCount,
+            cost_limit_hit: true,
+            failure_class: 'misconfig'
+          }
+        };
+      }
+      throw costError;
+    }
 
     // Snapshot voice request params
     await logger.snapshot('voice', 'payload', {
@@ -660,6 +694,23 @@ export async function executeVoiceStep(
 
     console.log(`[VOICE] ✓ Generated ${durationMs}ms audio, ${timestamps.length} word timestamps`);
     
+    // === COST CONTROL: Record usage + release slot ===
+    const costIdempotencyKey = `job:${job.id}:elevenlabs:voice:${storyHash.slice(0, 16)}`;
+    // Estimate: ~$0.30 per 1K chars = 0.03 cents per char
+    const estimatedCostCents = Math.round(charCount * 0.03);
+    await costHelper.recordUsage(
+      'elevenlabs',
+      costIdempotencyKey,
+      { 
+        chars_processed: charCount, 
+        model: 'eleven_turbo_v2_5',
+        estimated_cost_cents: estimatedCostCents
+      },
+      'voice',
+      'voice_synthesis'
+    );
+    await costHelper.releaseSlot('elevenlabs', 'voice_synthesis');
+
     // Snapshot voice response summary
     await logger.snapshot('voice', 'response', {
       duration_ms: durationMs,
@@ -678,8 +729,41 @@ export async function executeVoiceStep(
 }
 
 // =====================================================
-// STEP 5: MUSIC SELECTION
+// STEP 5: MUSIC SELECTION (v2 — DB-driven, Background Music V1)
+// Loads brand music config + tracks from DB, deterministic selection.
+// Stores track URL + music_config for renderer in job_assets/meta.
+// No API calls → no cost controls needed for this step.
 // =====================================================
+
+/**
+ * Music configuration object stored in brand_templates.config_overrides.music
+ * and passed to the FFmpeg renderer for audio mixing.
+ */
+interface MusicConfig {
+  enabled: boolean;
+  default_volume: number;       // 0.0 - 1.0 (e.g. 0.18 = 18%)
+  ducking: {
+    enabled: boolean;
+    duck_volume: number;        // Volume during speech (e.g. 0.08)
+    attack_ms: number;          // How fast to duck (e.g. 150)
+    release_ms: number;         // How fast to restore (e.g. 250)
+  };
+  fade: {
+    in_ms: number;              // Fade-in duration (e.g. 800)
+    out_ms: number;             // Fade-out duration (e.g. 1200)
+  };
+}
+
+interface SelectedTrack {
+  track_id: string;
+  display_name: string;
+  file_path: string;
+  storage_url: string;
+  duration_seconds: number;
+  loopable: boolean;
+  mood: string;
+  track_count: number;
+}
 
 export async function executeMusicStep(
   supabase: SupabaseClient,
@@ -690,50 +774,279 @@ export async function executeMusicStep(
 ): Promise<StepResult> {
   const idempotencyKey = `${job.id}:music_select`;
 
-  // Check if already done
+  // Check if already done (idempotent resume)
   const existingAsset = await getAssetByKey(supabase, job.id, idempotencyKey);
-  if (existingAsset?.meta?.track_id) {
+  if (existingAsset?.meta?.track_id && existingAsset?.meta?.music_config) {
     console.log(`[MUSIC] Already selected: ${existingAsset.meta.track_id}`);
     return { success: true, skipped: true, data: existingAsset.meta as Record<string, unknown> };
   }
 
-  // Check if job already has music track
-  if (job.meta?.music_track_id) {
+  // Check if job already has music track from a previous run
+  if (job.meta?.music_track_id && job.meta?.music_url && job.meta?.music_config) {
     console.log(`[MUSIC] Track already set in job meta: ${job.meta.music_track_id}`);
     await upsertAsset(supabase, job.id, idempotencyKey, 'music', '', null, {
-      track_id: job.meta.music_track_id,
+      track_id: job.meta.music_track_id as string,
+      music_url: job.meta.music_url as string,
+      music_config: job.meta.music_config,
       source: 'job_meta'
     });
-    return { success: true, skipped: true, data: { track_id: job.meta.music_track_id } };
+    return { success: true, skipped: true, data: { 
+      track_id: job.meta.music_track_id,
+      music_url: job.meta.music_url,
+    } };
   }
 
   const vibePreset = job.vibe_preset || (job.meta?.vibe_preset as string) || 'urban_legend';
-  
-  // Deterministic track selection based on vibe preset
+
+  try {
+    // -----------------------------------------------
+    // 1. Load brand music config (from brand_templates or defaults)
+    // -----------------------------------------------
+    const { data: musicConfig, error: configError } = await supabase
+      .rpc('get_brand_music_config', { p_brand_id: job.brand_id });
+
+    if (configError) {
+      console.warn(`[MUSIC] Failed to load music config: ${configError.message}, using defaults`);
+    }
+
+    const config: MusicConfig = musicConfig || {
+      enabled: true,
+      default_volume: 0.18,
+      ducking: { enabled: true, duck_volume: 0.08, attack_ms: 150, release_ms: 250 },
+      fade: { in_ms: 800, out_ms: 1200 },
+    };
+
+    // If music is disabled for this brand, skip entirely
+    if (!config.enabled) {
+      console.log(`[MUSIC] Music disabled for brand ${job.brand_id}, skipping`);
+      await upsertAsset(supabase, job.id, idempotencyKey, 'music', '', null, {
+        track_id: null,
+        music_enabled: false,
+        source: 'brand_config_disabled'
+      });
+      await updateJobMeta(supabase, job.id, { music_enabled: false });
+      return { success: true, skipped: true, data: { music_enabled: false } };
+    }
+
+    // -----------------------------------------------
+    // 2. Load available tracks from DB
+    // -----------------------------------------------
+    const { data: tracks, error: tracksError } = await supabase
+      .rpc('get_brand_music_tracks', { 
+        p_brand_id: job.brand_id,
+        p_vibe_preset: vibePreset
+      });
+
+    if (tracksError) {
+      console.error(`[MUSIC] Failed to load tracks: ${tracksError.message}`);
+      // Fall back to hardcoded track map (backwards compat)
+      return await musicFallback(supabase, job, vibePreset, config, idempotencyKey, logger);
+    }
+
+    if (!tracks || tracks.length === 0) {
+      console.warn(`[MUSIC] No tracks found for brand ${job.brand_id} / vibe ${vibePreset}`);
+      // Fall back to hardcoded
+      return await musicFallback(supabase, job, vibePreset, config, idempotencyKey, logger);
+    }
+
+    // -----------------------------------------------
+    // 3. Deterministic selection: hash(job_id + brand_id) % count
+    // -----------------------------------------------
+    const hashInput = `${job.id}::${job.brand_id}`;
+    const hashHex = await computeHash(hashInput);
+    const hashVal = parseInt(hashHex.slice(0, 8), 16);
+    const selectedIndex = hashVal % tracks.length;
+    const selected = tracks[selectedIndex];
+
+    console.log(`[MUSIC] Deterministic selection: hash=${hashHex.slice(0,8)} → index ${selectedIndex}/${tracks.length} → ${selected.track_id}`);
+
+    // -----------------------------------------------
+    // 4. Get public URL for the track file from Storage
+    // -----------------------------------------------
+    const trackPath = selected.file_path || pathForBrandMusic(job.brand_id, selected.track_id);
+    
+    const { data: urlData } = supabase.storage
+      .from(STORAGE_BUCKET)
+      .getPublicUrl(trackPath);
+
+    const musicUrl = urlData?.publicUrl || null;
+
+    if (!musicUrl) {
+      console.warn(`[MUSIC] Could not get public URL for ${trackPath}, track may not be uploaded yet`);
+      // Warn but don't fail — renderer will skip music if no URL
+      await logger.snapshot('music', 'warn', {
+        warn_code: 'music_missing_file',
+        track_id: selected.track_id,
+        file_path: trackPath,
+        reason: 'Track selected but MP3 not found in storage — video will render without music',
+      }, `⚠ Track file missing: ${trackPath}`);
+    }
+
+    // -----------------------------------------------
+    // 5. Store asset + update job meta
+    //    Include "music fingerprint" for debugging:
+    //    track_id + file hash proxy + config hash
+    // -----------------------------------------------
+    const configHash = (await computeHash(JSON.stringify(config))).slice(0, 16);
+
+    const assetMeta = {
+      track_id: selected.track_id,
+      display_name: selected.display_name,
+      file_path: trackPath,
+      music_url: musicUrl,
+      duration_seconds: selected.duration_seconds,
+      loopable: selected.loopable,
+      mood: selected.mood,
+      track_count: tracks.length,
+      vibe_preset: vibePreset,
+      selection_hash: hashHex.slice(0, 16),
+      selection_index: selectedIndex,
+      music_config: config,
+      music_config_hash: configHash,
+      source: 'db_tracks'
+    };
+
+    await upsertAsset(supabase, job.id, idempotencyKey, 'music', trackPath, musicUrl, assetMeta);
+
+    await updateJobMeta(supabase, job.id, {
+      music_track_id: selected.track_id,
+      music_url: musicUrl,
+      music_config: config,
+      music_enabled: true,
+      music_loopable: selected.loopable ?? true,
+    });
+
+    // Log snapshot
+    await logger.snapshot('music', 'output', {
+      track_id: selected.track_id,
+      display_name: selected.display_name,
+      mood: selected.mood,
+      loopable: selected.loopable,
+      duration_seconds: selected.duration_seconds,
+      track_count: tracks.length,
+      selection_index: selectedIndex,
+      volume: config.default_volume,
+      ducking_enabled: config.ducking.enabled,
+      fade_in_ms: config.fade.in_ms,
+      fade_out_ms: config.fade.out_ms,
+    }, `Selected track: ${selected.track_id}`);
+
+    console.log(`[MUSIC] ✓ Selected: ${selected.track_id} (${selected.display_name}), volume=${config.default_volume}, ducking=${config.ducking.enabled}`);
+    
+    return { 
+      success: true, 
+      data: { 
+        track_id: selected.track_id,
+        music_url: musicUrl,
+        track_count: tracks.length,
+      } 
+    };
+
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error(`[MUSIC] ✗ Failed: ${errorMsg} — soft-failing, video will render without music`);
+
+    // ALWAYS persist a job_assets record so downstream steps know music was attempted
+    try {
+      await upsertAsset(supabase, job.id, idempotencyKey, 'music', '', null, {
+        track_id: null,
+        music_enabled: false,
+        applied: false,
+        source: 'error',
+        error: errorMsg.slice(0, 500),
+      });
+      await updateJobMeta(supabase, job.id, { music_enabled: false, music_error: errorMsg.slice(0, 500) });
+    } catch (persistErr) {
+      console.error(`[MUSIC] Failed to persist error asset: ${persistErr instanceof Error ? persistErr.message : String(persistErr)}`);
+    }
+
+    // Warning snapshot with structured code for observability
+    try {
+      await logger.snapshot('music', 'warn', {
+        warn_code: 'music_selection_failed',
+        error: errorMsg.slice(0, 500),
+        brand_id: job.brand_id,
+        vibe_preset: job.vibe_preset || job.meta?.vibe_preset || 'unknown',
+        reason: 'Music step failed — video will render without music',
+      }, `⚠ Music selection failed: ${errorMsg.slice(0, 120)}`);
+    } catch (_) { /* snapshot is best-effort */ }
+
+    // Soft-fail: return success so the job continues without music
+    return { success: true, skipped: true, data: { music_enabled: false, error: errorMsg } };
+  }
+}
+
+/**
+ * Fallback music selection for brands with no DB tracks.
+ * Uses hardcoded vibe→track_id map (legacy behavior).
+ */
+async function musicFallback(
+  supabase: SupabaseClient,
+  job: Job,
+  vibePreset: string,
+  config: MusicConfig,
+  idempotencyKey: string,
+  logger: StepLogger,
+): Promise<StepResult> {
   const trackMap: Record<string, string> = {
     'urban_legend': 'ambient_dark_01',
-    'slow_creepy': 'ambient_creepy_01',
+    'slow_creepy': 'ambient_dark_01',
     'punchy_shock': 'tension_pulse_01',
-    'atmospheric': 'ambient_fog_01',
-    'one_too_many': 'uncanny_drone_01',
+    'atmospheric': 'ambient_dark_01',
+    'one_too_many': 'tension_pulse_01',
+    'nosleep': 'ambient_dark_01',
+    'backrooms': 'eerie_piano_01',
+    'glitch': 'tension_pulse_01',
   };
 
   const trackId = trackMap[vibePreset] || 'ambient_dark_01';
+  const trackPath = pathForBrandMusic(job.brand_id, trackId);
 
-  console.log(`[MUSIC] Selected track: ${trackId} for vibe: ${vibePreset}`);
+  // Attempt to get public URL (track may not exist in storage)
+  const { data: urlData } = supabase.storage
+    .from(STORAGE_BUCKET)
+    .getPublicUrl(trackPath);
+  const musicUrl = urlData?.publicUrl || null;
 
-  // Update job meta
+  if (!musicUrl) {
+    await logger.snapshot('music', 'warn', {
+      warn_code: 'music_missing_file',
+      track_id: trackId,
+      file_path: trackPath,
+      source: 'fallback',
+      reason: 'Fallback track selected but MP3 not found in storage',
+    }, `⚠ Fallback track file missing: ${trackPath}`);
+  }
+
+  console.log(`[MUSIC] Fallback selection: ${trackId} for vibe ${vibePreset}`);
+
+  const assetMeta = {
+    track_id: trackId,
+    music_url: musicUrl,
+    file_path: trackPath,
+    vibe_preset: vibePreset,
+    music_config: config,
+    source: 'fallback_hardcoded'
+  };
+
+  await upsertAsset(supabase, job.id, idempotencyKey, 'music', trackPath, musicUrl, assetMeta);
+
   await updateJobMeta(supabase, job.id, {
     music_track_id: trackId,
+    music_url: musicUrl,
+    music_config: config,
+    music_enabled: true,
   });
 
-  // Store asset
-  await upsertAsset(supabase, job.id, idempotencyKey, 'music', '', null, {
+  await logger.snapshot('music', 'output', {
     track_id: trackId,
+    source: 'fallback',
     vibe_preset: vibePreset,
-  });
+    volume: config.default_volume,
+    ducking_enabled: config.ducking.enabled,
+  }, `Fallback track: ${trackId}`);
 
-  return { success: true, data: { track_id: trackId } };
+  return { success: true, data: { track_id: trackId, music_url: musicUrl, source: 'fallback' } };
 }
 
 // =====================================================
@@ -861,6 +1174,30 @@ export async function executeImagesStep(
       // === LEASE GRACE CHECK: Verify enough time before expensive API call ===
       await requireLeaseGrace(supabase, job.id, workerId, `${imageModel} scene ${i}`);
 
+      // === COST CONTROL: Check budget + acquire slot before gpt-image-1 call ===
+      const costHelper = new CostControlHelper(supabase, job.id, workerId);
+      let costSlotAcquired = false;
+      try {
+        await assertCanSpend(costHelper, 'openai_image', `scene_${i}`, 1);
+        costSlotAcquired = true;
+      } catch (costError) {
+        if (isCostLimitError(costError)) {
+          // Cost limit reached - fail with clear message for DLQ (class: misconfig)
+          console.error(`[IMAGES] ❌ Cost limit hit at scene ${i}: ${costError instanceof Error ? costError.message : costError}`);
+          return { 
+            success: false, 
+            error: `cost_limit_exceeded: openai_image (gpt-image-1) - ${costError instanceof Error ? costError.message : 'budget reached'}`,
+            data: { 
+              scenes_completed: scenesCompleted.length,
+              scenes_total: scenes.length,
+              cost_limit_hit: true,
+              failure_class: 'misconfig'  // Signal to DLQ this is operator-actionable
+            }
+          };
+        }
+        throw costError; // Re-throw non-cost errors
+      }
+
       // Generate image using selected model
       let imageUrl: string;
       
@@ -981,6 +1318,23 @@ export async function executeImagesStep(
       generatedCount++;
       scenesCompleted.push(i);
       console.log(`[IMAGES] ✓ Scene ${i + 1} uploaded (${imageModel}): ${publicUrl}`);
+
+      // === COST CONTROL: Record usage + release slot ===
+      if (costSlotAcquired) {
+        const costIdempotencyKey = `job:${job.id}:openai_image:scene_${i}:${promptHash.slice(0, 16)}`;
+        await costHelper.recordUsage(
+          'openai_image',
+          costIdempotencyKey,
+          { 
+            image_count: 1, 
+            model: imageModel,  // 'gpt-image-1'
+            estimated_cost_cents: imageModel === 'gpt-image-1' ? 2 : (imageModel === 'dall-e-3' ? 8 : 4)
+          },
+          'images',
+          `scene_${i}`
+        );
+        await costHelper.releaseSlot('openai_image', `scene_${i}`);
+      }
     }
 
     // Update job meta with image URLs
@@ -1249,23 +1603,71 @@ export async function executeAssembleStep(
 
   console.log(`[ASSEMBLE] Assembling video: ${imageUrls.length} images, ${duration}s duration`);
 
+  // Determine which renderer service we'll use for cost tracking
+  const rendererService: ServiceType = videoRendererUrl ? 'ffmpeg_renderer' : 'creatomate';
+
   try {
     let videoUrl: string;
 
     // === LEASE GRACE CHECK: Verify enough time before expensive rendering ===
     await requireLeaseGrace(supabase, job.id, workerId, 'video assembly');
 
+    // === COST CONTROL: Check budget + acquire slot before rendering ===
+    const costHelper = new CostControlHelper(supabase, job.id, workerId);
+    try {
+      await assertCanSpend(costHelper, rendererService, 'assemble', 1);
+    } catch (costError) {
+      if (isCostLimitError(costError)) {
+        console.error(`[ASSEMBLE] ❌ Cost limit hit: ${costError instanceof Error ? costError.message : costError}`);
+        return { 
+          success: false, 
+          error: `cost_limit_exceeded: ${rendererService} - ${costError instanceof Error ? costError.message : 'budget reached'}`,
+          data: { 
+            duration,
+            cost_limit_hit: true,
+            failure_class: 'misconfig'
+          }
+        };
+      }
+      throw costError;
+    }
+
     // Prefer VIDEO_RENDERER_URL if available
     if (videoRendererUrl) {
       console.log(`[ASSEMBLE] Using video-renderer at ${videoRendererUrl}`);
       
+      // Build music config for renderer from job.meta (set by music step)
+      const musicUrl = job.meta?.music_url as string || null;
+      const musicCfg = job.meta?.music_config as MusicConfig | undefined;
+      const musicEnabled = job.meta?.music_enabled !== false && !!musicUrl;
+
+      // v4.0: Resolve effects_config from DB (Roadmap #15 — Controlled Motion)
+      let effectsConfig = null;
+      try {
+        effectsConfig = await getEffectsConfigForJob(
+          supabase,
+          job.brand_id,
+          job.vibe_preset,
+          job.meta
+        );
+      } catch (fxErr) {
+        console.warn(`[ASSEMBLE] getEffectsConfigForJob failed (soft): ${fxErr instanceof Error ? fxErr.message : fxErr}`);
+        // Soft failure: renderer will fall back to legacy pipeline
+      }
+
       // Snapshot the assembly input before rendering
       await logger.snapshot('assemble', 'payload', {
         renderer: 'ffmpeg',
         image_count: imageUrls.length,
         audio_url: audioUrl.slice(0, 100),
         duration: duration,
-        has_music: !!job.meta?.music_url,
+        has_music: musicEnabled,
+        music_track: job.meta?.music_track_id || null,
+        music_volume: musicCfg?.default_volume || 0.18,
+        ducking_enabled: musicCfg?.ducking?.enabled || false,
+        effects_config_resolved: !!effectsConfig,
+        effects_enabled: effectsConfig?.enabled ?? 'legacy',
+        effects_intensity: effectsConfig?.intensity ?? null,
       }, 'Video assembly input');
 
       videoUrl = await assembleWithRenderer(
@@ -1274,7 +1676,8 @@ export async function executeAssembleStep(
         imageUrls,
         audioUrl,
         duration,
-        job.meta
+        job.meta,
+        effectsConfig
       );
     } else if (creatomateKey) {
       console.log(`[ASSEMBLE] Using Creatomate`);
@@ -1296,6 +1699,22 @@ export async function executeAssembleStep(
       duration: duration,
       assembly_method: videoRendererUrl ? 'video-renderer' : 'creatomate',
     });
+
+    // === COST CONTROL: Record usage + release slot ===
+    const costIdempotencyKey = `job:${job.id}:${rendererService}:assemble`;
+    // Estimate: ~$0.02 per minute of video rendered
+    const estimatedCostCents = Math.round((duration / 60) * 2);
+    await costHelper.recordUsage(
+      rendererService,
+      costIdempotencyKey,
+      { 
+        render_seconds: duration, 
+        estimated_cost_cents: estimatedCostCents
+      },
+      'assemble',
+      'assemble'
+    );
+    await costHelper.releaseSlot(rendererService, 'assemble');
 
     // Snapshot assembly output
     await logger.snapshot('assemble', 'output', {
@@ -1329,7 +1748,8 @@ async function assembleWithRenderer(
   imageUrls: string[],
   audioUrl: string,
   duration: number,
-  meta: Record<string, unknown>
+  meta: Record<string, unknown>,
+  effectsConfig: Record<string, unknown> | null = null
 ): Promise<string> {
   // Calculate durations per scene (equal distribution)
   const sceneDuration = duration / imageUrls.length;
@@ -1338,6 +1758,19 @@ async function assembleWithRenderer(
   // Get word-level timestamps for captions (from voice synthesis step)
   const captions = Array.isArray(meta?.audio_timestamps) ? meta.audio_timestamps : [];
   console.log(`[ASSEMBLE] Sending ${captions.length} word timestamps for captions`);
+
+  // Build music config for renderer (from music step)
+  const musicUrl = meta?.music_url as string || null;
+  const musicCfg = meta?.music_config as {
+    default_volume?: number;
+    ducking?: { enabled?: boolean; duck_volume?: number; attack_ms?: number; release_ms?: number };
+    fade?: { in_ms?: number; out_ms?: number };
+  } | undefined;
+  
+  // Convert volume from 0-1 float to 0-100 percentage for renderer
+  const musicVolumePercent = musicCfg ? Math.round(musicCfg.default_volume! * 100) : 15;
+
+  console.log(`[ASSEMBLE] Music: ${musicUrl ? 'YES' : 'NO'}, volume=${musicVolumePercent}%, ducking=${musicCfg?.ducking?.enabled || false}`);
 
   // Start the render job
   const response = await fetchWithError(
@@ -1361,8 +1794,16 @@ async function assembleWithRenderer(
           horrorGrade: true,
           captionStyle: 'bold',
         },
-        music_url: meta?.music_url as string || null,
-        music_volume: 15,
+        // v4.0: Controlled Motion effects config (overrides legacy effects when present)
+        effects_config: effectsConfig || null,
+        music_url: musicUrl,
+        music_volume: musicVolumePercent,
+        // Background Music V1: ducking + fade config for renderer
+        music_config: musicCfg ? {
+          ducking: musicCfg.ducking || { enabled: false },
+          fade: musicCfg.fade || { in_ms: 800, out_ms: 1200 },
+          loopable: meta?.music_loopable !== false, // default true; set by music step
+        } : null,
         low_memory: true, // Safe for cloud deployment
       }),
     },

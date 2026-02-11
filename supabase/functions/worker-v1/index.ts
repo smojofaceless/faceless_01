@@ -3,6 +3,8 @@
 // Processes jobs through: Story → Uniqueness → Scenes → Voice → 
 //                         Music → Images → Subtitles → Assemble → Upload → Schedule
 // 
+// v2.7 - 2026-02-10 (Background Music V1: DB-driven tracks, ducking, fades)
+// v2.5 - 2026-02-10 (Step-level DLQ + retry eligibility tracking)
 // v2.4 - 2026-02-22 (Logger hardening: attempt + worker_id correlation)
 // v2.3 - 2026-02-22 (Visual logs + step timeline)
 // v2.2 - 2026-02-10 (Failure classification + DLQ support)
@@ -14,6 +16,7 @@
 // - No double-post guarantee (via schedule_post_idempotent)
 // - Async FFmpeg renderer with polling for completion
 // - Failure classification (transient/dependency/misconfig/permanent)
+// - Step-level failure tracking with retry eligibility (record_job_step_failure)
 // - Step logging with attempt correlation and worker_id
 // - Global kill switch support
 // - Visual step logs with timeline (job_step_logs table)
@@ -324,12 +327,32 @@ serve(async (req) => {
     if (pipelineError) {
       console.log(`[WORKER-V1] ✗ Pipeline failed: ${pipelineError}`);
       
-      // Record classified failure in job meta (for DLQ)
-      if (classifiedFailure) {
-        await supabase.rpc('update_job_failure', {
+      // Record step-level failure to DLQ using new RPC
+      if (classifiedFailure && currentStep) {
+        const stepResult = stepResults[currentStep];
+        const failurePayload = {
+          failure_class: classifiedFailure.class,
+          error_message: classifiedFailure.message || pipelineError,
+          error_signature: classifiedFailure.signature,
+          worker_id: workerId,
+          http_status: stepResult?.statusCode || null,
+          duration_ms: stepResult?.elapsed_ms || null,
+          step_progress: stepResult?.data?.progress || null
+        };
+        
+        console.log(`[WORKER-V1] Recording step failure: ${currentStep} (${classifiedFailure.class})`);
+        
+        const { data: dlqResult, error: dlqError } = await supabase.rpc('record_job_step_failure', {
           p_job_id: jobId,
-          p_failure: classifiedFailure
+          p_step_name: currentStep,
+          p_failure: failurePayload
         });
+        
+        if (dlqError) {
+          console.warn(`[WORKER-V1] Failed to record to DLQ: ${dlqError.message}`);
+        } else {
+          console.log(`[WORKER-V1] DLQ record: retry_eligible=${dlqResult?.retry_eligible}, next_retry_at=${dlqResult?.next_retry_at}`);
+        }
       }
       
       await releaseJob(supabase, jobId, workerId, 'failed', pipelineError);
@@ -338,6 +361,7 @@ serve(async (req) => {
           success: false, 
           error: pipelineError,
           failure_class: classifiedFailure?.class,
+          failure_step: currentStep,
           last_completed_step: lastCompletedStep,
           step_results: stepResults
         }),
@@ -363,10 +387,20 @@ serve(async (req) => {
         { step: 'finalization' }
       );
       
-      await supabase.rpc('update_job_failure', {
+      // Record to step-level DLQ
+      const { data: dlqResult } = await supabase.rpc('record_job_step_failure', {
         p_job_id: jobId,
-        p_failure: finalFailure
+        p_step_name: 'finalization',
+        p_failure: {
+          failure_class: finalFailure.class,
+          error_message: errorMsg,
+          error_signature: finalFailure.signature,
+          worker_id: workerId,
+          step_progress: { missing: finalization.missing }
+        }
       });
+      
+      console.log(`[WORKER-V1] Finalization DLQ: retry_eligible=${dlqResult?.retry_eligible}`);
       
       await releaseJob(supabase, jobId, workerId, 'failed', errorMsg);
       return new Response(
@@ -374,6 +408,7 @@ serve(async (req) => {
           success: false, 
           error: errorMsg,
           failure_class: finalFailure.class,
+          failure_step: 'finalization',
           finalization: finalization,
           step_results: stepResults
         }),
@@ -409,10 +444,16 @@ serve(async (req) => {
     // Try to release job if we claimed it
     if (claimedJobId && supabase) {
       try {
-        // Record classified failure
-        await supabase.rpc('update_job_failure', {
+        // Record to step-level DLQ
+        await supabase.rpc('record_job_step_failure', {
           p_job_id: claimedJobId,
-          p_failure: fatalFailure
+          p_step_name: 'fatal',
+          p_failure: {
+            failure_class: fatalFailure.class,
+            error_message: errorMessage,
+            error_signature: fatalFailure.signature,
+            worker_id: workerId
+          }
         });
         
         await releaseJob(supabase, claimedJobId, workerId, 'failed', errorMessage);

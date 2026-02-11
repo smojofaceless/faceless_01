@@ -1155,6 +1155,266 @@ function buildFiltersFromEffectsProfile(effectsProfile, options = {}) {
   };
 }
 
+// =====================================================
+// EFFECTS CONFIG v2.0 — Controlled Motion (Roadmap #15)
+//
+// Builds a complete FFmpeg filter list from the new
+// effects_config shape produced by get_effects_config_for_job().
+//
+// Key guarantees:
+//   1. enabled=false disables ALL effects
+//   2. intensity (master knob) scales every sub-effect
+//   3. All values are clamped to safe ranges
+//   4. Seed-based determinism for Ken Burns direction
+//   5. Soft failure: returns empty filters on error
+// =====================================================
+
+/**
+ * Derive a deterministic integer seed from a string (job_id)
+ *   djb2 hash → positive int31
+ */
+function hashSeed(str) {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash + str.charCodeAt(i)) & 0x7fffffff;
+  }
+  return hash;
+}
+
+/**
+ * Build Ken Burns zoompan filter from effects_config.kenburns
+ *
+ * @param {Object}  kb        – kenburns config { enabled, zoom_range, pan_speed, direction }
+ * @param {number}  master    – master intensity 0-1
+ * @param {number}  index     – scene index
+ * @param {number}  duration  – scene duration (seconds)
+ * @param {number}  width     – output width
+ * @param {number}  height    – output height
+ * @param {string}  seed      – deterministic seed string (job_id)
+ * @param {boolean} lowMem    – low memory mode
+ * @returns {string|null} FFmpeg filter string or null
+ */
+function buildKenBurnsFromConfig(kb, master, index, duration, width, height, seed, lowMem) {
+  if (!kb || !kb.enabled) return null;
+
+  const fps = lowMem ? 15 : 30;
+  const frames = Math.floor(duration * fps);
+  const scaleFactor = lowMem ? 1.1 : 2;
+  const scaledW = Math.floor(width * scaleFactor);
+  const scaledH = Math.floor(height * scaleFactor);
+
+  // Clamp
+  const zoomMin = safeClamp(kb.zoom_range?.[0], 1.0, 1.0, 1.5);
+  const zoomMax = safeClamp(kb.zoom_range?.[1], 1.12, 1.0, 1.5);
+  const panSpeed = safeClamp(kb.pan_speed, 0.4, 0, 1) * master;
+  const zoomDelta = (zoomMax - zoomMin) * master;
+
+  // Deterministic direction from seed + scene index
+  const dirSeed = hashSeed(`${seed}:${index}`);
+  let direction = kb.direction || 'alternate';
+  if (direction === 'alternate') {
+    direction = index % 2 === 0 ? 'in' : 'out';
+  } else if (direction === 'random') {
+    // Seed-based choice: in, out, pan-left, pan-right, pan-up, pan-down
+    const choices = ['in', 'out', 'pan-left', 'pan-right'];
+    direction = choices[dirSeed % choices.length];
+  }
+
+  let zExpr, xExpr, yExpr;
+
+  switch (direction) {
+    case 'in':
+      zExpr = `${zoomMin}+${zoomDelta.toFixed(4)}*on/${frames}`;
+      xExpr = '(iw-iw/zoom)/2';
+      yExpr = '(ih-ih/zoom)/2';
+      break;
+    case 'out':
+      zExpr = `${(zoomMin + zoomDelta).toFixed(4)}-${zoomDelta.toFixed(4)}*on/${frames}`;
+      xExpr = '(iw-iw/zoom)/2';
+      yExpr = '(ih-ih/zoom)/2';
+      break;
+    case 'pan-left':
+      zExpr = `${(zoomMin + zoomDelta * 0.5).toFixed(4)}`;
+      xExpr = `(iw-iw/zoom)/2+((iw/zoom-ow)/${(3 + (1 - panSpeed) * 4).toFixed(1)})*(1-cos(on/${frames}*PI))/2`;
+      yExpr = '(ih-ih/zoom)/2';
+      break;
+    case 'pan-right':
+      zExpr = `${(zoomMin + zoomDelta * 0.5).toFixed(4)}`;
+      xExpr = `(iw-iw/zoom)/2-((iw/zoom-ow)/${(3 + (1 - panSpeed) * 4).toFixed(1)})*(1-cos(on/${frames}*PI))/2`;
+      yExpr = '(ih-ih/zoom)/2';
+      break;
+    case 'pan-up':
+      zExpr = `${(zoomMin + zoomDelta * 0.5).toFixed(4)}`;
+      xExpr = '(iw-iw/zoom)/2';
+      yExpr = `(ih-ih/zoom)/2-((ih/zoom-oh)/${(4 + (1 - panSpeed) * 4).toFixed(1)})*(1-cos(on/${frames}*PI))/2`;
+      break;
+    case 'pan-down':
+      zExpr = `${(zoomMin + zoomDelta * 0.5).toFixed(4)}`;
+      xExpr = '(iw-iw/zoom)/2';
+      yExpr = `(ih-ih/zoom)/2+((ih/zoom-oh)/${(4 + (1 - panSpeed) * 4).toFixed(1)})*(1-cos(on/${frames}*PI))/2`;
+      break;
+    default: // fallback: zoom in
+      zExpr = `${zoomMin}+${zoomDelta.toFixed(4)}*on/${frames}`;
+      xExpr = '(iw-iw/zoom)/2';
+      yExpr = '(ih-ih/zoom)/2';
+  }
+
+  return `scale=${scaledW}:${scaledH}:force_original_aspect_ratio=increase,crop=${scaledW}:${scaledH},zoompan=z='${zExpr}':d=${frames}:x='${xExpr}':y='${yExpr}':s=${width}x${height}:fps=${fps}`;
+}
+
+/**
+ * Build grain filter from effects_config.grain
+ */
+function buildGrainFromConfig(grain, master) {
+  if (!grain || !grain.enabled) return null;
+  const intensity = safeClamp(grain.intensity, 0.2, 0, 1) * master;
+  if (intensity <= 0.01) return null;
+  const strength = Math.round(5 + intensity * 30);
+  const sizeFlag = safeClamp(grain.size, 1.0, 0.5, 2.0) > 1.2 ? 't+u' : 't';
+  return `noise=c0s=${strength}:c0f=${sizeFlag}`;
+}
+
+/**
+ * Build flicker filter from effects_config.flicker
+ * Deterministic: uses sine oscillation, no random().
+ */
+function buildFlickerFromConfig(flicker, master, seed, index) {
+  if (!flicker || !flicker.enabled) return null;
+  const intensity = safeClamp(flicker.intensity, 0.15, 0, 1) * master;
+  if (intensity <= 0.01) return null;
+  const freq = safeClamp(flicker.frequency, 0.3, 0.05, 1);
+  // Phase offset from seed for determinism
+  const phase = (hashSeed(`${seed}:flicker:${index}`) % 100) / 100;
+  const brightSwing = (intensity * 0.12).toFixed(4);
+  const freqVal = (freq * 0.5).toFixed(4);
+  return `eq=brightness=${brightSwing}*sin(n*${freqVal}+${phase.toFixed(2)})`;
+}
+
+/**
+ * Build vignette filter from effects_config.vignette
+ */
+function buildVignetteFromConfig(vignette, master) {
+  if (!vignette || !vignette.enabled) return null;
+  const intensity = safeClamp(vignette.intensity, 0.35, 0, 1) * master;
+  if (intensity <= 0.01) return null;
+  // Map 0-1 → PI/8 to PI/2
+  const angle = (Math.PI / 8) + (intensity * (Math.PI / 2 - Math.PI / 8));
+  return `vignette=${angle.toFixed(4)}`;
+}
+
+/**
+ * Build color grade filter from effects_config.color_grade
+ */
+function buildColorGradeFromConfig(cg, master) {
+  if (!cg || !cg.enabled) return null;
+  const intensity = safeClamp(cg.intensity, 0.5, 0, 1) * master;
+  if (intensity <= 0.01) return null;
+
+  const filters = [];
+
+  // Preset-specific base adjustments
+  switch (cg.preset) {
+    case 'cinematic_dark':
+      filters.push(`eq=saturation=${(1 - intensity * 0.15).toFixed(2)}:contrast=${(1 + intensity * 0.2).toFixed(2)}:brightness=${(-intensity * 0.05).toFixed(3)}`);
+      filters.push(`colorbalance=rs=${(-intensity * 0.03).toFixed(3)}:bs=${(intensity * 0.05).toFixed(3)}`);
+      break;
+    case 'cold_desaturated':
+      filters.push(`eq=saturation=${(1 - intensity * 0.4).toFixed(2)}`);
+      filters.push(`colorbalance=rs=${(-intensity * 0.08).toFixed(3)}:gs=${(-intensity * 0.05).toFixed(3)}:bs=${(intensity * 0.12).toFixed(3)}`);
+      break;
+    case 'vhs_degraded':
+      filters.push(`eq=saturation=${(1 - intensity * 0.3).toFixed(2)}:contrast=${(1 + intensity * 0.1).toFixed(2)}`);
+      filters.push(`colorbalance=gs=${(intensity * 0.06).toFixed(3)}`);
+      break;
+    case 'auto':
+    default:
+      // Gentle cinematic grade
+      filters.push(`eq=saturation=${(1 - intensity * 0.1).toFixed(2)}:contrast=${(1 + intensity * 0.1).toFixed(2)}`);
+      break;
+  }
+
+  return filters.join(',');
+}
+
+/**
+ * Build the complete filter list from effects_config.
+ *
+ * @param {Object}  config  – The merged effects_config from get_effects_config_for_job()
+ * @param {Object}  opts    – { lowMemory, seed, sceneIndex, sceneDuration, width, height }
+ * @returns {{ postFilters: string[], kenBurnsFilter: string|null, fadeConfig: object|null }}
+ */
+function buildFiltersFromEffectsConfig(config, opts = {}) {
+  const result = { postFilters: [], kenBurnsFilter: null, fadeConfig: null };
+
+  // Guard: missing / disabled
+  if (!config || typeof config !== 'object' || config.enabled === false) {
+    return result;
+  }
+
+  const master = safeClamp(config.intensity, 0.5, 0, 1);
+  const {
+    lowMemory = false,
+    seed = 'default',
+    sceneIndex = 0,
+    sceneDuration = 5,
+    width = 1080,
+    height = 1920,
+  } = opts;
+
+  // --- Ken Burns (per-scene, applied in createVideoFromImages) ---
+  try {
+    result.kenBurnsFilter = buildKenBurnsFromConfig(
+      config.kenburns, master, sceneIndex, sceneDuration, width, height, seed, lowMemory
+    );
+  } catch (err) {
+    console.warn(`[effects_config] kenburns failed (scene ${sceneIndex}):`, err.message);
+  }
+
+  // --- Post-processing filters (applied after concat) ---
+  // Order: color_grade → vignette → grain → flicker
+
+  try {
+    const cg = buildColorGradeFromConfig(config.color_grade, master);
+    if (cg) result.postFilters.push(cg);
+  } catch (err) {
+    console.warn('[effects_config] color_grade failed:', err.message);
+  }
+
+  try {
+    const vig = buildVignetteFromConfig(config.vignette, master);
+    if (vig) result.postFilters.push(vig);
+  } catch (err) {
+    console.warn('[effects_config] vignette failed:', err.message);
+  }
+
+  if (!lowMemory) {
+    try {
+      const gr = buildGrainFromConfig(config.grain, master);
+      if (gr) result.postFilters.push(gr);
+    } catch (err) {
+      console.warn('[effects_config] grain failed:', err.message);
+    }
+
+    try {
+      const fl = buildFlickerFromConfig(config.flicker, master, seed, sceneIndex);
+      if (fl) result.postFilters.push(fl);
+    } catch (err) {
+      console.warn('[effects_config] flicker failed:', err.message);
+    }
+  }
+
+  // Fade config (passed through, renderer handles separately)
+  if (config.fade) {
+    result.fadeConfig = {
+      fade_in: config.fade.fade_in !== false,
+      fade_out: config.fade.fade_out !== false,
+      duration: safeClamp(config.fade.duration, 1.5, 0.1, 3.0),
+    };
+  }
+
+  return result;
+}
+
 module.exports = {
   // Filter mappings
   VISUAL_STYLE_FILTERS,
@@ -1193,6 +1453,15 @@ module.exports = {
   buildGlitchFilter,
   buildColorGradeFilter,
   buildFiltersFromEffectsProfile,
+  
+  // Effects Config v2.0 (Roadmap #15 — Controlled Motion)
+  buildFiltersFromEffectsConfig,
+  buildKenBurnsFromConfig,
+  buildGrainFromConfig,
+  buildFlickerFromConfig,
+  buildVignetteFromConfig,
+  buildColorGradeFromConfig,
+  hashSeed,
   
   // Utility
   safeClamp,

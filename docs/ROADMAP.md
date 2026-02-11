@@ -1,6 +1,6 @@
 # Project Roadmap
 
-> **Document Version:** 2.5  
+> **Document Version:** 2.9  
 > **Last Updated:** February 10, 2026  
 > **Author:** System Architect  
 > **Status:** Active Development
@@ -11,6 +11,10 @@
 
 | Date | Version | Changes |
 |------|---------|--------|
+| Feb 10, 2026 | 2.9 | **Background Music V1.2**: loudness_lufs/peak_db metadata, music fingerprint (config_hash) in job_assets.meta, alimiter (anti-clip), music status badge in job detail UI, Brand Music Management UI (view/upload/toggle/delete tracks per brand on brands page) |
+| Feb 10, 2026 | 2.8 | **Background Music V1 Complete**: music_tracks table, 3 RPCs, DB-driven track selection, sidechain ducking, fade in/out, brand music config in brand_templates, renderer v3.2, worker-v1 v2.7 |
+| Feb 10, 2026 | 2.7 | **Cost Controls / Rate Limits Complete**: Per-job caps, per-campaign budgets, global throttles, concurrency slots, api_usage ledger with idempotency, 11 RPCs, worker-v1 v2.6 + schedule-jobs v2.2 |
+| Feb 10, 2026 | 2.6 | **Step-Level Retries + DLQ Complete**: Per-step retry policies, job_failures table, requeue RPC with lease safety, admin UI (requeue button, failure history modal), worker-v1 v2.5 |
 | Feb 10, 2026 | 2.5 | **End-to-End Verified**: worker-v1 auth fix (--no-verify-jwt), subtitles fix (captions passed to renderer), auto-import trigger (video→posts), UI auto-refresh, video preview button fix |
 | Feb 23, 2026 | 2.4 | **Post Queue System Complete**: Automated posting pipeline, claim/lease mechanism, platform adapters (stubbed), retry with backoff, campaign gating |
 | Feb 22, 2026 | 2.3 | **Asset Storage + Naming Convention Complete**: Standardized paths to `brands/{brand_id}/jobs/{job_id}/{category}/`, path builder helpers, ASSET_NAMING_CONVENTION.md documentation |
@@ -34,6 +38,10 @@
 
 | Item | Date | Notes |
 |------|------|-------|
+| **Background Music V1.2** | Feb 10, 2026 | V1.2 hardening: loudness_lufs/peak_db columns for per-track gain tuning, music_config_hash fingerprint in job_assets.meta for debugging, alimiter anti-clipping filter in renderer, music status badge in job detail modal, **Brand Music Management UI** on brands page (view tracks, upload MP3, preview playback, toggle active/inactive, delete). |
+| **Background Music V1** | Feb 10, 2026 | music_tracks table (3 default tracks per brand), brand music config in config_overrides, 3 RPCs, deterministic selection (hash-based), sidechain ducking + fade in/out in FFmpeg renderer v3.2, worker-v1 v2.7. |
+| **Cost Controls / Rate Limits** | Feb 10, 2026 | Per-job caps, per-campaign/global budgets, concurrency slots, api_usage ledger (idempotent), 11 RPCs. Services: openai_text, openai_image (gpt-image-1), elevenlabs, ffmpeg_renderer, creatomate. Worker-v1 v2.6, schedule-jobs v2.2. |
+| **Step-Level Retries + DLQ** | Feb 10, 2026 | Per-step retry policies (images=2, others=3), job_failures DLQ table, requeue RPC with lease safety, admin UI (requeue button, failure history). Worker-v1 v2.5. |
 | **End-to-End Pipeline Verified** | Feb 10, 2026 | Full automated flow working: schedule-jobs → worker-v1 → video-renderer → auto-import to posts. Subtitles rendering, UI updates, video preview all functional. |
 | **Auto-Import Trigger** | Feb 10, 2026 | Database trigger `auto_import_video_to_posts` creates posts automatically when video completes (on `job_assets` INSERT where type='final_mp4') |
 | **Subtitles/Captions Fix** | Feb 10, 2026 | `audio_timestamps` (word-level timing) now passed to video-renderer as captions. Videos render with burned-in subtitles. |
@@ -46,7 +54,7 @@
 | **Failure Cluster Protection + DLQ** | Feb 22, 2026 | Error classification, auto-pause, kill switch, DLQ view, bulk requeue. Worker-v1 v2.2, schedule-jobs v2.1. |
 | **Worker V1 End-to-End** | Feb 10, 2026 | Full pipeline verified: Story→Scenes→Voice→Music→Images→Subtitles→Assemble→Upload. FFmpeg renderer working. |
 
-**Reference:** [PRESET_SOURCE_OF_TRUTH.md](PRESET_SOURCE_OF_TRUTH.md), [DNA_AND_DB_OPTION1_IMPLEMENTATION_PLAN.md](DNA_AND_DB_OPTION1_IMPLEMENTATION_PLAN.md), [CAMPAIGN_SYSTEM.md](CAMPAIGN_SYSTEM.md), [JOB_SCHEDULER.md](JOB_SCHEDULER.md)
+**Reference:** [PRESET_SOURCE_OF_TRUTH.md](PRESET_SOURCE_OF_TRUTH.md), [DNA_AND_DB_OPTION1_IMPLEMENTATION_PLAN.md](DNA_AND_DB_OPTION1_IMPLEMENTATION_PLAN.md), [CAMPAIGN_SYSTEM.md](CAMPAIGN_SYSTEM.md), [JOB_SCHEDULER.md](JOB_SCHEDULER.md), [COST_CONTROLS.md](COST_CONTROLS.md), [BACKGROUND_MUSIC.md](BACKGROUND_MUSIC.md)
 
 ---
 
@@ -334,21 +342,109 @@ To-do inside this item:
 
 ---
 
-### 5. Retries + Dead-Letter Queue (DLQ)
+### 5b. ✅ Step-Level Retries + Dead-Letter Queue (DLQ) — COMPLETE
 
-- [ ] Retry with exponential backoff per step
-- [ ] After N fails → mark as `failed`
-- [ ] UI "Requeue Failed Job" button
-- [ ] DLQ table for failed jobs analysis
+> **Status:** ✅ COMPLETE (February 10, 2026)
+
+**Problem Statement:**
+Need per-step retry policies (expensive steps like images get fewer retries), proper backoff scheduling, a DLQ for failure analysis, and admin UI to requeue failed jobs.
+
+**Delivered:**
+- [x] `job_step_retry_policies` table - configurable per-step max attempts and backoff schedules
+- [x] `job_failures` table - DLQ with step awareness, failure classification, retry eligibility
+- [x] `v_failed_jobs_dlq_step` view - admin view with `can_retry`, `recommended_action`
+- [x] `record_job_step_failure` RPC - records both job-level and row-level failure info
+- [x] `requeue_failed_job` RPC - respects active leases, applies backoff, preserves `current_step`
+- [x] `get_failed_jobs_dlq` RPC - query DLQ with filters
+- [x] `get_job_failures` RPC - get failure history for a job
+- [x] Admin UI: "Requeue" button (can_retry=true) and "Force Retry" (can_retry=false)
+- [x] Admin UI: Failure history modal (📋 button)
+- [x] Admin UI: Failure info badges (step, class, attempts) on job rows
+- [x] Worker-v1 v2.5 calls `record_job_step_failure` on pipeline failure
+
+**Step Retry Policies (Default):**
+| Step | Max Attempts | Backoff (min) | Notes |
+|------|--------------|---------------|-------|
+| story | 3 | [10, 30, 120] | Moderate cost |
+| uniqueness | 3 | [5, 15, 60] | Cheap, quick |
+| scenes | 3 | [10, 30, 120] | Moderate cost |
+| voice | 3 | [10, 30, 120] | ElevenLabs |
+| music | 3 | [5, 15, 60] | Cheap/local |
+| **images** | **2** | [30, 120] | **EXPENSIVE** (DALL-E) |
+| subtitles | 3 | [5, 15, 60] | Cheap/local |
+| assemble | 3 | [10, 30, 120] | External renderer |
+| upload | 3 | [5, 15, 60] | Storage |
+| schedule | 3 | [5, 15, 60] | Post scheduling |
+
+**Failure Classes:**
+| Class | Retryable | Example |
+|-------|-----------|---------|
+| `transient` | ✅ Yes | Network timeout, 500 error |
+| `dependency` | ✅ Yes | OpenAI down, ElevenLabs rate limit |
+| `misconfig` | ❌ No | Invalid API key, 401 error |
+| `permanent` | ❌ No | Content policy violation |
+
+**Key Design:**
+- **Lease Safety:** `requeue_failed_job` refuses if job has active lease (unless force=true)
+- **Step Resume:** `current_step` preserved; worker checks step completion and resumes
+- **DLQ Dedupe:** Unique constraint on `(job_id, job_attempt_number, step_name, step_attempt_number)`
+- **Dual Recording:** `record_job_step_failure` writes both `job_failures` row AND `jobs.meta.last_failure`
+- **UI Refresh:** After requeue, UI reloads campaign which refreshes failure info map
+
+**Database Objects:**
+- Table: `job_step_retry_policies`
+- Table: `job_failures` (DLQ)
+- View: `v_failed_jobs_dlq_step`
+- RPCs: `record_job_step_failure`, `requeue_failed_job`, `get_failed_jobs_dlq`, `get_job_failures`, `get_step_retry_policies`
+
+**Files:**
+- Migration: `20260210002_step_retry_dlq.sql`
+- Worker: `supabase/functions/worker-v1/index.ts` (v2.5)
+- UI: `js/pages/campaign-detail.js` (requeue, failure history)
+- CSS: `css/campaign.css` (failure-info, failure-history styles)
 
 ---
 
-### 6. Cost Controls / Rate Limits
+### 6. ✅ Cost Controls / Rate Limits — COMPLETE
 
-- [ ] Per-job regeneration caps
-- [ ] Per-campaign spend caps
-- [ ] Global throttle for APIs (OpenAI, ElevenLabs, etc.)
+> **Status:** ✅ COMPLETE (February 10, 2026)
+
+**Delivered:**
+- [x] `cost_limits` table with scope hierarchy (system → brand → campaign → job)
+- [x] `api_usage` ledger with idempotency (prevents double-counting retries)
+- [x] `api_slots` concurrency throttle (semaphore-style with lease expiry)
+- [x] `mv_daily_usage` materialized view for fast budget aggregation
+- [x] 11 RPCs: `get_effective_limits`, `check_budget`, `record_api_usage`, `acquire_api_slot`, `release_api_slot`, `sweep_stale_api_slots`, `get_usage_summary`, `check_campaign_budget`, `refresh_daily_usage`, `check_global_budget`, `get_campaigns_over_budget`
+- [x] Default limits for 5 services + global aggregate
+- [x] `CostControlHelper` TypeScript class for worker integration
+- [x] Worker-v1 v2.6: `assertCanSpend()` before images, voice, assemble steps; `recordUsage()` after
+- [x] Schedule-jobs v2.2: Global budget gate (`check_global_budget`) after kill switch check
+- [x] Cost limit failures classified as `misconfig` (operator-actionable, not auto-retried)
 - [x] ~~Pause/Resume campaign functionality~~ → Delivered in Campaign System V1
+
+**Services Tracked:**
+| Service | Model | Daily Budget | Max/Job | Concurrent |
+|---------|-------|-------------|---------|------------|
+| `openai_text` | gpt-4o | $50 | 5 | 10 |
+| `openai_image` | **gpt-image-1** (NOT DALL-E) | $100 | 20 | 5 |
+| `elevenlabs` | eleven_turbo_v2_5 | $30 | 3 | 3 |
+| `ffmpeg_renderer` | (self-hosted) | $10 | 3 | 3 |
+| `creatomate` | (cloud API) | $25 | 2 | 2 |
+| **Global** | All services | **$200** | — | — |
+
+**Database Objects:**
+- Tables: `cost_limits`, `api_usage`, `api_slots`
+- Materialized View: `mv_daily_usage`
+- RPCs: 11 total (9 core + 2 scheduler integration)
+- Migration: `20260210008_cost_controls_FULL.sql`
+
+**Files:**
+- `supabase/migrations/20260210008_cost_controls_FULL.sql`
+- `supabase/functions/worker-v1/costControl.ts`
+- `supabase/functions/worker-v1/steps.ts` (updated with cost control hooks)
+- `supabase/functions/schedule-jobs/index.ts` (updated with global budget gate)
+
+**Reference:** [COST_CONTROLS.md](COST_CONTROLS.md), [COST_CONTROLS_SMOKE_TESTS.md](COST_CONTROLS_SMOKE_TESTS.md)
 
 ---
 
@@ -505,12 +601,45 @@ scheduled → posting → posted
 
 ---
 
-### 10. Background Music v1
+### 10. ✅ Background Music v1 — COMPLETE
 
-- [ ] 1–3 initial tracks per brand
-- [ ] Audio ducking (lower music during speech)
-- [ ] Fade in/out transitions
-- [ ] Store music preferences in `brand_templates`
+> **Status:** ✅ COMPLETE (February 10, 2026)
+
+**Delivered:**
+- [x] `music_tracks` table — per-brand track catalog with mood, energy, vibe preset associations
+- [x] 3 default tracks seeded per brand (`ambient_dark_01`, `tension_pulse_01`, `eerie_piano_01`)
+- [x] Music preferences in `brand_templates.config_overrides.music` (volume, ducking, fades)
+- [x] `get_brand_music_config` RPC — merged defaults + brand overrides
+- [x] `get_brand_music_tracks` RPC — filtered by vibe preset, ordered deterministically
+- [x] `select_music_track_deterministic` RPC — hash(job_id+brand_id) % count
+- [x] Worker music step v2 — DB-driven, idempotent, with hardcoded fallback
+- [x] Audio ducking via FFmpeg `sidechaincompress` — music lowers during narration
+- [x] Fade in/out via FFmpeg `afade` filters — configurable per brand
+- [x] Renderer v3.2 accepts `music_config` with ducking + fade parameters
+- [x] Music failures are soft (video renders without music, no job failure)
+- [x] No API cost for music (pre-licensed tracks, no generation)
+
+**Architecture:**
+- Tracks stored at `brands/{brand_id}/music/{track_id}.mp3` (brand-level, no per-job copies)
+- Selection is deterministic: same job always gets the same track
+- Music step stores config in `jobs.meta.music_config` → assemble step reads it
+- Renderer builds FFmpeg filter chain: volume → fade-in → fade-out → sidechaincompress → amix
+
+**Non-Goals (v1):** No adaptive music, no multi-track layering, no per-scene switching, no user uploads, no music generation APIs.
+
+**Database Objects:**
+- Table: `music_tracks` (PK: id + brand_id)
+- RPCs: `get_brand_music_config`, `get_brand_music_tracks`, `select_music_track_deterministic`
+- Migration: `20260210009_background_music_v1.sql`
+
+**Files:**
+- `supabase/migrations/20260210009_background_music_v1.sql`
+- `supabase/functions/worker-v1/steps.ts` (v1.4)
+- `supabase/functions/worker-v1/helpers.ts` (`pathForBrandMusic`, `pathForJobMusic`)
+- `supabase/functions/worker-v1/index.ts` (v2.7)
+- `video-renderer/server.js` (v3.2)
+
+**Reference:** [BACKGROUND_MUSIC.md](BACKGROUND_MUSIC.md), [BACKGROUND_MUSIC_SMOKE_TESTS.md](BACKGROUND_MUSIC_SMOKE_TESTS.md)
 
 ---
 
@@ -700,16 +829,17 @@ scheduled → posting → posted
 
 ```
 MUST DO NOW (Level 1)
-├── 1. Campaign System
-├── 2. Job Queue + Locking
-├── 3. Worker v1
-├── 4. ✅ Story Uniqueness (DONE)
-├── 5. Retries + DLQ
-├── 6. Cost Controls
-├── 7. Visual Logs
-├── 8. Asset Storage
-├── 9. Auto Schedule
-├── 10. Background Music
+├── 1. ✅ Campaign System (DONE)
+├── 2. ✅ Job Queue + Locking (DONE)
+├── 3. ✅ Worker v1 (DONE)
+├── 4. ✅ Failure Cluster Protection (DONE)
+├── 5. ✅ Story Uniqueness (DONE)
+├── 5b. ✅ Step-Level Retries + DLQ (DONE)
+├── 6. ✅ Cost Controls (DONE)
+├── 7. ✅ Visual Logs (DONE)
+├── 8. ✅ Asset Storage (DONE)
+├── 9. ✅ Auto Schedule → Post Queue (DONE)
+├── 10. ✅ Background Music (DONE)
 └── 11. Kill Switch
 
 NEXT (Level 2)
@@ -748,3 +878,4 @@ FINAL (Level 5)
 - [DNA_AND_DB_OPTION1_IMPLEMENTATION_PLAN.md](DNA_AND_DB_OPTION1_IMPLEMENTATION_PLAN.md) — DB-driven config
 - [PRESET_SOURCE_OF_TRUTH.md](PRESET_SOURCE_OF_TRUTH.md) — Preset loading architecture
 - [BRAND_SELECTION.md](BRAND_SELECTION.md) — Brand system
+- [BACKGROUND_MUSIC.md](BACKGROUND_MUSIC.md) — Background music system

@@ -33,6 +33,9 @@ const {
   buildKenBurnsWithMotionProfile,
   getEffectFlagsFromVisualDNA,
   buildCombinedFilterGraph,
+  buildFiltersFromEffectsConfig,
+  hashSeed,
+  safeClamp,
 } = require('./ffmpeg_presets');
 
 const app = express();
@@ -351,7 +354,7 @@ function getSimpleKenBurnsFilter(index, duration, width = 1080, height = 1920) {
  * - Encodes scenes in parallel batches of 2 (within memory limits)
  */
 async function createVideoFromImages(jobId, images, durations, outputPath, options = {}) {
-  const { kenBurns = true, lowMemory = false, moodLevels = [] } = options;
+  const { kenBurns = true, lowMemory = false, moodLevels = [], effectsConfig = null, seed = 'default' } = options;
   const tempVideos = [];
   const width = 1080;
   const height = 1920;
@@ -383,7 +386,28 @@ async function createVideoFromImages(jobId, images, durations, outputPath, optio
         // Get mood level for this scene (default 5 = medium if not provided)
         const sceneMood = moodLevels && moodLevels[i] !== undefined ? moodLevels[i] : 5;
         
-        if (lowMemory) {
+        // v4.0: Controlled Motion — use effects_config Ken Burns if available
+        if (effectsConfig && effectsConfig.kenburns?.enabled) {
+          try {
+            const kbFilter = buildKenBurnsFromConfig(
+              effectsConfig.kenburns,
+              safeClamp(effectsConfig.intensity, 0.5, 0, 1),
+              i, duration, width, height, seed, lowMemory
+            );
+            if (kbFilter) {
+              cmd = cmd.complexFilter(kbFilter);
+              console.log(`[${jobId}] Scene ${i + 1}: Controlled Motion KB (dir=${effectsConfig.kenburns.direction || 'alt'}, seed=${seed.substring(0, 8)})`);
+            } else {
+              // Fallback to standard KB
+              const filter = getKenBurnsFilter(i, duration, width, height, sceneMood);
+              cmd = cmd.complexFilter(filter);
+            }
+          } catch (kbErr) {
+            console.warn(`[${jobId}] Scene ${i + 1}: Controlled Motion KB failed, fallback:`, kbErr.message);
+            const filter = getKenBurnsFilter(i, duration, width, height, sceneMood);
+            cmd = cmd.complexFilter(filter);
+          }
+        } else if (lowMemory) {
           // Low memory: use simplified Ken Burns with minimal scale
           const filter = getSimpleKenBurnsFilter(i, duration, width, height);
           cmd = cmd.complexFilter(filter);
@@ -521,29 +545,154 @@ async function addAudioToVideo(videoPath, audioPath, outputPath) {
 
 /**
  * Mix background music with existing video audio
+ * v2.0 - Background Music V1: Sidechain ducking + fade in/out
+ * 
  * @param {string} videoPath - Input video with existing audio (narration)
  * @param {string} musicPath - Background music file
  * @param {string} outputPath - Output video path
  * @param {number} musicVolume - Music volume as percentage (0-100)
+ * @param {object} musicConfig - Optional config: { ducking: { enabled, duck_volume, attack_ms, release_ms }, fade: { in_ms, out_ms } }
+ * @param {number} videoDurationSec - Video duration in seconds (for fade-out timing)
  */
-async function mixBackgroundMusic(videoPath, musicPath, outputPath, musicVolume = 15) {
-  return new Promise((resolve, reject) => {
-    // Convert percentage to decimal (15% = 0.15)
-    const volumeDecimal = musicVolume / 100;
+async function mixBackgroundMusic(videoPath, musicPath, outputPath, musicVolume = 15, musicConfig = null, videoDurationSec = 0) {
+  return new Promise(async (resolve, reject) => {
+    // Clamp and convert percentage to decimal (15% = 0.15)
+    const clampedVolume = Math.max(0, Math.min(100, Number(musicVolume) || 15));
+    const volumeDecimal = clampedVolume / 100;
     
-    // Use amix filter to blend existing audio with background music
-    // [0:a] is video's audio (narration), [1:a] is music
-    // Music is looped and faded out at the end
-    ffmpeg()
-      .input(videoPath)
-      .input(musicPath)
-      .inputOptions('-stream_loop', '-1') // Loop music infinitely
-      .complexFilter([
-        // Reduce music volume
-        `[1:a]volume=${volumeDecimal}[music]`,
-        // Mix narration (full volume) with quieter music
-        '[0:a][music]amix=inputs=2:duration=first:dropout_transition=2[out]'
-      ])
+    // Parse music config with safe defaults — handles null, undefined, partial objects
+    const ducking = (musicConfig && typeof musicConfig.ducking === 'object' && musicConfig.ducking)
+      ? { enabled: !!musicConfig.ducking.enabled, ...musicConfig.ducking }
+      : { enabled: false };
+    const fade = (musicConfig && typeof musicConfig.fade === 'object' && musicConfig.fade)
+      ? musicConfig.fade
+      : { in_ms: 0, out_ms: 0 };
+    const fadeInSec = (Number(fade.in_ms) || 0) / 1000;
+    const fadeOutSec = (Number(fade.out_ms) || 0) / 1000;
+    
+    // Get video duration for fade-out calculation if not provided
+    let duration = videoDurationSec;
+    if (duration <= 0) {
+      try {
+        duration = await getMediaDuration(videoPath);
+      } catch (e) {
+        console.warn(`Could not get video duration for fade-out: ${e.message}, using 60s default`);
+        duration = 60;
+      }
+    }
+    
+    // Build the audio filter chain for the music track [1:a]
+    // 
+    // Filter pipeline:
+    //   1. Volume reduction (always)
+    //   2. Fade-in (if configured)
+    //   3. Fade-out at end of video (if configured)
+    //   4. Mix with narration using either:
+    //      a. sidechaincompress (if ducking enabled) — music ducks when voice is present
+    //      b. amix (if no ducking) — simple volume blend
+    //
+    // Sidechain Ducking Explanation:
+    //   sidechaincompress uses the narration [0:a] as the "sidechain" signal.
+    //   When narration volume exceeds the threshold, the compressor reduces
+    //   the music volume (ratio controls how aggressively).
+    //   attack_ms = how fast the music ducks when voice starts
+    //   release_ms = how fast the music comes back when voice stops
+    //   This creates the professional "music lowers during speech" effect.
+    //
+    // Why this won't clip:
+    //   - Music is pre-attenuated to volumeDecimal BEFORE mixing
+    //   - amix with duration=first ensures output duration matches video
+    //   - dropout_transition provides smooth fade at the end
+    //   - sidechaincompress only reduces (never amplifies) the music signal
+    //
+    // Duration mismatches:
+    //   - Music shorter than video: -stream_loop -1 loops it infinitely
+    //   - Music longer than video: duration=first in amix truncates to video length
+    //   - This handles any music/video length combination safely
+    
+    const musicFilters = [];
+    
+    // Step 1: Volume reduction
+    let currentLabel = '1:a';
+    musicFilters.push(`[${currentLabel}]volume=${volumeDecimal}[mvol]`);
+    currentLabel = 'mvol';
+    
+    // Step 2: Fade-in
+    if (fadeInSec > 0) {
+      musicFilters.push(`[${currentLabel}]afade=t=in:st=0:d=${fadeInSec}[mfin]`);
+      currentLabel = 'mfin';
+    }
+    
+    // Step 3: Fade-out (at end of video)
+    if (fadeOutSec > 0 && duration > fadeOutSec) {
+      const fadeOutStart = Math.max(0, duration - fadeOutSec);
+      musicFilters.push(`[${currentLabel}]afade=t=out:st=${fadeOutStart.toFixed(2)}:d=${fadeOutSec}[mfout]`);
+      currentLabel = 'mfout';
+    }
+    
+    let filterComplex;
+    
+    if (ducking.enabled) {
+      // Sidechain ducking: narration controls music volume
+      //
+      // Parameters:
+      //   threshold: voice level that triggers ducking (0.02 = very sensitive, catches whispers)
+      //   ratio: compression ratio (6-10 = aggressive ducking for clear narration)
+      //   attack: how fast music ducks in seconds (150ms = quick but not clicking)
+      //   release: how fast music returns in seconds (250ms = natural swell back)
+      //   level_sc: sidechain input gain (1.0 = no change to detection sensitivity)
+      //
+      const duckVol = ducking.duck_volume || 0.08;
+      const attackSec = (ducking.attack_ms || 150) / 1000;
+      const releaseSec = (ducking.release_ms || 250) / 1000;
+      // ratio = how much to duck. Higher = more aggressive.
+      // We calculate from the volume ratio: if default_volume=0.18 and duck_volume=0.08,
+      // that's roughly 2.25:1 reduction, so ratio ~6-8 gives us good ducking.
+      const ratio = Math.max(4, Math.min(12, Math.round(volumeDecimal / Math.max(duckVol, 0.01))));
+      
+      filterComplex = [
+        ...musicFilters,
+        // Use sidechaincompress: narration [0:a] controls music compression
+        `[${currentLabel}][0:a]sidechaincompress=threshold=0.02:ratio=${ratio}:attack=${attackSec.toFixed(3)}:release=${releaseSec.toFixed(3)}:level_sc=1.0[ducked]`,
+        // Mix narration (full volume) with ducked music
+        '[0:a][ducked]amix=inputs=2:duration=first:dropout_transition=2[mixed]',
+        // Limiter: prevent clipping from amplitude spikes when mixing different-loudness tracks
+        // limit=0.95 leaves 0.5dB headroom; attack/release in ms for transparent limiting
+        '[mixed]alimiter=limit=0.95:attack=5:release=50[out]'
+      ];
+    } else {
+      // Simple mix without ducking (original behavior)
+      filterComplex = [
+        ...musicFilters,
+        // Mix narration (full volume) with volume-adjusted music
+        `[0:a][${currentLabel}]amix=inputs=2:duration=first:dropout_transition=2[mixed]`,
+        // Limiter: prevent clipping from amplitude spikes when mixing different-loudness tracks
+        '[mixed]alimiter=limit=0.95:attack=5:release=50[out]'
+      ];
+    }
+    
+    console.log(`  Music filter chain: ducking=${ducking.enabled}, fadeIn=${fadeInSec}s, fadeOut=${fadeOutSec}s, volume=${clampedVolume}%`);
+    
+    // Loopable flag: defaults to true for backward compat
+    // When false, music plays once and any remaining video has silence
+    const loopable = musicConfig?.loopable !== false;
+    
+    // Build FFmpeg command
+    // [0:a] = video's audio (narration), [1:a] = music
+    //
+    // FILTER ORDER VERIFICATION (do not reorder):
+    //   1. volume → 2. afade(in) → 3. afade(out) → 4. sidechaincompress → 5. amix → 6. alimiter
+    //   Steps 1-3 affect ONLY the music stream (pre-mix).
+    //   Step 4 ducks music when narration is loud (music=[compressed], sidechain=[0:a]).
+    //   Step 5 mixes narration + processed music. duration=first = truncate to video length.
+    //   Step 6 limits output amplitude to 0.95 (−0.45 dB headroom) to prevent clipping.
+    //   Narration is NEVER passed through fades or volume — it stays at full level.
+    //
+    const cmd = ffmpeg().input(videoPath).input(musicPath);
+    if (loopable) {
+      cmd.inputOptions('-stream_loop', '-1'); // Loop music infinitely; amix duration=first truncates
+    }
+    cmd.complexFilter(filterComplex)
       .outputOptions([
         '-c:v', 'copy',
         '-c:a', 'aac',
@@ -559,6 +708,18 @@ async function mixBackgroundMusic(videoPath, musicPath, outputPath, musicVolume 
         reject(err);
       })
       .run();
+  });
+}
+
+/**
+ * Get duration of a media file in seconds using ffprobe
+ */
+function getMediaDuration(filePath) {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(filePath, (err, metadata) => {
+      if (err) return reject(err);
+      resolve(metadata.format.duration || 0);
+    });
   });
 }
 
@@ -1439,6 +1600,7 @@ app.post('/render', async (req, res) => {
       audio_url,        // Audio file URL (narration)
       music_url,        // Background music URL (optional)
       music_volume = 15, // Music volume (0-100, default 15%)
+      music_config = null, // Background Music V1: { ducking: { enabled, duck_volume, attack_ms, release_ms }, fade: { in_ms, out_ms } }
       durations,        // Duration for each image in seconds
       captions = [],    // Word-by-word captions: [{ word, start, end }, ...]
       effects = {},     // { kenBurns, vignette, horrorGrade, filmGrain, fadeTransitions, captionStyle, highlightScary }
@@ -1448,6 +1610,7 @@ app.post('/render', async (req, res) => {
       low_memory = false, // Enable low memory mode for free tier hosting
       visual_dna = null,  // v3.0: Visual DNA for deterministic aesthetic binding
       effects_profile = null, // v3.1: Effects profile with intensity controls (0-1)
+      effects_config = null,  // v4.0: Controlled Motion effects config from get_effects_config_for_job()
     } = req.body;
     
     if (!images || images.length === 0) {
@@ -1493,8 +1656,32 @@ app.post('/render', async (req, res) => {
       console.log(`[${jobId}]   Platform: ${visual_dna.platform}`);
     }
     
+    // v4.0: Validate and log effects_config (Controlled Motion)
+    let safeEffectsConfig = null;
+    if (effects_config) {
+      try {
+        if (typeof effects_config === 'object' && !Array.isArray(effects_config)) {
+          safeEffectsConfig = effects_config;
+          console.log(`[${jobId}] 🎛️ Effects Config v2.0 (Controlled Motion):`);
+          console.log(`[${jobId}]   enabled=${effects_config.enabled}, master_intensity=${effects_config.intensity}`);
+          const ecParts = [];
+          if (effects_config.kenburns?.enabled) ecParts.push(`kb(${effects_config.kenburns.direction || 'alt'})`);
+          if (effects_config.grain?.enabled) ecParts.push(`grain(${((effects_config.grain.intensity || 0) * 100).toFixed(0)}%)`);
+          if (effects_config.flicker?.enabled) ecParts.push(`flicker(${((effects_config.flicker.intensity || 0) * 100).toFixed(0)}%)`);
+          if (effects_config.vignette?.enabled) ecParts.push(`vignette(${((effects_config.vignette.intensity || 0) * 100).toFixed(0)}%)`);
+          if (effects_config.color_grade?.enabled) ecParts.push(`cg(${effects_config.color_grade.preset || 'auto'})`);
+          console.log(`[${jobId}]   Active: ${ecParts.join(', ') || 'none (all disabled)'}`);
+        } else {
+          console.warn(`[${jobId}] ⚠️ Invalid effects_config format, ignoring`);
+        }
+      } catch (err) {
+        console.warn(`[${jobId}] ⚠️ Failed to process effects_config:`, err.message);
+        safeEffectsConfig = null;
+      }
+    }
+    
     if (music_url) {
-      console.log(`[${jobId}] Background music at ${music_volume}% volume`);
+      console.log(`[${jobId}] Background music at ${music_volume}% volume${music_config?.ducking?.enabled ? ', ducking ON' : ''}${music_config?.fade?.in_ms ? `, fade-in ${music_config.fade.in_ms}ms` : ''}${music_config?.fade?.out_ms ? `, fade-out ${music_config.fade.out_ms}ms` : ''}`);
     }
     
     // Initialize job
@@ -1515,8 +1702,8 @@ app.post('/render', async (req, res) => {
       status_url: `/status/${jobId}`,
     });
     
-    // Process asynchronously (now with visual_dna and effects_profile)
-    processRender(jobId, images, audio_url, durations, captions, effects, webhook_url, supabaseJobId, low_memory, music_url, music_volume, mood_levels, visual_dna, safeEffectsProfile);
+    // Process asynchronously (now with visual_dna, effects_profile, effects_config, and music_config)
+    processRender(jobId, images, audio_url, durations, captions, effects, webhook_url, supabaseJobId, low_memory, music_url, music_volume, mood_levels, visual_dna, safeEffectsProfile, music_config, safeEffectsConfig);
     
   } catch (error) {
     console.error('[RENDER] Error:', error);
@@ -1528,12 +1715,16 @@ app.post('/render', async (req, res) => {
  * Async render processing
  * v3.0: Now accepts visualDNA for deterministic aesthetic binding
  * v3.1: Now accepts effectsProfile for intensity-based effect controls
+ * v3.2: Now accepts musicConfig for ducking + fade (Background Music V1)
+ * v4.0: Now accepts effectsConfig for controlled motion (Roadmap #15)
  * 
  * @param moodLevels - Array of mood intensities (1-10) for each scene, for intelligent Ken Burns selection
  * @param visualDNA - Visual DNA object for FFmpeg filter binding
  * @param effectsProfile - Effects profile with intensity controls (0-1 scale)
+ * @param musicConfig - Music mixing config: { ducking: { enabled, duck_volume, attack_ms, release_ms }, fade: { in_ms, out_ms } }
+ * @param effectsConfig - Controlled motion config from get_effects_config_for_job()
  */
-async function processRender(jobId, imageUrls, audioUrl, durations, captions, effects, webhookUrl, supabaseJobId, lowMemory, musicUrl = null, musicVolume = 15, moodLevels = [], visualDNA = null, effectsProfile = null) {
+async function processRender(jobId, imageUrls, audioUrl, durations, captions, effects, webhookUrl, supabaseJobId, lowMemory, musicUrl = null, musicVolume = 15, moodLevels = [], visualDNA = null, effectsProfile = null, musicConfig = null, effectsConfig = null) {
   activeRenders++;
   const jobDir = path.join(TEMP_DIR, jobId);
   await fs.mkdir(jobDir, { recursive: true });
@@ -1564,6 +1755,73 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
   // Merge DNA effect flags with explicit effects (explicit wins)
   // BUT if effectsProfile is provided with all disabled, it takes precedence
   let mergedEffects = { ...dnaEffectFlags, ...effects };
+  
+  // v4.0: If effectsConfig (Controlled Motion) is provided, it takes highest precedence
+  // and replaces the legacy individual-effect pipeline
+  let controlledMotionConfig = null;
+  let controlledMotionFilters = null;  // Post-processing filter chain from effects_config
+  let controlledMotionFade = null;     // Fade config from effects_config
+  
+  if (effectsConfig && typeof effectsConfig === 'object' && effectsConfig.enabled !== false) {
+    console.log(`[${jobId}] 🎬 Controlled Motion v2.0 ACTIVE — effects_config drives the render pipeline`);
+    controlledMotionConfig = effectsConfig;
+    
+    // Build the post-processing filter chain (applies after concat + audio)
+    const cmResult = buildFiltersFromEffectsConfig(effectsConfig, {
+      lowMemory: useLowMemory,
+      seed: supabaseJobId || jobId,
+      sceneIndex: 0,  // For flicker phase; recalculated per-scene for KB
+      width: 1080,
+      height: 1920,
+    });
+    
+    controlledMotionFilters = cmResult.postFilters;
+    controlledMotionFade = cmResult.fadeConfig;
+    
+    console.log(`[${jobId}]   Post-filters: ${controlledMotionFilters.length} (${controlledMotionFilters.map(f => f.substring(0, 30)).join(', ')})`);
+    console.log(`[${jobId}]   Fade: in=${controlledMotionFade?.fade_in}, out=${controlledMotionFade?.fade_out}, dur=${controlledMotionFade?.duration}s`);
+    
+    // Override legacy mergedEffects — Controlled Motion disables legacy effect passes
+    // because it handles kenBurns, vignette, grain, flicker, color grade itself
+    mergedEffects.vignette = false;
+    mergedEffects.horrorGrade = false;
+    mergedEffects.filmGrain = false;
+    mergedEffects.glitchFlicker = false;
+    mergedEffects.vhsTracking = false;
+    mergedEffects.scanlines = false;
+    mergedEffects.lightFlicker = false;
+    mergedEffects.coldColorCreep = false;
+    mergedEffects.heartbeatZoom = false;
+    mergedEffects.negativeFlash = false;
+    mergedEffects.edgeDarkeningCreep = false;
+    
+    // Ken Burns is handled per-scene by controlledMotionConfig, 
+    // but keep mergedEffects.kenBurns for the existing createVideoFromImages flow
+    mergedEffects.kenBurns = effectsConfig.kenburns?.enabled !== false;
+    
+    // Fade is handled below by controlledMotionFade
+    if (controlledMotionFade) {
+      mergedEffects.fadeIn = controlledMotionFade.fade_in;
+      mergedEffects.fadeOut = controlledMotionFade.fade_out;
+      mergedEffects.fadeDuration = controlledMotionFade.duration;
+    }
+  } else if (effectsConfig && effectsConfig.enabled === false) {
+    console.log(`[${jobId}] 🎬 Controlled Motion: DISABLED (enabled=false) — no effects applied`);
+    mergedEffects.kenBurns = false;
+    mergedEffects.vignette = false;
+    mergedEffects.horrorGrade = false;
+    mergedEffects.filmGrain = false;
+    mergedEffects.glitchFlicker = false;
+    mergedEffects.vhsTracking = false;
+    mergedEffects.scanlines = false;
+    mergedEffects.lightFlicker = false;
+    mergedEffects.fadeIn = false;
+    mergedEffects.fadeOut = false;
+    mergedEffects.coldColorCreep = false;
+    mergedEffects.heartbeatZoom = false;
+    mergedEffects.negativeFlash = false;
+    mergedEffects.edgeDarkeningCreep = false;
+  }
   
   // v3.2: If effectsProfile is provided, use it to override legacy flags
   // This ensures custom mode with disabled effects actually disables them
@@ -1667,6 +1925,8 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
       lowMemory: useLowMemory,
       moodLevels: moodLevels, // Pass mood levels for intelligent Ken Burns
       motionOverride: dnaMotionOverride, // v3.0: Pass Visual DNA motion override
+      effectsConfig: controlledMotionConfig, // v4.0: Controlled Motion per-scene Ken Burns
+      seed: supabaseJobId || jobId,           // v4.0: Deterministic seed for KB direction
     });
     timings.createVideo = Date.now() - videoStart;
     job.progress = 50;
@@ -1687,22 +1947,40 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     job.progress = 55;
     
     // Step 4b: Add background music (if provided)
+    // v3.2: Now with sidechain ducking + fade in/out
+    // v3.2.1: Backward-compat — null/missing/disabled musicConfig handled gracefully
     if (musicUrl) {
       const musicStart = Date.now();
       console.log(`[${jobId}] Downloading background music...`);
       const musicPath = path.join(jobDir, 'music.mp3');
       try {
-        await downloadFile(musicUrl, musicPath);
-        console.log(`[${jobId}] Adding background music at ${musicVolume}% volume...`);
-        const withMusicPath = path.join(jobDir, 'with_music.mp4');
-        await mixBackgroundMusic(currentVideo, musicPath, withMusicPath, musicVolume);
-        await fs.unlink(currentVideo).catch(() => {});
-        await fs.unlink(musicPath).catch(() => {});
-        currentVideo = withMusicPath;
-        timings.addMusic = Date.now() - musicStart;
-        console.log(`[${jobId}] ✓ Background music added (${Math.round(timings.addMusic/1000)}s)`);
+        // Guard: if musicConfig explicitly disables music, skip mixing
+        if (musicConfig && musicConfig.enabled === false) {
+          console.log(`[${jobId}] ⚠️ Music URL provided but music_config.enabled=false, skipping mix`);
+        } else {
+          await downloadFile(musicUrl, musicPath);
+          // Validate the downloaded file exists and has content
+          const musicStat = await fs.stat(musicPath).catch(() => null);
+          if (!musicStat || musicStat.size < 1024) {
+            throw new Error(`Music file too small or missing (${musicStat?.size || 0} bytes)`);
+          }
+          // Safe volume: ensure it's a valid number in range 0-100
+          const safeVolume = (typeof musicVolume === 'number' && musicVolume >= 0 && musicVolume <= 100) ? musicVolume : 15;
+          console.log(`[${jobId}] Adding background music at ${safeVolume}% volume (ducking=${musicConfig?.ducking?.enabled || false})...`);
+          const withMusicPath = path.join(jobDir, 'with_music.mp4');
+          // Calculate total video duration for fade-out timing
+          const totalDuration = durations ? durations.reduce((a, b) => a + b, 0) : 0;
+          await mixBackgroundMusic(currentVideo, musicPath, withMusicPath, safeVolume, musicConfig || null, totalDuration);
+          await fs.unlink(currentVideo).catch(() => {});
+          await fs.unlink(musicPath).catch(() => {});
+          currentVideo = withMusicPath;
+          timings.addMusic = Date.now() - musicStart;
+          console.log(`[${jobId}] ✓ Background music added (${Math.round(timings.addMusic/1000)}s)`);
+        }
       } catch (musicErr) {
         console.log(`[${jobId}] ⚠️ Failed to add background music: ${musicErr.message}, continuing without it`);
+        // Clean up partial download
+        await fs.unlink(path.join(jobDir, 'music.mp3')).catch(() => {});
       }
     }
     job.progress = 60;
@@ -1785,6 +2063,32 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
         duration: `0:00 - ${formatTime(totalDuration)}`,
         processTime: timings.captions 
       });
+    }
+    
+    // v4.0: Apply Controlled Motion post-processing filters (single pass)
+    // This replaces the legacy individual effect passes when effects_config is active
+    if (controlledMotionFilters && controlledMotionFilters.length > 0) {
+      const cmStart = Date.now();
+      console.log(`[${jobId}] 🎛️ Applying Controlled Motion filters (${controlledMotionFilters.length} filters)...`);
+      const cmGradedPath = path.join(jobDir, 'cm_graded.mp4');
+      try {
+        await applyVisualDNAFilters(currentVideo, cmGradedPath, controlledMotionFilters, useLowMemory);
+        await fs.unlink(currentVideo).catch(() => {});
+        currentVideo = cmGradedPath;
+        const cmTime = Date.now() - cmStart;
+        appliedEffects.push({
+          name: 'Controlled Motion Grade',
+          category: 'Effects Config v2.0',
+          timeline: 'Full video',
+          duration: `0:00 - ${formatTime(totalDuration)}`,
+          processTime: cmTime,
+          filters: controlledMotionFilters.slice(0, 3).join(', ') + (controlledMotionFilters.length > 3 ? '...' : ''),
+        });
+        console.log(`[${jobId}] ✓ Controlled Motion filters applied (${Math.round(cmTime/1000)}s)`);
+      } catch (cmErr) {
+        console.warn(`[${jobId}] ⚠️ Controlled Motion filters failed (soft failure), continuing without:`, cmErr.message);
+        // Soft failure: continue rendering without effects
+      }
     }
     
     // Step 6: Apply vignette (if enabled - skip if DNA already applied vignette)

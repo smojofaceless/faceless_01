@@ -1,7 +1,8 @@
 # Worker V1 Smoke Tests
 
 > **Last Updated:** February 10, 2026  
-> **Status:** ✅ Production Ready - End-to-end verified
+> **Status:** ✅ Production Ready - End-to-end verified  
+> **Worker Version:** v2.6 (with cost controls)
 
 ---
 
@@ -122,6 +123,18 @@ SELECT job_id, platform, COUNT(*) as count
 FROM posts 
 WHERE job_id = '00000000-0000-0000-0000-000000000001'
 GROUP BY job_id, platform;
+
+-- ✅ api_usage has cost tracking records (cost controls)
+SELECT service, COUNT(*) as calls, SUM(units) as total_units
+FROM api_usage
+WHERE job_id = '00000000-0000-0000-0000-000000000001'
+GROUP BY service
+ORDER BY service;
+
+-- Expected services logged:
+-- openai_image (one per scene)
+-- elevenlabs (1 call)
+-- ffmpeg_renderer or creatomate (1 call)
 ```
 
 ---
@@ -303,6 +316,12 @@ DELETE FROM posts WHERE job_id IN (
   '00000000-0000-0000-0000-000000000003'
 );
 
+DELETE FROM api_usage WHERE job_id IN (
+  '00000000-0000-0000-0000-000000000001',
+  '00000000-0000-0000-0000-000000000002',
+  '00000000-0000-0000-0000-000000000003'
+);
+
 DELETE FROM job_assets WHERE job_id IN (
   '00000000-0000-0000-0000-000000000001',
   '00000000-0000-0000-0000-000000000002',
@@ -322,7 +341,8 @@ DELETE FROM jobs WHERE id IN (
 
 | Test | Expected | Verified |
 |------|----------|----------|
-| A. Fresh job | complete, video_url, all assets, 1 post | ⬜ |
+| A. Fresh job | complete, video_url, all assets, 1 post, api_usage logged | ⬜ |
 | B. Retry same job | No new assets, no new posts, fast skip | ⬜ |
 | C. Crash + resume | Resumes from incomplete step | ⬜ |
 | D. Concurrency | One 200, one 409 | ⬜ |
+| E. Cost controls | api_usage records for images/voice/assemble | ⬜ |
