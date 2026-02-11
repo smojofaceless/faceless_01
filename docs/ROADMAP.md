@@ -38,6 +38,7 @@
 
 | Item | Date | Notes |
 |------|------|-------|
+| **Effects Refinement (Controlled Motion)** | Feb 10, 2026 | DB-driven, intensity-scaled, deterministic effects. 4-layer merge (system->preset->brand->job). `normalizeEffectsConfig()` centralized clamping. Brand-level ceilings (`limits`). Hardened: soft-fail, effects OFF by default, legacy pipeline always reachable. Brand Effects UI on brands page. |
 | **Background Music V1.2** | Feb 10, 2026 | V1.2 hardening: loudness_lufs/peak_db columns for per-track gain tuning, music_config_hash fingerprint in job_assets.meta for debugging, alimiter anti-clipping filter in renderer, music status badge in job detail modal, **Brand Music Management UI** on brands page (view tracks, upload MP3, preview playback, toggle active/inactive, delete). |
 | **Background Music V1** | Feb 10, 2026 | music_tracks table (3 default tracks per brand), brand music config in config_overrides, 3 RPCs, deterministic selection (hash-based), sidechain ducking + fade in/out in FFmpeg renderer v3.2, worker-v1 v2.7. |
 | **Cost Controls / Rate Limits** | Feb 10, 2026 | Per-job caps, per-campaign/global budgets, concurrency slots, api_usage ledger (idempotent), 11 RPCs. Services: openai_text, openai_image (gpt-image-1), elevenlabs, ffmpeg_renderer, creatomate. Worker-v1 v2.6, schedule-jobs v2.2. |
@@ -686,14 +687,20 @@ scheduled → posting → posted
 
 ---
 
-### 15. Effects Refinement (Controlled Motion)
+### 15. ✅ Effects Refinement (Controlled Motion) — COMPLETE
 
-- [ ] Subtle pan/zoom (Ken Burns)
-- [ ] Grain/flicker per preset
-- [ ] Effect intensity controls
-- [ ] Per-preset effect profiles
+> **Status:** ✅ COMPLETE (February 10, 2026)
 
-**Reference:** [EFFECTS_SYSTEM.md](EFFECTS_SYSTEM.md)
+- [x] Subtle pan/zoom (Ken Burns) — deterministic direction via djb2 hash seed
+- [x] Grain/flicker per preset — DB-driven profiles (urban_legend, one_too_many, analog_horror, clean)
+- [x] Effect intensity controls — master intensity knob (0-1) scales all sub-effects
+- [x] Per-preset effect profiles — 4-layer merge (system → preset → brand → job)
+- [x] `normalizeEffectsConfig()` — centralized clamping, NaN-safe, two-pass (system + brand ceilings)
+- [x] Brand-level ceilings (`limits`) — cap effects regardless of preset
+- [x] Hardening: enabled=false doesn't kill legacy, soft-fail on filter build, effects OFF by default
+- [x] Brand Effects UI on brands page — toggle, sliders, ceilings, per-brand config
+
+**Reference:** [EFFECTS_REFINEMENT.md](EFFECTS_REFINEMENT.md), [EFFECTS_SYSTEM.md](EFFECTS_SYSTEM.md), [EFFECTS_SMOKE_TESTS.md](EFFECTS_SMOKE_TESTS.md)
 
 ---
 

@@ -392,6 +392,196 @@
         </div>
     </div>
 
+    <!-- Effects Config Modal -->
+    <div class="modal" id="effects-modal">
+        <div class="modal__overlay" onclick="closeEffectsModal()"></div>
+        <div class="modal__content modal__content--lg">
+            <div class="modal__header">
+                <h3 class="modal__title">🎛️ Effects Config — <span id="effects-brand-name"></span></h3>
+                <button class="modal__close" onclick="closeEffectsModal()">&times;</button>
+            </div>
+            <div class="modal__body" id="effects-modal-body">
+
+                <!-- Master Controls -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <label class="fx-toggle">
+                            <input type="checkbox" id="fx-enabled">
+                            <span class="fx-toggle__label">Controlled Motion Enabled</span>
+                        </label>
+                    </div>
+                    <div class="fx-slider-row">
+                        <label class="fx-slider-label">Master Intensity</label>
+                        <input type="range" class="fx-slider" id="fx-intensity" min="0" max="1" step="0.05" value="0.6">
+                        <span class="fx-slider-value" id="fx-intensity-val">60%</span>
+                    </div>
+                </div>
+
+                <!-- Ken Burns -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <label class="fx-toggle">
+                            <input type="checkbox" id="fx-kb-enabled" checked>
+                            <span class="fx-toggle__label">Ken Burns (Pan/Zoom)</span>
+                        </label>
+                    </div>
+                    <div class="fx-slider-row">
+                        <label class="fx-slider-label">Pan Speed</label>
+                        <input type="range" class="fx-slider" id="fx-kb-pan" min="0" max="0.6" step="0.05" value="0.4">
+                        <span class="fx-slider-value" id="fx-kb-pan-val">0.40</span>
+                    </div>
+                    <div class="fx-slider-row">
+                        <label class="fx-slider-label">Zoom Range</label>
+                        <input type="range" class="fx-slider" id="fx-kb-zoom" min="1.0" max="1.5" step="0.01" value="1.12">
+                        <span class="fx-slider-value" id="fx-kb-zoom-val">1.12</span>
+                    </div>
+                    <div class="fx-select-row">
+                        <label class="fx-slider-label">Direction</label>
+                        <select class="form-control form-control--sm" id="fx-kb-direction">
+                            <option value="alternate">Alternate</option>
+                            <option value="in">Zoom In</option>
+                            <option value="out">Zoom Out</option>
+                            <option value="random">Random</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Grain -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <label class="fx-toggle">
+                            <input type="checkbox" id="fx-grain-enabled">
+                            <span class="fx-toggle__label">Film Grain</span>
+                        </label>
+                    </div>
+                    <div class="fx-slider-row">
+                        <label class="fx-slider-label">Intensity</label>
+                        <input type="range" class="fx-slider" id="fx-grain-int" min="0" max="0.5" step="0.05" value="0.2">
+                        <span class="fx-slider-value" id="fx-grain-int-val">20%</span>
+                    </div>
+                    <div class="fx-slider-row">
+                        <label class="fx-slider-label">Size</label>
+                        <input type="range" class="fx-slider" id="fx-grain-size" min="0.5" max="2.0" step="0.1" value="1.0">
+                        <span class="fx-slider-value" id="fx-grain-size-val">1.0</span>
+                    </div>
+                </div>
+
+                <!-- Flicker -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <label class="fx-toggle">
+                            <input type="checkbox" id="fx-flicker-enabled">
+                            <span class="fx-toggle__label">Light Flicker</span>
+                        </label>
+                    </div>
+                    <div class="fx-slider-row">
+                        <label class="fx-slider-label">Intensity</label>
+                        <input type="range" class="fx-slider" id="fx-flicker-int" min="0" max="0.5" step="0.05" value="0.15">
+                        <span class="fx-slider-value" id="fx-flicker-int-val">15%</span>
+                    </div>
+                    <div class="fx-slider-row">
+                        <label class="fx-slider-label">Frequency</label>
+                        <input type="range" class="fx-slider" id="fx-flicker-freq" min="0.05" max="2.0" step="0.05" value="0.25">
+                        <span class="fx-slider-value" id="fx-flicker-freq-val">0.25</span>
+                    </div>
+                </div>
+
+                <!-- Vignette -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <label class="fx-toggle">
+                            <input type="checkbox" id="fx-vignette-enabled">
+                            <span class="fx-toggle__label">Vignette</span>
+                        </label>
+                    </div>
+                    <div class="fx-slider-row">
+                        <label class="fx-slider-label">Intensity</label>
+                        <input type="range" class="fx-slider" id="fx-vignette-int" min="0" max="1" step="0.05" value="0.6">
+                        <span class="fx-slider-value" id="fx-vignette-int-val">60%</span>
+                    </div>
+                </div>
+
+                <!-- Color Grade -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <label class="fx-toggle">
+                            <input type="checkbox" id="fx-cg-enabled">
+                            <span class="fx-toggle__label">Color Grade</span>
+                        </label>
+                    </div>
+                    <div class="fx-select-row">
+                        <label class="fx-slider-label">Preset</label>
+                        <select class="form-control form-control--sm" id="fx-cg-preset">
+                            <option value="auto">Auto</option>
+                            <option value="cinematic_dark">Cinematic Dark</option>
+                            <option value="cold_desaturated">Cold Desaturated</option>
+                            <option value="vhs_degraded">VHS Degraded</option>
+                        </select>
+                    </div>
+                    <div class="fx-slider-row">
+                        <label class="fx-slider-label">Intensity</label>
+                        <input type="range" class="fx-slider" id="fx-cg-int" min="0" max="1" step="0.05" value="0.65">
+                        <span class="fx-slider-value" id="fx-cg-int-val">65%</span>
+                    </div>
+                </div>
+
+                <!-- Fade -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <span class="fx-toggle__label" style="font-weight:600;">Fade In/Out</span>
+                    </div>
+                    <div class="fx-slider-row" style="gap:16px;">
+                        <label class="fx-toggle" style="flex:0;">
+                            <input type="checkbox" id="fx-fade-in" checked>
+                            <span class="fx-toggle__label">In</span>
+                        </label>
+                        <label class="fx-toggle" style="flex:0;">
+                            <input type="checkbox" id="fx-fade-out" checked>
+                            <span class="fx-toggle__label">Out</span>
+                        </label>
+                    </div>
+                    <div class="fx-slider-row">
+                        <label class="fx-slider-label">Duration (s)</label>
+                        <input type="range" class="fx-slider" id="fx-fade-dur" min="0.1" max="5.0" step="0.1" value="1.5">
+                        <span class="fx-slider-value" id="fx-fade-dur-val">1.5s</span>
+                    </div>
+                </div>
+
+                <!-- Brand Ceilings -->
+                <div class="fx-section fx-section--ceilings">
+                    <div class="fx-section__header">
+                        <span class="fx-toggle__label" style="font-weight:600;">🔒 Brand Ceilings</span>
+                        <span class="fx-hint">Max values this brand will never exceed, regardless of preset</span>
+                    </div>
+                    <div class="fx-slider-row">
+                        <label class="fx-slider-label">Max Pan Speed</label>
+                        <input type="range" class="fx-slider fx-slider--ceiling" id="fx-ceil-pan" min="0" max="0.6" step="0.05" value="0.6">
+                        <span class="fx-slider-value" id="fx-ceil-pan-val">—</span>
+                    </div>
+                    <div class="fx-slider-row">
+                        <label class="fx-slider-label">Max Grain</label>
+                        <input type="range" class="fx-slider fx-slider--ceiling" id="fx-ceil-grain" min="0" max="0.5" step="0.05" value="0.5">
+                        <span class="fx-slider-value" id="fx-ceil-grain-val">—</span>
+                    </div>
+                    <div class="fx-slider-row">
+                        <label class="fx-slider-label">Max Flicker</label>
+                        <input type="range" class="fx-slider fx-slider--ceiling" id="fx-ceil-flicker" min="0" max="0.5" step="0.05" value="0.5">
+                        <span class="fx-slider-value" id="fx-ceil-flicker-val">—</span>
+                    </div>
+                </div>
+
+            </div>
+            <div class="modal__footer">
+                <div class="fx-footer-info" id="fx-status"></div>
+                <div class="fx-footer-actions">
+                    <button class="btn btn--secondary btn--sm" id="fx-reset-btn">Reset to Default</button>
+                    <button class="btn btn--secondary" onclick="closeEffectsModal()">Cancel</button>
+                    <button class="btn btn--primary" id="fx-save-btn">Save Effects</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Supabase SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
@@ -595,6 +785,13 @@
                     openMusicModal(btn.dataset.id);
                 });
             });
+
+            container.querySelectorAll('.brand-card__action--effects').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openEffectsModal(btn.dataset.id);
+                });
+            });
         }
 
         function renderSummary(brands, enrichments) {
@@ -750,6 +947,12 @@
                                     <path d="M9 18V5l12-2v13"/>
                                     <circle cx="6" cy="18" r="3"/>
                                     <circle cx="18" cy="16" r="3"/>
+                                </svg>
+                            </button>
+                            <button class="btn btn--icon btn--sm brand-card__action--effects" data-id="${brand.id}" title="Effects Config">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                    <circle cx="12" cy="12" r="3"/>
+                                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
                                 </svg>
                             </button>
                             <button class="btn btn--icon btn--sm brand-card__action--edit" data-id="${brand.id}" title="Edit Brand">
@@ -1195,6 +1398,270 @@
             const div = document.createElement('div');
             div.textContent = str;
             return div.innerHTML;
+        }
+
+        // =====================================================
+        // EFFECTS CONFIG MODAL
+        // =====================================================
+
+        let effectsBrandId = null;
+        let effectsOriginal = null; // snapshot for dirty-check
+
+        async function openEffectsModal(brandId) {
+            effectsBrandId = brandId;
+            const brand = brandManager.get(brandId);
+            document.getElementById('effects-brand-name').textContent = brand?.name || brandId;
+            document.getElementById('effects-modal').classList.add('active');
+            document.getElementById('fx-status').textContent = 'Loading...';
+
+            try {
+                const cfg = await brandManager.getEffectsConfig(brandId);
+                populateEffectsForm(cfg);
+                effectsOriginal = JSON.stringify(cfg);
+                document.getElementById('fx-status').textContent = cfg ? 'Loaded from DB' : 'No config set — using system defaults';
+            } catch (e) {
+                document.getElementById('fx-status').textContent = 'Failed to load config';
+                console.error(e);
+            }
+            setupEffectsListeners();
+        }
+
+        function closeEffectsModal() {
+            document.getElementById('effects-modal').classList.remove('active');
+            effectsBrandId = null;
+            effectsOriginal = null;
+        }
+
+        function populateEffectsForm(cfg) {
+            // If no config, leave defaults
+            if (!cfg) {
+                document.getElementById('fx-enabled').checked = false;
+                document.getElementById('fx-intensity').value = 0.6;
+                document.getElementById('fx-intensity-val').textContent = '60%';
+                // KB defaults
+                document.getElementById('fx-kb-enabled').checked = true;
+                document.getElementById('fx-kb-pan').value = 0.4;
+                document.getElementById('fx-kb-pan-val').textContent = '0.40';
+                document.getElementById('fx-kb-zoom').value = 1.12;
+                document.getElementById('fx-kb-zoom-val').textContent = '1.12';
+                document.getElementById('fx-kb-direction').value = 'alternate';
+                // Grain defaults
+                document.getElementById('fx-grain-enabled').checked = false;
+                document.getElementById('fx-grain-int').value = 0.2;
+                document.getElementById('fx-grain-int-val').textContent = '20%';
+                document.getElementById('fx-grain-size').value = 1.0;
+                document.getElementById('fx-grain-size-val').textContent = '1.0';
+                // Flicker defaults
+                document.getElementById('fx-flicker-enabled').checked = false;
+                document.getElementById('fx-flicker-int').value = 0.15;
+                document.getElementById('fx-flicker-int-val').textContent = '15%';
+                document.getElementById('fx-flicker-freq').value = 0.25;
+                document.getElementById('fx-flicker-freq-val').textContent = '0.25';
+                // Vignette defaults
+                document.getElementById('fx-vignette-enabled').checked = false;
+                document.getElementById('fx-vignette-int').value = 0.6;
+                document.getElementById('fx-vignette-int-val').textContent = '60%';
+                // Color Grade defaults
+                document.getElementById('fx-cg-enabled').checked = false;
+                document.getElementById('fx-cg-preset').value = 'auto';
+                document.getElementById('fx-cg-int').value = 0.65;
+                document.getElementById('fx-cg-int-val').textContent = '65%';
+                // Fade defaults
+                document.getElementById('fx-fade-in').checked = true;
+                document.getElementById('fx-fade-out').checked = true;
+                document.getElementById('fx-fade-dur').value = 1.5;
+                document.getElementById('fx-fade-dur-val').textContent = '1.5s';
+                // Ceilings at max (= no ceiling)
+                resetCeilings();
+                return;
+            }
+
+            // Master
+            document.getElementById('fx-enabled').checked = cfg.enabled === true;
+            setSlider('fx-intensity', cfg.intensity ?? 0.6, v => Math.round(v * 100) + '%');
+
+            // Ken Burns
+            const kb = cfg.kenburns || {};
+            document.getElementById('fx-kb-enabled').checked = kb.enabled !== false;
+            setSlider('fx-kb-pan', kb.pan_speed ?? 0.4, v => v.toFixed(2));
+            const zoomMax = Array.isArray(kb.zoom_range) ? kb.zoom_range[1] : 1.12;
+            setSlider('fx-kb-zoom', zoomMax, v => v.toFixed(2));
+            document.getElementById('fx-kb-direction').value = kb.direction || 'alternate';
+
+            // Grain
+            const gr = cfg.grain || {};
+            document.getElementById('fx-grain-enabled').checked = gr.enabled === true;
+            setSlider('fx-grain-int', gr.intensity ?? 0.2, v => Math.round(v * 100) + '%');
+            setSlider('fx-grain-size', gr.size ?? 1.0, v => v.toFixed(1));
+
+            // Flicker
+            const fl = cfg.flicker || {};
+            document.getElementById('fx-flicker-enabled').checked = fl.enabled === true;
+            setSlider('fx-flicker-int', fl.intensity ?? 0.15, v => Math.round(v * 100) + '%');
+            setSlider('fx-flicker-freq', fl.frequency ?? 0.25, v => v.toFixed(2));
+
+            // Vignette
+            const vi = cfg.vignette || {};
+            document.getElementById('fx-vignette-enabled').checked = vi.enabled === true;
+            setSlider('fx-vignette-int', vi.intensity ?? 0.6, v => Math.round(v * 100) + '%');
+
+            // Color Grade
+            const cg = cfg.color_grade || {};
+            document.getElementById('fx-cg-enabled').checked = cg.enabled === true;
+            document.getElementById('fx-cg-preset').value = cg.preset || 'auto';
+            setSlider('fx-cg-int', cg.intensity ?? 0.65, v => Math.round(v * 100) + '%');
+
+            // Fade
+            const fd = cfg.fade || {};
+            document.getElementById('fx-fade-in').checked = fd.fade_in !== false;
+            document.getElementById('fx-fade-out').checked = fd.fade_out !== false;
+            setSlider('fx-fade-dur', fd.duration ?? 1.5, v => v.toFixed(1) + 's');
+
+            // Ceilings
+            const lim = cfg.limits || {};
+            setCeiling('fx-ceil-pan', lim.kenburns?.max_pan_speed, 0.6);
+            setCeiling('fx-ceil-grain', lim.grain?.max_intensity, 0.5);
+            setCeiling('fx-ceil-flicker', lim.flicker?.max_intensity, 0.5);
+        }
+
+        function setSlider(id, value, formatter) {
+            const slider = document.getElementById(id);
+            const valEl = document.getElementById(id + '-val');
+            slider.value = value;
+            if (valEl) valEl.textContent = formatter(Number(value));
+        }
+
+        function setCeiling(id, value, defaultMax) {
+            const slider = document.getElementById(id);
+            const valEl = document.getElementById(id + '-val');
+            if (value !== undefined && value !== null) {
+                slider.value = value;
+                valEl.textContent = Number(value).toFixed(2);
+            } else {
+                slider.value = defaultMax;
+                valEl.textContent = '—';
+            }
+        }
+
+        function resetCeilings() {
+            setCeiling('fx-ceil-pan', undefined, 0.6);
+            setCeiling('fx-ceil-grain', undefined, 0.5);
+            setCeiling('fx-ceil-flicker', undefined, 0.5);
+        }
+
+        function setupEffectsListeners() {
+            // Slider live-update labels
+            const sliders = [
+                { id: 'fx-intensity', fmt: v => Math.round(v * 100) + '%' },
+                { id: 'fx-kb-pan', fmt: v => v.toFixed(2) },
+                { id: 'fx-kb-zoom', fmt: v => v.toFixed(2) },
+                { id: 'fx-grain-int', fmt: v => Math.round(v * 100) + '%' },
+                { id: 'fx-grain-size', fmt: v => v.toFixed(1) },
+                { id: 'fx-flicker-int', fmt: v => Math.round(v * 100) + '%' },
+                { id: 'fx-flicker-freq', fmt: v => v.toFixed(2) },
+                { id: 'fx-vignette-int', fmt: v => Math.round(v * 100) + '%' },
+                { id: 'fx-cg-int', fmt: v => Math.round(v * 100) + '%' },
+                { id: 'fx-fade-dur', fmt: v => v.toFixed(1) + 's' },
+                { id: 'fx-ceil-pan', fmt: v => v.toFixed(2) },
+                { id: 'fx-ceil-grain', fmt: v => v.toFixed(2) },
+                { id: 'fx-ceil-flicker', fmt: v => v.toFixed(2) },
+            ];
+            sliders.forEach(({ id, fmt }) => {
+                const el = document.getElementById(id);
+                // Remove old listeners by cloning
+                const clone = el.cloneNode(true);
+                el.parentNode.replaceChild(clone, el);
+                clone.addEventListener('input', () => {
+                    document.getElementById(id + '-val').textContent = fmt(Number(clone.value));
+                });
+            });
+
+            // Save button
+            const saveBtn = document.getElementById('fx-save-btn');
+            const saveClone = saveBtn.cloneNode(true);
+            saveBtn.parentNode.replaceChild(saveClone, saveBtn);
+            saveClone.addEventListener('click', saveEffectsConfig);
+
+            // Reset button
+            const resetBtn = document.getElementById('fx-reset-btn');
+            const resetClone = resetBtn.cloneNode(true);
+            resetBtn.parentNode.replaceChild(resetClone, resetBtn);
+            resetClone.addEventListener('click', async () => {
+                if (!confirm('Remove all effects config for this brand? It will use system defaults.')) return;
+                try {
+                    await brandManager.saveEffectsConfig(effectsBrandId, null);
+                    toast.success('Effects config removed — using system defaults');
+                    closeEffectsModal();
+                } catch (e) {
+                    toast.error('Failed to reset effects config');
+                }
+            });
+        }
+
+        function buildEffectsConfigFromForm() {
+            const cfg = {
+                enabled: document.getElementById('fx-enabled').checked,
+                intensity: Number(document.getElementById('fx-intensity').value),
+                kenburns: {
+                    enabled: document.getElementById('fx-kb-enabled').checked,
+                    zoom_range: [1.0, Number(document.getElementById('fx-kb-zoom').value)],
+                    pan_speed: Number(document.getElementById('fx-kb-pan').value),
+                    direction: document.getElementById('fx-kb-direction').value,
+                },
+                grain: {
+                    enabled: document.getElementById('fx-grain-enabled').checked,
+                    intensity: Number(document.getElementById('fx-grain-int').value),
+                    size: Number(document.getElementById('fx-grain-size').value),
+                },
+                flicker: {
+                    enabled: document.getElementById('fx-flicker-enabled').checked,
+                    intensity: Number(document.getElementById('fx-flicker-int').value),
+                    frequency: Number(document.getElementById('fx-flicker-freq').value),
+                },
+                vignette: {
+                    enabled: document.getElementById('fx-vignette-enabled').checked,
+                    intensity: Number(document.getElementById('fx-vignette-int').value),
+                },
+                color_grade: {
+                    enabled: document.getElementById('fx-cg-enabled').checked,
+                    preset: document.getElementById('fx-cg-preset').value,
+                    intensity: Number(document.getElementById('fx-cg-int').value),
+                },
+                fade: {
+                    fade_in: document.getElementById('fx-fade-in').checked,
+                    fade_out: document.getElementById('fx-fade-out').checked,
+                    duration: Number(document.getElementById('fx-fade-dur').value),
+                },
+            };
+
+            // Build limits (only include if user set a ceiling below the system max)
+            const limits = {};
+            const ceilPan = Number(document.getElementById('fx-ceil-pan').value);
+            const ceilGrain = Number(document.getElementById('fx-ceil-grain').value);
+            const ceilFlicker = Number(document.getElementById('fx-ceil-flicker').value);
+            if (ceilPan < 0.6) limits.kenburns = { max_pan_speed: ceilPan };
+            if (ceilGrain < 0.5) limits.grain = { max_intensity: ceilGrain };
+            if (ceilFlicker < 0.5) limits.flicker = { max_intensity: ceilFlicker };
+            if (Object.keys(limits).length > 0) cfg.limits = limits;
+
+            return cfg;
+        }
+
+        async function saveEffectsConfig() {
+            const cfg = buildEffectsConfigFromForm();
+            const btn = document.getElementById('fx-save-btn') || document.querySelector('#effects-modal .btn--primary');
+            
+            try {
+                if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+                await brandManager.saveEffectsConfig(effectsBrandId, cfg);
+                toast.success('Effects config saved');
+                closeEffectsModal();
+            } catch (e) {
+                toast.error('Failed to save effects config: ' + e.message);
+                console.error(e);
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = 'Save Effects'; }
+            }
         }
     </script>
 </body>

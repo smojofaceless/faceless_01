@@ -179,6 +179,62 @@ WHERE brand_id = 'YOUR_BRAND_UUID'
 
 ---
 
+## E9 — Normalizer clamping
+
+**Goal:** `normalizeEffectsConfig()` clamps out-of-range values.
+
+1. Send `/render` with extreme values:
+   ```json
+   {
+     "effects_config": {
+       "enabled": true,
+       "intensity": 5.0,
+       "grain": { "enabled": true, "intensity": 999, "size": -1 },
+       "flicker": { "enabled": true, "intensity": 2, "frequency": 100 },
+       "kenburns": { "enabled": true, "pan_speed": 10, "zoom_range": [0.1, 5.0] }
+     }
+   }
+   ```
+2. Check renderer logs.
+
+**Pass:** Logs show clamped values: `master_intensity=1`, grain intensity ≤ 0.5, flicker frequency ≤ 2.0, pan_speed ≤ 0.6, zoom_range within [1.0, 1.5]. Video renders without FFmpeg errors.
+
+---
+
+## E10 — Brand ceilings
+
+**Goal:** Brand `limits` cap effects below system max.
+
+1. Set brand ceiling via SQL:
+   ```sql
+   UPDATE brand_templates
+   SET config_overrides = config_overrides || '{
+     "effects": {
+       "enabled": true,
+       "limits": {
+         "grain": { "max_intensity": 0.1 },
+         "kenburns": { "max_pan_speed": 0.2 }
+       }
+     }
+   }'::jsonb
+   WHERE brand_id = 'YOUR_BRAND_UUID'
+     AND is_default = true;
+   ```
+2. Trigger a render (preset requests grain 0.2, pan_speed 0.4).
+3. Check renderer logs.
+
+**Pass:** Logs show `🔒 Brand ceilings applied: grain.intensity, kb.pan_speed`. Grain capped to 0.1, pan_speed capped to 0.2.
+
+**Cleanup:**
+```sql
+UPDATE brand_templates
+SET config_overrides = config_overrides #- '{effects,limits}'
+WHERE brand_id = 'YOUR_BRAND_UUID'
+  AND is_default = true;
+```
+
+---
+
 ## Checklist
 
 | Test | Result | Date | Notes |
@@ -191,3 +247,5 @@ WHERE brand_id = 'YOUR_BRAND_UUID'
 | E6 — Controlled Motion render | ⬜ | | |
 | E7 — Deterministic retries | ⬜ | | |
 | E8 — Soft failure | ⬜ | | |
+| E9 — Normalizer clamping | ⬜ | | |
+| E10 — Brand ceilings | ⬜ | | |

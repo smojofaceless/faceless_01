@@ -138,6 +138,56 @@ All values are **clamped** in the renderer via `safeClamp(value, default, min, m
 
 ---
 
+## normalizeEffectsConfig() — Centralized Safety Gate (v4.1)
+
+A single function clamps and sanitizes the entire `effects_config` before any builder sees it.
+Called once at the renderer `/render` entry point.
+
+### Two-pass clamping
+
+| Pass | Purpose |
+|------|--------|
+| **1. System clamp** | Hard FFmpeg-safe ranges — never exceeded |
+| **2. Brand ceilings** | Optional per-brand caps from `raw.limits` — only lower, never raise |
+
+### System safe ranges
+
+| Field | Min | Max | Default |
+|-------|-----|-----|---------|
+| `intensity` | 0 | 1 | 0.5 |
+| `kenburns.zoom_range[]` | 1.0 | 1.5 | [1.0, 1.12] |
+| `kenburns.pan_speed` | 0 | 0.6 | 0.4 |
+| `grain.intensity` | 0 | 0.5 | 0 |
+| `grain.size` | 0.5 | 2.0 | 1.0 |
+| `flicker.intensity` | 0 | 0.5 | 0 |
+| `flicker.frequency` | 0.05 | 2.0 | 0.3 |
+| `vignette.intensity` | 0 | 1 | 0 |
+| `color_grade.intensity` | 0 | 1 | 0 |
+| `fade.duration` | 0.1 | 5.0 | 1.5 |
+
+### Brand ceilings (Pass 2)
+
+Brands set `limits` in `config_overrides.effects` — ceilings cap effects regardless of preset:
+
+```json
+{
+  "enabled": true,
+  "intensity": 0.6,
+  "limits": {
+    "max_intensity": 0.7,
+    "kenburns": { "max_pan_speed": 0.4 },
+    "grain": { "max_intensity": 0.25 },
+    "flicker": { "max_intensity": 0.15 }
+  }
+}
+```
+
+**Flow:** Preset requests grain 0.40 → system clamps 0.40 (within 0–0.5) → brand ceiling caps to 0.25.
+
+When ceilings fire, the renderer logs `🔒 Brand ceilings applied: grain.intensity, flicker.intensity`.
+
+---
+
 ## Backwards compatibility
 
 | Scenario | Behavior |
@@ -189,5 +239,6 @@ Only the keys you specify are overridden — everything else inherits from the p
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v2.1 | Feb 10, 2026 | Brand-level ceilings (`limits`), centralized `normalizeEffectsConfig()`, hardening (enabled=false fix, soft-fail, effects OFF by default) |
 | v2.0 | Feb 2026 | Controlled Motion: DB-driven, intensity-scaled, deterministic effects |
 | v1.0 | Jan 2026 | Initial effects profile system (boolean flags + intensity overrides) |

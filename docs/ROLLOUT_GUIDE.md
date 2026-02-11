@@ -105,6 +105,24 @@ SET config_overrides = config_overrides - 'effects'
 WHERE brand_id = 'YOUR_BRAND_UUID';
 ```
 
+### To set brand-level ceilings:
+```sql
+UPDATE brand_templates
+SET config_overrides = jsonb_set(
+  COALESCE(config_overrides, '{}'::jsonb),
+  '{effects,limits}',
+  '{
+    "kenburns": { "max_pan_speed": 0.4 },
+    "grain": { "max_intensity": 0.25 },
+    "flicker": { "max_intensity": 0.15 }
+  }'::jsonb
+)
+WHERE brand_id = 'YOUR_BRAND_UUID'
+  AND is_default = true;
+```
+
+Ceilings only lower values — they never raise them. The renderer logs which fields were capped.
+
 ---
 
 ## Step D — Baseline Parity Verification

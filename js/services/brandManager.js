@@ -854,6 +854,85 @@ class BrandManager {
         const supabaseUrl = typeof CONFIG !== 'undefined' ? CONFIG.SUPABASE_URL : '';
         return `${supabaseUrl}/storage/v1/object/public/story-videos/brands/${brandId}/music/${trackId}.mp3`;
     }
+
+    // =================================================================
+    // EFFECTS CONFIG (brand-level config_overrides.effects)
+    // =================================================================
+
+    /**
+     * Get effects config from brand_templates for a brand.
+     * Returns the effects object from the default template's config_overrides,
+     * or null if no effects are configured.
+     * @param {string} brandId
+     * @returns {Promise<Object|null>}
+     */
+    async getEffectsConfig(brandId) {
+        if (!this.useSupabase) {
+            console.warn('Effects config requires Supabase');
+            return null;
+        }
+        const { data, error } = await supabaseClient
+            .from('brand_templates')
+            .select('id, template_type, config_overrides, is_default')
+            .eq('brand_id', brandId)
+            .eq('is_default', true)
+            .limit(1)
+            .single();
+
+        if (error) {
+            // PGRST116 = no rows found — brand has no default template
+            if (error.code === 'PGRST116') return null;
+            console.error('Failed to load effects config:', error);
+            throw error;
+        }
+        return data?.config_overrides?.effects || null;
+    }
+
+    /**
+     * Save effects config to brand_templates for a brand.
+     * Merges into config_overrides.effects on the default template.
+     * If effectsConfig is null, removes the effects key entirely.
+     * @param {string} brandId
+     * @param {Object|null} effectsConfig
+     * @returns {Promise<void>}
+     */
+    async saveEffectsConfig(brandId, effectsConfig) {
+        if (!this.useSupabase) throw new Error('Effects config requires Supabase');
+
+        // Find the default template for this brand
+        const { data: template, error: fetchErr } = await supabaseClient
+            .from('brand_templates')
+            .select('id, config_overrides')
+            .eq('brand_id', brandId)
+            .eq('is_default', true)
+            .limit(1)
+            .single();
+
+        if (fetchErr) {
+            console.error('Failed to find default template:', fetchErr);
+            throw fetchErr;
+        }
+
+        const overrides = template.config_overrides || {};
+
+        if (effectsConfig === null) {
+            // Remove effects key entirely
+            delete overrides.effects;
+        } else {
+            overrides.effects = effectsConfig;
+        }
+
+        const { error: updateErr } = await supabaseClient
+            .from('brand_templates')
+            .update({ config_overrides: overrides })
+            .eq('id', template.id);
+
+        if (updateErr) {
+            console.error('Failed to save effects config:', updateErr);
+            throw updateErr;
+        }
+        console.log('🎛️ Effects config saved for brand:', brandId);
+    }
 }
 
 // Create singleton instance
