@@ -5,6 +5,14 @@
 --
 -- Part of: Roadmap #15 — Effects Refinement (Controlled Motion)
 --
+-- ROLLOUT STRATEGY:
+--   System defaults have enabled=false (effects OFF globally).
+--   Per-preset profiles have enabled=true (ready to activate).
+--   To enable for a brand: run get_effects_config_for_job() with
+--   a brand that has config_overrides.effects.enabled=true in its
+--   brand_template, OR pass { "effects_config": { "enabled": true } }
+--   in job meta.
+--
 -- ACTIVE PRESETS:
 --   - urban_legend  → documentary folklore style
 --   - one_too_many  → counting horror style
@@ -33,7 +41,7 @@ RETURNS jsonb
 LANGUAGE sql STABLE
 AS $$
   SELECT '{
-    "enabled": true,
+    "enabled": false,
     "intensity": 0.5,
     "kenburns": {
       "enabled": true,
@@ -75,6 +83,10 @@ COMMENT ON FUNCTION get_effects_system_defaults IS
 -- 2. PER-PRESET DEFAULT PROFILES
 -- These live in a lookup function so they are DB-driven
 -- and can be changed without redeploying the worker.
+--
+-- NOTE: Presets do NOT set "enabled" — that flag is controlled
+-- exclusively by system defaults (false), brand overrides, or
+-- job meta. This ensures effects stay OFF until explicitly opted in.
 -- =====================================================
 CREATE OR REPLACE FUNCTION get_effects_preset_profile(p_preset TEXT)
 RETURNS jsonb
@@ -85,7 +97,6 @@ AS $$
     -- URBAN LEGEND: documentary folklore — subtle grain, strong vignette,
     -- alternating Ken Burns, cold color grade
     WHEN 'urban_legend' THEN '{
-      "enabled": true,
       "intensity": 0.6,
       "kenburns": {
         "enabled": true,
@@ -122,7 +133,6 @@ AS $$
     -- ONE TOO MANY: counting horror — static tension, cold desaturated,
     -- minimal motion, moderate grain
     WHEN 'one_too_many' THEN '{
-      "enabled": true,
       "intensity": 0.5,
       "kenburns": {
         "enabled": true,
@@ -158,7 +168,6 @@ AS $$
 
     -- ANALOG HORROR (legacy): VHS heavy, scanlines, heavy grain
     WHEN 'analog_horror' THEN '{
-      "enabled": true,
       "intensity": 0.7,
       "kenburns": {
         "enabled": true,
@@ -194,7 +203,6 @@ AS $$
 
     -- CLEAN: minimal effects, modern look
     WHEN 'clean' THEN '{
-      "enabled": true,
       "intensity": 0.3,
       "kenburns": {
         "enabled": true,

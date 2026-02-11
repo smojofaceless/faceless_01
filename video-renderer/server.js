@@ -1764,63 +1764,63 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
   
   if (effectsConfig && typeof effectsConfig === 'object' && effectsConfig.enabled !== false) {
     console.log(`[${jobId}] 🎬 Controlled Motion v2.0 ACTIVE — effects_config drives the render pipeline`);
-    controlledMotionConfig = effectsConfig;
     
     // Build the post-processing filter chain (applies after concat + audio)
-    const cmResult = buildFiltersFromEffectsConfig(effectsConfig, {
-      lowMemory: useLowMemory,
-      seed: supabaseJobId || jobId,
-      sceneIndex: 0,  // For flicker phase; recalculated per-scene for KB
-      width: 1080,
-      height: 1920,
-    });
-    
-    controlledMotionFilters = cmResult.postFilters;
-    controlledMotionFade = cmResult.fadeConfig;
-    
-    console.log(`[${jobId}]   Post-filters: ${controlledMotionFilters.length} (${controlledMotionFilters.map(f => f.substring(0, 30)).join(', ')})`);
-    console.log(`[${jobId}]   Fade: in=${controlledMotionFade?.fade_in}, out=${controlledMotionFade?.fade_out}, dur=${controlledMotionFade?.duration}s`);
-    
-    // Override legacy mergedEffects — Controlled Motion disables legacy effect passes
-    // because it handles kenBurns, vignette, grain, flicker, color grade itself
-    mergedEffects.vignette = false;
-    mergedEffects.horrorGrade = false;
-    mergedEffects.filmGrain = false;
-    mergedEffects.glitchFlicker = false;
-    mergedEffects.vhsTracking = false;
-    mergedEffects.scanlines = false;
-    mergedEffects.lightFlicker = false;
-    mergedEffects.coldColorCreep = false;
-    mergedEffects.heartbeatZoom = false;
-    mergedEffects.negativeFlash = false;
-    mergedEffects.edgeDarkeningCreep = false;
-    
-    // Ken Burns is handled per-scene by controlledMotionConfig, 
-    // but keep mergedEffects.kenBurns for the existing createVideoFromImages flow
-    mergedEffects.kenBurns = effectsConfig.kenburns?.enabled !== false;
-    
-    // Fade is handled below by controlledMotionFade
-    if (controlledMotionFade) {
-      mergedEffects.fadeIn = controlledMotionFade.fade_in;
-      mergedEffects.fadeOut = controlledMotionFade.fade_out;
-      mergedEffects.fadeDuration = controlledMotionFade.duration;
+    // WRAPPED in try/catch: if filter construction fails, fall back to legacy pipeline
+    try {
+      const cmResult = buildFiltersFromEffectsConfig(effectsConfig, {
+        lowMemory: useLowMemory,
+        seed: supabaseJobId || jobId,
+        sceneIndex: 0,  // For flicker phase; recalculated per-scene for KB
+        width: 1080,
+        height: 1920,
+      });
+      
+      controlledMotionConfig = effectsConfig;
+      controlledMotionFilters = cmResult.postFilters;
+      controlledMotionFade = cmResult.fadeConfig;
+      
+      console.log(`[${jobId}]   Post-filters: ${controlledMotionFilters.length} (${controlledMotionFilters.map(f => f.substring(0, 30)).join(', ')})`);
+      console.log(`[${jobId}]   Fade: in=${controlledMotionFade?.fade_in}, out=${controlledMotionFade?.fade_out}, dur=${controlledMotionFade?.duration}s`);
+      
+      // Override legacy mergedEffects — Controlled Motion disables legacy effect passes
+      // because it handles kenBurns, vignette, grain, flicker, color grade itself
+      mergedEffects.vignette = false;
+      mergedEffects.horrorGrade = false;
+      mergedEffects.filmGrain = false;
+      mergedEffects.glitchFlicker = false;
+      mergedEffects.vhsTracking = false;
+      mergedEffects.scanlines = false;
+      mergedEffects.lightFlicker = false;
+      mergedEffects.coldColorCreep = false;
+      mergedEffects.heartbeatZoom = false;
+      mergedEffects.negativeFlash = false;
+      mergedEffects.edgeDarkeningCreep = false;
+      
+      // Ken Burns is handled per-scene by controlledMotionConfig, 
+      // but keep mergedEffects.kenBurns for the existing createVideoFromImages flow
+      mergedEffects.kenBurns = effectsConfig.kenburns?.enabled !== false;
+      
+      // Fade is handled below by controlledMotionFade
+      if (controlledMotionFade) {
+        mergedEffects.fadeIn = controlledMotionFade.fade_in;
+        mergedEffects.fadeOut = controlledMotionFade.fade_out;
+        mergedEffects.fadeDuration = controlledMotionFade.duration;
+      }
+    } catch (cmBuildErr) {
+      // SOFT FAIL: if filter construction crashes, fall back to legacy pipeline
+      console.warn(`[${jobId}] ⚠️ Controlled Motion filter build FAILED — falling back to legacy pipeline:`, cmBuildErr.message);
+      controlledMotionConfig = null;
+      controlledMotionFilters = null;
+      controlledMotionFade = null;
+      // mergedEffects stays as-is (DNA + explicit effects) → legacy pipeline fires normally
     }
   } else if (effectsConfig && effectsConfig.enabled === false) {
-    console.log(`[${jobId}] 🎬 Controlled Motion: DISABLED (enabled=false) — no effects applied`);
-    mergedEffects.kenBurns = false;
-    mergedEffects.vignette = false;
-    mergedEffects.horrorGrade = false;
-    mergedEffects.filmGrain = false;
-    mergedEffects.glitchFlicker = false;
-    mergedEffects.vhsTracking = false;
-    mergedEffects.scanlines = false;
-    mergedEffects.lightFlicker = false;
-    mergedEffects.fadeIn = false;
-    mergedEffects.fadeOut = false;
-    mergedEffects.coldColorCreep = false;
-    mergedEffects.heartbeatZoom = false;
-    mergedEffects.negativeFlash = false;
-    mergedEffects.edgeDarkeningCreep = false;
+    // IMPORTANT: enabled=false means "skip Controlled Motion" only.
+    // Legacy pipeline (Visual DNA, effectsProfile, explicit effects flags) continues unchanged.
+    // This ensures baseline parity: effects_config.enabled=false → same output as no effects_config.
+    console.log(`[${jobId}] 🎬 Controlled Motion: DISABLED (enabled=false) — legacy pipeline unchanged`);
+    // controlledMotionConfig stays null → legacy effects fire normally
   }
   
   // v3.2: If effectsProfile is provided, use it to override legacy flags
@@ -2086,8 +2086,13 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
         });
         console.log(`[${jobId}] ✓ Controlled Motion filters applied (${Math.round(cmTime/1000)}s)`);
       } catch (cmErr) {
-        console.warn(`[${jobId}] ⚠️ Controlled Motion filters failed (soft failure), continuing without:`, cmErr.message);
-        // Soft failure: continue rendering without effects
+        // SOFT FAIL: if FFmpeg filtergraph rejects the filters, render without effects.
+        // This is the #1 production hardening requirement — never let effects crash a render.
+        console.warn(`[${jobId}] ⚠️ Controlled Motion filtergraph FAILED — rendering without effects (soft fail):`, cmErr.message);
+        console.warn(`[${jobId}]   Failed filters: ${controlledMotionFilters.join(' | ')}`);
+        // Try to clean up any partial output
+        await fs.unlink(cmGradedPath).catch(() => {});
+        // Continue with currentVideo as-is (no effects applied)
       }
     }
     
