@@ -2355,6 +2355,27 @@
             lakeside_cabins: ['Minnesota', 'Wisconsin', 'Michigan', 'New Hampshire', 'Maine'],
         };
 
+        // ---- ONE_TOO_MANY trope packs (mirrors run-job/story_dna.ts) ----
+        const ONE_TOO_MANY_TROPE_PACKS = [
+            { group: 'friends on a road trip', size: 5, extra: 6, container: 'van', evidence: 'group photo', glitch: 'the GPS kept rerouting to the same dead end' },
+            { group: 'coworkers at an office retreat', size: 8, extra: 9, container: 'conference room', evidence: 'sign-in sheet', glitch: 'the elevator kept stopping on a floor that didn\'t exist' },
+            { group: 'students on a field trip', size: 12, extra: 13, container: 'school bus', evidence: 'attendance sheet', glitch: 'the bus driver counted 13 but the roster said 12' },
+            { group: 'neighbors evacuating together', size: 7, extra: 8, container: 'hotel', evidence: 'hotel key card log', glitch: 'the GPS rerouted to the same dead end' },
+            { group: 'wedding guests at a rehearsal dinner', size: 10, extra: 11, container: 'restaurant', evidence: 'seating chart', glitch: 'the table settings kept resetting to 11' },
+            { group: 'hikers on a trail', size: 6, extra: 7, container: 'campsite', evidence: 'trail register', glitch: 'the marked trail led somewhere not on the map' },
+            { group: 'subway passengers stuck in a stopped train', size: 9, extra: 10, container: 'subway car', evidence: 'security camera footage', glitch: 'the train kept arriving at the same station' },
+            { group: 'ferry passengers on a night crossing', size: 8, extra: 9, container: 'ferry', evidence: 'ticket manifest', glitch: 'the lighthouse signal came from the wrong direction' },
+            { group: 'classmates at a school reunion', size: 15, extra: 16, container: 'gymnasium', evidence: 'yearbook', glitch: 'one face in every photo didn\'t match anyone\'s memory' },
+            { group: 'family members at a holiday gathering', size: 11, extra: 12, container: 'house', evidence: 'family photo from that night', glitch: 'Grandma\'s china cabinet had exactly one extra place setting' },
+        ];
+
+        // Dims locked by one_too_many (these get overridden, user can't change them)
+        const ONE_TOO_MANY_LOCKED_DIMS = ['threat_behavior', 'threat_manifestation', 'repeating_detail', 'weird_axis', 'escalation', 'ending_imagery'];
+
+        function getRandomTropePack() {
+            return ONE_TOO_MANY_TROPE_PACKS[Math.floor(Math.random() * ONE_TOO_MANY_TROPE_PACKS.length)];
+        }
+
         let lastGeneratedStory = null;
         let lastGeneratedScenes = [];
         let lastUsedDNA = null;
@@ -2379,38 +2400,149 @@
         }
 
         function rollAllDNA() {
+            const vibePreset = document.getElementById('ip-vibe-preset').value;
             for (const [dimKey, dim] of Object.entries(DNA_DIMENSIONS)) {
                 const sel = document.getElementById(`ip-dna-${dimKey}`);
-                if (sel) {
-                    const randomIdx = Math.floor(Math.random() * dim.options.length);
-                    sel.value = dim.options[randomIdx].key;
-                }
+                if (!sel) continue;
+                // Don't roll locked dims for one_too_many
+                if (vibePreset === 'one_too_many' && ONE_TOO_MANY_LOCKED_DIMS.includes(dimKey)) continue;
+                const randomIdx = Math.floor(Math.random() * dim.options.length);
+                sel.value = dim.options[randomIdx].key;
             }
             // Open the details panel so user can see the roll
             const details = document.getElementById('ip-dna-details');
             if (details) details.open = true;
         }
 
+        // Apply/remove lane lock when vibe preset changes
+        function applyPresetLaneLock() {
+            const vibePreset = document.getElementById('ip-vibe-preset').value;
+            const isOTM = vibePreset === 'one_too_many';
+            
+            for (const dimKey of Object.keys(DNA_DIMENSIONS)) {
+                const sel = document.getElementById(`ip-dna-${dimKey}`);
+                const wrapper = sel?.closest('div');
+                if (!sel || !wrapper) continue;
+                const isLocked = isOTM && ONE_TOO_MANY_LOCKED_DIMS.includes(dimKey);
+                sel.disabled = isLocked;
+                wrapper.style.opacity = isLocked ? '0.5' : '1';
+                
+                // Show lock indicator
+                let lockBadge = wrapper.querySelector('.lane-lock-badge');
+                if (isLocked) {
+                    if (!lockBadge) {
+                        lockBadge = document.createElement('span');
+                        lockBadge.className = 'lane-lock-badge';
+                        lockBadge.style.cssText = 'font-size:9px;color:#F59E0B;font-weight:600;margin-left:4px';
+                        lockBadge.textContent = '🔒 Lane Locked';
+                        wrapper.querySelector('label')?.appendChild(lockBadge);
+                    }
+                    // Set visual indicator value
+                    sel.value = '_locked';
+                    // Add _locked option if not present
+                    if (!sel.querySelector('option[value="_locked"]')) {
+                        const opt = document.createElement('option');
+                        opt.value = '_locked';
+                        opt.textContent = '🔒 Set by One Too Many trope';
+                        sel.insertBefore(opt, sel.firstChild);
+                    }
+                } else {
+                    if (lockBadge) lockBadge.remove();
+                    // Remove _locked option if present & reset to random
+                    const lockedOpt = sel.querySelector('option[value="_locked"]');
+                    if (lockedOpt) {
+                        if (sel.value === '_locked') sel.value = '_random';
+                        lockedOpt.remove();
+                    }
+                }
+            }
+        }
+
         function getSelectedDNA() {
+            const vibePreset = document.getElementById('ip-vibe-preset').value;
             const dna = {};
+            
             for (const [dimKey, dim] of Object.entries(DNA_DIMENSIONS)) {
                 const sel = document.getElementById(`ip-dna-${dimKey}`);
                 const val = sel ? sel.value : '_random';
-                if (val === '_random') {
+                if (val === '_random' || val === '_locked') {
                     const randomIdx = Math.floor(Math.random() * dim.options.length);
                     dna[dimKey] = dim.options[randomIdx];
                 } else {
                     dna[dimKey] = dim.options.find(o => o.key === val) || dim.options[0];
                 }
             }
+            
+            // Apply ONE_TOO_MANY lane lock — override 6 dims with trope pack
+            if (vibePreset === 'one_too_many') {
+                const trope = getRandomTropePack();
+                dna._trope = trope;
+                dna.threat_behavior = { key: 'count_appears', label: `Appears in counts (group of ${trope.size} keeps counting ${trope.extra})` };
+                dna.threat_manifestation = { key: 'extra_person', label: `Extra person among ${trope.group}` };
+                dna.repeating_detail = { key: 'numbers_wrong', label: `The count kept coming up wrong — ${trope.size} should be there but they count ${trope.extra}` };
+                dna.weird_axis = { key: 'counting_wrong', label: 'There was always one more person in the group than there should have been' };
+                dna.escalation = { key: 'counting_escalation', label: `Confusion → panic as ${trope.evidence} confirms ${trope.extra} people (should be ${trope.size})` };
+                dna.ending_imagery = { key: 'proof_n_plus_one', label: `The ${trope.evidence} showed exactly ${trope.extra} people — with an extra face, unfazed, as if they belonged` };
+            }
+            
             // Add random US states based on location
             const statePool = LOCATION_STATES[dna.location.key] || ['Unknown State'];
             const state = statePool[Math.floor(Math.random() * statePool.length)];
             dna._state = state;
+            dna._vibePreset = vibePreset;
             return dna;
         }
 
         function buildDNAPrompt(dna, wordRange) {
+            // ONE_TOO_MANY gets a special counting-horror prompt structure
+            if (dna._vibePreset === 'one_too_many' && dna._trope) {
+                const t = dna._trope;
+                return `You are writing a "one too many" counting horror story. A group realizes there is ONE EXTRA PERSON that no one can identify. The DNA has been PRE-DETERMINED. Follow ALL specifications.
+
+═══════════════════════════════════════
+📋 STORY DNA (NON-NEGOTIABLE):
+═══════════════════════════════════════
+
+⏰ ERA: "In the ${dna.era.label.toLowerCase()}..."
+📍 LOCATION: ${dna._state} — ${dna.location.label.toLowerCase()}
+📰 FORMAT: ${dna.subgenre.label}
+📜 NARRATIVE VOICE: ${dna.narrative_artifact.label}
+
+👥 THE GROUP: ${t.group} — there should be ${t.size} people
+🔢 THE COUNT: They keep counting ${t.extra} — one extra that shouldn't exist
+📦 CONTAINER: The group is in/at a ${t.container}
+📋 EVIDENCE: The ${t.evidence} confirms ${t.extra} people (should be ${t.size})
+⚡ GLITCH: ${t.glitch}
+
+🏛️ AUTHORITY RESPONSE: ${dna.authority.label}
+🔚 ENDING: ${dna.ending_knowledge.label}
+   Final Image: The ${t.evidence} shows exactly ${t.extra} people — with an extra face looking at the camera, unfazed, unblinking, as if they belonged
+💭 EMOTIONAL AFTERTASTE: ${dna.emotion.label}
+
+═══════════════════════════════════════
+📐 STRUCTURE:
+═══════════════════════════════════════
+1. OPENING: "In the ${dna.era.label.toLowerCase()}..." — introduce the ${t.group} gathering at the ${t.container} in ${dna._state}
+2. THE COUNT: Someone counts heads. ${t.size} people should be there. They count ${t.extra}. "Wait... count again."
+3. GROWING UNEASE: Every recount = ${t.extra}. Who is the extra? Everyone looks familiar. No one is a stranger. The number is just WRONG.
+4. THE GLITCH: ${t.glitch}
+5. EVIDENCE: The ${t.evidence} shows ${t.extra} people. Proof.
+6. ENDING: ${dna.ending_knowledge.label}. Final image: the ${t.evidence} with that extra face.
+
+📏 WORD COUNT: MINIMUM ${wordRange.min} / MAXIMUM ${wordRange.max} words
+🚫 DO NOT: Reveal who the extra person is. Do NOT make it a ghost/demon/monster. The horror is that the count is simply WRONG and there's no explanation.
+🚫 DO NOT: Use first-person ("I"). Use third-person limited or the specified narrative voice.
+
+The setting should feel REAL and SPECIFIC to ${dna._state}. Use local details.
+
+Respond in JSON:
+{
+  "title": "Short catchy title (3-6 words)",
+  "story": "The full story text..."
+}`;
+            }
+
+            // Default: generic DNA-driven horror prompt
             return `You are writing a faux–true crime horror story. The DNA of this story has been PRE-DETERMINED. You MUST follow ALL specifications exactly.
 
 ═══════════════════════════════════════
@@ -2460,19 +2592,37 @@ Respond in JSON:
             const list = document.getElementById('ip-dna-used-list');
             if (!el || !list) return;
             el.style.display = 'block';
+            
             const items = [
                 `⏰ <strong>Era:</strong> ${dna.era.label}`,
                 `📍 <strong>Location:</strong> ${dna.location.label} (${dna._state})`,
                 `📰 <strong>Format:</strong> ${dna.subgenre.label}`,
                 `📜 <strong>Voice:</strong> ${dna.narrative_artifact.label}`,
-                `👁️ <strong>Threat:</strong> ${dna.threat_manifestation.label} — ${dna.threat_behavior.label}`,
-                `🔄 <strong>Repeat:</strong> ${dna.repeating_detail.label}`,
-                `❓ <strong>Weird:</strong> ${dna.weird_axis.label}`,
-                `📈 <strong>Escalation:</strong> ${dna.escalation.label}`,
+            ];
+
+            if (dna._vibePreset === 'one_too_many' && dna._trope) {
+                const t = dna._trope;
+                items.push(
+                    `<span style="color:#F59E0B">🔒 <strong>ONE TOO MANY LANE LOCK:</strong></span>`,
+                    `&nbsp;&nbsp;👥 <strong>Group:</strong> ${t.group} (${t.size} should be there, counting ${t.extra})`,
+                    `&nbsp;&nbsp;📦 <strong>Container:</strong> ${t.container}`,
+                    `&nbsp;&nbsp;📋 <strong>Evidence:</strong> ${t.evidence}`,
+                    `&nbsp;&nbsp;⚡ <strong>Glitch:</strong> ${t.glitch}`,
+                );
+            } else {
+                items.push(
+                    `👁️ <strong>Threat:</strong> ${dna.threat_manifestation.label} — ${dna.threat_behavior.label}`,
+                    `🔄 <strong>Repeat:</strong> ${dna.repeating_detail.label}`,
+                    `❓ <strong>Weird:</strong> ${dna.weird_axis.label}`,
+                    `📈 <strong>Escalation:</strong> ${dna.escalation.label}`,
+                );
+            }
+            
+            items.push(
                 `🏛️ <strong>Authority:</strong> ${dna.authority.label}`,
                 `🔚 <strong>Ending:</strong> ${dna.ending_knowledge.label} — ${dna.ending_imagery.label}`,
                 `💭 <strong>Emotion:</strong> ${dna.emotion.label}`,
-            ];
+            );
             list.innerHTML = items.join('<br>');
         }
 
@@ -2487,6 +2637,13 @@ Respond in JSON:
                     generateTestImage();
                 }
             });
+            // Apply lane lock when vibe preset changes
+            const vibeSelect = document.getElementById('ip-vibe-preset');
+            if (vibeSelect) {
+                vibeSelect.addEventListener('change', applyPresetLaneLock);
+                // Apply on initial load in case already set to one_too_many
+                setTimeout(applyPresetLaneLock, 100);
+            }
         });
 
         async function generateTestStory() {
