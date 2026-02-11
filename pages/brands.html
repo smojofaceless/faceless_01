@@ -716,6 +716,122 @@
                     <pre id="ip-preview" style="font-size:12px;color:var(--text-secondary);white-space:pre-wrap;margin:0;max-height:200px;overflow-y:auto"></pre>
                 </div>
 
+                <!-- Test Image Generation -->
+                <div class="fx-section" style="background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.2);border-radius:8px;padding:12px;margin-top:8px">
+                    <div class="fx-section__header">
+                        <span class="fx-toggle__label" style="font-weight:600;">🧪 Test Image Generation</span>
+                        <span class="fx-hint">Generate a test image using current settings (~$0.02)</span>
+                    </div>
+                    <textarea class="form-control" id="ip-test-scene" rows="2" style="font-size:13px;resize:vertical;margin-top:8px" placeholder="Enter test scene text... or generate a story below and use a scene from it"></textarea>
+                    <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+                        <button class="btn btn--primary btn--sm" id="ip-generate-btn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="margin-right:4px">
+                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                            </svg>
+                            Generate Test Image
+                        </button>
+                        <span id="ip-generate-status" style="font-size:12px;color:var(--text-secondary)"></span>
+                    </div>
+                    <div id="ip-test-image-container" style="display:none;margin-top:12px;text-align:center">
+                        <img id="ip-test-image" style="max-width:100%;max-height:400px;border-radius:8px;border:1px solid rgba(255,255,255,0.1)" />
+                        <pre id="ip-test-prompt-used" style="font-size:11px;color:var(--text-secondary);white-space:pre-wrap;margin-top:8px;text-align:left;max-height:150px;overflow-y:auto"></pre>
+                    </div>
+                </div>
+
+                <!-- Test Story Generation -->
+                <div class="fx-section" style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);border-radius:8px;padding:12px;margin-top:8px">
+                    <div class="fx-section__header">
+                        <span class="fx-toggle__label" style="font-weight:600;">📝 Test Story Generation</span>
+                        <span class="fx-hint">Generate a test story using the selected vibe preset</span>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+                        <label style="font-size:12px;color:var(--text-secondary)">Duration:</label>
+                        <select class="form-control form-control--sm" id="ip-story-duration" style="max-width:120px">
+                            <option value="30">30s (Short)</option>
+                            <option value="60" selected>60s (Medium)</option>
+                            <option value="90">90s (Long)</option>
+                        </select>
+                        <button class="btn btn--primary btn--sm" id="ip-story-generate-btn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="margin-right:4px">
+                                <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                            </svg>
+                            Generate Test Story
+                        </button>
+                        <span id="ip-story-status" style="font-size:12px;color:var(--text-secondary)"></span>
+                    </div>
+                    <div id="ip-story-container" style="display:none;margin-top:12px">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                            <strong id="ip-story-title" style="font-size:14px;color:var(--text-primary)"></strong>
+                            <span id="ip-story-wordcount" style="font-size:11px;color:var(--text-secondary)"></span>
+                        </div>
+                        <div id="ip-story-text" style="font-size:13px;color:var(--text-secondary);line-height:1.6;max-height:200px;overflow-y:auto;padding:8px;background:rgba(0,0,0,0.15);border-radius:6px"></div>
+                        
+                        <!-- Scenes extracted from story -->
+                        <div id="ip-story-scenes" style="display:none;margin-top:10px">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                                <span style="font-size:12px;font-weight:600;color:var(--text-primary)">Scene Breakdown</span>
+                                <button class="btn btn--secondary btn--sm" id="ip-use-scene-btn" style="font-size:11px">Use Scene 1 for Image Test</button>
+                            </div>
+                            <div id="ip-scenes-list" style="font-size:12px;color:var(--text-secondary);max-height:150px;overflow-y:auto"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Uniqueness Dashboard -->
+                <div class="fx-section" style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;padding:12px;margin-top:8px">
+                    <div class="fx-section__header">
+                        <span class="fx-toggle__label" style="font-weight:600;">🧬 Story Uniqueness Dashboard</span>
+                        <span class="fx-hint">DNA system health and collision detection</span>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+                        <button class="btn btn--secondary btn--sm" id="ip-uniqueness-refresh">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="margin-right:4px">
+                                <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
+                                <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                            </svg>
+                            Load Stats
+                        </button>
+                        <span id="ip-uniqueness-status" style="font-size:12px;color:var(--text-secondary)"></span>
+                    </div>
+                    <div id="ip-uniqueness-container" style="display:none;margin-top:10px">
+                        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
+                            <div style="background:rgba(0,0,0,0.15);border-radius:6px;padding:10px;text-align:center">
+                                <div style="font-size:20px;font-weight:700;color:var(--text-primary)" id="ip-stat-total">-</div>
+                                <div style="font-size:11px;color:var(--text-secondary)">Total Stories</div>
+                            </div>
+                            <div style="background:rgba(0,0,0,0.15);border-radius:6px;padding:10px;text-align:center">
+                                <div style="font-size:20px;font-weight:700;color:var(--text-primary)" id="ip-stat-unique">-</div>
+                                <div style="font-size:11px;color:var(--text-secondary)">Unique Concepts</div>
+                            </div>
+                            <div style="background:rgba(0,0,0,0.15);border-radius:6px;padding:10px;text-align:center">
+                                <div style="font-size:20px;font-weight:700;color:var(--text-primary)" id="ip-stat-7d">-</div>
+                                <div style="font-size:11px;color:var(--text-secondary)">Last 7 Days</div>
+                            </div>
+                            <div style="background:rgba(0,0,0,0.15);border-radius:6px;padding:10px;text-align:center">
+                                <div style="font-size:20px;font-weight:700;color:var(--text-primary)" id="ip-stat-30d">-</div>
+                                <div style="font-size:11px;color:var(--text-secondary)">Last 30 Days</div>
+                            </div>
+                            <div style="background:rgba(0,0,0,0.15);border-radius:6px;padding:10px;text-align:center">
+                                <div style="font-size:20px;font-weight:700;color:var(--text-primary)" id="ip-stat-attempts">-</div>
+                                <div style="font-size:11px;color:var(--text-secondary)">Avg Attempts</div>
+                            </div>
+                            <div style="background:rgba(0,0,0,0.15);border-radius:6px;padding:10px;text-align:center">
+                                <div style="font-size:20px;font-weight:700;color:#10B981" id="ip-stat-ratio">-</div>
+                                <div style="font-size:11px;color:var(--text-secondary)">Uniqueness %</div>
+                            </div>
+                        </div>
+                        <div style="margin-top:8px;font-size:11px;color:var(--text-secondary)">
+                            <span>Most used weird axis: <strong id="ip-stat-most-weird">-</strong></span> &nbsp;|&nbsp;
+                            <span>Least used: <strong id="ip-stat-least-weird">-</strong></span>
+                        </div>
+                        <!-- Recent stories list -->
+                        <div id="ip-recent-stories" style="margin-top:10px;display:none">
+                            <span style="font-size:12px;font-weight:600;color:var(--text-primary)">Recent DNA Entries</span>
+                            <div id="ip-recent-stories-list" style="font-size:11px;color:var(--text-secondary);max-height:120px;overflow-y:auto;margin-top:4px"></div>
+                        </div>
+                    </div>
+                </div>
+
             </div>
             <div class="modal__footer">
                 <div class="fx-footer-info" id="ip-status"></div>
@@ -740,6 +856,7 @@
     <script src="../js/models/Post.js"></script>
     <script src="../js/models/Schedule.js"></script>
     <script src="../js/models/index.js"></script>
+    <script src="../js/services/apiKeys.js"></script>
     <script src="../js/services/platformAPI.js"></script>
     <script src="../js/services/postManager.js"></script>
     <script src="../js/services/scheduler.js"></script>
@@ -1861,7 +1978,8 @@
             if (modal.parentElement !== document.body) document.body.appendChild(modal);
 
             // Find brand name
-            const brand = brands.find(b => b.id === brandId);
+            const allBrands = brandManager.getAll();
+            const brand = allBrands.find(b => b.id === brandId);
             document.getElementById('ip-brand-name').textContent = brand?.name || brandId;
 
             // Load resolved config (merged: system → preset → brand)
@@ -1869,13 +1987,13 @@
             const vibe = vibeSelect.value || 'urban_legend';
             await loadImagePromptConfig(brandId, vibe);
 
-            modal.classList.add('is-active');
+            modal.classList.add('active');
             document.body.style.overflow = 'hidden';
         }
 
         function closeImagePromptModal() {
             const modal = document.getElementById('imgprompt-modal');
-            modal.classList.remove('is-active');
+            modal.classList.remove('active');
             document.body.style.overflow = '';
             ipBrandId = null;
         }
@@ -1988,6 +2106,322 @@
                 }
             });
         });
+
+        // =========================================================
+        // TEST IMAGE GENERATION
+        // =========================================================
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('ip-generate-btn').addEventListener('click', generateTestImage);
+        });
+
+        async function generateTestImage() {
+            const btn = document.getElementById('ip-generate-btn');
+            const statusEl = document.getElementById('ip-generate-status');
+            const container = document.getElementById('ip-test-image-container');
+            const imgEl = document.getElementById('ip-test-image');
+            const promptUsedEl = document.getElementById('ip-test-prompt-used');
+
+            // Get OpenAI key
+            const openaiKey = window.apiKeys?.get('openai');
+            if (!openaiKey) {
+                toast.error('OpenAI API key not configured. Add it in Settings first.');
+                return;
+            }
+
+            // Build the prompt using current form settings
+            const cfg = buildImagePromptConfigFromForm();
+            const sceneText = document.getElementById('ip-test-scene').value.trim() 
+                || 'A group of friends sit around a campfire near their parked van, laughing and talking under a starry night sky';
+
+            const tensionLevel = cfg.tension_escalation ? 3 : 5;
+            const camera = (cfg.camera_angles || [])[0] || '';
+            const parts = [
+                sceneText,
+                '',
+                `Style: ${cfg.style_prompt}`,
+                `Environment: ${cfg.environment}`,
+                `Mood: ${cfg.mood}, tension level ${tensionLevel}/10`,
+                camera ? `Camera: ${camera}` : '',
+                `Lighting: ${cfg.lighting}`,
+                `Color: ${cfg.color_palette}`,
+                '',
+                cfg.negative_prompt,
+                cfg.suffix,
+            ].filter(Boolean);
+            const fullPrompt = parts.join('\n');
+
+            // Show what we're sending
+            container.style.display = 'block';
+            imgEl.src = '';
+            imgEl.style.display = 'none';
+            promptUsedEl.textContent = '📤 Prompt sent:\n' + fullPrompt;
+
+            btn.disabled = true;
+            statusEl.textContent = '⏳ Generating image...';
+            statusEl.style.color = 'var(--text-secondary)';
+
+            try {
+                const response = await fetch('https://api.openai.com/v1/images/generations', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${openaiKey}`
+                    },
+                    body: JSON.stringify({
+                        model: 'gpt-image-1',
+                        prompt: fullPrompt,
+                        n: 1,
+                        size: '1024x1536',
+                        quality: 'low'
+                    })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({ error: { message: response.statusText } }));
+                    throw new Error(err.error?.message || `API error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                const imageData = data.data?.[0];
+                
+                if (!imageData) throw new Error('No image returned from API');
+
+                // gpt-image-1 returns base64
+                if (imageData.b64_json) {
+                    imgEl.src = `data:image/png;base64,${imageData.b64_json}`;
+                } else if (imageData.url) {
+                    imgEl.src = imageData.url;
+                } else {
+                    throw new Error('Unexpected response format');
+                }
+
+                imgEl.style.display = 'block';
+                statusEl.textContent = '✅ Generated (~$0.02)';
+                statusEl.style.color = '#10B981';
+            } catch (e) {
+                statusEl.textContent = '❌ ' + e.message;
+                statusEl.style.color = '#EF4444';
+                console.error('[TestImage]', e);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // =========================================================
+        // TEST STORY GENERATION
+        // =========================================================
+        const VIBE_DESCRIPTIONS = {
+            urban_legend: 'an urban legend or creepy internet story, featuring unexplained phenomena, "that one weird thing that happened", or local folklore that turns out to be true',
+            one_too_many: 'a chilling "one too many" counting horror story where a group realizes there\'s an extra person that shouldn\'t be there. The setting can be ANYTHING \u2014 a road trip, office retreat, school reunion, dinner party, elevator ride, hotel stay, subway commute, wedding, hike, ferry crossing. The group counts heads and the number is wrong. IMPORTANT: vary the setting, do NOT default to camping trips.',
+            backrooms: 'a liminal space or "backrooms" style horror about accidentally entering wrong places, glitches in reality, or spaces that shouldn\'t exist',
+            nosleep: 'a first-person creepypasta/NoSleep style horror that starts mundane but escalates into something terrifying',
+            glitch: 'a glitch in the matrix story about strange repetitions, d\u00e9j\u00e0 vu, NPCs acting weird, or reality not working right',
+            analog_horror: 'an analog horror VHS found footage story about tapes found that should not exist, emergency broadcasts that aired to no one, and government training videos hiding terrible truths',
+        };
+
+        let lastGeneratedStory = null;
+        let lastGeneratedScenes = [];
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('ip-story-generate-btn').addEventListener('click', generateTestStory);
+            document.getElementById('ip-uniqueness-refresh').addEventListener('click', loadUniquenessStats);
+            document.getElementById('ip-use-scene-btn').addEventListener('click', () => {
+                if (lastGeneratedScenes.length > 0) {
+                    document.getElementById('ip-test-scene').value = lastGeneratedScenes[0];
+                    toast.success('Scene 1 copied to image test field');
+                }
+            });
+        });
+
+        async function generateTestStory() {
+            const btn = document.getElementById('ip-story-generate-btn');
+            const statusEl = document.getElementById('ip-story-status');
+            const container = document.getElementById('ip-story-container');
+
+            const openaiKey = window.apiKeys?.get('openai');
+            if (!openaiKey) {
+                toast.error('OpenAI API key not configured. Add it in Settings first.');
+                return;
+            }
+
+            const vibePreset = document.getElementById('ip-vibe-preset').value;
+            const duration = parseInt(document.getElementById('ip-story-duration').value);
+            const targetWords = Math.round(duration * 2.5);
+            const wordRange = { min: Math.round(targetWords * 0.85), max: Math.round(targetWords * 1.15) };
+
+            const vibeDesc = VIBE_DESCRIPTIONS[vibePreset] || VIBE_DESCRIPTIONS.urban_legend;
+
+            const storyPrompt = `Create ${vibeDesc}.
+
+REQUIREMENTS:
+- Word count: ${wordRange.min}-${wordRange.max} words (this is critical for video timing)
+- First-person narration, past tense
+- Start with an engaging hook that grabs attention in the first 3 seconds
+- Build tension throughout
+- End with a chilling revelation or unresolved mystery
+- Use vivid sensory details
+- Keep sentences punchy for narration pacing
+
+Respond in JSON format:
+{
+  "title": "Short catchy title (3-6 words)",
+  "story": "The full story text..."
+}`;
+
+            btn.disabled = true;
+            statusEl.textContent = '\u23f3 Generating story...';
+            statusEl.style.color = 'var(--text-secondary)';
+
+            try {
+                const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${openaiKey}`
+                    },
+                    body: JSON.stringify({
+                        model: 'gpt-4o-mini',
+                        messages: [
+                            { role: 'system', content: 'You are a master storyteller specializing in short-form horror and mystery content. You create gripping, atmospheric stories perfect for TikTok/Reels narration. Your stories are ALWAYS first-person narration that feels personal and immediate.' },
+                            { role: 'user', content: storyPrompt }
+                        ],
+                        response_format: { type: 'json_object' },
+                        temperature: 0.9,
+                        max_tokens: 2000,
+                    })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({ error: { message: response.statusText } }));
+                    throw new Error(err.error?.message || `API error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                const content = JSON.parse(data.choices[0].message.content);
+                const title = content.title || 'Untitled';
+                const storyText = content.story || content.text || '';
+                const wordCount = storyText.split(/\s+/).length;
+
+                lastGeneratedStory = { title, story: storyText, wordCount };
+
+                // Show story
+                container.style.display = 'block';
+                document.getElementById('ip-story-title').textContent = title;
+                document.getElementById('ip-story-wordcount').textContent = `${wordCount} words (~${Math.round(wordCount / 2.5)}s)`;
+                document.getElementById('ip-story-text').textContent = storyText;
+
+                // Split into scenes (by paragraph breaks or ~every 3 sentences)
+                lastGeneratedScenes = splitIntoScenes(storyText);
+                if (lastGeneratedScenes.length > 0) {
+                    const scenesEl = document.getElementById('ip-story-scenes');
+                    const listEl = document.getElementById('ip-scenes-list');
+                    scenesEl.style.display = 'block';
+                    listEl.innerHTML = lastGeneratedScenes.map((s, i) => 
+                        `<div style="padding:4px 6px;margin-bottom:4px;background:rgba(0,0,0,0.1);border-radius:4px;cursor:pointer" onclick="document.getElementById('ip-test-scene').value=this.dataset.scene" data-scene="${s.replace(/"/g, '&quot;')}"><strong>Scene ${i+1}:</strong> ${s.substring(0, 120)}${s.length > 120 ? '...' : ''}</div>`
+                    ).join('');
+                }
+
+                statusEl.textContent = `\u2705 Generated "${title}" (${wordCount} words)`;
+                statusEl.style.color = '#10B981';
+
+            } catch (e) {
+                statusEl.textContent = '\u274c ' + e.message;
+                statusEl.style.color = '#EF4444';
+                console.error('[TestStory]', e);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        function splitIntoScenes(text, targetScenes = 5) {
+            // First try paragraph breaks
+            const paragraphs = text.split(/\n\n+/).filter(p => p.trim().length > 20);
+            if (paragraphs.length >= 3) return paragraphs.slice(0, 8);
+            
+            // Fall back to sentence grouping
+            const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+            const perScene = Math.ceil(sentences.length / targetScenes);
+            const scenes = [];
+            for (let i = 0; i < sentences.length; i += perScene) {
+                scenes.push(sentences.slice(i, i + perScene).join(' ').trim());
+            }
+            return scenes.slice(0, 8);
+        }
+
+        // =========================================================
+        // UNIQUENESS DASHBOARD
+        // =========================================================
+        async function loadUniquenessStats() {
+            const statusEl = document.getElementById('ip-uniqueness-status');
+            const container = document.getElementById('ip-uniqueness-container');
+
+            statusEl.textContent = '\u23f3 Loading...';
+            statusEl.style.color = 'var(--text-secondary)';
+
+            try {
+                // Call get_dna_statistics() RPC
+                const { data: stats, error } = await window.supabaseClient.rpc('get_dna_statistics');
+                if (error) throw error;
+
+                const s = Array.isArray(stats) ? stats[0] : stats;
+                if (!s) throw new Error('No stats returned');
+
+                container.style.display = 'block';
+                document.getElementById('ip-stat-total').textContent = s.total_generated || '0';
+                document.getElementById('ip-stat-unique').textContent = s.unique_concepts || '0';
+                document.getElementById('ip-stat-7d').textContent = s.stories_last_7_days || '0';
+                document.getElementById('ip-stat-30d').textContent = s.stories_last_30_days || '0';
+                document.getElementById('ip-stat-attempts').textContent = s.avg_uniqueness_attempts || '1.00';
+                
+                const total = parseInt(s.total_generated) || 0;
+                const unique = parseInt(s.unique_concepts) || 0;
+                const ratio = total > 0 ? Math.round((unique / total) * 100) : 100;
+                document.getElementById('ip-stat-ratio').textContent = ratio + '%';
+                document.getElementById('ip-stat-ratio').style.color = ratio >= 90 ? '#10B981' : ratio >= 70 ? '#F59E0B' : '#EF4444';
+
+                document.getElementById('ip-stat-most-weird').textContent = s.most_used_weird_axis || 'n/a';
+                document.getElementById('ip-stat-least-weird').textContent = s.least_used_weird_axis || 'n/a';
+
+                // Load recent story_dna entries
+                await loadRecentDNA();
+
+                statusEl.textContent = '\u2705 Stats loaded';
+                statusEl.style.color = '#10B981';
+            } catch (e) {
+                statusEl.textContent = '\u274c ' + e.message;
+                statusEl.style.color = '#EF4444';
+                console.error('[Uniqueness]', e);
+            }
+        }
+
+        async function loadRecentDNA() {
+            try {
+                const { data, error } = await window.supabaseClient
+                    .from('story_dna')
+                    .select('id, created_at, genre, concept_hash, weird_axis_id, threat_behavior_id, threat_manifestation_id, era_id, location_id, generation_attempt')
+                    .order('created_at', { ascending: false })
+                    .limit(10);
+
+                if (error) throw error;
+                if (!data || data.length === 0) return;
+
+                const recentEl = document.getElementById('ip-recent-stories');
+                const listEl = document.getElementById('ip-recent-stories-list');
+                recentEl.style.display = 'block';
+
+                listEl.innerHTML = data.map(d => {
+                    const date = new Date(d.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                    const genre = d.genre || 'unknown';
+                    const attempt = d.generation_attempt > 1 ? ` (${d.generation_attempt} attempts)` : '';
+                    return `<div style="padding:3px 6px;margin-bottom:2px;background:rgba(0,0,0,0.1);border-radius:4px;display:flex;justify-content:space-between;align-items:center">
+                        <span><strong>${genre}</strong> \u2014 ${d.weird_axis_id || 'n/a'} / ${d.threat_behavior_id || d.threat_manifestation_id || 'n/a'} @ ${d.location_id || 'n/a'}${attempt}</span>
+                        <span style="opacity:0.6">${date}</span>
+                    </div>`;
+                }).join('');
+            } catch (e) {
+                console.warn('[RecentDNA]', e.message);
+            }
+        }
 
         async function saveImagePromptConfig() {
             const cfg = buildImagePromptConfigFromForm();

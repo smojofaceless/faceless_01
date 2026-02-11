@@ -71,18 +71,19 @@ AS $$
     }'::jsonb
 
     -- ONE TOO MANY: counting horror — uncanny illustrated editorial style,
-    -- cold blue tones, static tension, group photos that feel wrong
+    -- rich graphic novel illustration, bold ink outlines, bright saturated colors,
+    -- detailed visible faces, comic book coloring, chromatic aberration
     WHEN 'one_too_many' THEN '{
       "art_style": "uncanny-illustrated",
-      "style_prompt": "Editorial cartoon illustration, cel-shaded horror, bold black ink outlines, flat cold colors, uncanny valley faces, extra figure that should not be there, off-kilter group composition.",
-      "environment": "mundane group settings — camping trip, school photo, dinner table, group selfie, elevator, waiting room",
-      "color_palette": "cold blue undertones, washed-out pastels, stark white highlights, deep navy shadows",
-      "lighting": "flat institutional lighting, flash photography overexposure, unflattering fluorescent",
-      "mood": "counting dread — the number is wrong and no one else notices",
-      "camera_angles": ["wide group shot showing everyone", "medium shot — count the figures", "close-up on the extra face", "overhead view showing one too many shadows", "POV looking at a group photo", "extreme close-up of a face that was not there before"],
+      "style_prompt": "Detailed horror comic book illustration, bold clean black ink outlines on every figure and object, flat cel-shaded coloring with bright saturated hues, every character face clearly visible and detailed with distinct expressions, manga-influenced horror art, sharp line work, professional graphic novel quality, slight chromatic aberration on edges only.",
+      "environment": "any setting where a group gathers — match the scene description. Examples: road trip van, office conference room, cabin living room, restaurant table, hotel lobby, subway platform, school hallway, elevator, ferry deck, backyard barbecue, wedding venue",
+      "color_palette": "bright saturated greens for grass and trees, vivid clothing colors (red, yellow, blue, green), warm orange campfire glow, clear skin tones, deep but rich navy-blue night sky with visible stars, high color contrast even in dark scenes",
+      "lighting": "bright key lighting on all characters even at night, warm campfire/lamplight illuminating faces clearly, ambient fill light so no face is lost in shadow, starry sky provides cool blue backlight",
+      "mood": "uneasy group gathering at night, everyone looks normal but the count feels wrong",
+      "camera_angles": ["wide establishing shot showing the full group at night", "medium shot of the group around a campfire", "close-up on a face with a slightly off expression", "low angle looking up at friends talking", "POV from someone arriving at the group", "extreme close-up of an expression that is just slightly wrong"],
       "tension_escalation": true,
-      "negative_prompt": "No text, no words, no letters, no watermarks, no signatures, no happy expressions",
-      "suffix": "Portrait orientation 9:16. Unsettling editorial illustration, horror comic style."
+      "negative_prompt": "No text, no words, no letters, no watermarks, no signatures, no photorealistic style, no oil painting, no blurry faces, no dark muddy colors, no impressionist style, no faces hidden in shadow, no shadow figures, no silhouettes, no dark mysterious figures, no monsters, no demons, no glowing eyes",
+      "suffix": "Portrait orientation 9:16. Clean horror comic book illustration with bold ink outlines, bright flat colors, and every face clearly visible. NOT a painting."
     }'::jsonb
 
     -- BACKROOMS: liminal space horror — empty impossible architecture,

@@ -199,7 +199,7 @@ export async function executeStoryStep(
 function buildStoryPrompt(vibePreset: string, wordRange: { min: number; max: number }): string {
   const vibeDescriptions: Record<string, string> = {
     urban_legend: 'an urban legend or creepy internet story, featuring unexplained phenomena, "that one weird thing that happened", or local folklore that turns out to be true',
-    one_too_many: 'a chilling "one too many" counting horror story where a group realizes there\'s an extra person/item that shouldn\'t exist (e.g., "there were 4 of us on that camping trip... but in every photo, there are 5 people")',
+    one_too_many: 'a chilling "one too many" counting horror story where a group realizes there\'s an extra person that shouldn\'t be there. The setting can be ANYTHING — a road trip, office retreat, school reunion, dinner party, elevator ride, hotel stay, subway commute, wedding, hike, ferry crossing. The group counts heads and the number is wrong. IMPORTANT: vary the setting, do NOT default to camping trips.',
     backrooms: 'a liminal space or "backrooms" style horror about accidentally entering wrong places, glitches in reality, or spaces that shouldn\'t exist',
     nosleep: 'a first-person creepypasta/NoSleep style horror that starts mundane but escalates into something terrifying',
     glitch: 'a glitch in the matrix story about strange repetitions, déjà vu, NPCs acting weird, or reality not working right',
