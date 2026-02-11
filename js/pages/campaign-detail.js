@@ -1255,15 +1255,10 @@ class CampaignDetailPage {
             .single();
         data.job = jobRecord;
         
-        // Load step status record (has per-step metadata)
+        // Read step metadata from jobs.meta.steps (stored by update_job_step RPC)
         try {
-            const { data: stepStatus } = await supabase
-                .from('job_step_status')
-                .select('*')
-                .eq('job_id', jobId)
-                .eq('step_name', stepName)
-                .single();
-            data.stepMeta = stepStatus?.meta || stepStatus?.step_meta || {};
+            const steps = jobRecord?.meta?.steps || {};
+            data.stepMeta = steps[stepName] || {};
         } catch { data.stepMeta = {}; }
         
         // Load assets for specific steps

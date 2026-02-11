@@ -41,9 +41,9 @@ const PACE_PRESETS = {
 
 // Platform-specific scene clamps
 const PLATFORM_SCENE_CLAMPS = {
-    reels: { 60: { min: 12, max: 30 }, 90: { min: 18, max: 36 } },
-    tiktok: { 60: { min: 12, max: 32 }, 120: { min: 18, max: 48 } },
-    shorts: { 60: { min: 12, max: 28 } }
+    reels: { 60: { min: 12, max: 24 }, 90: { min: 18, max: 36 } },
+    tiktok: { 60: { min: 12, max: 24 }, 120: { min: 18, max: 48 } },
+    shorts: { 60: { min: 12, max: 24 } }
 };
 
 // Narration and readability constants

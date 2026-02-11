@@ -3,6 +3,7 @@
 // Processes jobs through: Story → Uniqueness → Scenes → Voice → 
 //                         Music → Images → Subtitles → Assemble → Upload → Schedule
 // 
+// v4.0 - 2026-02-14 (waitUntil background processing: beat 150s HTTP idle timeout)
 // v3.0 - 2026-02-13 (Time-budget continuation: auto-pause + self-re-invoke at 340s wall clock)
 // v2.9 - 2026-02-12 (DB-driven image prompt config per vibe preset)\n// v2.8 - 2026-02-10 (503 retry: wait + retry when renderer busy during campaigns)
 // v2.7 - 2026-02-10 (Background Music V1: DB-driven tracks, ducking, fades)
@@ -58,6 +59,11 @@ import {
   executeUploadStep,
   executeScheduleStep,
 } from "./steps.ts";
+
+// Declare EdgeRuntime global (Supabase Edge Functions background processing)
+declare const EdgeRuntime: {
+  waitUntil(promise: Promise<unknown>): void;
+};
 
 // =====================================================
 // CONSTANTS
@@ -195,6 +201,15 @@ serve(async (req) => {
     claimedJobId = jobId;
     const attemptCount = claimResult.attempt_count || 1;
     console.log(`[WORKER-V1] ✓ Claimed job ${jobId} (attempt #${attemptCount})`);
+
+    // =========================================
+    // BACKGROUND PIPELINE (via EdgeRuntime.waitUntil)
+    // Return HTTP 202 immediately so the 150s HTTP idle timeout
+    // doesn't kill the function. Pipeline processes in background
+    // with full 400s wall-clock budget (paid plan).
+    // =========================================
+    const pipelinePromise = (async () => {
+      try {
 
     // =========================================
     // LOAD JOB DATA
@@ -494,15 +509,41 @@ serve(async (req) => {
     
     console.log(`[WORKER-V1] ✓ Pipeline complete for job ${jobId}`);
     await releaseJob(supabase, jobId, workerId, 'complete', undefined, 100);
-    
+
+      } catch (bgError) {
+        // Background pipeline fatal error handler
+        const msg = bgError instanceof Error ? bgError.message : String(bgError);
+        console.error(`[WORKER-V1] ✗ Background pipeline error: ${msg}`);
+        const classified = classifyError(bgError, { step: 'fatal' });
+        try {
+          await supabase!.rpc('record_job_step_failure', {
+            p_job_id: jobId,
+            p_step_name: 'fatal',
+            p_failure: {
+              failure_class: classified.class,
+              error_message: msg,
+              error_signature: classified.signature,
+              worker_id: workerId
+            }
+          });
+          await releaseJob(supabase!, jobId, workerId, 'failed', msg);
+        } catch (releaseErr) {
+          console.error(`[WORKER-V1] Failed to release after background error: ${releaseErr}`);
+        }
+      }
+    })();
+
+    // Return 202 immediately; pipeline continues in background via waitUntil
+    EdgeRuntime.waitUntil(pipelinePromise);
+
     return new Response(
       JSON.stringify({ 
         success: true, 
         job_id: jobId,
-        steps_completed: STEP_ORDER.length,
-        step_results: stepResults
+        message: 'Pipeline started in background',
+        worker_id: workerId
       }),
-      { status: 200, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      { status: 202, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
     );
 
   } catch (error) {

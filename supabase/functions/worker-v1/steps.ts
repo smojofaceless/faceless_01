@@ -365,7 +365,7 @@ export async function executeScenesStep(
   
   // scene_count from UI (create page calculates via PACE_PRESETS + platform clamps)
   // Fallback: balanced pace ~2.5s per scene, clamped [12, 30] for social media
-  const fallbackSceneCount = Math.max(12, Math.min(30, Math.round(duration / 2.5)));
+  const fallbackSceneCount = Math.max(12, Math.min(24, Math.round(duration / 2.5)));
   const sceneCount = (job.meta?.scene_count as number) || fallbackSceneCount;
   console.log(`[SCENES] sceneCount=${sceneCount} for duration=${duration}s (source: ${job.meta?.scene_count ? 'job.meta' : 'fallback'})`);
 
