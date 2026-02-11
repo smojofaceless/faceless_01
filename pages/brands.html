@@ -2823,15 +2823,22 @@ Respond in JSON:
         }
 
         function splitIntoScenes(text, targetScenes = 24) {
+            const MIN_WORDS_PER_SCENE = 10;
+            const wordCount = text.split(/\s+/).length;
+            
+            // Cap target scenes so each scene has at least MIN_WORDS_PER_SCENE words
+            const maxViableScenes = Math.max(3, Math.floor(wordCount / MIN_WORDS_PER_SCENE));
+            const effectiveTarget = Math.min(targetScenes, maxViableScenes);
+            
             // Split into sentences first
             const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
             
             // When we need more scenes than sentences, split at clause boundaries
             let chunks = [...sentences];
-            if (chunks.length < targetScenes) {
+            if (chunks.length < effectiveTarget) {
                 const expanded = [];
                 for (const s of chunks) {
-                    if (expanded.length >= targetScenes) { expanded.push(s); continue; }
+                    if (expanded.length >= effectiveTarget) { expanded.push(s); continue; }
                     const clauses = s.split(/(?<=,)\s+|(?<=;)\s+|(?<=—)\s*|\s+(?:and|but|when|as|while|then)\s+/i)
                         .filter(c => c.trim().length > 3);
                     if (clauses.length > 1) expanded.push(...clauses);
@@ -2840,16 +2847,21 @@ Respond in JSON:
                 chunks = expanded;
             }
             
-            // Distribute chunks evenly across target scenes
-            const chunksPerScene = chunks.length / targetScenes;
+            // Final cap: never more scenes than chunks
+            const finalTarget = Math.min(effectiveTarget, chunks.length);
+            
+            // Distribute chunks evenly across scenes
+            const chunksPerScene = chunks.length / finalTarget;
             const scenes = [];
-            for (let i = 0; i < targetScenes; i++) {
+            for (let i = 0; i < finalTarget; i++) {
                 const startIdx = Math.floor(i * chunksPerScene);
-                const endIdx = i === targetScenes - 1 ? chunks.length : Math.floor((i + 1) * chunksPerScene);
+                const endIdx = i === finalTarget - 1 ? chunks.length : Math.floor((i + 1) * chunksPerScene);
                 const actualEnd = Math.max(endIdx, startIdx + 1);
                 const sceneText = chunks.slice(startIdx, actualEnd).join(' ').trim();
                 if (sceneText) scenes.push(sceneText);
             }
+            
+            console.log(`[splitIntoScenes] ${wordCount} words, target=${targetScenes}, effective=${finalTarget}, chunks=${chunks.length}, produced=${scenes.length}`);
             return scenes.length > 0 ? scenes : [text];
         }
 
@@ -2901,14 +2913,19 @@ Respond in JSON:
                         ],
                         response_format: { type: 'json_object' },
                         temperature: 0.5,
-                        max_tokens: 1500,
+                        max_tokens: 4000,
                     })
                 });
 
-                if (!response.ok) throw new Error('Visual cue extraction failed');
+                if (!response.ok) {
+                    const errBody = await response.text().catch(() => response.statusText);
+                    throw new Error(`Visual cue API ${response.status}: ${errBody.substring(0, 200)}`);
+                }
                 
                 const data = await response.json();
-                const content = JSON.parse(data.choices[0].message.content);
+                const raw = data.choices?.[0]?.message?.content;
+                if (!raw) throw new Error('No content in visual cue response');
+                const content = JSON.parse(raw);
                 return content.visual_cues || [];
             } catch (e) {
                 console.warn('[VisualCues] Extraction failed, falling back to raw scenes:', e.message);
