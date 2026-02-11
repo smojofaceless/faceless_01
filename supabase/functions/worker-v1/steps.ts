@@ -1706,10 +1706,13 @@ Genre/vibe: ${vibePreset}
 Analyze each scene's narration and describe what the STILL IMAGE should depict — not the narration text itself, but what a viewer should SEE. Each image must match the art style and negative constraints above.
 
 CRITICAL SCENE-GROUNDING RULES:
-- Each visual description MUST depict ONLY what happens in THAT specific scene's narration.
-- Do NOT borrow or blend visual elements from other scenes.
-- If Scene 1 mentions an elevator floor number and Scene 3 mentions faces and a stranger in a corner, the floor number visual belongs ONLY in Scene 1's cue, NOT Scene 3.
-- Read each scene's narration carefully and extract the DOMINANT visual action or subject of THAT scene only.
+- Each visual description must focus on the DOMINANT ACTION or SUBJECT of THAT specific scene's narration.
+- Do NOT put a scene's unique focal element into a different scene (e.g. if Scene 1 mentions an elevator floor number and Scene 3 mentions counting faces, the floor number belongs ONLY in Scene 1).
+- HOWEVER, maintain CONSISTENCY across all scenes for:
+  • LOCATION/SETTING: If the story takes place in an elevator, office, car, forest — every scene should reflect that same environment unless the narration explicitly moves to a new location.
+  • CHARACTER APPEARANCE: Characters must look the same in every scene they appear in (same clothing, hair, build). Use the Story Anchor character descriptions if provided.
+  • RECURRING PROPS: If a character carries a folder, wears a specific jacket, etc., keep those details consistent.
+- Think of it as: the BACKGROUND and CAST stay consistent, but the CAMERA FOCUS changes per scene to match what's happening in that scene's narration.
 
 IMPORTANT VARIETY RULES:
 - Mix scene types: NOT every scene should be "group". Use establishing (wide location), object (detail/prop focus), atmosphere (mood/environment), character (single person), group (multiple people)
