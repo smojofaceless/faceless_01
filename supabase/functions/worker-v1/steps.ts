@@ -1656,8 +1656,9 @@ async function extractVisualCues(
   config: ImagePromptConfig | null,
   storyAnchor: StoryAnchor | null,
 ): Promise<VisualCue[]> {
+  // Use up to 350 chars per scene for better context grounding
   const sceneList = scenes.map((s, i) => 
-    `Scene ${i + 1}: "${s.text.substring(0, 200)}"`
+    `Scene ${i + 1} (sceneIndex: ${i}): "${s.text.substring(0, 350)}"`
   ).join('\n');
 
   // Build preset-aware context for the extraction
@@ -1703,6 +1704,12 @@ ${liminalRules}
 Genre/vibe: ${vibePreset}
 
 Analyze each scene's narration and describe what the STILL IMAGE should depict — not the narration text itself, but what a viewer should SEE. Each image must match the art style and negative constraints above.
+
+CRITICAL SCENE-GROUNDING RULES:
+- Each visual description MUST depict ONLY what happens in THAT specific scene's narration.
+- Do NOT borrow or blend visual elements from other scenes.
+- If Scene 1 mentions an elevator floor number and Scene 3 mentions faces and a stranger in a corner, the floor number visual belongs ONLY in Scene 1's cue, NOT Scene 3.
+- Read each scene's narration carefully and extract the DOMINANT visual action or subject of THAT scene only.
 
 IMPORTANT VARIETY RULES:
 - Mix scene types: NOT every scene should be "group". Use establishing (wide location), object (detail/prop focus), atmosphere (mood/environment), character (single person), group (multiple people)
@@ -1797,8 +1804,13 @@ function buildImagePrompt(
       : '';
     const cameraAngle = visualCue?.camera || configCamera;
 
-    // Scene description: prefer visual cue (image-specific), fall back to raw text
-    const sceneDescription = visualCue?.description || sceneText.substring(0, 250);
+    // Scene description: combine visual cue with narration for grounding
+    // Always include narration context so the image matches the specific scene
+    const cueDescription = visualCue?.description || '';
+    const narrationSnippet = sceneText.substring(0, 180);
+    const sceneDescription = cueDescription
+      ? `${cueDescription}\nScene narration context: ${narrationSnippet}`
+      : narrationSnippet;
 
     // Scene-type-aware mood/environment adjustments
     const sceneType = visualCue?.sceneType || 'atmosphere';
