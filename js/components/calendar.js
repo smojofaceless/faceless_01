@@ -27,12 +27,14 @@ class Calendar {
         // State
         this.isLoading = false;
         this.posts = [];
+        this._cachedItems = []; // Cached calendar items from Supabase
+        this._useSupabase = false;
     }
 
     /**
      * Initialize the calendar
      */
-    init() {
+    async init() {
         // Use provided container or find by selector
         if (!this.container) {
             this.container = document.querySelector(this.selector);
@@ -43,7 +45,14 @@ class Calendar {
             return;
         }
 
-        this.render();
+        // Detect if postQueueService is available (Supabase-backed)
+        this._useSupabase = typeof postQueueService !== 'undefined';
+        if (this._useSupabase) {
+            await postQueueService.init();
+            console.log('📅 Calendar: Using Supabase via PostQueueService');
+        }
+
+        await this.render();
         return this; // Allow chaining
     }
 
@@ -51,9 +60,9 @@ class Calendar {
      * Set filters
      * @param {Object} filters - Filters to apply
      */
-    setFilters(filters) {
+    async setFilters(filters) {
         this.filters = { ...this.filters, ...filters };
-        this.render();
+        await this.render();
     }
 
     /**
@@ -67,35 +76,35 @@ class Calendar {
     /**
      * Navigate to previous period
      */
-    prev() {
+    async prev() {
         if (this.view === 'month') {
             this.currentDate.setMonth(this.currentDate.getMonth() - 1);
         } else {
             this.currentDate.setDate(this.currentDate.getDate() - 7);
         }
-        this.render();
+        await this.render();
         this.notifyNavigation();
     }
 
     /**
      * Navigate to next period
      */
-    next() {
+    async next() {
         if (this.view === 'month') {
             this.currentDate.setMonth(this.currentDate.getMonth() + 1);
         } else {
             this.currentDate.setDate(this.currentDate.getDate() + 7);
         }
-        this.render();
+        await this.render();
         this.notifyNavigation();
     }
 
     /**
      * Go to today
      */
-    today() {
+    async today() {
         this.currentDate = new Date();
-        this.render();
+        await this.render();
         this.notifyNavigation();
     }
 
@@ -103,9 +112,9 @@ class Calendar {
      * Go to specific date
      * @param {Date} date - Date to navigate to
      */
-    goToDate(date) {
+    async goToDate(date) {
         this.currentDate = new Date(date);
-        this.render();
+        await this.render();
         this.notifyNavigation();
     }
 
@@ -126,10 +135,10 @@ class Calendar {
      * Switch view mode
      * @param {string} view - 'month' or 'week'
      */
-    setView(view) {
+    async setView(view) {
         if (this.view !== view) {
             this.view = view;
-            this.render();
+            await this.render();
             this.notifyNavigation();
         }
     }
@@ -160,9 +169,12 @@ class Calendar {
     /**
      * Render the calendar
      */
-    render() {
-        // Show loading indicator
-        if (this.isLoading) {
+    async render() {
+        if (!this.container) return;
+
+        // Show loading state while fetching data
+        if (this._useSupabase) {
+            this.isLoading = true;
             this.container.innerHTML = `
                 <div class="calendar calendar--loading">
                     <div class="calendar__loading">
@@ -171,7 +183,22 @@ class Calendar {
                     </div>
                 </div>
             `;
-            return;
+
+            // Calculate the date range we need
+            const { start, end } = this._getViewDateRange();
+            
+            try {
+                this._cachedItems = await postQueueService.getCalendarItems(start, end, {
+                    brandId: this.filters.brandId,
+                    status: this.filters.status,
+                    platformId: this.filters.platformId
+                });
+                console.log(`📅 Calendar: Loaded ${this._cachedItems.length} items for ${start.toLocaleDateString()} - ${end.toLocaleDateString()}`);
+            } catch (e) {
+                console.error('Failed to load calendar data:', e);
+                this._cachedItems = [];
+            }
+            this.isLoading = false;
         }
 
         // Render appropriate view (no header - controlled by page)
@@ -187,6 +214,29 @@ class Calendar {
         
         // Notify navigation after render
         this.notifyNavigation();
+    }
+
+    /**
+     * Get the date range for the current view
+     * @returns {{ start: Date, end: Date }}
+     */
+    _getViewDateRange() {
+        if (this.view === 'month') {
+            const firstDay = new Date(this.currentDate.getFullYear(), this.currentDate.getMonth(), 1);
+            const start = new Date(firstDay);
+            start.setDate(start.getDate() - firstDay.getDay());
+            start.setHours(0, 0, 0, 0);
+            const end = new Date(start);
+            end.setDate(end.getDate() + 42);
+            end.setHours(23, 59, 59, 999);
+            return { start, end };
+        } else {
+            const start = this.getWeekStart(this.currentDate);
+            const end = new Date(start);
+            end.setDate(end.getDate() + 7);
+            end.setHours(23, 59, 59, 999);
+            return { start, end };
+        }
     }
 
     /**
@@ -418,11 +468,16 @@ class Calendar {
     }
 
     /**
-     * Find a post by ID from postManager
+     * Find a post by ID from cached items or postManager  
      * @param {string} postId - Post ID to find
      * @returns {Object|null} Post object or null
      */
     findPostById(postId) {
+        // Check cached Supabase items first
+        if (this._useSupabase && this._cachedItems.length > 0) {
+            return this._cachedItems.find(item => item.id === postId) || null;
+        }
+        // Fall back to postManager
         if (typeof postManager !== 'undefined') {
             return postManager.get(postId);
         }
@@ -430,25 +485,39 @@ class Calendar {
     }
 
     /**
-     * Get filtered posts from postManager
+     * Get filtered posts from cache (Supabase) or postManager (localStorage)
      * @param {Date} start - Start date
      * @param {Date} end - End date
      * @returns {Array} Filtered posts
      */
     getFilteredPosts(start, end) {
+        // If using Supabase, return from pre-loaded cache
+        if (this._useSupabase) {
+            let items = this._cachedItems.filter(item => {
+                if (!item.scheduledAt) return false;
+                return item.scheduledAt >= start && item.scheduledAt <= end;
+            });
+
+            // Apply status filter if set (already applied at query time, but double-check)
+            if (this.filters.status) {
+                items = items.filter(item => item.status === this.filters.status);
+            }
+
+            return items;
+        }
+
+        // Legacy: localStorage via postManager
         if (typeof postManager === 'undefined') {
             console.warn('postManager not available');
             return [];
         }
 
         try {
-            // Get posts from postManager
             let posts = postManager.getScheduledInRange(start, end, {
                 brandId: this.filters.brandId,
                 platformId: this.filters.platformId
             });
 
-            // Apply status filter if set
             if (this.filters.status) {
                 posts = posts.filter(p => p.status === this.filters.status);
             }

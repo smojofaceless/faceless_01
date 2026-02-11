@@ -76,7 +76,7 @@
     /**
      * Initialize the calendar component
      */
-    function initCalendar() {
+    async function initCalendar() {
         console.log('📅 Creating Calendar instance');
 
         // Create calendar instance
@@ -89,8 +89,8 @@
             onNavigate: handleNavigate
         });
 
-        // Initialize calendar
-        calendar.init();
+        // Initialize calendar (async — loads data from Supabase)
+        await calendar.init();
 
         // Set up page controls
         setupToolbar();
@@ -218,9 +218,9 @@
      * Handle brand change from brand switcher
      * @param {Object} brand - Selected brand
      */
-    function handleBrandChange(brand) {
+    async function handleBrandChange(brand) {
         if (calendar) {
-            calendar.setFilters({ brandId: brand?.id || null });
+            await calendar.setFilters({ brandId: brand?.id || null });
         }
     }
 
@@ -287,7 +287,7 @@
 
     /**
      * Show post detail modal
-     * @param {Object} post - Post to display
+     * @param {Object} post - Post to display (unified calendar item)
      */
     function showPostModal(post) {
         if (!elements.postModal || !elements.postModalBody) return;
@@ -297,15 +297,23 @@
             ? getPlatform(post.platformId) 
             : { name: post.platformId };
 
+        const isJob = post.type === 'job';
+        const statusLabel = isJob ? (post.status === 'pending' ? 'Pending Generation' : 'Generating...') : post.status;
+
         // Build modal content
         elements.postModalBody.innerHTML = `
             <div class="post-detail">
                 <div class="post-detail__header">
+                    ${isJob ? `
+                        <span class="badge badge--info" style="font-size: 11px;">
+                            &#9881; Job
+                        </span>
+                    ` : ''}
                     <span class="platform-badge platform-badge--${post.platformId}">
                         ${platform?.name || post.platformId}
                     </span>
                     <span class="badge badge--${getStatusClass(post.status)}">
-                        ${post.status}
+                        ${statusLabel}
                     </span>
                 </div>
                 
@@ -345,6 +353,13 @@
                             <span>${formatDuration(post.content.duration)}</span>
                         </div>
                     ` : ''}
+
+                    ${post.batchId ? `
+                        <div class="meta-item">
+                            <strong>Campaign:</strong>
+                            <span style="font-family: monospace; font-size: 11px;">${post.batchId.substring(0, 8)}...</span>
+                        </div>
+                    ` : ''}
                     
                     ${post.lastError ? `
                         <div class="meta-item meta-item--error">
@@ -363,6 +378,11 @@
                             preload="metadata"
                             style="max-width: 100%; border-radius: 8px;">
                         </video>
+                    </div>
+                ` : isJob ? `
+                    <div class="post-detail__preview" style="text-align: center; padding: 24px; background: var(--surface-secondary); border-radius: 8px; color: var(--text-muted);">
+                        <div style="font-size: 32px; margin-bottom: 8px;">&#9881;</div>
+                        <p style="margin: 0;">Video is being generated...</p>
                     </div>
                 ` : ''}
             </div>
@@ -471,11 +491,17 @@
     function getStatusClass(status) {
         const classes = {
             published: 'success',
+            posted: 'success',
             scheduled: 'warning',
             failed: 'error',
             draft: 'default',
             queued: 'info',
-            publishing: 'info'
+            publishing: 'info',
+            posting: 'info',
+            pending: 'default',
+            generating: 'info',
+            approved: 'warning',
+            cancelled: 'default'
         };
         return classes[status] || 'default';
     }

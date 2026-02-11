@@ -282,6 +282,163 @@ class PostQueueService {
     }
 
     /**
+     * Get all posts in a date range (for calendar view)
+     * Unlike getUpcomingPosts, this returns ALL statuses and supports past dates
+     * @param {Date} start - Range start
+     * @param {Date} end - Range end  
+     * @param {Object} filters - Optional filters { brandId, status, platformId }
+     * @returns {Promise<Object[]>}
+     */
+    async getPostsInRange(start, end, filters = {}) {
+        if (this.useSupabase) {
+            let query = supabaseClient
+                .from('posts')
+                .select('*')
+                .gte('scheduled_at', start.toISOString())
+                .lte('scheduled_at', end.toISOString())
+                .order('scheduled_at', { ascending: true });
+
+            if (filters.brandId) {
+                query = query.eq('brand_id', filters.brandId);
+            }
+            if (filters.status) {
+                if (Array.isArray(filters.status)) {
+                    query = query.in('status', filters.status);
+                } else {
+                    query = query.eq('status', filters.status);
+                }
+            }
+            if (filters.platformId) {
+                query = query.contains('platforms', [filters.platformId]);
+            }
+
+            const { data, error } = await query;
+            if (error) {
+                console.error('Failed to get posts in range:', error);
+                return [];
+            }
+            return data || [];
+        } else {
+            return Array.from(this.posts.values())
+                .filter(p =>
+                    p.scheduled_at &&
+                    new Date(p.scheduled_at) >= start &&
+                    new Date(p.scheduled_at) <= end &&
+                    (!filters.brandId || p.brand_id === filters.brandId) &&
+                    (!filters.status || (Array.isArray(filters.status) ? filters.status.includes(p.status) : p.status === filters.status))
+                )
+                .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
+        }
+    }
+
+    /**
+     * Get jobs in a date range that haven't been imported to posts yet
+     * These show as "generating" or "pending" items on the calendar
+     * @param {Date} start - Range start
+     * @param {Date} end - Range end
+     * @param {Object} filters - Optional filters { brandId }
+     * @returns {Promise<Object[]>}
+     */
+    async getJobsInRange(start, end, filters = {}) {
+        if (!this.useSupabase) return [];
+
+        try {
+            let query = supabaseClient
+                .from('jobs')
+                .select('id, title, status, vibe_preset, scheduled_post_at, brand_id, batch_id, created_at')
+                .not('status', 'eq', 'complete')
+                .not('scheduled_post_at', 'is', null)
+                .gte('scheduled_post_at', start.toISOString())
+                .lte('scheduled_post_at', end.toISOString())
+                .order('scheduled_post_at', { ascending: true });
+
+            if (filters.brandId) {
+                query = query.eq('brand_id', filters.brandId);
+            }
+
+            const { data, error } = await query;
+            if (error) {
+                console.error('Failed to get jobs in range:', error);
+                return [];
+            }
+            return data || [];
+        } catch (e) {
+            console.error('Error fetching jobs for calendar:', e);
+            return [];
+        }
+    }
+
+    /**
+     * Get combined calendar items (posts + pending jobs) for a date range
+     * Maps everything to a unified calendar item shape
+     * @param {Date} start - Range start
+     * @param {Date} end - Range end
+     * @param {Object} filters - Optional filters { brandId, status, platformId }
+     * @returns {Promise<Object[]>} Unified calendar items
+     */
+    async getCalendarItems(start, end, filters = {}) {
+        // Fetch posts and pending jobs in parallel
+        const [posts, jobs] = await Promise.all([
+            this.getPostsInRange(start, end, filters),
+            this.getJobsInRange(start, end, filters)
+        ]);
+
+        // Map posts to calendar item shape
+        const postItems = posts.map(p => ({
+            id: p.id,
+            type: 'post',
+            scheduledAt: new Date(p.scheduled_at),
+            status: p.status,
+            platformId: (p.platforms && p.platforms[0]) || 'youtube',
+            brandId: p.brand_id,
+            content: {
+                title: p.title || 'Untitled',
+                description: p.description || '',
+                videoUrl: p.video_url,
+                thumbnailUrl: p.thumbnail_url,
+                duration: p.duration_seconds
+            },
+            publishedAt: p.posted_at ? new Date(p.posted_at) : null,
+            lastError: p.error_message,
+            sourceJobId: p.source_job_id,
+            batchId: p.generation_batch_id,
+            raw: p
+        }));
+
+        // Map pending jobs to calendar item shape
+        // Filter out jobs that already have a corresponding post
+        const importedJobIds = new Set(posts.filter(p => p.source_job_id).map(p => p.source_job_id));
+        const pendingJobItems = jobs
+            .filter(j => !importedJobIds.has(j.id))
+            .map(j => ({
+                id: `job-${j.id}`,
+                type: 'job',
+                scheduledAt: new Date(j.scheduled_post_at),
+                status: j.status === 'pending' ? 'pending' : 'generating',
+                platformId: 'youtube',
+                brandId: j.brand_id,
+                content: {
+                    title: j.title || `${j.vibe_preset || 'Video'} (generating...)`,
+                    description: `Job status: ${j.status}`,
+                    videoUrl: null,
+                    thumbnailUrl: null,
+                    duration: null
+                },
+                publishedAt: null,
+                lastError: null,
+                sourceJobId: j.id,
+                batchId: j.batch_id,
+                raw: j
+            }));
+
+        // Combine and sort by scheduled time
+        const allItems = [...postItems, ...pendingJobItems];
+        allItems.sort((a, b) => a.scheduledAt - b.scheduledAt);
+
+        return allItems;
+    }
+
+    /**
      * Get posts by status
      */
     async getPostsByStatus(status, brandId = null) {

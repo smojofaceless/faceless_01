@@ -321,6 +321,63 @@
     border-left: 2px solid var(--primary);
 }
 
+/* Pending job — not yet started generating */
+.calendar__post--pending {
+    background: rgba(156, 163, 175, 0.15);
+    color: var(--text-muted);
+    border-left: 2px solid var(--text-muted);
+    border-left-style: dashed;
+}
+
+/* Generating job — currently being rendered */
+.calendar__post--generating {
+    background: rgba(139, 92, 246, 0.1);
+    color: var(--primary);
+    border-left: 2px solid var(--primary);
+    border-left-style: dashed;
+    animation: calendarPulse 2s ease-in-out infinite;
+}
+
+/* Posted — same as published for DB status naming */
+.calendar__post--posted {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--success);
+    border-left: 2px solid var(--success);
+}
+
+/* Posting — currently uploading */
+.calendar__post--posting {
+    background: rgba(139, 92, 246, 0.15);
+    color: var(--primary);
+    border-left: 2px solid var(--primary);
+    animation: calendarPulse 1.5s ease-in-out infinite;
+}
+
+/* Week view card variants */
+.calendar__post-card--pending {
+    border-left: 3px dashed var(--text-muted);
+    opacity: 0.7;
+}
+
+.calendar__post-card--generating {
+    border-left: 3px dashed var(--primary);
+    animation: calendarPulse 2s ease-in-out infinite;
+}
+
+.calendar__post-card--posted {
+    border-left: 3px solid var(--success);
+}
+
+.calendar__post-card--posting {
+    border-left: 3px solid var(--primary);
+    animation: calendarPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes calendarPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
 /* More Posts Button */
 .calendar__more {
     font-size: 11px;
@@ -575,6 +632,22 @@
 .legend-dot--failed {
     background: #f87171;
     color: rgba(239, 68, 68, 0.4);
+}
+
+.legend-dot--posted {
+    background: #34d399;
+    color: rgba(16, 185, 129, 0.4);
+}
+
+.legend-dot--pending {
+    background: #9ca3af;
+    color: rgba(156, 163, 175, 0.4);
+}
+
+.legend-dot--generating {
+    background: #a78bfa;
+    color: rgba(139, 92, 246, 0.4);
+    animation: calendarPulse 2s ease-in-out infinite;
 }
 
 /* ==========================================================================

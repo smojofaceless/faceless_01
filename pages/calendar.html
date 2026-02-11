@@ -153,9 +153,12 @@
                             </select>
                             <select class="select" id="status-filter">
                                 <option value="">All Status</option>
+                                <option value="draft">Draft</option>
                                 <option value="scheduled">Scheduled</option>
-                                <option value="published">Published</option>
+                                <option value="posted">Posted</option>
                                 <option value="failed">Failed</option>
+                                <option value="pending">Pending</option>
+                                <option value="generating">Generating</option>
                             </select>
                         </div>
                     </div>
@@ -171,8 +174,16 @@
                         <span>Scheduled</span>
                     </div>
                     <div class="legend-item">
-                        <span class="legend-dot legend-dot--published"></span>
-                        <span>Published</span>
+                        <span class="legend-dot legend-dot--posted"></span>
+                        <span>Posted</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot legend-dot--generating"></span>
+                        <span>Generating</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot legend-dot--pending"></span>
+                        <span>Pending</span>
                     </div>
                     <div class="legend-item">
                         <span class="legend-dot legend-dot--failed"></span>
@@ -210,6 +221,7 @@
     <script src="../js/models/index.js"></script>
     <script src="../js/services/platformAPI.js"></script>
     <script src="../js/services/postManager.js"></script>
+    <script src="../js/services/postQueue.js"></script>
     <script src="../js/services/scheduler.js"></script>
     <script src="../js/services/brandManager.js"></script>
     <script src="../js/services/index.js"></script>
