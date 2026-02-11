@@ -106,6 +106,13 @@ class CampaignDetailPage {
         this.logShowSnapshots = document.getElementById('log-show-snapshots');
         this.logShowProgress = document.getElementById('log-show-progress');
         
+        // Step Detail Panel
+        this.stepDetailPanel = document.getElementById('step-detail-panel');
+        this.stepDetailTitle = document.getElementById('step-detail-title');
+        this.stepDetailContent = document.getElementById('step-detail-content');
+        this.stepDetailClose = document.getElementById('step-detail-close');
+        this.selectedStepName = null;
+        
         // Modal
         this.confirmModal = document.getElementById('confirm-modal');
         this.confirmTitle = document.getElementById('confirm-title');
@@ -135,6 +142,9 @@ class CampaignDetailPage {
         this.btnRefreshLogs?.addEventListener('click', () => this.loadJobLogs(this.selectedJobId));
         this.logShowSnapshots?.addEventListener('change', () => this.renderLogs());
         this.logShowProgress?.addEventListener('change', () => this.renderLogs());
+        
+        // Step Detail Panel close
+        this.stepDetailClose?.addEventListener('click', () => this.closeStepDetail());
         
         // Modal
         this.confirmOkBtn?.addEventListener('click', () => this.executeConfirmedAction());
@@ -1151,7 +1161,9 @@ class CampaignDetailPage {
             const connectorActive = status === 'completed' || status === 'running';
             
             return `
-                <div class="step-timeline__step step-timeline__step--${status}" title="${step}: ${status}${durationText ? ` (${durationText})` : ''}">
+                <div class="step-timeline__step step-timeline__step--${status} ${this.selectedStepName === step ? 'step-timeline__step--selected' : ''}" 
+                     title="Click for ${step} details${durationText ? ` (${durationText})` : ''}"
+                     data-step="${step}" onclick="window.campaignDetailPage.openStepDetail('${step}')">
                     <div class="step-timeline__icon">${statusIcons[status]}</div>
                     <div class="step-timeline__name">${step}</div>
                     ${durationText ? `<div class="step-timeline__duration">${durationText}</div>` : ''}
@@ -1161,6 +1173,519 @@ class CampaignDetailPage {
         }).join('');
         
         this.stepTimeline.innerHTML = timelineHtml || '<div class="step-timeline__empty">Select a job to view pipeline status</div>';
+    }
+
+    // ==========================================
+    // STEP DETAIL PANEL
+    // ==========================================
+
+    /**
+     * Open the detail panel for a clicked step
+     */
+    async openStepDetail(stepName) {
+        if (!this.selectedJobId) return;
+        
+        this.selectedStepName = stepName;
+        
+        // Re-render timeline to show selection
+        const currentJob = this.jobs?.find(j => j.id === this.selectedJobId);
+        this.renderStepTimeline(this.currentLogs, currentJob?.status);
+        
+        // Show panel with loading state
+        if (this.stepDetailPanel) this.stepDetailPanel.style.display = 'block';
+        if (this.stepDetailTitle) this.stepDetailTitle.textContent = `${this.getStepIcon(stepName)} ${this.capitalize(stepName)} Details`;
+        if (this.stepDetailContent) this.stepDetailContent.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">Loading step data...</div>';
+        
+        try {
+            // Gather all data for this step from logs + job + assets
+            const stepData = await this.gatherStepData(stepName);
+            this.renderStepDetail(stepName, stepData);
+        } catch (err) {
+            console.error(`Failed to load ${stepName} details:`, err);
+            if (this.stepDetailContent) this.stepDetailContent.innerHTML = `<div style="color:var(--color-error)">Failed to load step details: ${err.message}</div>`;
+        }
+    }
+
+    /**
+     * Close the step detail panel
+     */
+    closeStepDetail() {
+        this.selectedStepName = null;
+        if (this.stepDetailPanel) this.stepDetailPanel.style.display = 'none';
+        // Re-render timeline to remove selection
+        const currentJob = this.jobs?.find(j => j.id === this.selectedJobId);
+        this.renderStepTimeline(this.currentLogs, currentJob?.status);
+    }
+
+    /**
+     * Gather all relevant data for a step from logs, job data, and assets
+     */
+    async gatherStepData(stepName) {
+        const supabase = window.supabaseClient || (typeof getSupabaseClient === 'function' ? getSupabaseClient() : null);
+        if (!supabase) throw new Error('Supabase client not available');
+        
+        const jobId = this.selectedJobId;
+        const data = { snapshots: [], progress: [], status: null, duration: null, error: null };
+        
+        // Extract step-specific logs
+        this.currentLogs.forEach(log => {
+            if (log.step_name !== stepName) return;
+            const eventType = log.event_type || log.log_type;
+            if (eventType === 'snapshot') data.snapshots.push(log);
+            if (eventType === 'progress') data.progress.push(log);
+            if (eventType === 'completed') {
+                data.status = 'completed';
+                data.duration = log.meta?.duration_ms || log.duration_ms;
+            }
+            if (eventType === 'failed') {
+                data.status = 'failed';
+                data.error = log.message || log.meta?.error;
+            }
+        });
+        if (!data.status) {
+            const started = this.currentLogs.find(l => l.step_name === stepName && (l.event_type === 'started' || l.log_type === 'started'));
+            if (started) data.status = 'running';
+        }
+        
+        // Load job record for story_text, title, meta, etc.
+        const { data: jobRecord } = await supabase
+            .from('jobs')
+            .select('*')
+            .eq('id', jobId)
+            .single();
+        data.job = jobRecord;
+        
+        // Load step status record (has per-step metadata)
+        try {
+            const { data: stepStatus } = await supabase
+                .from('job_step_status')
+                .select('*')
+                .eq('job_id', jobId)
+                .eq('step_name', stepName)
+                .single();
+            data.stepMeta = stepStatus?.meta || stepStatus?.step_meta || {};
+        } catch { data.stepMeta = {}; }
+        
+        // Load assets for specific steps
+        if (['images', 'voice', 'music', 'subtitles', 'assemble'].includes(stepName)) {
+            const prefix = stepName === 'images' ? `${jobId}:image_generate` 
+                         : stepName === 'voice' ? `${jobId}:voice`
+                         : stepName === 'music' ? `${jobId}:music`
+                         : stepName === 'subtitles' ? `${jobId}:subtitle`
+                         : `${jobId}:assemble`;
+            
+            const { data: assets } = await supabase
+                .from('job_assets')
+                .select('*')
+                .eq('job_id', jobId)
+                .like('idempotency_key', `${prefix}%`)
+                .order('created_at', { ascending: true });
+            data.assets = assets || [];
+        }
+        
+        // Load scenes data
+        if (['scenes', 'images'].includes(stepName)) {
+            const { data: scenesAsset } = await supabase
+                .from('job_assets')
+                .select('*')
+                .eq('job_id', jobId)
+                .eq('idempotency_key', `${jobId}:scenes_subtitles`)
+                .single();
+            data.scenesData = scenesAsset?.meta?.scenes || [];
+        }
+        
+        return data;
+    }
+
+    /**
+     * Render the detail panel content based on step type
+     */
+    renderStepDetail(stepName, data) {
+        if (!this.stepDetailContent) return;
+        
+        const statusBadge = data.status 
+            ? `<span class="step-detail__badge step-detail__badge--${data.status === 'completed' ? 'success' : data.status === 'failed' ? 'error' : 'warning'}">${data.status}</span>`
+            : '';
+        const durationText = data.duration ? this.formatDuration(data.duration) : '';
+        
+        let html = `<div class="step-detail__section">
+            <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
+                ${statusBadge}
+                ${durationText ? `<span style="font-size:12px;color:var(--text-secondary)">Duration: ${durationText}</span>` : ''}
+            </div>
+        </div>`;
+        
+        // Step-specific content
+        switch (stepName) {
+            case 'story': html += this.renderStoryDetail(data); break;
+            case 'uniqueness': html += this.renderUniquenessDetail(data); break;
+            case 'scenes': html += this.renderScenesDetail(data); break;
+            case 'voice': html += this.renderVoiceDetail(data); break;
+            case 'music': html += this.renderMusicDetail(data); break;
+            case 'images': html += this.renderImagesDetail(data); break;
+            case 'subtitles': html += this.renderSubtitlesDetail(data); break;
+            case 'assemble': html += this.renderAssembleDetail(data); break;
+            case 'upload': html += this.renderUploadDetail(data); break;
+            case 'schedule': html += this.renderScheduleDetail(data); break;
+            default: html += this.renderGenericDetail(data); break;
+        }
+        
+        // Show error if failed
+        if (data.error) {
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">⚠️ Error</div>
+                <div class="step-detail__pre" style="border-color:var(--color-error);color:var(--color-error)">${this.escapeHtml(data.error)}</div>
+            </div>`;
+        }
+        
+        // Show raw snapshots toggle
+        if (data.snapshots.length > 0) {
+            html += `<details style="margin-top:12px">
+                <summary style="font-size:12px;color:var(--text-secondary);cursor:pointer">📋 Raw Snapshots (${data.snapshots.length})</summary>
+                <div class="step-detail__pre" style="margin-top:8px">${this.escapeHtml(JSON.stringify(data.snapshots.map(s => ({ label: s.message, meta: s.meta || s.details })), null, 2))}</div>
+            </details>`;
+        }
+        
+        this.stepDetailContent.innerHTML = html;
+    }
+
+    // === Per-Step Detail Renderers ===
+
+    renderStoryDetail(data) {
+        const job = data.job || {};
+        const promptSnapshot = data.snapshots.find(s => s.message?.includes('prompt'));
+        const responseSnapshot = data.snapshots.find(s => s.message?.includes('Generated') || s.message?.includes('response'));
+        const promptText = promptSnapshot?.meta?.data || promptSnapshot?.details || '';
+        const storyPreview = responseSnapshot?.meta?.story_preview || responseSnapshot?.meta?.data?.story_preview || '';
+        const wordCount = responseSnapshot?.meta?.word_count || responseSnapshot?.meta?.data?.word_count || job.story_word_count || '';
+        
+        let html = '';
+        
+        // Story settings
+        html += `<div class="step-detail__section">
+            <div class="step-detail__label">📋 Settings</div>
+            <div class="step-detail__kv-grid">
+                <span class="step-detail__kv-key">Vibe Preset</span>
+                <span class="step-detail__kv-val">${job.vibe_preset || job.meta?.vibe_preset || '-'}</span>
+                <span class="step-detail__kv-key">Duration</span>
+                <span class="step-detail__kv-val">${job.meta?.duration || job.meta?.length_preset || '-'}s</span>
+                <span class="step-detail__kv-key">Word Count</span>
+                <span class="step-detail__kv-val">${wordCount || '-'} words</span>
+                <span class="step-detail__kv-key">Model</span>
+                <span class="step-detail__kv-val">gpt-4o</span>
+            </div>
+        </div>`;
+        
+        // Story title & text
+        if (job.title || job.story_text) {
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">📖 Story: ${this.escapeHtml(job.title || 'Untitled')}</div>
+                <div class="step-detail__story">${this.escapeHtml(job.story_text || 'No story text available')}</div>
+            </div>`;
+        }
+        
+        // Prompt used
+        if (promptText) {
+            const promptStr = typeof promptText === 'object' ? JSON.stringify(promptText, null, 2) : promptText;
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">🧠 Story Prompt</div>
+                <div class="step-detail__pre">${this.escapeHtml(promptStr)}</div>
+            </div>`;
+        }
+        
+        return html;
+    }
+
+    renderUniquenessDetail(data) {
+        const job = data.job || {};
+        const meta = data.stepMeta || {};
+        const score = job.uniqueness_score ?? meta.uniqueness_score ?? '-';
+        
+        let html = `<div class="step-detail__section">
+            <div class="step-detail__label">🔍 Uniqueness Score</div>
+            <div style="font-size:32px;font-weight:700;color:${score >= 70 ? '#10B981' : score >= 40 ? '#F59E0B' : '#EF4444'}">${score}%</div>
+        </div>`;
+        
+        if (meta.similar_count !== undefined) {
+            html += `<div class="step-detail__section">
+                <div class="step-detail__kv-grid">
+                    <span class="step-detail__kv-key">Similar Stories Found</span>
+                    <span class="step-detail__kv-val">${meta.similar_count || 0}</span>
+                    <span class="step-detail__kv-key">Threshold</span>
+                    <span class="step-detail__kv-val">${meta.threshold || 'default'}</span>
+                </div>
+            </div>`;
+        }
+        
+        return html;
+    }
+
+    renderScenesDetail(data) {
+        const scenes = data.scenesData || [];
+        const job = data.job || {};
+        
+        let html = `<div class="step-detail__section">
+            <div class="step-detail__label">🎬 Scene Breakdown (${scenes.length} scenes)</div>
+            <div class="step-detail__kv-grid">
+                <span class="step-detail__kv-key">Scene Count</span>
+                <span class="step-detail__kv-val">${scenes.length}</span>
+                <span class="step-detail__kv-key">Duration</span>
+                <span class="step-detail__kv-val">${job.meta?.duration || '60'}s</span>
+                <span class="step-detail__kv-key">Pace</span>
+                <span class="step-detail__kv-val">${job.meta?.pace || 'balanced'}</span>
+            </div>
+        </div>`;
+        
+        if (scenes.length > 0) {
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">📝 Scenes</div>
+                <div style="max-height:300px;overflow-y:auto">
+                    ${scenes.map((s, i) => `
+                        <div style="padding:8px;margin-bottom:4px;background:var(--bg-primary);border-radius:4px;border-left:3px solid var(--color-primary);font-size:12px">
+                            <strong style="color:var(--text-secondary)">Scene ${i + 1}</strong> <span style="color:var(--text-secondary);font-size:11px">(${(s.startTime || 0).toFixed(1)}s - ${(s.endTime || 0).toFixed(1)}s)</span>
+                            <div style="margin-top:4px;color:var(--text-primary)">${this.escapeHtml((s.text || '').substring(0, 200))}${(s.text || '').length > 200 ? '...' : ''}</div>
+                            ${s.keywords?.length ? `<div style="margin-top:4px;font-size:11px;color:var(--text-secondary)">Keywords: ${s.keywords.join(', ')}</div>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            </div>`;
+        }
+        
+        return html;
+    }
+
+    renderVoiceDetail(data) {
+        const payloadSnap = data.snapshots.find(s => s.message?.includes('request') || s.message?.includes('payload'));
+        const resultSnap = data.snapshots.find(s => s.message?.includes('result') || s.message?.includes('response'));
+        const payload = payloadSnap?.meta || payloadSnap?.details || {};
+        const result = resultSnap?.meta || resultSnap?.details || {};
+        const payloadData = payload.data || payload;
+        const resultData = result.data || result;
+        
+        let html = `<div class="step-detail__section">
+            <div class="step-detail__label">🎙️ Voice Configuration</div>
+            <div class="step-detail__kv-grid">
+                <span class="step-detail__kv-key">Voice ID</span>
+                <span class="step-detail__kv-val">${payloadData.voice_id || '-'}</span>
+                <span class="step-detail__kv-key">Model</span>
+                <span class="step-detail__kv-val">${payloadData.model || payloadData.model_id || 'eleven_turbo_v2'}</span>
+                <span class="step-detail__kv-key">Stability</span>
+                <span class="step-detail__kv-val">${payloadData.stability ?? '-'}</span>
+                <span class="step-detail__kv-key">Similarity</span>
+                <span class="step-detail__kv-val">${payloadData.similarity_boost ?? '-'}</span>
+            </div>
+        </div>`;
+        
+        if (resultData.duration_seconds || resultData.file_size_kb) {
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">📊 Output</div>
+                <div class="step-detail__kv-grid">
+                    <span class="step-detail__kv-key">Audio Duration</span>
+                    <span class="step-detail__kv-val">${resultData.duration_seconds ? resultData.duration_seconds.toFixed(1) + 's' : '-'}</span>
+                    <span class="step-detail__kv-key">File Size</span>
+                    <span class="step-detail__kv-val">${resultData.file_size_kb ? resultData.file_size_kb + ' KB' : '-'}</span>
+                </div>
+            </div>`;
+        }
+        
+        // Audio player if we have the URL
+        const voiceAsset = data.assets?.find(a => a.public_url);
+        if (voiceAsset?.public_url) {
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">🔊 Audio Preview</div>
+                <audio controls style="width:100%;margin-top:4px" src="${voiceAsset.public_url}">Your browser does not support audio</audio>
+            </div>`;
+        }
+        
+        return html;
+    }
+
+    renderMusicDetail(data) {
+        const outputSnap = data.snapshots.find(s => s.message?.includes('Selected') || s.message?.includes('output'));
+        const snapData = outputSnap?.meta?.data || outputSnap?.meta || {};
+        
+        let html = `<div class="step-detail__section">
+            <div class="step-detail__label">🎵 Track Selection</div>
+            <div class="step-detail__kv-grid">
+                <span class="step-detail__kv-key">Track</span>
+                <span class="step-detail__kv-val">${snapData.track_name || snapData.selected_track || '-'}</span>
+                <span class="step-detail__kv-key">Volume</span>
+                <span class="step-detail__kv-val">${snapData.volume ?? snapData.ducking_volume ?? '-'}</span>
+                <span class="step-detail__kv-key">Fade In</span>
+                <span class="step-detail__kv-val">${snapData.fade_in_ms ? snapData.fade_in_ms + 'ms' : '-'}</span>
+                <span class="step-detail__kv-key">Fade Out</span>
+                <span class="step-detail__kv-val">${snapData.fade_out_ms ? snapData.fade_out_ms + 'ms' : '-'}</span>
+            </div>
+        </div>`;
+        
+        return html;
+    }
+
+    renderImagesDetail(data) {
+        const promptSnap = data.snapshots.find(s => s.message?.includes('prompt'));
+        const promptData = promptSnap?.meta?.data || promptSnap?.meta || {};
+        const assets = data.assets || [];
+        const progress = data.progress || [];
+        
+        const imageAssets = assets
+            .filter(a => a.public_url && a.idempotency_key?.includes('image_generate'))
+            .sort((a, b) => {
+                const aIdx = parseInt(a.idempotency_key?.split('scene_')[1] || '0');
+                const bIdx = parseInt(b.idempotency_key?.split('scene_')[1] || '0');
+                return aIdx - bIdx;
+            });
+        
+        const totalScenes = data.stepMeta?.total_scenes || progress[progress.length - 1]?.meta?.total || imageAssets.length || '?';
+        
+        let html = `<div class="step-detail__section">
+            <div class="step-detail__label">🖼️ Image Generation</div>
+            <div class="step-detail__kv-grid">
+                <span class="step-detail__kv-key">Model</span>
+                <span class="step-detail__kv-val">${promptData.model || data.stepMeta?.image_model || '-'}</span>
+                <span class="step-detail__kv-key">Size</span>
+                <span class="step-detail__kv-val">${promptData.size || '-'}</span>
+                <span class="step-detail__kv-key">Generated</span>
+                <span class="step-detail__kv-val">${imageAssets.length} / ${totalScenes}</span>
+            </div>
+        </div>`;
+        
+        // Sample prompt
+        if (promptData.prompt) {
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">🧠 Sample Prompt (Scene ${(promptData.scene_index || 0) + 1})</div>
+                <div class="step-detail__pre">${this.escapeHtml(promptData.prompt)}</div>
+            </div>`;
+        }
+        
+        // Image grid
+        if (imageAssets.length > 0) {
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">🎨 Generated Images (${imageAssets.length})</div>
+                <div class="step-detail__image-grid">
+                    ${imageAssets.map((a, i) => {
+                        const sceneIdx = parseInt(a.idempotency_key?.split('scene_')[1] || i);
+                        return `<div class="step-detail__image-item" onclick="window.open('${a.public_url}', '_blank')">
+                            <img src="${a.public_url}" alt="Scene ${sceneIdx + 1}" loading="lazy">
+                            <div class="step-detail__image-item__label">Scene ${sceneIdx + 1}</div>
+                        </div>`;
+                    }).join('')}
+                </div>
+            </div>`;
+        }
+        
+        // Progress log
+        if (progress.length > 0) {
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">📈 Progress (${progress.length} updates)</div>
+                <div style="max-height:200px;overflow-y:auto;font-size:12px">
+                    ${progress.map(p => {
+                        const time = new Date(p.created_at).toLocaleTimeString();
+                        return `<div style="padding:2px 0;color:var(--text-secondary)">${time} — ${p.message || ''}</div>`;
+                    }).join('')}
+                </div>
+            </div>`;
+        }
+        
+        return html;
+    }
+
+    renderSubtitlesDetail(data) {
+        const job = data.job || {};
+        
+        let html = `<div class="step-detail__section">
+            <div class="step-detail__label">📝 Subtitle Configuration</div>
+            <div class="step-detail__kv-grid">
+                <span class="step-detail__kv-key">Caption Style</span>
+                <span class="step-detail__kv-val">${job.meta?.caption_style || 'default'}</span>
+                <span class="step-detail__kv-key">Platform</span>
+                <span class="step-detail__kv-val">${job.meta?.platform || '-'}</span>
+            </div>
+        </div>`;
+        
+        return html;
+    }
+
+    renderAssembleDetail(data) {
+        const payloadSnap = data.snapshots.find(s => s.message?.includes('payload'));
+        const outputSnap = data.snapshots.find(s => s.message?.includes('output') || s.message?.includes('complete'));
+        const payload = payloadSnap?.meta?.data || payloadSnap?.meta || {};
+        const output = outputSnap?.meta?.data || outputSnap?.meta || {};
+        
+        let html = `<div class="step-detail__section">
+            <div class="step-detail__label">🔧 Assembly Configuration</div>
+            <div class="step-detail__kv-grid">
+                <span class="step-detail__kv-key">Renderer</span>
+                <span class="step-detail__kv-val">${payload.renderer_url ? 'Video Renderer' : 'N/A'}</span>
+                <span class="step-detail__kv-key">Scenes</span>
+                <span class="step-detail__kv-val">${payload.scene_count || payload.total_scenes || '-'}</span>
+                <span class="step-detail__kv-key">Effects Mode</span>
+                <span class="step-detail__kv-val">${payload.effects_mode || data.job?.meta?.effects_mode || '-'}</span>
+            </div>
+        </div>`;
+        
+        if (output.video_url || output.render_url) {
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">🎬 Output Video</div>
+                <video controls style="width:100%;max-height:300px;border-radius:6px;background:#000" src="${output.video_url || output.render_url}"></video>
+            </div>`;
+        }
+        
+        return html;
+    }
+
+    renderUploadDetail(data) {
+        const outputSnap = data.snapshots.find(s => s.message?.includes('output'));
+        const output = outputSnap?.meta?.data || outputSnap?.meta || {};
+        
+        let html = `<div class="step-detail__section">
+            <div class="step-detail__label">☁️ Upload Details</div>
+            <div class="step-detail__kv-grid">
+                <span class="step-detail__kv-key">Final URL</span>
+                <span class="step-detail__kv-val" style="word-break:break-all">${output.final_url || output.video_url || data.job?.video_url || '-'}</span>
+                <span class="step-detail__kv-key">File Size</span>
+                <span class="step-detail__kv-val">${output.file_size ? (output.file_size / 1024 / 1024).toFixed(1) + ' MB' : '-'}</span>
+            </div>
+        </div>`;
+        
+        return html;
+    }
+
+    renderScheduleDetail(data) {
+        const outputSnap = data.snapshots.find(s => s.message?.includes('output'));
+        const output = outputSnap?.meta?.data || outputSnap?.meta || {};
+        
+        let html = `<div class="step-detail__section">
+            <div class="step-detail__label">📅 Schedule Details</div>
+            <div class="step-detail__kv-grid">
+                <span class="step-detail__kv-key">Platform</span>
+                <span class="step-detail__kv-val">${output.platform || data.job?.meta?.platform || '-'}</span>
+                <span class="step-detail__kv-key">Scheduled For</span>
+                <span class="step-detail__kv-val">${output.scheduled_at ? new Date(output.scheduled_at).toLocaleString() : '-'}</span>
+                <span class="step-detail__kv-key">Post ID</span>
+                <span class="step-detail__kv-val">${output.post_id || '-'}</span>
+            </div>
+        </div>`;
+        
+        return html;
+    }
+
+    renderGenericDetail(data) {
+        return `<div class="step-detail__section">
+            <div class="step-detail__label">Step Data</div>
+            <div class="step-detail__pre">${this.escapeHtml(JSON.stringify(data.stepMeta, null, 2))}</div>
+        </div>`;
+    }
+
+    // Utility methods for step details
+    getStepIcon(step) {
+        const icons = { story: '📖', uniqueness: '🔍', scenes: '🎬', voice: '🎙️', music: '🎵', images: '🖼️', subtitles: '📝', assemble: '🔧', upload: '☁️', schedule: '📅' };
+        return icons[step] || '⚙️';
+    }
+    capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+    escapeHtml(str) {
+        if (!str) return '';
+        if (typeof str !== 'string') str = String(str);
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
     /**

@@ -34,6 +34,8 @@ import {
   ELEVENLABS_VOICE_ID,
   STORAGE_BUCKET,
   updateStepStatus,
+  WALL_CLOCK_BUDGET_MS,
+  IMAGE_RESERVE_MS,
   // Path builders for canonical storage paths
   pathForImage,
   pathForAudio,
@@ -456,6 +458,15 @@ export async function executeScenesStep(
       duration: duration,
       word_count: wordCount,
     });
+
+    // Log scene breakdown snapshot
+    await logger.snapshot('scenes', 'output', {
+      scene_count: scenes.length,
+      duration: duration,
+      source: job.meta?.scene_count ? 'job.meta' : 'fallback',
+      avg_scene_duration: (duration / scenes.length).toFixed(1) + 's',
+      sample_scenes: scenes.slice(0, 3).map(s => ({ index: s.index, text: s.text.substring(0, 100), keywords: s.keywords })),
+    }, `Generated ${scenes.length} scenes for ${duration}s video`);
 
     // === PIPELINE HASH: Compute once for entire job config ===
     // This makes debugging "why did this re-render?" trivial
@@ -1093,7 +1104,8 @@ export async function executeImagesStep(
   job: Job,
   workerId: string,
   env: Record<string, string>,
-  logger: StepLogger
+  logger: StepLogger,
+  functionStartTime?: number
 ): Promise<StepResult> {
   // Load scene data
   const sceneAsset = await getAssetByKey(supabase, job.id, `${job.id}:scenes_subtitles`);
@@ -1132,14 +1144,45 @@ export async function executeImagesStep(
   console.log(`[IMAGES] Generating ${scenes.length} images (model: ${imageModel}, style: ${artStyle}, config: ${imagePromptConfig ? 'DB' : 'legacy'})`);
 
   // v2.0: Extract visual cues from scenes (GPT analyzes what images should depict)
+  // Cache visual cues as a job asset so continuation invocations don't re-extract
   let visualCues: VisualCue[] = [];
+  const visualCuesCacheKey = `${job.id}:visual_cues`;
+  
   try {
-    visualCues = await extractVisualCues(scenes, openaiKey, vibePreset);
-    if (visualCues.length > 0) {
-      console.log(`[IMAGES] Visual cues extracted: ${visualCues.length} cues for ${scenes.length} scenes`);
+    // Check cache first (saves ~25-30s on continuation invocations)
+    const cachedCues = await getAssetByKey(supabase, job.id, visualCuesCacheKey);
+    if (cachedCues?.meta?.cues && Array.isArray(cachedCues.meta.cues)) {
+      visualCues = cachedCues.meta.cues as VisualCue[];
+      console.log(`[IMAGES] Visual cues loaded from cache: ${visualCues.length} cues`);
+    } else {
+      // Extract fresh visual cues
+      visualCues = await extractVisualCues(scenes, openaiKey, vibePreset);
+      if (visualCues.length > 0) {
+        console.log(`[IMAGES] Visual cues extracted: ${visualCues.length} cues for ${scenes.length} scenes`);
+        // Cache for continuation invocations
+        await upsertAsset(supabase, job.id, visualCuesCacheKey, 'visual_cues', '', '', {
+          cues: visualCues,
+          scene_count: scenes.length,
+          vibe_preset: vibePreset,
+        });
+      }
     }
   } catch (vcErr) {
     console.warn(`[IMAGES] Visual cue extraction failed (will use raw text): ${vcErr instanceof Error ? vcErr.message : vcErr}`);
+  }
+
+  // Log visual cues summary
+  if (visualCues.length > 0) {
+    await logger.snapshot('images', 'visual_cues', {
+      total_cues: visualCues.length,
+      total_scenes: scenes.length,
+      sample_cues: visualCues.slice(0, 5).map(vc => ({ 
+        scene: vc.sceneIndex, 
+        type: vc.sceneType, 
+        camera: vc.camera,
+        description: (vc.description || '').substring(0, 100) 
+      }))
+    }, `Visual cues extracted: ${visualCues.length} for ${scenes.length} scenes`);
   }
 
   let generatedCount = 0;
@@ -1158,6 +1201,49 @@ export async function executeImagesStep(
         skippedCount++;
         scenesCompleted.push(i);
         continue;
+      }
+
+      // =========================================
+      // TIME BUDGET CHECK: Ensure enough wall-clock time for one more image
+      // Supabase Edge Functions have a hard 400s limit (paid).
+      // If we're running low, pause and let the orchestrator re-invoke.
+      // =========================================
+      if (functionStartTime) {
+        const elapsedMs = Date.now() - functionStartTime;
+        const timeRemainingMs = WALL_CLOCK_BUDGET_MS - elapsedMs;
+        
+        if (timeRemainingMs < IMAGE_RESERVE_MS) {
+          console.log(`[IMAGES] ⏰ Time budget exhausted: ${Math.round(elapsedMs / 1000)}s elapsed, ${Math.round(timeRemainingMs / 1000)}s remaining (need ${IMAGE_RESERVE_MS / 1000}s). Pausing at scene ${i + 1}/${scenes.length}.`);
+          
+          // Update step status with progress before pausing
+          await updateStepStatus(supabase, job.id, 'images', 'running', {
+            scenes_done: scenesCompleted,
+            current_scene: i,
+            total_scenes: scenes.length,
+            progress_pct: Math.round((scenesCompleted.length / scenes.length) * 100),
+            image_model: imageModel,
+            paused_for_continuation: true,
+          });
+          
+          await logger.progress('images', scenesCompleted.length, scenes.length,
+            `⏰ Time budget pause: ${scenesCompleted.length}/${scenes.length} scenes done (${Math.round(elapsedMs / 1000)}s elapsed)`,
+            { paused: true, elapsed_ms: elapsedMs }
+          );
+          
+          // Return partial success — the pipeline will re-invoke
+          return {
+            success: true,
+            continuation_needed: true,
+            data: {
+              generated: generatedCount,
+              skipped: skippedCount,
+              completed: scenesCompleted.length,
+              total: scenes.length,
+              elapsed_ms: elapsedMs,
+              reason: 'wall_clock_budget',
+            }
+          };
+        }
       }
 
       // Heartbeat before each image (they can be slow)
@@ -1212,14 +1298,17 @@ export async function executeImagesStep(
 
       console.log(`[IMAGES] Generating scene ${i + 1}/${scenes.length} with ${imageModel} (hash: ${promptHash.slice(0, 8)}...)`);
 
-      // Log prompt snapshot (first scene only to limit storage)
-      if (i === 0) {
+      // Log prompt snapshot (first, every 5th, and last — balance storage vs visibility)
+      if (i === 0 || i === scenes.length - 1 || i % 5 === 0) {
+        const cue = visualCues.find(vc => vc.sceneIndex === i);
         await logger.snapshot('images', 'prompt', { 
           scene_index: i, 
           prompt: scenePrompt.slice(0, 800), 
           model: imageModel, 
-          size: imageSize 
-        }, 'First scene prompt (sample)');
+          size: imageSize,
+          visual_cue: cue ? { type: cue.sceneType, camera: cue.camera, description: (cue.description || '').slice(0, 200) } : null,
+          source: cue ? 'visual_cue' : 'raw_text'
+        }, `Scene ${i + 1}/${scenes.length} prompt`);
       }
 
       // === LEASE GRACE CHECK: Verify enough time before expensive API call ===

@@ -3,6 +3,7 @@
 // Processes jobs through: Story → Uniqueness → Scenes → Voice → 
 //                         Music → Images → Subtitles → Assemble → Upload → Schedule
 // 
+// v3.0 - 2026-02-13 (Time-budget continuation: auto-pause + self-re-invoke at 340s wall clock)
 // v2.9 - 2026-02-12 (DB-driven image prompt config per vibe preset)\n// v2.8 - 2026-02-10 (503 retry: wait + retry when renderer busy during campaigns)
 // v2.7 - 2026-02-10 (Background Music V1: DB-driven tracks, ducking, fades)
 // v2.5 - 2026-02-10 (Step-level DLQ + retry eligibility tracking)
@@ -41,6 +42,8 @@ import {
   DEFAULT_LEASE_SECONDS,
   STEP_PROGRESS,
   logStepTelemetry,
+  WALL_CLOCK_BUDGET_MS,
+  IMAGE_RESERVE_MS,
 } from "./helpers.ts";
 
 import {
@@ -96,6 +99,14 @@ const STEP_JOB_STATUS: Record<StepName, string> = {
 };
 
 // =====================================================
+// SHUTDOWN HANDLER
+// Log if Supabase kills the function (wall-clock or memory limit)
+// =====================================================
+addEventListener('beforeunload', (ev: any) => {
+  console.warn(`[WORKER-V1] ⚠️ Function shutting down: ${ev?.detail?.reason || 'unknown reason'}`);
+});
+
+// =====================================================
 // MAIN HANDLER
 // =====================================================
 
@@ -108,6 +119,7 @@ serve(async (req) => {
   }
 
   const workerId = `worker-v1-${crypto.randomUUID()}`;
+  const functionStartTime = Date.now(); // Track wall-clock for time-budget
   let claimedJobId: string | null = null;
   let supabase: SupabaseClient | null = null;
 
@@ -260,7 +272,7 @@ serve(async (req) => {
       logStepTelemetry({ job_id: jobId, step: stepName, status: 'running', worker_id: workerId });
       const startTime = Date.now();
       
-      const stepResult = await executeStep(supabase, job, stepName, workerId, env, logger);
+      const stepResult = await executeStep(supabase, job, stepName, workerId, env, logger, functionStartTime);
       
       const elapsedMs = Date.now() - startTime;
       
@@ -298,6 +310,64 @@ serve(async (req) => {
           failure_class: classifiedFailure.class
         });
         break;
+      }
+      
+      // =========================================
+      // CONTINUATION: Time budget exhausted
+      // Release job as 'queued' so it can be re-claimed, then self-invoke
+      // =========================================
+      if (stepResult.continuation_needed) {
+        console.log(`[WORKER-V1] ⏰ Step ${stepName} needs continuation (time budget). ${stepResult.data?.completed || '?'}/${stepResult.data?.total || '?'} done.`);
+        
+        // Mark step as running (not complete) so it resumes on next invocation
+        await updateStepStatus(supabase, jobId, stepName, 'running', {
+          continuation_needed: true,
+          ...(stepResult.data || {}),
+          elapsed_ms: elapsedMs
+        });
+        
+        // Log continuation event
+        await logger.snapshot(stepName, 'continuation_pause', {
+          reason: 'wall_clock_budget',
+          elapsed_ms: elapsedMs,
+          function_elapsed_ms: Date.now() - functionStartTime,
+          ...(stepResult.data || {})
+        }, `Pausing for continuation: ${stepResult.data?.completed || '?'}/${stepResult.data?.total || '?'} scenes`);
+        
+        // Release job as 'queued' so next invocation can claim it
+        await releaseJob(supabase, jobId, workerId, 'queued', undefined);
+        
+        // Self-invoke: fire-and-forget re-invocation for continuation
+        try {
+          const selfUrl = `${env.SUPABASE_URL}/functions/v1/worker-v1`;
+          console.log(`[WORKER-V1] 🔄 Self-invoking for continuation: ${selfUrl}`);
+          
+          // Don't await — fire and forget
+          fetch(selfUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+            },
+            body: JSON.stringify({ job_id: jobId }),
+          }).catch(err => {
+            console.warn(`[WORKER-V1] Self-invoke fetch error (non-fatal): ${err}`);
+          });
+        } catch (invokeErr) {
+          console.warn(`[WORKER-V1] Self-invoke error (non-fatal, scheduler will retry): ${invokeErr}`);
+        }
+        
+        return new Response(
+          JSON.stringify({
+            success: true,
+            continuation: true,
+            job_id: jobId,
+            paused_step: stepName,
+            step_results: stepResults,
+            message: `Time budget reached at ${stepName}. Re-invoked for continuation.`
+          }),
+          { status: 202, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+        );
       }
       
       // Log step completed
@@ -507,7 +577,8 @@ async function executeStep(
   stepName: StepName,
   workerId: string,
   env: Record<string, string>,
-  logger: StepLogger
+  logger: StepLogger,
+  functionStartTime: number
 ): Promise<StepResult> {
   switch (stepName) {
     case 'story':
@@ -521,7 +592,7 @@ async function executeStep(
     case 'music':
       return executeMusicStep(supabase, job, workerId, env, logger);
     case 'images':
-      return executeImagesStep(supabase, job, workerId, env, logger);
+      return executeImagesStep(supabase, job, workerId, env, logger, functionStartTime);
     case 'subtitles':
       return executeSubtitlesStep(supabase, job, workerId, env, logger);
     case 'assemble':

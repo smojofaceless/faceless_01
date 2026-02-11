@@ -30,10 +30,17 @@ export interface Job {
 export interface StepResult {
   success: boolean;
   skipped?: boolean;
+  continuation_needed?: boolean;  // Time budget exhausted, re-invoke to continue
   error?: string;
   statusCode?: number;  // HTTP status code if applicable (for error classification)
   data?: Record<string, unknown>;
 }
+
+// Wall-clock budget for the entire Edge Function invocation (Supabase limit = 400s on paid)
+// Leave 60s buffer for cleanup, self-re-invocation, and overhead
+export const WALL_CLOCK_BUDGET_MS = 340_000; // 340 seconds
+// Minimum time needed to generate + upload one image (be conservative)
+export const IMAGE_RESERVE_MS = 30_000; // 30 seconds
 
 export interface AssetRecord {
   id: string;
