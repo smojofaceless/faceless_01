@@ -2150,17 +2150,49 @@
 
             // Build the prompt using current form settings
             const cfg = buildImagePromptConfigFromForm();
-            const sceneText = document.getElementById('ip-test-scene').value.trim() 
+            const sceneTextarea = document.getElementById('ip-test-scene');
+            const sceneText = sceneTextarea.value.trim() 
                 || 'A group of friends sit around a campfire near their parked van, laughing and talking under a starry night sky';
 
-            const tensionLevel = cfg.tension_escalation ? 3 : 5;
-            const camera = (cfg.camera_angles || [])[0] || '';
+            // Get visual cue metadata if available
+            const cueType = sceneTextarea.dataset.cueType || 'character';
+            const cueCamera = sceneTextarea.dataset.cueCamera || '';
+
+            // Determine camera angle — use cue camera if available, else config default
+            const cameraMap = {
+                'wide': 'wide establishing shot showing the full scene',
+                'medium': 'medium shot at eye level',
+                'close-up': 'close-up shot focusing on the main subject',
+                'extreme-close-up': 'extreme close-up on fine details, textures, and surfaces',
+                'overhead': 'overhead bird\'s-eye view looking down',
+                'low-angle': 'low angle looking up, dramatic perspective',
+            };
+            const camera = cueCamera && cameraMap[cueCamera] 
+                ? cameraMap[cueCamera] 
+                : (cfg.camera_angles || [])[0] || '';
+
+            // Determine mood based on scene type
+            const moodMap = {
+                'establishing': 'atmospheric establishing shot, cinematic and expansive',
+                'object': 'eerie stillness, focus on the uncanny detail of this object',
+                'atmosphere': 'thick dread, something is deeply wrong with this place',
+                'character': cfg.mood || 'uneasy tension',
+                'group': cfg.mood || 'uneasy group gathering, everyone looks normal but something feels wrong',
+            };
+            const mood = moodMap[cueType] || cfg.mood || 'uneasy tension';
+
+            // Determine environment based on scene type
+            const envNote = cueType === 'establishing' || cueType === 'atmosphere' || cueType === 'object'
+                ? 'Match the environment described in the scene — do NOT default to generic group settings'
+                : cfg.environment;
+
+            const tensionLevel = Math.min(10, cfg.tension_escalation ? 3 : 5);
             const parts = [
                 sceneText,
                 '',
                 `Style: ${cfg.style_prompt}`,
-                `Environment: ${cfg.environment}`,
-                `Mood: ${cfg.mood}, tension level ${tensionLevel}/10`,
+                `Environment: ${envNote}`,
+                `Mood: ${mood}, tension level ${tensionLevel}/10`,
                 camera ? `Camera: ${camera}` : '',
                 `Lighting: ${cfg.lighting}`,
                 `Color: ${cfg.color_palette}`,
@@ -2170,11 +2202,29 @@
             ].filter(Boolean);
             const fullPrompt = parts.join('\n');
 
+            // Build debug display showing what came from where
+            const debugParts = [
+                `📤 PROMPT SENT TO gpt-image-1:`,
+                `────────────────────────────`,
+                `🎬 VISUAL CUE (scene type: ${cueType}, camera: ${cueCamera || 'config default'}):`,
+                sceneText,
+                ``,
+                `🎨 FROM IMAGE CONFIG:`,
+                `  Style: ${cfg.style_prompt?.substring(0, 80)}...`,
+                `  Environment: ${envNote?.substring(0, 80)}...`,
+                `  Mood: ${mood}`,
+                `  Camera: ${camera}`,
+                `  Lighting: ${cfg.lighting?.substring(0, 80)}...`,
+                `  Color: ${cfg.color_palette?.substring(0, 80)}...`,
+                ``,
+                `🚫 NEGATIVE: ${cfg.negative_prompt?.substring(0, 100)}...`,
+            ];
+
             // Show what we're sending
             container.style.display = 'block';
             imgEl.src = '';
             imgEl.style.display = 'none';
-            promptUsedEl.textContent = '📤 Prompt sent:\n' + fullPrompt;
+            promptUsedEl.textContent = debugParts.join('\n');
 
             btn.disabled = true;
             statusEl.textContent = '⏳ Generating image...';
@@ -2378,6 +2428,7 @@
 
         let lastGeneratedStory = null;
         let lastGeneratedScenes = [];
+        let lastGeneratedVisualCues = [];
         let lastUsedDNA = null;
 
         // Build the DNA dropdown grid
@@ -2632,7 +2683,9 @@ Respond in JSON:
             document.getElementById('ip-dna-roll-btn').addEventListener('click', rollAllDNA);
             document.getElementById('ip-uniqueness-refresh').addEventListener('click', loadUniquenessStats);
             document.getElementById('ip-use-scene-btn').addEventListener('click', () => {
-                if (lastGeneratedScenes.length > 0) {
+                if (lastGeneratedVisualCues.length > 0) {
+                    useVisualCueForImage(0);
+                } else if (lastGeneratedScenes.length > 0) {
                     document.getElementById('ip-test-scene').value = lastGeneratedScenes[0];
                     generateTestImage();
                 }
@@ -2712,28 +2765,31 @@ Respond in JSON:
 
                 // Split into scenes (by paragraph breaks or ~every 3 sentences)
                 lastGeneratedScenes = splitIntoScenes(storyText);
+                lastGeneratedVisualCues = [];
+                
                 if (lastGeneratedScenes.length > 0) {
-                    const scenesEl = document.getElementById('ip-story-scenes');
-                    const listEl = document.getElementById('ip-scenes-list');
-                    scenesEl.style.display = 'block';
-                    listEl.innerHTML = lastGeneratedScenes.map((s, i) => 
-                        `<div style="display:flex;align-items:flex-start;gap:6px;padding:4px 6px;margin-bottom:4px;background:rgba(0,0,0,0.1);border-radius:4px">
-                            <button class="btn btn--secondary btn--sm" style="flex-shrink:0;font-size:10px;padding:2px 6px" onclick="document.getElementById('ip-test-scene').value=this.parentElement.dataset.scene;generateTestImage()" title="Generate image from this scene">🖼️</button>
-                            <span style="cursor:pointer;flex:1" onclick="document.getElementById('ip-test-scene').value=this.parentElement.dataset.scene" title="Click to copy scene text"><strong>Scene ${i+1}:</strong> ${s.substring(0, 120)}${s.length > 120 ? '...' : ''}</span>
-                        </div>`
-                    ).join('');
-                    // Attach scene data on parent divs
-                    listEl.querySelectorAll('div[style*="display:flex"]').forEach((el, i) => {
-                        el.dataset.scene = lastGeneratedScenes[i];
-                    });
+                    // Show scenes immediately with placeholder cues
+                    renderSceneList(lastGeneratedScenes, []);
+                    
+                    // Extract visual cues using GPT (background step)
+                    statusEl.textContent = `⏳ Extracting visual cues from ${lastGeneratedScenes.length} scenes...`;
+                    const cues = await extractVisualCues(lastGeneratedScenes, openaiKey);
+                    lastGeneratedVisualCues = cues;
+                    
+                    // Re-render with visual cues
+                    renderSceneList(lastGeneratedScenes, cues);
+                    
+                    // Auto-fill Scene 1's visual cue into the image test field
+                    if (cues[0]) {
+                        document.getElementById('ip-test-scene').value = cues[0].description;
+                        document.getElementById('ip-test-scene').dataset.cueType = cues[0].type || 'character';
+                        document.getElementById('ip-test-scene').dataset.cueCamera = cues[0].camera || 'medium';
+                    } else {
+                        document.getElementById('ip-test-scene').value = lastGeneratedScenes[0];
+                    }
                 }
 
-                // Auto-fill Scene 1 into the image test field
-                if (lastGeneratedScenes.length > 0) {
-                    document.getElementById('ip-test-scene').value = lastGeneratedScenes[0];
-                }
-
-                statusEl.textContent = `\u2705 Generated "${title}" (${wordCount} words) — click a 🖼️ button to generate an image`;
+                statusEl.textContent = `✅ Generated "${title}" (${wordCount} words, ${lastGeneratedVisualCues.length} visual cues) — click 🖼️ to generate`;
                 statusEl.style.color = '#10B981';
 
             } catch (e) {
@@ -2758,6 +2814,125 @@ Respond in JSON:
                 scenes.push(sentences.slice(i, i + perScene).join(' ').trim());
             }
             return scenes.slice(0, 8);
+        }
+
+        // =========================================================
+        // VISUAL CUE EXTRACTION — Scene → Image Description
+        // =========================================================
+        async function extractVisualCues(scenes, openaiKey) {
+            const sceneList = scenes.map((s, i) => `Scene ${i+1}: ${s}`).join('\n\n');
+            
+            const prompt = `You are a visual director for a horror comic book. For each scene of a story, describe what a SINGLE ILLUSTRATION should depict.
+
+RULES:
+- Each scene gets ONE image description
+- Focus on the KEY VISUAL ELEMENT of the scene — what would a camera capture?
+- NOT every scene needs people. Some scenes should be:
+  • Establishing shots (landscape, roads, buildings, signs)
+  • Object close-ups (documents, registers, phones, evidence)  
+  • Atmosphere shots (fog, empty corridors, dark forests)
+  • Character moments (group gathered, single person reacting)
+- Describe WHAT IS VISIBLE in the image, not emotions or sounds
+- Include: subjects, setting, time of day, key objects, camera angle
+- Be specific: "A worn leather trail register book lying open on a wooden post, showing 7 handwritten names, surrounded by dark pine trees" NOT "a trail register"
+- Keep each description to 1-3 sentences max
+- Think about what would make the most VISUALLY INTERESTING and STORY-RELEVANT illustration
+
+SCENES:
+${sceneList}
+
+Respond in JSON:
+{
+  "visual_cues": [
+    { "scene": 1, "type": "establishing|object|atmosphere|character|group", "description": "What the image shows...", "camera": "wide|medium|close-up|extreme-close-up|overhead|low-angle" },
+    ...
+  ]
+}`;
+
+            try {
+                const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${openaiKey}`
+                    },
+                    body: JSON.stringify({
+                        model: 'gpt-4o-mini',
+                        messages: [
+                            { role: 'system', content: 'You are a visual director who translates story scenes into precise image descriptions for an AI image generator. You think cinematically — not every scene is a person shot.' },
+                            { role: 'user', content: prompt }
+                        ],
+                        response_format: { type: 'json_object' },
+                        temperature: 0.5,
+                        max_tokens: 1500,
+                    })
+                });
+
+                if (!response.ok) throw new Error('Visual cue extraction failed');
+                
+                const data = await response.json();
+                const content = JSON.parse(data.choices[0].message.content);
+                return content.visual_cues || [];
+            } catch (e) {
+                console.warn('[VisualCues] Extraction failed, falling back to raw scenes:', e.message);
+                // Fallback: use raw scene text
+                return scenes.map((s, i) => ({ scene: i+1, type: 'character', description: s.substring(0, 250), camera: 'medium' }));
+            }
+        }
+
+        function renderSceneList(scenes, visualCues) {
+            const scenesEl = document.getElementById('ip-story-scenes');
+            const listEl = document.getElementById('ip-scenes-list');
+            if (!scenesEl || !listEl) return;
+            
+            scenesEl.style.display = 'block';
+            
+            const typeColors = {
+                establishing: '#3B82F6', object: '#F59E0B', atmosphere: '#8B5CF6',
+                character: '#10B981', group: '#EF4444'
+            };
+            const typeIcons = {
+                establishing: '🏞️', object: '🔍', atmosphere: '🌫️',
+                character: '👤', group: '👥'
+            };
+            
+            listEl.innerHTML = scenes.map((s, i) => {
+                const cue = visualCues[i] || { type: 'character', description: s.substring(0, 250), camera: 'medium' };
+                const color = typeColors[cue.type] || '#6B7280';
+                const icon = typeIcons[cue.type] || '📷';
+                
+                return `<div style="padding:6px 8px;margin-bottom:6px;background:rgba(0,0,0,0.1);border-radius:6px;border-left:3px solid ${color}">
+                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+                        <button class="btn btn--secondary btn--sm" style="flex-shrink:0;font-size:10px;padding:2px 6px" onclick="useVisualCueForImage(${i})" title="Generate image from visual cue">🖼️</button>
+                        <strong style="font-size:12px;color:var(--text-primary)">Scene ${i+1}</strong>
+                        <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:${color};color:#fff;font-weight:700;text-transform:uppercase">${icon} ${cue.type}</span>
+                        <span style="font-size:9px;color:var(--text-secondary)">📷 ${cue.camera || 'medium'}</span>
+                    </div>
+                    <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;cursor:pointer" onclick="document.getElementById('ip-test-scene').value=this.parentElement.dataset.rawScene" title="Click to copy raw scene text">
+                        📖 ${s.substring(0, 100)}${s.length > 100 ? '...' : ''}
+                    </div>
+                    <div style="font-size:11px;color:${color};font-weight:500;padding:3px 6px;background:rgba(0,0,0,0.08);border-radius:4px">
+                        🎬 <strong>Visual:</strong> ${cue.description}
+                    </div>
+                </div>`;
+            }).join('');
+            
+            // Attach data
+            listEl.querySelectorAll('div[style*="border-left"]').forEach((el, i) => {
+                el.dataset.rawScene = scenes[i];
+                el.dataset.visualCue = JSON.stringify(visualCues[i] || {});
+            });
+        }
+        
+        function useVisualCueForImage(sceneIdx) {
+            const cue = lastGeneratedVisualCues[sceneIdx];
+            if (!cue) return;
+            // Set the textarea to the visual cue description (not the raw narrative)
+            document.getElementById('ip-test-scene').value = cue.description;
+            // Store metadata for the image generator to use
+            document.getElementById('ip-test-scene').dataset.cueType = cue.type || 'character';
+            document.getElementById('ip-test-scene').dataset.cueCamera = cue.camera || 'medium';
+            generateTestImage();
         }
 
         // =========================================================
