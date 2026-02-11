@@ -1,6 +1,7 @@
 // =====================================================
 // WORKER V1 STEP IMPLEMENTATIONS
 // Real work for each pipeline step
+// v2.0 - 2026-02-15 (Visual cue extraction for images, balanced scene count defaults, scene splitting fix)
 // v1.5 - 2026-02-12 (DB-driven image prompt config per vibe preset)
 // v1.4 - 2026-02-10 (Background Music V1: DB-driven track selection, ducking config)
 // v1.3 - 2026-02-10 (Cost controls integration)
@@ -360,8 +361,11 @@ export async function executeScenesStep(
     console.log(`[SCENES] Duration defaulted to: ${duration}s`);
   }
   
-  const sceneCount = (job.meta?.scene_count as number) || Math.ceil(duration / 10);
-  console.log(`[SCENES] Calculated sceneCount=${sceneCount} for duration=${duration}s`);
+  // scene_count from UI (create page calculates via PACE_PRESETS + platform clamps)
+  // Fallback: balanced pace ~2.5s per scene, clamped [12, 30] for social media
+  const fallbackSceneCount = Math.max(12, Math.min(30, Math.round(duration / 2.5)));
+  const sceneCount = (job.meta?.scene_count as number) || fallbackSceneCount;
+  console.log(`[SCENES] sceneCount=${sceneCount} for duration=${duration}s (source: ${job.meta?.scene_count ? 'job.meta' : 'fallback'})`);
 
   console.log(`[SCENES] Generating ${sceneCount} scenes for ${duration}s video`);
 
@@ -371,8 +375,29 @@ export async function executeScenesStep(
       .split(/(?<=[.!?])\s+/)
       .filter(s => s.trim().length > 0);
 
-    // Distribute sentences across scenes
-    const scenesPerSentence = Math.max(1, Math.floor(sentences.length / sceneCount));
+    // When we need more scenes than sentences, split long sentences at clause boundaries
+    let textChunks = [...sentences];
+    if (textChunks.length < sceneCount) {
+      // Split at clause boundaries (commas, semicolons, dashes, "and", "but", "when", "as")
+      const clauseSplitters = /(?<=,)\s+|(?<=;)\s+|(?<=—)\s*|\s+(?:and|but|when|as|while|then)\s+/i;
+      let expanded: string[] = [];
+      for (const sentence of textChunks) {
+        if (expanded.length >= sceneCount) {
+          expanded.push(sentence);
+          continue;
+        }
+        const clauses = sentence.split(clauseSplitters).filter(c => c.trim().length > 3);
+        if (clauses.length > 1) {
+          expanded.push(...clauses);
+        } else {
+          expanded.push(sentence);
+        }
+      }
+      textChunks = expanded;
+    }
+
+    // Distribute text chunks across scenes evenly
+    const chunksPerScene = textChunks.length / sceneCount;
     const scenes: Array<{
       index: number;
       text: string;
@@ -384,9 +409,11 @@ export async function executeScenesStep(
     const sceneDuration = duration / sceneCount;
 
     for (let i = 0; i < sceneCount; i++) {
-      const startIdx = i * scenesPerSentence;
-      const endIdx = i === sceneCount - 1 ? sentences.length : (i + 1) * scenesPerSentence;
-      const sceneText = sentences.slice(startIdx, endIdx).join(' ');
+      const startIdx = Math.floor(i * chunksPerScene);
+      const endIdx = i === sceneCount - 1 ? textChunks.length : Math.floor((i + 1) * chunksPerScene);
+      // Ensure at least one chunk per scene
+      const actualEnd = Math.max(endIdx, startIdx + 1);
+      const sceneText = textChunks.slice(startIdx, actualEnd).join(' ').trim();
 
       // Extract basic keywords (nouns/adjectives)
       const words = sceneText.toLowerCase().split(/\s+/);
@@ -396,7 +423,7 @@ export async function executeScenesStep(
 
       scenes.push({
         index: i,
-        text: sceneText || sentences[0] || 'Scene',
+        text: sceneText || textChunks[Math.min(i, textChunks.length - 1)] || 'Scene',
         startTime: i * sceneDuration,
         endTime: (i + 1) * sceneDuration,
         keywords: keywords,
@@ -1104,6 +1131,17 @@ export async function executeImagesStep(
 
   console.log(`[IMAGES] Generating ${scenes.length} images (model: ${imageModel}, style: ${artStyle}, config: ${imagePromptConfig ? 'DB' : 'legacy'})`);
 
+  // v2.0: Extract visual cues from scenes (GPT analyzes what images should depict)
+  let visualCues: VisualCue[] = [];
+  try {
+    visualCues = await extractVisualCues(scenes, openaiKey, vibePreset);
+    if (visualCues.length > 0) {
+      console.log(`[IMAGES] Visual cues extracted: ${visualCues.length} cues for ${scenes.length} scenes`);
+    }
+  } catch (vcErr) {
+    console.warn(`[IMAGES] Visual cue extraction failed (will use raw text): ${vcErr instanceof Error ? vcErr.message : vcErr}`);
+  }
+
   let generatedCount = 0;
   let skippedCount = 0;
   const scenesCompleted: number[] = [];
@@ -1125,8 +1163,9 @@ export async function executeImagesStep(
       // Heartbeat before each image (they can be slow)
       await requireLeaseOwner(supabase, job.id, workerId, `images:scene_${i}`);
 
-      // Build prompt — uses DB config when available, legacy otherwise
-      const scenePrompt = buildImagePrompt(scene.text, scene.keywords, artStyle, i, scenes.length, imagePromptConfig);
+      // Build prompt — uses visual cues + DB config when available, legacy otherwise
+      const visualCue = visualCues.find(vc => vc.sceneIndex === i);
+      const scenePrompt = buildImagePrompt(scene.text, scene.keywords, artStyle, i, scenes.length, imagePromptConfig, visualCue);
       
       // === EXTERNAL IDEMPOTENCY: Hash includes model+size+prompt to avoid cross-config collisions ===
       // Note: imageModel is defined at function scope from job.meta or env
@@ -1375,6 +1414,83 @@ export async function executeImagesStep(
   }
 }
 
+// =====================================================
+// VISUAL CUE EXTRACTION (GPT analyzes scenes for images)
+// =====================================================
+
+interface VisualCue {
+  sceneIndex: number;
+  description: string;   // What the IMAGE should depict
+  sceneType: string;      // establishing | object | atmosphere | character | group
+  camera: string;         // wide, medium, close-up, overhead, etc.
+}
+
+/**
+ * Extract visual cues from scene text using GPT-4o-mini.
+ * Analyzes what each scene's IMAGE should depict (not narration text).
+ * Returns per-scene descriptions, scene types, and camera suggestions.
+ */
+async function extractVisualCues(
+  scenes: Array<{ index: number; text: string; keywords: string[] }>,
+  openaiKey: string,
+  vibePreset: string,
+): Promise<VisualCue[]> {
+  const sceneList = scenes.map((s, i) => 
+    `Scene ${i + 1}: "${s.text.substring(0, 200)}"`
+  ).join('\n');
+
+  const prompt = `You are a visual director for a short horror/mystery video. Analyze each scene's narration and describe what the STILL IMAGE should depict — not the narration text itself, but what a viewer should SEE.
+
+Genre/vibe: ${vibePreset}
+
+For each scene, provide:
+- description: A concise 1-2 sentence visual description of what the image should show (specific subjects, actions, environment details)
+- sceneType: One of: establishing (wide location shots), object (focus on a specific item/detail), atmosphere (mood/environment), character (person focus), group (multiple people)
+- camera: One of: wide, medium, close-up, extreme-close-up, overhead, low-angle, pov
+
+${sceneList}
+
+Respond with a JSON object: { "cues": [ { "sceneIndex": 0, "description": "...", "sceneType": "...", "camera": "..." }, ... ] }`;
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openaiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: 'You are a visual director. Respond only with valid JSON.' },
+          { role: 'user', content: prompt }
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.7,
+        max_tokens: 4000,
+      }),
+    });
+
+    if (!response.ok) {
+      console.warn(`[VISUAL_CUES] GPT call failed: ${response.status}`);
+      return [];
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) return [];
+
+    const parsed = JSON.parse(content);
+    const cues = parsed.cues || parsed.scenes || [];
+    
+    console.log(`[VISUAL_CUES] Extracted ${cues.length} visual cues for ${scenes.length} scenes`);
+    return cues;
+  } catch (err) {
+    console.warn(`[VISUAL_CUES] Extraction failed: ${err instanceof Error ? err.message : err}`);
+    return []; // Graceful fallback — images will use raw text
+  }
+}
+
 /**
  * Build a DALL-E prompt for a scene
  */
@@ -1390,7 +1506,8 @@ function buildImagePrompt(
   artStyle: string,
   sceneIndex: number,
   totalScenes: number,
-  config: ImagePromptConfig | null
+  config: ImagePromptConfig | null,
+  visualCue?: VisualCue
 ): string {
   // === DB-driven prompt (new path) ===
   if (config) {
@@ -1398,20 +1515,37 @@ function buildImagePrompt(
       ? Math.min(10, Math.floor((sceneIndex / totalScenes) * 10) + 3)
       : 5;
 
-    // Pick camera angle by scene index (cycles if more scenes than angles)
+    // Camera: prefer visual cue camera, then config progression, then fallback
     const angles = config.camera_angles || [];
-    const cameraAngle = angles.length > 0
+    const configCamera = angles.length > 0
       ? angles[Math.min(sceneIndex, angles.length - 1)]
       : '';
+    const cameraAngle = visualCue?.camera || configCamera;
+
+    // Scene description: prefer visual cue (image-specific), fall back to raw text
+    const sceneDescription = visualCue?.description || sceneText.substring(0, 250);
+
+    // Scene-type-aware mood/environment adjustments
+    const sceneType = visualCue?.sceneType || 'atmosphere';
+    let mood = config.mood;
+    let environment = config.environment;
+    if (sceneType === 'establishing') {
+      // Wide establishing shots — emphasize environment over character mood
+      environment = `${config.environment}, expansive vista`;
+      mood = `atmospheric, ${config.mood}`;
+    } else if (sceneType === 'object') {
+      // Object focus — tight framing, detail emphasis
+      mood = `focused detail, ${config.mood}`;
+    }
 
     const keywordStr = keywords.slice(0, 3).join(', ');
 
     const parts = [
-      sceneText.substring(0, 250),
+      sceneDescription,
       '',
       `Style: ${config.style_prompt}`,
-      `Environment: ${config.environment}`,
-      `Mood: ${config.mood}, tension level ${tensionLevel}/10`,
+      `Environment: ${environment}`,
+      `Mood: ${mood}, tension level ${tensionLevel}/10`,
       cameraAngle ? `Camera: ${cameraAngle}` : '',
       `Lighting: ${config.lighting}`,
       `Color: ${config.color_palette}`,
@@ -1432,6 +1566,10 @@ function buildImagePrompt(
   };
   const styleBase = styleTemplates[artStyle] || styleTemplates['cinematic-dark'];
 
+  // Use visual cue description if available, else raw text
+  const sceneDescription = visualCue?.description || sceneText.substring(0, 200);
+  const cameraHint = visualCue?.camera ? ` Camera: ${visualCue.camera}.` : '';
+
   const envHints: Record<string, string> = {
     'forest': 'dark misty forest, twisted trees',
     'hallway': 'abandoned corridor, peeling walls',
@@ -1442,7 +1580,7 @@ function buildImagePrompt(
   const envHint = envHints[visualPreset] || envHints['forest'];
 
   const keywordStr = keywords.slice(0, 3).join(', ');
-  return `${styleBase} Scene: ${sceneText.substring(0, 200)}. Environment: ${envHint}. Keywords: ${keywordStr}. Portrait orientation 9:16. No text, no words, no letters.`;
+  return `${styleBase} Scene: ${sceneDescription}.${cameraHint} Environment: ${envHint}. Keywords: ${keywordStr}. Portrait orientation 9:16. No text, no words, no letters.`;
 }
 
 // =====================================================

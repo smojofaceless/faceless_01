@@ -748,11 +748,16 @@
                     <!-- Controls row -->
                     <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
                         <label style="font-size:12px;color:var(--text-secondary)">Duration:</label>
-                        <select class="form-control form-control--sm" id="ip-story-duration" style="max-width:120px">
+                        <select class="form-control form-control--sm" id="ip-story-duration" style="max-width:120px" onchange="updateSceneCountFromDuration()">
                             <option value="30">30s (Short)</option>
                             <option value="60" selected>60s (Medium)</option>
                             <option value="90">90s (Long)</option>
                         </select>
+                        <label style="font-size:12px;color:var(--text-secondary)">Scenes:</label>
+                        <input type="number" class="form-control form-control--sm" id="ip-scene-count" 
+                               style="max-width:70px" min="6" max="45" value="24"
+                               title="Scene count for image generation (24-30 typical for 60s social media)">
+                        <span style="font-size:11px;color:var(--text-secondary)" id="ip-scene-pace">2.5s/scene</span>
                         <button class="btn btn--secondary btn--sm" id="ip-dna-roll-btn" title="Randomize all DNA dimensions">🎲 Roll DNA</button>
                         <button class="btn btn--primary btn--sm" id="ip-story-generate-btn">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="margin-right:4px">
@@ -2677,10 +2682,25 @@ Respond in JSON:
             list.innerHTML = items.join('<br>');
         }
 
+        // ---- Scene count helpers ----
+        function updateSceneCountFromDuration() {
+            const dur = parseInt(document.getElementById('ip-story-duration').value) || 60;
+            const balanced = Math.round(dur / 2.5); // 2.5s per scene = balanced pace
+            document.getElementById('ip-scene-count').value = balanced;
+            updateScenePace();
+        }
+        function updateScenePace() {
+            const dur = parseInt(document.getElementById('ip-story-duration').value) || 60;
+            const sc = parseInt(document.getElementById('ip-scene-count').value) || 24;
+            const pace = (dur / sc).toFixed(1);
+            document.getElementById('ip-scene-pace').textContent = `${pace}s/scene`;
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             buildDNAGrid();
             document.getElementById('ip-story-generate-btn').addEventListener('click', generateTestStory);
             document.getElementById('ip-dna-roll-btn').addEventListener('click', rollAllDNA);
+            document.getElementById('ip-scene-count').addEventListener('input', updateScenePace);
             document.getElementById('ip-uniqueness-refresh').addEventListener('click', loadUniquenessStats);
             document.getElementById('ip-use-scene-btn').addEventListener('click', () => {
                 if (lastGeneratedVisualCues.length > 0) {
@@ -2763,8 +2783,9 @@ Respond in JSON:
                 document.getElementById('ip-story-wordcount').textContent = `${wordCount} words (~${Math.round(wordCount / 2.5)}s)`;
                 document.getElementById('ip-story-text').textContent = storyText;
 
-                // Split into scenes (by paragraph breaks or ~every 3 sentences)
-                lastGeneratedScenes = splitIntoScenes(storyText);
+                // Split into scenes using the configured scene count
+                const targetSceneCount = parseInt(document.getElementById('ip-scene-count').value) || 24;
+                lastGeneratedScenes = splitIntoScenes(storyText, targetSceneCount);
                 lastGeneratedVisualCues = [];
                 
                 if (lastGeneratedScenes.length > 0) {
@@ -2801,19 +2822,35 @@ Respond in JSON:
             }
         }
 
-        function splitIntoScenes(text, targetScenes = 5) {
-            // First try paragraph breaks
-            const paragraphs = text.split(/\n\n+/).filter(p => p.trim().length > 20);
-            if (paragraphs.length >= 3) return paragraphs.slice(0, 8);
-            
-            // Fall back to sentence grouping
+        function splitIntoScenes(text, targetScenes = 24) {
+            // Split into sentences first
             const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
-            const perScene = Math.ceil(sentences.length / targetScenes);
-            const scenes = [];
-            for (let i = 0; i < sentences.length; i += perScene) {
-                scenes.push(sentences.slice(i, i + perScene).join(' ').trim());
+            
+            // When we need more scenes than sentences, split at clause boundaries
+            let chunks = [...sentences];
+            if (chunks.length < targetScenes) {
+                const expanded = [];
+                for (const s of chunks) {
+                    if (expanded.length >= targetScenes) { expanded.push(s); continue; }
+                    const clauses = s.split(/(?<=,)\s+|(?<=;)\s+|(?<=—)\s*|\s+(?:and|but|when|as|while|then)\s+/i)
+                        .filter(c => c.trim().length > 3);
+                    if (clauses.length > 1) expanded.push(...clauses);
+                    else expanded.push(s);
+                }
+                chunks = expanded;
             }
-            return scenes.slice(0, 8);
+            
+            // Distribute chunks evenly across target scenes
+            const chunksPerScene = chunks.length / targetScenes;
+            const scenes = [];
+            for (let i = 0; i < targetScenes; i++) {
+                const startIdx = Math.floor(i * chunksPerScene);
+                const endIdx = i === targetScenes - 1 ? chunks.length : Math.floor((i + 1) * chunksPerScene);
+                const actualEnd = Math.max(endIdx, startIdx + 1);
+                const sceneText = chunks.slice(startIdx, actualEnd).join(' ').trim();
+                if (sceneText) scenes.push(sceneText);
+            }
+            return scenes.length > 0 ? scenes : [text];
         }
 
         // =========================================================
