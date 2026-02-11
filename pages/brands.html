@@ -1550,6 +1550,22 @@
         }
 
         function setupEffectsListeners() {
+            // Auto-enable master toggle when ANY sub-effect is turned on
+            const subToggles = ['fx-kb-enabled', 'fx-grain-enabled', 'fx-flicker-enabled',
+                                'fx-vignette-enabled', 'fx-cg-enabled', 'fx-fade-in', 'fx-fade-out'];
+            subToggles.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    const clone2 = el.cloneNode(true);
+                    el.parentNode.replaceChild(clone2, el);
+                    clone2.addEventListener('change', () => {
+                        if (clone2.checked) {
+                            document.getElementById('fx-enabled').checked = true;
+                        }
+                    });
+                }
+            });
+
             // Slider live-update labels
             const sliders = [
                 { id: 'fx-intensity', fmt: v => Math.round(v * 100) + '%' },
@@ -1643,6 +1659,15 @@
             if (ceilGrain < 0.5) limits.grain = { max_intensity: ceilGrain };
             if (ceilFlicker < 0.5) limits.flicker = { max_intensity: ceilFlicker };
             if (Object.keys(limits).length > 0) cfg.limits = limits;
+
+            // Safety: auto-enable master if ANY sub-effect is turned on
+            const anyActive = cfg.kenburns.enabled || cfg.grain.enabled || cfg.flicker.enabled
+                || cfg.vignette.enabled || cfg.color_grade.enabled
+                || cfg.fade.fade_in || cfg.fade.fade_out;
+            if (anyActive && !cfg.enabled) {
+                cfg.enabled = true;
+                document.getElementById('fx-enabled').checked = true;
+            }
 
             return cfg;
         }
