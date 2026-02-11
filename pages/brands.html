@@ -741,9 +741,11 @@
                 <!-- Test Story Generation -->
                 <div class="fx-section" style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);border-radius:8px;padding:12px;margin-top:8px">
                     <div class="fx-section__header">
-                        <span class="fx-toggle__label" style="font-weight:600;">📝 Test Story Generation</span>
-                        <span class="fx-hint">Generate a test story using the selected vibe preset</span>
+                        <span class="fx-toggle__label" style="font-weight:600;">📝 Test Story Generation (DNA-Driven)</span>
+                        <span class="fx-hint">Generate stories using the same 13-dimension DNA system as production</span>
                     </div>
+                    
+                    <!-- Controls row -->
                     <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
                         <label style="font-size:12px;color:var(--text-secondary)">Duration:</label>
                         <select class="form-control form-control--sm" id="ip-story-duration" style="max-width:120px">
@@ -751,6 +753,7 @@
                             <option value="60" selected>60s (Medium)</option>
                             <option value="90">90s (Long)</option>
                         </select>
+                        <button class="btn btn--secondary btn--sm" id="ip-dna-roll-btn" title="Randomize all DNA dimensions">🎲 Roll DNA</button>
                         <button class="btn btn--primary btn--sm" id="ip-story-generate-btn">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="margin-right:4px">
                                 <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/>
@@ -759,6 +762,23 @@
                         </button>
                         <span id="ip-story-status" style="font-size:12px;color:var(--text-secondary)"></span>
                     </div>
+
+                    <!-- DNA Parameters Grid (collapsible) -->
+                    <details id="ip-dna-details" style="margin-top:10px">
+                        <summary style="font-size:12px;font-weight:600;color:var(--text-primary);cursor:pointer;user-select:none">
+                            🧬 Story DNA Parameters <span style="font-weight:400;color:var(--text-secondary)">(click to expand — lock specific values or leave on Random)</span>
+                        </summary>
+                        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px;margin-top:8px" id="ip-dna-grid">
+                            <!-- Filled by JS -->
+                        </div>
+                    </details>
+
+                    <!-- DNA Used Display (shown after generation) -->
+                    <div id="ip-dna-used" style="display:none;margin-top:10px;padding:8px;background:rgba(0,0,0,0.15);border-radius:6px">
+                        <div style="font-size:11px;font-weight:600;color:var(--text-primary);margin-bottom:4px">🧬 DNA Used for This Story:</div>
+                        <div id="ip-dna-used-list" style="font-size:11px;color:var(--text-secondary);line-height:1.5"></div>
+                    </div>
+
                     <div id="ip-story-container" style="display:none;margin-top:12px">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
                             <strong id="ip-story-title" style="font-size:14px;color:var(--text-primary)"></strong>
@@ -770,7 +790,7 @@
                         <div id="ip-story-scenes" style="display:none;margin-top:10px">
                             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
                                 <span style="font-size:12px;font-weight:600;color:var(--text-primary)">Scene Breakdown</span>
-                                <button class="btn btn--secondary btn--sm" id="ip-use-scene-btn" style="font-size:11px">Use Scene 1 for Image Test</button>
+                                <button class="btn btn--primary btn--sm" id="ip-use-scene-btn" style="font-size:11px">🖼️ Generate Image from Scene 1</button>
                             </div>
                             <div id="ip-scenes-list" style="font-size:12px;color:var(--text-secondary);max-height:150px;overflow-y:auto"></div>
                         </div>
@@ -2208,27 +2228,263 @@
         }
 
         // =========================================================
-        // TEST STORY GENERATION
+        // TEST STORY GENERATION — DNA-DRIVEN (matches production)
         // =========================================================
-        const VIBE_DESCRIPTIONS = {
-            urban_legend: 'an urban legend or creepy internet story, featuring unexplained phenomena, "that one weird thing that happened", or local folklore that turns out to be true',
-            one_too_many: 'a chilling "one too many" counting horror story where a group realizes there\'s an extra person that shouldn\'t be there. The setting can be ANYTHING \u2014 a road trip, office retreat, school reunion, dinner party, elevator ride, hotel stay, subway commute, wedding, hike, ferry crossing. The group counts heads and the number is wrong. IMPORTANT: vary the setting, do NOT default to camping trips.',
-            backrooms: 'a liminal space or "backrooms" style horror about accidentally entering wrong places, glitches in reality, or spaces that shouldn\'t exist',
-            nosleep: 'a first-person creepypasta/NoSleep style horror that starts mundane but escalates into something terrifying',
-            glitch: 'a glitch in the matrix story about strange repetitions, d\u00e9j\u00e0 vu, NPCs acting weird, or reality not working right',
-            analog_horror: 'an analog horror VHS found footage story about tapes found that should not exist, emergency broadcasts that aired to no one, and government training videos hiding terrible truths',
+
+        // ---- All 13 DNA dimensions (mirrored from run-job/story_dna.ts) ----
+        const DNA_DIMENSIONS = {
+            era: { label: '⏰ Era', options: [
+                { key: '1940s_postwar', label: 'Late 1940s' }, { key: '1950s_atomic', label: 'Mid-1950s' },
+                { key: '1950s_late', label: 'Late 1950s' }, { key: '1960s_early', label: 'Early 1960s' },
+                { key: '1960s_late', label: 'Late 1960s' }, { key: '1970s_early', label: 'Early 1970s' },
+                { key: '1970s_late', label: 'Late 1970s' }, { key: '1980s_early', label: 'Early 1980s' },
+                { key: '1980s_late', label: 'Late 1980s' }, { key: '1990s_early', label: 'Early 1990s' },
+                { key: '1990s_late', label: 'Late 1990s' }, { key: '2000s_early', label: 'Early 2000s' },
+            ]},
+            location: { label: '📍 Location', options: [
+                { key: 'rural_highway', label: 'Rural highways' }, { key: 'forest_trail', label: 'Forest trails' },
+                { key: 'coastal_town', label: 'Coastal towns' }, { key: 'desert_highway', label: 'Desert stretches' },
+                { key: 'mountain_roads', label: 'Mountain roads' }, { key: 'midwest_farmland', label: 'Midwest farmland' },
+                { key: 'swamp_bayou', label: 'Southern swamps' }, { key: 'industrial_ruins', label: 'Industrial ruins' },
+                { key: 'small_towns', label: 'Small towns' }, { key: 'suburban_sprawl', label: 'Suburban developments' },
+                { key: 'college_campus', label: 'College campuses' }, { key: 'national_parks', label: 'National parks' },
+                { key: 'border_towns', label: 'Border towns' }, { key: 'mining_towns', label: 'Mining towns' },
+                { key: 'lakeside_cabins', label: 'Lakeside areas' },
+            ]},
+            subgenre: { label: '📰 Format', options: [
+                { key: 'urban_legend', label: 'Urban legend' }, { key: 'true_crime', label: 'Faux true-crime' },
+                { key: 'witness_account', label: 'Witness compilation' }, { key: 'found_document', label: 'Found document' },
+                { key: 'broadcast_interruption', label: 'Broadcast incident' }, { key: 'missing_persons', label: 'Missing persons case' },
+                { key: 'government_coverup', label: 'Government coverup' }, { key: 'recurring_phenomenon', label: 'Recurring phenomenon' },
+                { key: 'local_folklore', label: 'Local folklore' }, { key: 'investigation_closed', label: 'Closed investigation' },
+            ]},
+            narrative_artifact: { label: '📜 Narrative Voice', options: [
+                { key: 'police_memo', label: 'Archived police memo' }, { key: 'newspaper_recap', label: 'Local newspaper recap' },
+                { key: 'research_footnote', label: 'Research paper footnote' }, { key: 'witness_interview', label: 'Witness interview summary' },
+                { key: 'agency_report', label: 'Internal agency report' }, { key: 'radio_transcript', label: 'Radio broadcast transcript' },
+                { key: 'forum_post', label: 'Archived forum post' }, { key: 'documentary_narration', label: 'Documentary narration' },
+                { key: 'oral_history', label: 'Oral history compilation' }, { key: 'deathbed_confession', label: 'Deathbed testimony' },
+            ]},
+            threat_behavior: { label: '👁️ Threat Behavior', options: [
+                { key: 'watching', label: 'Watching' }, { key: 'following', label: 'Following' },
+                { key: 'appearing', label: 'Appearing' }, { key: 'calling', label: 'Calling' },
+                { key: 'signaling', label: 'Signaling' }, { key: 'waiting', label: 'Waiting' },
+                { key: 'mimicking', label: 'Mimicking' }, { key: 'gathering', label: 'Gathering' },
+                { key: 'retreating', label: 'Retreating' }, { key: 'broadcasting', label: 'Broadcasting' },
+            ]},
+            threat_manifestation: { label: '👤 Threat Form', options: [
+                { key: 'humanoid_tall', label: 'Tall humanoid' }, { key: 'humanoid_faceless', label: 'Faceless figure' },
+                { key: 'humanoid_dated', label: 'Anachronistic figure' }, { key: 'vehicle_black', label: 'Black vehicle' },
+                { key: 'light_geometric', label: 'Geometric lights' }, { key: 'sound_pattern', label: 'Repeating sound' },
+                { key: 'reflection', label: 'Wrong reflection' }, { key: 'shadow_independent', label: 'Independent shadow' },
+                { key: 'distortion_visual', label: 'Visual distortion' }, { key: 'animal_wrong', label: 'Wrong animals' },
+                { key: 'object_appearing', label: 'Appearing objects' }, { key: 'environmental', label: 'Environmental anomaly' },
+            ]},
+            repeating_detail: { label: '🔄 Repeating Detail', options: [
+                { key: 'face_covered', label: 'Face obscured by pale cloth' }, { key: 'face_blank', label: 'Featureless smooth face' },
+                { key: 'face_too_wide', label: 'Smile stretched too wide' }, { key: 'eyes_wrong', label: 'Eyes reflecting nonexistent light' },
+                { key: 'eyes_black', label: 'Entirely black eyes' },
+                { key: 'posture_still', label: 'Standing perfectly still' }, { key: 'posture_tilted', label: 'Head always tilted unnaturally' },
+                { key: 'movement_wrong', label: 'Joints bending backwards' }, { key: 'movement_stop', label: 'Freezing when observed' },
+                { key: 'clothing_dated', label: 'Clothes from wrong decade' }, { key: 'clothing_wet', label: 'Always dripping wet' },
+                { key: 'appearance_faded', label: 'Colors washed out like old photo' },
+                { key: 'env_cold', label: 'Temperature drops sharply' }, { key: 'env_smell', label: 'Smell of ozone and copper' },
+                { key: 'env_static', label: 'All radios fill with static' }, { key: 'env_animals', label: 'Dogs refuse to go near' },
+            ]},
+            weird_axis: { label: '❓ Weird Axis', options: [
+                { key: 'distance_constant', label: 'Maintains exact same distance always' }, { key: 'photos_closer', label: 'Closer in photos than in person' },
+                { key: 'memories_fade', label: 'Witnesses forget details, only fear remains' }, { key: 'maps_wrong', label: 'Location can\'t be found on any map' },
+                { key: 'time_wrong', label: 'Clocks show different times for nearby people' }, { key: 'direction_wrong', label: 'Every compass points to same coordinates' },
+                { key: 'counting_wrong', label: 'Always one more person than there should be' }, { key: 'sound_delayed', label: 'Sounds arrive seconds late' },
+                { key: 'shadow_independent', label: 'Shadow moves independently' }, { key: 'reflection_delayed', label: 'Reflection appears moments late' },
+                { key: 'names_forgotten', label: 'No one remembers names of the missing' }, { key: 'roads_change', label: 'Road doesn\'t exist the next day' },
+                { key: 'photos_show_more', label: 'Photos show things not seen in person' }, { key: 'radio_predicts', label: 'Radio describes events before they happen' },
+                { key: 'children_remember', label: 'Only children can see it clearly' }, { key: 'writing_appears', label: 'Same message in window condensation' },
+                { key: 'electronics_fail', label: 'Electronics die in specific radius' }, { key: 'dreams_shared', label: 'Everyone reports the same dream' },
+                { key: 'photos_change', label: 'Face appears in old photos where none was' }, { key: 'voices_recorded', label: 'Recordings contain unheard voices' },
+            ]},
+            escalation: { label: '📈 Escalation', options: [
+                { key: 'sightings_to_missing', label: 'Sightings → disappearances' }, { key: 'one_to_many', label: 'One witness → many' },
+                { key: 'distant_to_close', label: 'Distant → close' }, { key: 'night_to_day', label: 'Night only → daylight' },
+                { key: 'rural_to_urban', label: 'Rural → urban' }, { key: 'passive_to_active', label: 'Passive → active' },
+                { key: 'individual_to_group', label: 'Individuals → groups' }, { key: 'physical_to_psychological', label: 'Physical → psychological' },
+            ]},
+            authority: { label: '🏛️ Authority Response', options: [
+                { key: 'files_lost', label: 'Files lost' }, { key: 'dismissed', label: 'Dismissed reports' },
+                { key: 'active_coverup', label: 'Active coverup' }, { key: 'investigation_closed', label: 'Investigation quietly closed' },
+                { key: 'witnesses_silenced', label: 'Witnesses relocated' }, { key: 'official_denial', label: 'Official denial' },
+                { key: 'media_blackout', label: 'Media blackout' }, { key: 'alternative_explanation', label: 'Alternative explanation given' },
+            ]},
+            ending_knowledge: { label: '🔚 Ending', options: [
+                { key: 'unresolved', label: 'Unresolved' }, { key: 'suppressed', label: 'Suppressed' },
+                { key: 'forgotten', label: 'Forgotten' }, { key: 'ongoing', label: 'Ongoing' },
+                { key: 'inherited', label: 'Inherited' }, { key: 'cyclical', label: 'Cyclical' },
+                { key: 'partial', label: 'Partially explained' }, { key: 'denied', label: 'Officially denied' },
+            ]},
+            ending_imagery: { label: '🖼️ Final Image', options: [
+                { key: 'watching_treeline', label: 'Figure at treeline' }, { key: 'empty_road', label: 'Empty road' },
+                { key: 'silent_recording', label: 'Silent recording' }, { key: 'coordinates_appearing', label: 'Coordinates appearing' },
+                { key: 'sealed_files', label: 'Sealed files' }, { key: 'children_dreaming', label: 'Children dreaming' },
+                { key: 'photograph_changing', label: 'Photograph changing' }, { key: 'fog_rolling', label: 'Fog rolling in' },
+                { key: 'lights_distant', label: 'Distant lights' }, { key: 'message_reappearing', label: 'Message reappearing' },
+            ]},
+            emotion: { label: '💭 Emotional Aftertaste', options: [
+                { key: 'unease', label: 'Lingering unease' }, { key: 'dread', label: 'Slow-building dread' },
+                { key: 'paranoia', label: 'Paranoia' }, { key: 'isolation', label: 'Profound isolation' },
+                { key: 'insignificance', label: 'Cosmic insignificance' }, { key: 'wrongness', label: 'Fundamental wrongness' },
+                { key: 'recognition', label: 'Uncomfortable recognition' }, { key: 'curiosity_fear', label: 'Morbid curiosity mixed with fear' },
+            ]},
+        };
+
+        // US state pools by location (abbreviated)
+        const LOCATION_STATES = {
+            rural_highway: ['Texas', 'Oklahoma', 'Kansas', 'Nebraska', 'Iowa'],
+            forest_trail: ['Oregon', 'Washington', 'Vermont', 'Maine', 'West Virginia'],
+            coastal_town: ['Maine', 'Massachusetts', 'North Carolina', 'Florida', 'California'],
+            desert_highway: ['Nevada', 'Arizona', 'New Mexico', 'Utah', 'West Texas'],
+            mountain_roads: ['Colorado', 'Montana', 'Wyoming', 'West Virginia', 'Alaska'],
+            midwest_farmland: ['Iowa', 'Indiana', 'Illinois', 'Ohio', 'Wisconsin'],
+            swamp_bayou: ['Louisiana', 'Mississippi', 'Alabama', 'Georgia', 'South Carolina'],
+            industrial_ruins: ['Pennsylvania', 'Michigan', 'Ohio', 'Indiana', 'New Jersey'],
+            small_towns: ['Arkansas', 'Tennessee', 'Kentucky', 'Missouri', 'North Dakota'],
+            suburban_sprawl: ['New Jersey', 'Connecticut', 'Maryland', 'Virginia', 'Illinois'],
+            college_campus: ['Massachusetts', 'California', 'Pennsylvania', 'New York', 'Ohio'],
+            national_parks: ['Wyoming', 'Montana', 'California', 'Utah', 'Arizona'],
+            border_towns: ['Texas', 'Arizona', 'New Mexico', 'California'],
+            mining_towns: ['West Virginia', 'Pennsylvania', 'Colorado', 'Montana', 'Nevada'],
+            lakeside_cabins: ['Minnesota', 'Wisconsin', 'Michigan', 'New Hampshire', 'Maine'],
         };
 
         let lastGeneratedStory = null;
         let lastGeneratedScenes = [];
+        let lastUsedDNA = null;
+
+        // Build the DNA dropdown grid
+        function buildDNAGrid() {
+            const grid = document.getElementById('ip-dna-grid');
+            if (!grid) return;
+            grid.innerHTML = '';
+            for (const [dimKey, dim] of Object.entries(DNA_DIMENSIONS)) {
+                const wrapper = document.createElement('div');
+                wrapper.style.cssText = 'display:flex;flex-direction:column;gap:2px';
+                wrapper.innerHTML = `
+                    <label style="font-size:10px;color:var(--text-secondary);font-weight:600">${dim.label}</label>
+                    <select class="form-control form-control--sm" id="ip-dna-${dimKey}" style="font-size:11px">
+                        <option value="_random">🎲 Random</option>
+                        ${dim.options.map(o => `<option value="${o.key}">${o.label}</option>`).join('')}
+                    </select>
+                `;
+                grid.appendChild(wrapper);
+            }
+        }
+
+        function rollAllDNA() {
+            for (const [dimKey, dim] of Object.entries(DNA_DIMENSIONS)) {
+                const sel = document.getElementById(`ip-dna-${dimKey}`);
+                if (sel) {
+                    const randomIdx = Math.floor(Math.random() * dim.options.length);
+                    sel.value = dim.options[randomIdx].key;
+                }
+            }
+            // Open the details panel so user can see the roll
+            const details = document.getElementById('ip-dna-details');
+            if (details) details.open = true;
+        }
+
+        function getSelectedDNA() {
+            const dna = {};
+            for (const [dimKey, dim] of Object.entries(DNA_DIMENSIONS)) {
+                const sel = document.getElementById(`ip-dna-${dimKey}`);
+                const val = sel ? sel.value : '_random';
+                if (val === '_random') {
+                    const randomIdx = Math.floor(Math.random() * dim.options.length);
+                    dna[dimKey] = dim.options[randomIdx];
+                } else {
+                    dna[dimKey] = dim.options.find(o => o.key === val) || dim.options[0];
+                }
+            }
+            // Add random US states based on location
+            const statePool = LOCATION_STATES[dna.location.key] || ['Unknown State'];
+            const state = statePool[Math.floor(Math.random() * statePool.length)];
+            dna._state = state;
+            return dna;
+        }
+
+        function buildDNAPrompt(dna, wordRange) {
+            return `You are writing a faux–true crime horror story. The DNA of this story has been PRE-DETERMINED. You MUST follow ALL specifications exactly.
+
+═══════════════════════════════════════
+📋 STORY DNA (NON-NEGOTIABLE):
+═══════════════════════════════════════
+
+⏰ ERA: "In the ${dna.era.label.toLowerCase()}..." 
+📍 LOCATION: ${dna._state} — specifically ${dna.location.label.toLowerCase()}
+📰 FORMAT: ${dna.subgenre.label}
+📜 NARRATIVE VOICE: ${dna.narrative_artifact.label} — write in the style and tone of a ${dna.narrative_artifact.label.toLowerCase()}
+👁️ THE THREAT:
+   What it IS: ${dna.threat_manifestation.label}
+   What it DOES: ${dna.threat_behavior.label}
+🔄 REPEATING DETAIL (must appear 2-3 times): ${dna.repeating_detail.label}
+❓ THE WEIRD AXIS (what makes this story unique): ${dna.weird_axis.label}
+📈 ESCALATION PATTERN: ${dna.escalation.label}
+🏛️ AUTHORITY RESPONSE: ${dna.authority.label}
+🔚 ENDING:
+   Resolution: ${dna.ending_knowledge.label}
+   Final Image: ${dna.ending_imagery.label}
+💭 EMOTIONAL AFTERTASTE: ${dna.emotion.label}
+
+═══════════════════════════════════════
+📐 STRUCTURE (FOLLOW EXACTLY):
+═══════════════════════════════════════
+1. OPENING: Start with "In the ${dna.era.label.toLowerCase()}..." using the ${dna.narrative_artifact.label.toLowerCase()} voice
+2. EARLY REPORTS: Describe initial encounters with the ${dna.threat_manifestation.label.toLowerCase()} that is ${dna.threat_behavior.label.toLowerCase()}. Include the repeating detail.
+3. PATTERN: The same repeating detail (${dna.repeating_detail.label.toLowerCase()}) appears in reports from different sources.
+4. THE WEIRD PART: Introduce the weird axis — ${dna.weird_axis.label.toLowerCase()}
+5. ESCALATION: ${dna.escalation.label}
+6. AUTHORITY: ${dna.authority.label}
+7. ENDING: ${dna.ending_knowledge.label}. Final image: ${dna.ending_imagery.label.toLowerCase()}
+
+📏 WORD COUNT: MINIMUM ${wordRange.min} words / MAXIMUM ${wordRange.max} words
+🌲 VISUAL ENVIRONMENT: Stories set in ${dna.location.label.toLowerCase()} of ${dna._state}
+🚫 DO NOT: Add elements not in the DNA. Do not change the threat, weird axis, or ending.
+
+Respond in JSON:
+{
+  "title": "Short catchy title (3-6 words)",
+  "story": "The full story text..."
+}`;
+        }
+
+        function displayUsedDNA(dna) {
+            const el = document.getElementById('ip-dna-used');
+            const list = document.getElementById('ip-dna-used-list');
+            if (!el || !list) return;
+            el.style.display = 'block';
+            const items = [
+                `⏰ <strong>Era:</strong> ${dna.era.label}`,
+                `📍 <strong>Location:</strong> ${dna.location.label} (${dna._state})`,
+                `📰 <strong>Format:</strong> ${dna.subgenre.label}`,
+                `📜 <strong>Voice:</strong> ${dna.narrative_artifact.label}`,
+                `👁️ <strong>Threat:</strong> ${dna.threat_manifestation.label} — ${dna.threat_behavior.label}`,
+                `🔄 <strong>Repeat:</strong> ${dna.repeating_detail.label}`,
+                `❓ <strong>Weird:</strong> ${dna.weird_axis.label}`,
+                `📈 <strong>Escalation:</strong> ${dna.escalation.label}`,
+                `🏛️ <strong>Authority:</strong> ${dna.authority.label}`,
+                `🔚 <strong>Ending:</strong> ${dna.ending_knowledge.label} — ${dna.ending_imagery.label}`,
+                `💭 <strong>Emotion:</strong> ${dna.emotion.label}`,
+            ];
+            list.innerHTML = items.join('<br>');
+        }
 
         document.addEventListener('DOMContentLoaded', () => {
+            buildDNAGrid();
             document.getElementById('ip-story-generate-btn').addEventListener('click', generateTestStory);
+            document.getElementById('ip-dna-roll-btn').addEventListener('click', rollAllDNA);
             document.getElementById('ip-uniqueness-refresh').addEventListener('click', loadUniquenessStats);
             document.getElementById('ip-use-scene-btn').addEventListener('click', () => {
                 if (lastGeneratedScenes.length > 0) {
                     document.getElementById('ip-test-scene').value = lastGeneratedScenes[0];
-                    toast.success('Scene 1 copied to image test field');
+                    generateTestImage();
                 }
             });
         });
@@ -2244,29 +2500,16 @@
                 return;
             }
 
-            const vibePreset = document.getElementById('ip-vibe-preset').value;
             const duration = parseInt(document.getElementById('ip-story-duration').value);
             const targetWords = Math.round(duration * 2.5);
             const wordRange = { min: Math.round(targetWords * 0.85), max: Math.round(targetWords * 1.15) };
 
-            const vibeDesc = VIBE_DESCRIPTIONS[vibePreset] || VIBE_DESCRIPTIONS.urban_legend;
+            // Resolve DNA (random dims get rolled here)
+            const dna = getSelectedDNA();
+            lastUsedDNA = dna;
+            displayUsedDNA(dna);
 
-            const storyPrompt = `Create ${vibeDesc}.
-
-REQUIREMENTS:
-- Word count: ${wordRange.min}-${wordRange.max} words (this is critical for video timing)
-- First-person narration, past tense
-- Start with an engaging hook that grabs attention in the first 3 seconds
-- Build tension throughout
-- End with a chilling revelation or unresolved mystery
-- Use vivid sensory details
-- Keep sentences punchy for narration pacing
-
-Respond in JSON format:
-{
-  "title": "Short catchy title (3-6 words)",
-  "story": "The full story text..."
-}`;
+            const storyPrompt = buildDNAPrompt(dna, wordRange);
 
             btn.disabled = true;
             statusEl.textContent = '\u23f3 Generating story...';
@@ -2282,11 +2525,11 @@ Respond in JSON format:
                     body: JSON.stringify({
                         model: 'gpt-4o-mini',
                         messages: [
-                            { role: 'system', content: 'You are a master storyteller specializing in short-form horror and mystery content. You create gripping, atmospheric stories perfect for TikTok/Reels narration. Your stories are ALWAYS first-person narration that feels personal and immediate.' },
+                            { role: 'system', content: 'You are a master horror story writer. You follow story DNA specifications EXACTLY — every dimension must appear in the story. You write atmospheric, gripping stories in the specified narrative voice. NEVER deviate from the DNA.' },
                             { role: 'user', content: storyPrompt }
                         ],
                         response_format: { type: 'json_object' },
-                        temperature: 0.9,
+                        temperature: 0.75,
                         max_tokens: 2000,
                     })
                 });
@@ -2317,11 +2560,23 @@ Respond in JSON format:
                     const listEl = document.getElementById('ip-scenes-list');
                     scenesEl.style.display = 'block';
                     listEl.innerHTML = lastGeneratedScenes.map((s, i) => 
-                        `<div style="padding:4px 6px;margin-bottom:4px;background:rgba(0,0,0,0.1);border-radius:4px;cursor:pointer" onclick="document.getElementById('ip-test-scene').value=this.dataset.scene" data-scene="${s.replace(/"/g, '&quot;')}"><strong>Scene ${i+1}:</strong> ${s.substring(0, 120)}${s.length > 120 ? '...' : ''}</div>`
+                        `<div style="display:flex;align-items:flex-start;gap:6px;padding:4px 6px;margin-bottom:4px;background:rgba(0,0,0,0.1);border-radius:4px">
+                            <button class="btn btn--secondary btn--sm" style="flex-shrink:0;font-size:10px;padding:2px 6px" onclick="document.getElementById('ip-test-scene').value=this.parentElement.dataset.scene;generateTestImage()" title="Generate image from this scene">🖼️</button>
+                            <span style="cursor:pointer;flex:1" onclick="document.getElementById('ip-test-scene').value=this.parentElement.dataset.scene" title="Click to copy scene text"><strong>Scene ${i+1}:</strong> ${s.substring(0, 120)}${s.length > 120 ? '...' : ''}</span>
+                        </div>`
                     ).join('');
+                    // Attach scene data on parent divs
+                    listEl.querySelectorAll('div[style*="display:flex"]').forEach((el, i) => {
+                        el.dataset.scene = lastGeneratedScenes[i];
+                    });
                 }
 
-                statusEl.textContent = `\u2705 Generated "${title}" (${wordCount} words)`;
+                // Auto-fill Scene 1 into the image test field
+                if (lastGeneratedScenes.length > 0) {
+                    document.getElementById('ip-test-scene').value = lastGeneratedScenes[0];
+                }
+
+                statusEl.textContent = `\u2705 Generated "${title}" (${wordCount} words) — click a 🖼️ button to generate an image`;
                 statusEl.style.color = '#10B981';
 
             } catch (e) {
@@ -2360,7 +2615,7 @@ Respond in JSON format:
 
             try {
                 // Call get_dna_statistics() RPC
-                const { data: stats, error } = await window.supabaseClient.rpc('get_dna_statistics');
+                const { data: stats, error } = await getSupabaseClient().rpc('get_dna_statistics');
                 if (error) throw error;
 
                 const s = Array.isArray(stats) ? stats[0] : stats;
@@ -2396,7 +2651,7 @@ Respond in JSON format:
 
         async function loadRecentDNA() {
             try {
-                const { data, error } = await window.supabaseClient
+                const { data, error } = await getSupabaseClient()
                     .from('story_dna')
                     .select('id, created_at, genre, concept_hash, weird_axis_id, threat_behavior_id, threat_manifestation_id, era_id, location_id, generation_attempt')
                     .order('created_at', { ascending: false })
@@ -2412,10 +2667,18 @@ Respond in JSON format:
                 listEl.innerHTML = data.map(d => {
                     const date = new Date(d.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
                     const genre = d.genre || 'unknown';
-                    const attempt = d.generation_attempt > 1 ? ` (${d.generation_attempt} attempts)` : '';
-                    return `<div style="padding:3px 6px;margin-bottom:2px;background:rgba(0,0,0,0.1);border-radius:4px;display:flex;justify-content:space-between;align-items:center">
-                        <span><strong>${genre}</strong> \u2014 ${d.weird_axis_id || 'n/a'} / ${d.threat_behavior_id || d.threat_manifestation_id || 'n/a'} @ ${d.location_id || 'n/a'}${attempt}</span>
-                        <span style="opacity:0.6">${date}</span>
+                    const genreColor = genre === 'one_too_many' ? '#F59E0B' : genre === 'urban_legend' ? '#8B5CF6' : '#6B7280';
+                    const attempt = d.generation_attempt > 1 ? ` <span style="color:#EF4444">(${d.generation_attempt} attempts)</span>` : '';
+                    const era = d.era_id ? d.era_id.replace(/_/g, ' ') : '';
+                    const loc = d.location_id ? d.location_id.replace(/_/g, ' ') : '';
+                    return `<div style="padding:4px 6px;margin-bottom:2px;background:rgba(0,0,0,0.1);border-radius:4px;font-size:11px;line-height:1.4">
+                        <div style="display:flex;justify-content:space-between;align-items:center">
+                            <span><span style="background:${genreColor};color:#fff;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;text-transform:uppercase">${genre.replace(/_/g, ' ')}</span> ${attempt}</span>
+                            <span style="opacity:0.6;font-size:10px">${date}</span>
+                        </div>
+                        <div style="margin-top:2px;color:var(--text-secondary)">
+                            ❓ ${d.weird_axis_id || 'n/a'} · 👁️ ${d.threat_behavior_id || 'n/a'} / ${d.threat_manifestation_id || 'n/a'} · 📍 ${loc || 'n/a'} · ⏰ ${era || 'n/a'}
+                        </div>
                     </div>`;
                 }).join('');
             } catch (e) {
