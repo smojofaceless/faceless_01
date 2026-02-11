@@ -933,6 +933,100 @@ class BrandManager {
         }
         console.log('🎛️ Effects config saved for brand:', brandId);
     }
+
+    // =================================================
+    // IMAGE PROMPT CONFIG
+    // =================================================
+
+    /**
+     * Load the resolved image prompt config for a brand + vibe preset.
+     * Uses the DB RPC which merges: system defaults → preset → brand overrides.
+     * @param {string} brandId
+     * @param {string} [vibePreset='urban_legend']
+     * @returns {Promise<Object|null>}
+     */
+    async getImagePromptConfig(brandId, vibePreset = 'urban_legend') {
+        if (!this.useSupabase) return null;
+        try {
+            const { data, error } = await supabaseClient.rpc('get_image_prompt_config_for_job', {
+                p_brand_id: brandId,
+                p_vibe_preset: vibePreset,
+                p_job_meta: {},
+            });
+            if (error) {
+                console.error('Failed to load image prompt config:', error);
+                return null;
+            }
+            return data || null;
+        } catch (err) {
+            console.error('getImagePromptConfig exception:', err);
+            return null;
+        }
+    }
+
+    /**
+     * Load only the brand-level image_prompt overrides (raw, not merged).
+     * @param {string} brandId
+     * @returns {Promise<Object|null>}
+     */
+    async getImagePromptConfigRaw(brandId) {
+        if (!this.useSupabase) return null;
+        const { data, error } = await supabaseClient
+            .from('brand_templates')
+            .select('id, template_type, config_overrides, is_default')
+            .eq('brand_id', brandId)
+            .eq('is_default', true)
+            .limit(1)
+            .single();
+        if (error) {
+            if (error.code === 'PGRST116') return null;
+            console.error('Failed to load image prompt config:', error);
+            throw error;
+        }
+        return data?.config_overrides?.image_prompt || null;
+    }
+
+    /**
+     * Save image prompt config to brand_templates for a brand.
+     * Merges into config_overrides.image_prompt on the default template.
+     * @param {string} brandId
+     * @param {Object|null} imagePromptConfig - null to remove overrides
+     */
+    async saveImagePromptConfig(brandId, imagePromptConfig) {
+        if (!this.useSupabase) throw new Error('Image prompt config requires Supabase');
+
+        const { data: template, error: fetchErr } = await supabaseClient
+            .from('brand_templates')
+            .select('id, config_overrides')
+            .eq('brand_id', brandId)
+            .eq('is_default', true)
+            .limit(1)
+            .single();
+
+        if (fetchErr) {
+            console.error('Failed to find default template:', fetchErr);
+            throw fetchErr;
+        }
+
+        const overrides = template.config_overrides || {};
+
+        if (imagePromptConfig === null) {
+            delete overrides.image_prompt;
+        } else {
+            overrides.image_prompt = imagePromptConfig;
+        }
+
+        const { error: updateErr } = await supabaseClient
+            .from('brand_templates')
+            .update({ config_overrides: overrides })
+            .eq('id', template.id);
+
+        if (updateErr) {
+            console.error('Failed to save image prompt config:', updateErr);
+            throw updateErr;
+        }
+        console.log('🎨 Image prompt config saved for brand:', brandId);
+    }
 }
 
 // Create singleton instance

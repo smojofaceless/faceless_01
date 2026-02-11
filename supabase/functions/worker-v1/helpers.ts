@@ -1025,3 +1025,58 @@ export async function getEffectsConfigForJob(
     return null;
   }
 }
+
+// =====================================================
+// IMAGE PROMPT CONFIG (DB-driven, follows effects pattern)
+// =====================================================
+
+export interface ImagePromptConfig {
+  art_style: string;
+  style_prompt: string;
+  environment: string;
+  color_palette: string;
+  lighting: string;
+  mood: string;
+  camera_angles: string[];
+  tension_escalation: boolean;
+  negative_prompt: string;
+  suffix: string;
+}
+
+/**
+ * Resolve the final image_prompt config for a job by calling the DB RPC
+ * which merges: system defaults → preset profile → brand overrides → job meta.
+ *
+ * Falls back to a hardcoded minimal config if the RPC is unavailable
+ * (soft failure — never blocks image generation).
+ */
+export async function getImagePromptConfigForJob(
+  supabase: SupabaseClient,
+  brandId: string,
+  vibePreset: string | null,
+  jobMeta: Record<string, unknown> = {}
+): Promise<ImagePromptConfig | null> {
+  try {
+    const { data, error } = await supabase.rpc('get_image_prompt_config_for_job', {
+      p_brand_id: brandId,
+      p_vibe_preset: vibePreset || 'urban_legend',
+      p_job_meta: jobMeta,
+    });
+
+    if (error) {
+      console.warn(`[IMAGE_PROMPT] RPC get_image_prompt_config_for_job failed: ${error.message}`);
+      return null;
+    }
+
+    if (data && typeof data === 'object') {
+      console.log(`[IMAGE_PROMPT] ✓ Resolved config: art_style=${data.art_style}, tension=${data.tension_escalation}`);
+      return data as ImagePromptConfig;
+    }
+
+    console.warn('[IMAGE_PROMPT] RPC returned unexpected data shape, using fallback');
+    return null;
+  } catch (err) {
+    console.warn(`[IMAGE_PROMPT] getImagePromptConfigForJob exception: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+}

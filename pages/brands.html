@@ -582,6 +582,152 @@
         </div>
     </div>
 
+    <!-- Image Prompt Config Modal -->
+    <div class="modal" id="imgprompt-modal">
+        <div class="modal__overlay" onclick="closeImagePromptModal()"></div>
+        <div class="modal__content modal__content--lg">
+            <div class="modal__header">
+                <h3 class="modal__title">🎨 Image Prompt Config — <span id="ip-brand-name"></span></h3>
+                <button class="modal__close" onclick="closeImagePromptModal()">&times;</button>
+            </div>
+            <div class="modal__body" id="imgprompt-modal-body">
+
+                <!-- Preset Selector -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <span class="fx-toggle__label" style="font-weight:600;">Vibe Preset</span>
+                    </div>
+                    <div class="fx-select-row">
+                        <select class="form-control form-control--sm" id="ip-vibe-preset" style="max-width:280px">
+                            <option value="urban_legend">📜 Urban Legend</option>
+                            <option value="one_too_many">👥 One Too Many</option>
+                            <option value="backrooms">🚪 Backrooms</option>
+                            <option value="nosleep">😱 NoSleep</option>
+                            <option value="glitch">⚡ Glitch</option>
+                            <option value="analog_horror">📼 Analog Horror</option>
+                        </select>
+                        <button class="btn btn--secondary btn--sm" id="ip-load-preset" style="margin-left:8px">Load Preset Defaults</button>
+                    </div>
+                </div>
+
+                <!-- Art Style -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <span class="fx-toggle__label" style="font-weight:600;">Art Style</span>
+                    </div>
+                    <div class="fx-select-row">
+                        <select class="form-control form-control--sm" id="ip-art-style" style="max-width:280px">
+                            <option value="cinematic-dark">🎬 Cinematic Dark</option>
+                            <option value="analog-horror">📼 Analog Horror / VHS</option>
+                            <option value="uncanny-illustrated">📰 Uncanny Illustrated</option>
+                            <option value="horror-anime">🎌 Dark Anime</option>
+                            <option value="oil-painting">🖼️ Oil Painting</option>
+                            <option value="found-footage">📹 Found Footage</option>
+                            <option value="surreal-nightmare">🌀 Surreal Nightmare</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Style Prompt -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <span class="fx-toggle__label" style="font-weight:600;">Style Prompt</span>
+                        <span class="fx-hint">The core style description sent to the image model</span>
+                    </div>
+                    <textarea class="form-control" id="ip-style-prompt" rows="3" style="font-size:13px;resize:vertical"></textarea>
+                </div>
+
+                <!-- Environment -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <span class="fx-toggle__label" style="font-weight:600;">Environment</span>
+                        <span class="fx-hint">Scene locations and settings</span>
+                    </div>
+                    <textarea class="form-control" id="ip-environment" rows="2" style="font-size:13px;resize:vertical"></textarea>
+                </div>
+
+                <!-- Color Palette -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <span class="fx-toggle__label" style="font-weight:600;">Color Palette</span>
+                    </div>
+                    <input type="text" class="form-control" id="ip-color-palette" style="font-size:13px">
+                </div>
+
+                <!-- Lighting -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <span class="fx-toggle__label" style="font-weight:600;">Lighting</span>
+                    </div>
+                    <input type="text" class="form-control" id="ip-lighting" style="font-size:13px">
+                </div>
+
+                <!-- Mood -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <span class="fx-toggle__label" style="font-weight:600;">Mood</span>
+                    </div>
+                    <input type="text" class="form-control" id="ip-mood" style="font-size:13px">
+                </div>
+
+                <!-- Camera Angles -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <span class="fx-toggle__label" style="font-weight:600;">Camera Angles</span>
+                        <span class="fx-hint">One per line, progresses through scenes in order</span>
+                    </div>
+                    <textarea class="form-control" id="ip-camera-angles" rows="4" style="font-size:13px;resize:vertical" placeholder="establishing wide shot&#10;medium shot&#10;close-up&#10;dutch angle&#10;low angle&#10;extreme close-up"></textarea>
+                </div>
+
+                <!-- Tension Escalation -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <label class="fx-toggle">
+                            <input type="checkbox" id="ip-tension" checked>
+                            <span class="fx-toggle__label">Tension Escalation</span>
+                        </label>
+                        <span class="fx-hint">Increase tension level through scenes (3/10 → 10/10)</span>
+                    </div>
+                </div>
+
+                <!-- Negative Prompt -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <span class="fx-toggle__label" style="font-weight:600;">Negative Prompt</span>
+                        <span class="fx-hint">Things to exclude from generated images</span>
+                    </div>
+                    <input type="text" class="form-control" id="ip-negative" style="font-size:13px" value="No text, no words, no letters, no watermarks, no signatures">
+                </div>
+
+                <!-- Suffix -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <span class="fx-toggle__label" style="font-weight:600;">Suffix</span>
+                        <span class="fx-hint">Appended after everything (orientation, composition)</span>
+                    </div>
+                    <input type="text" class="form-control" id="ip-suffix" style="font-size:13px" value="Portrait orientation 9:16. Horror photography, cinematic composition.">
+                </div>
+
+                <!-- Live Preview -->
+                <div class="fx-section" style="background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.2);border-radius:8px;padding:12px">
+                    <div class="fx-section__header">
+                        <span class="fx-toggle__label" style="font-weight:600;">📋 Prompt Preview (Scene 1)</span>
+                    </div>
+                    <pre id="ip-preview" style="font-size:12px;color:var(--text-secondary);white-space:pre-wrap;margin:0;max-height:200px;overflow-y:auto"></pre>
+                </div>
+
+            </div>
+            <div class="modal__footer">
+                <div class="fx-footer-info" id="ip-status"></div>
+                <div class="fx-footer-actions">
+                    <button class="btn btn--secondary btn--sm" id="ip-reset-btn">Reset to Preset Defaults</button>
+                    <button class="btn btn--secondary" onclick="closeImagePromptModal()">Cancel</button>
+                    <button class="btn btn--primary" id="ip-save-btn">Save Image Config</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Supabase SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
@@ -792,6 +938,13 @@
                     openEffectsModal(btn.dataset.id);
                 });
             });
+
+            container.querySelectorAll('.brand-card__action--imgprompt').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openImagePromptModal(btn.dataset.id);
+                });
+            });
         }
 
         function renderSummary(brands, enrichments) {
@@ -947,6 +1100,13 @@
                                     <path d="M9 18V5l12-2v13"/>
                                     <circle cx="6" cy="18" r="3"/>
                                     <circle cx="18" cy="16" r="3"/>
+                                </svg>
+                            </button>
+                            <button class="btn btn--icon btn--sm brand-card__action--imgprompt" data-id="${brand.id}" title="Image Prompt Config">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                                    <polyline points="21 15 16 10 5 21"/>
                                 </svg>
                             </button>
                             <button class="btn btn--icon btn--sm brand-card__action--effects" data-id="${brand.id}" title="Effects Config">
@@ -1686,6 +1846,162 @@
                 console.error(e);
             } finally {
                 if (btn) { btn.disabled = false; btn.textContent = 'Save Effects'; }
+            }
+        }
+
+        // =========================================================
+        // IMAGE PROMPT CONFIG MODAL
+        // =========================================================
+        let ipBrandId = null;
+        let ipCurrentConfig = null;
+
+        async function openImagePromptModal(brandId) {
+            ipBrandId = brandId;
+            const modal = document.getElementById('imgprompt-modal');
+            if (modal.parentElement !== document.body) document.body.appendChild(modal);
+
+            // Find brand name
+            const brand = brands.find(b => b.id === brandId);
+            document.getElementById('ip-brand-name').textContent = brand?.name || brandId;
+
+            // Load resolved config (merged: system → preset → brand)
+            const vibeSelect = document.getElementById('ip-vibe-preset');
+            const vibe = vibeSelect.value || 'urban_legend';
+            await loadImagePromptConfig(brandId, vibe);
+
+            modal.classList.add('is-active');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeImagePromptModal() {
+            const modal = document.getElementById('imgprompt-modal');
+            modal.classList.remove('is-active');
+            document.body.style.overflow = '';
+            ipBrandId = null;
+        }
+
+        async function loadImagePromptConfig(brandId, vibePreset) {
+            try {
+                document.getElementById('ip-status').textContent = 'Loading...';
+                const cfg = await brandManager.getImagePromptConfig(brandId, vibePreset);
+                ipCurrentConfig = cfg;
+                populateImagePromptForm(cfg);
+
+                // Check if brand has overrides
+                const raw = await brandManager.getImagePromptConfigRaw(brandId);
+                document.getElementById('ip-status').textContent = raw
+                    ? 'Brand overrides active'
+                    : 'Using preset defaults (no brand overrides)';
+            } catch (e) {
+                document.getElementById('ip-status').textContent = 'Failed to load config';
+                console.error(e);
+            }
+        }
+
+        function populateImagePromptForm(cfg) {
+            if (!cfg) return;
+            document.getElementById('ip-art-style').value = cfg.art_style || 'cinematic-dark';
+            document.getElementById('ip-style-prompt').value = cfg.style_prompt || '';
+            document.getElementById('ip-environment').value = cfg.environment || '';
+            document.getElementById('ip-color-palette').value = cfg.color_palette || '';
+            document.getElementById('ip-lighting').value = cfg.lighting || '';
+            document.getElementById('ip-mood').value = cfg.mood || '';
+            document.getElementById('ip-camera-angles').value = (cfg.camera_angles || []).join('\n');
+            document.getElementById('ip-tension').checked = cfg.tension_escalation !== false;
+            document.getElementById('ip-negative').value = cfg.negative_prompt || '';
+            document.getElementById('ip-suffix').value = cfg.suffix || '';
+            updateImagePromptPreview();
+        }
+
+        function buildImagePromptConfigFromForm() {
+            return {
+                art_style: document.getElementById('ip-art-style').value,
+                style_prompt: document.getElementById('ip-style-prompt').value.trim(),
+                environment: document.getElementById('ip-environment').value.trim(),
+                color_palette: document.getElementById('ip-color-palette').value.trim(),
+                lighting: document.getElementById('ip-lighting').value.trim(),
+                mood: document.getElementById('ip-mood').value.trim(),
+                camera_angles: document.getElementById('ip-camera-angles').value.trim().split('\n').filter(l => l.trim()),
+                tension_escalation: document.getElementById('ip-tension').checked,
+                negative_prompt: document.getElementById('ip-negative').value.trim(),
+                suffix: document.getElementById('ip-suffix').value.trim(),
+            };
+        }
+
+        function updateImagePromptPreview() {
+            const cfg = buildImagePromptConfigFromForm();
+            const tensionLevel = cfg.tension_escalation ? 3 : 5;
+            const camera = (cfg.camera_angles || [])[0] || '';
+            const parts = [
+                '[Scene text would appear here]',
+                '',
+                `Style: ${cfg.style_prompt}`,
+                `Environment: ${cfg.environment}`,
+                `Mood: ${cfg.mood}, tension level ${tensionLevel}/10`,
+                camera ? `Camera: ${camera}` : '',
+                `Lighting: ${cfg.lighting}`,
+                `Color: ${cfg.color_palette}`,
+                '',
+                cfg.negative_prompt,
+                cfg.suffix,
+            ].filter(Boolean);
+            document.getElementById('ip-preview').textContent = parts.join('\n');
+        }
+
+        // Wire up live preview on all inputs
+        document.addEventListener('DOMContentLoaded', () => {
+            const ipFields = ['ip-art-style', 'ip-style-prompt', 'ip-environment', 'ip-color-palette',
+                              'ip-lighting', 'ip-mood', 'ip-camera-angles', 'ip-tension',
+                              'ip-negative', 'ip-suffix'];
+            ipFields.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener('input', updateImagePromptPreview);
+                if (el) el.addEventListener('change', updateImagePromptPreview);
+            });
+
+            // Load Preset Defaults button
+            document.getElementById('ip-load-preset').addEventListener('click', async () => {
+                const vibe = document.getElementById('ip-vibe-preset').value;
+                if (ipBrandId) await loadImagePromptConfig(ipBrandId, vibe);
+            });
+
+            // Vibe preset change also reloads
+            document.getElementById('ip-vibe-preset').addEventListener('change', async () => {
+                const vibe = document.getElementById('ip-vibe-preset').value;
+                if (ipBrandId) await loadImagePromptConfig(ipBrandId, vibe);
+            });
+
+            // Save button
+            const ipSaveClone = document.getElementById('ip-save-btn');
+            ipSaveClone.addEventListener('click', saveImagePromptConfig);
+
+            // Reset button
+            document.getElementById('ip-reset-btn').addEventListener('click', async () => {
+                if (!confirm('Remove all image prompt overrides for this brand? It will use preset defaults.')) return;
+                try {
+                    await brandManager.saveImagePromptConfig(ipBrandId, null);
+                    toast.success('Image prompt config reset to preset defaults');
+                    const vibe = document.getElementById('ip-vibe-preset').value;
+                    await loadImagePromptConfig(ipBrandId, vibe);
+                } catch (e) {
+                    toast.error('Failed to reset: ' + e.message);
+                }
+            });
+        });
+
+        async function saveImagePromptConfig() {
+            const cfg = buildImagePromptConfigFromForm();
+            const btn = document.getElementById('ip-save-btn');
+            try {
+                if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+                await brandManager.saveImagePromptConfig(ipBrandId, cfg);
+                toast.success('Image prompt config saved');
+                closeImagePromptModal();
+            } catch (e) {
+                toast.error('Failed to save: ' + e.message);
+                console.error(e);
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = 'Save Image Config'; }
             }
         }
     </script>

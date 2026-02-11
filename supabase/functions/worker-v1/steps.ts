@@ -1,6 +1,7 @@
 // =====================================================
 // WORKER V1 STEP IMPLEMENTATIONS
 // Real work for each pipeline step
+// v1.5 - 2026-02-12 (DB-driven image prompt config per vibe preset)
 // v1.4 - 2026-02-10 (Background Music V1: DB-driven track selection, ducking config)
 // v1.3 - 2026-02-10 (Cost controls integration)
 // v1.2 - 2026-02-22 (Standardized asset paths)
@@ -27,6 +28,8 @@ import {
   computePipelineHash,
   fetchWithError,
   getEffectsConfigForJob,
+  getImagePromptConfigForJob,
+  ImagePromptConfig,
   ELEVENLABS_VOICE_ID,
   STORAGE_BUCKET,
   updateStepStatus,
@@ -1082,15 +1085,24 @@ export async function executeImagesStep(
     return { success: false, error: 'OPENAI_API_KEY not configured' };
   }
 
-  const artStyle = (job.meta?.art_style as string) || 'cinematic-dark';
-  const visualPreset = job.visual_preset || (job.meta?.visual_preset as string) || 'forest';
-  
   // Determine which image model to use (job meta > env > default)
   const imageModel: ImageModel = (job.meta?.image_model as ImageModel) || 
                                   (env.IMAGE_MODEL as ImageModel) || 
                                   DEFAULT_IMAGE_MODEL;
 
-  console.log(`[IMAGES] Generating ${scenes.length} images (model: ${imageModel}, style: ${artStyle})`);
+  // v1.5: Resolve image prompt config from DB (system → preset → brand → job meta)
+  const vibePreset = job.vibe_preset || (job.meta?.vibe_preset as string) || 'urban_legend';
+  let imagePromptConfig: ImagePromptConfig | null = null;
+  try {
+    imagePromptConfig = await getImagePromptConfigForJob(supabase, job.brand_id, vibePreset, job.meta || {});
+  } catch (cfgErr) {
+    console.warn(`[IMAGES] Failed to load image prompt config: ${cfgErr instanceof Error ? cfgErr.message : cfgErr}`);
+  }
+
+  // Fallback to legacy hardcoded values if DB config unavailable
+  const artStyle = imagePromptConfig?.art_style || (job.meta?.art_style as string) || 'cinematic-dark';
+
+  console.log(`[IMAGES] Generating ${scenes.length} images (model: ${imageModel}, style: ${artStyle}, config: ${imagePromptConfig ? 'DB' : 'legacy'})`);
 
   let generatedCount = 0;
   let skippedCount = 0;
@@ -1113,8 +1125,8 @@ export async function executeImagesStep(
       // Heartbeat before each image (they can be slow)
       await requireLeaseOwner(supabase, job.id, workerId, `images:scene_${i}`);
 
-      // Build prompt (deterministic based on inputs)
-      const scenePrompt = buildImagePrompt(scene.text, scene.keywords, artStyle, visualPreset);
+      // Build prompt — uses DB config when available, legacy otherwise
+      const scenePrompt = buildImagePrompt(scene.text, scene.keywords, artStyle, i, scenes.length, imagePromptConfig);
       
       // === EXTERNAL IDEMPOTENCY: Hash includes model+size+prompt to avoid cross-config collisions ===
       // Note: imageModel is defined at function scope from job.meta or env
@@ -1366,36 +1378,71 @@ export async function executeImagesStep(
 /**
  * Build a DALL-E prompt for a scene
  */
+/**
+ * Build an image generation prompt for a scene.
+ * When DB config is available (ImagePromptConfig), produces a rich multi-line prompt
+ * with per-preset art style, environment, color palette, camera progression, and
+ * tension escalation. Falls back to legacy flat prompt when config is null.
+ */
 function buildImagePrompt(
   sceneText: string,
   keywords: string[],
   artStyle: string,
-  visualPreset: string
+  sceneIndex: number,
+  totalScenes: number,
+  config: ImagePromptConfig | null
 ): string {
-  // Base style templates
+  // === DB-driven prompt (new path) ===
+  if (config) {
+    const tensionLevel = config.tension_escalation
+      ? Math.min(10, Math.floor((sceneIndex / totalScenes) * 10) + 3)
+      : 5;
+
+    // Pick camera angle by scene index (cycles if more scenes than angles)
+    const angles = config.camera_angles || [];
+    const cameraAngle = angles.length > 0
+      ? angles[Math.min(sceneIndex, angles.length - 1)]
+      : '';
+
+    const keywordStr = keywords.slice(0, 3).join(', ');
+
+    const parts = [
+      sceneText.substring(0, 250),
+      '',
+      `Style: ${config.style_prompt}`,
+      `Environment: ${config.environment}`,
+      `Mood: ${config.mood}, tension level ${tensionLevel}/10`,
+      cameraAngle ? `Camera: ${cameraAngle}` : '',
+      `Lighting: ${config.lighting}`,
+      `Color: ${config.color_palette}`,
+      keywordStr ? `Keywords: ${keywordStr}` : '',
+      '',
+      config.negative_prompt,
+      config.suffix,
+    ].filter(Boolean);
+
+    return parts.join('\n');
+  }
+
+  // === Legacy fallback (hardcoded maps) ===
   const styleTemplates: Record<string, string> = {
     'cinematic-dark': 'Cinematic dark photography, moody desaturated colors, deep shadows, film grain, A24 horror aesthetic.',
     'analog-horror': 'Analog horror VHS aesthetic, heavy static, glitch artifacts, scanlines, found footage style.',
     'uncanny-illustrated': 'Editorial cartoon illustration, cel-shaded horror, bold black ink outlines, flat colors, uncanny faces.',
   };
-
   const styleBase = styleTemplates[artStyle] || styleTemplates['cinematic-dark'];
 
-  // Environment hints
   const envHints: Record<string, string> = {
     'forest': 'dark misty forest, twisted trees',
     'hallway': 'abandoned corridor, peeling walls',
     'attic': 'dusty attic, cobwebs, old furniture',
     'urban': 'empty city streets at night',
   };
-
+  const visualPreset = 'forest'; // legacy default
   const envHint = envHints[visualPreset] || envHints['forest'];
 
-  // Compose prompt
   const keywordStr = keywords.slice(0, 3).join(', ');
-  const prompt = `${styleBase} Scene: ${sceneText.substring(0, 200)}. Environment: ${envHint}. Keywords: ${keywordStr}. Portrait orientation 9:16. No text, no words, no letters.`;
-
-  return prompt;
+  return `${styleBase} Scene: ${sceneText.substring(0, 200)}. Environment: ${envHint}. Keywords: ${keywordStr}. Portrait orientation 9:16. No text, no words, no letters.`;
 }
 
 // =====================================================
