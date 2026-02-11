@@ -33,6 +33,7 @@ const {
   buildKenBurnsWithMotionProfile,
   getEffectFlagsFromVisualDNA,
   buildCombinedFilterGraph,
+  normalizeEffectsConfig,
   buildFiltersFromEffectsConfig,
   hashSeed,
   safeClamp,
@@ -1657,25 +1658,28 @@ app.post('/render', async (req, res) => {
     }
     
     // v4.0: Validate and log effects_config (Controlled Motion)
+    // v4.1: Normalize + clamp effects_config at the entry gate.
+    // normalizeEffectsConfig() guarantees every numeric field is a finite number
+    // within safe FFmpeg ranges. Individual builders can then trust the values.
     let safeEffectsConfig = null;
     if (effects_config) {
       try {
-        if (typeof effects_config === 'object' && !Array.isArray(effects_config)) {
-          safeEffectsConfig = effects_config;
+        safeEffectsConfig = normalizeEffectsConfig(effects_config);
+        if (safeEffectsConfig) {
           console.log(`[${jobId}] 🎛️ Effects Config v2.0 (Controlled Motion):`);
-          console.log(`[${jobId}]   enabled=${effects_config.enabled}, master_intensity=${effects_config.intensity}`);
+          console.log(`[${jobId}]   enabled=${safeEffectsConfig.enabled}, master_intensity=${safeEffectsConfig.intensity}`);
           const ecParts = [];
-          if (effects_config.kenburns?.enabled) ecParts.push(`kb(${effects_config.kenburns.direction || 'alt'})`);
-          if (effects_config.grain?.enabled) ecParts.push(`grain(${((effects_config.grain.intensity || 0) * 100).toFixed(0)}%)`);
-          if (effects_config.flicker?.enabled) ecParts.push(`flicker(${((effects_config.flicker.intensity || 0) * 100).toFixed(0)}%)`);
-          if (effects_config.vignette?.enabled) ecParts.push(`vignette(${((effects_config.vignette.intensity || 0) * 100).toFixed(0)}%)`);
-          if (effects_config.color_grade?.enabled) ecParts.push(`cg(${effects_config.color_grade.preset || 'auto'})`);
+          if (safeEffectsConfig.kenburns?.enabled) ecParts.push(`kb(${safeEffectsConfig.kenburns.direction || 'alt'})`);
+          if (safeEffectsConfig.grain?.enabled) ecParts.push(`grain(${((safeEffectsConfig.grain.intensity || 0) * 100).toFixed(0)}%)`);
+          if (safeEffectsConfig.flicker?.enabled) ecParts.push(`flicker(${((safeEffectsConfig.flicker.intensity || 0) * 100).toFixed(0)}%)`);
+          if (safeEffectsConfig.vignette?.enabled) ecParts.push(`vignette(${((safeEffectsConfig.vignette.intensity || 0) * 100).toFixed(0)}%)`);
+          if (safeEffectsConfig.color_grade?.enabled) ecParts.push(`cg(${safeEffectsConfig.color_grade.preset || 'auto'})`);
           console.log(`[${jobId}]   Active: ${ecParts.join(', ') || 'none (all disabled)'}`);
         } else {
           console.warn(`[${jobId}] ⚠️ Invalid effects_config format, ignoring`);
         }
       } catch (err) {
-        console.warn(`[${jobId}] ⚠️ Failed to process effects_config:`, err.message);
+        console.warn(`[${jobId}] ⚠️ Failed to normalize effects_config:`, err.message);
         safeEffectsConfig = null;
       }
     }

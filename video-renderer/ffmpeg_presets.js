@@ -1017,6 +1017,113 @@ function safeClamp(value, defaultVal, min = 0, max = 1) {
 }
 
 /**
+ * normalizeEffectsConfig(raw)
+ *
+ * Single-point clamp + sanitize for effects_config before it reaches any builder.
+ * Guarantees every numeric field is a finite number within safe FFmpeg ranges.
+ * Call once at the renderer entry point — individual builders can then trust the values.
+ *
+ * Safe ranges (chosen to prevent visible artefacts or FFmpeg errors):
+ *   intensity:         0 – 1
+ *   kenburns.zoom_range: each element 1.0 – 1.5
+ *   kenburns.pan_speed:  0 – 0.6    (above 0.4 is already very noticeable)
+ *   grain.intensity:     0 – 0.5    (above 0.35 is heavy noise)
+ *   grain.size:          0.5 – 2.0
+ *   flicker.intensity:   0 – 0.5
+ *   flicker.frequency:   0.05 – 2.0
+ *   vignette.intensity:  0 – 1
+ *   color_grade.intensity: 0 – 1
+ *   fade.duration:       0.1 – 5.0
+ *
+ * @param {Object} raw - The effects_config object (may be from untrusted worker payload)
+ * @returns {Object} A deep-cloned config with every numeric field clamped to safe ranges
+ */
+function normalizeEffectsConfig(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+
+  const cfg = {};
+
+  // Top-level
+  cfg.enabled = raw.enabled === true;
+  cfg.intensity = safeClamp(raw.intensity, 0.5, 0, 1);
+
+  // Ken Burns
+  if (raw.kenburns && typeof raw.kenburns === 'object') {
+    const kb = raw.kenburns;
+    cfg.kenburns = {
+      enabled: kb.enabled !== false,
+      zoom_range: [
+        safeClamp(Array.isArray(kb.zoom_range) ? kb.zoom_range[0] : 1.0, 1.0, 1.0, 1.5),
+        safeClamp(Array.isArray(kb.zoom_range) ? kb.zoom_range[1] : 1.12, 1.0, 1.0, 1.5),
+      ],
+      pan_speed: safeClamp(kb.pan_speed, 0.4, 0, 0.6),
+      direction: ['alternate', 'in', 'out', 'random', 'pan-left', 'pan-right', 'pan-up', 'pan-down']
+        .includes(kb.direction) ? kb.direction : 'alternate',
+    };
+  } else {
+    cfg.kenburns = { enabled: true, zoom_range: [1.0, 1.12], pan_speed: 0.4, direction: 'alternate' };
+  }
+
+  // Grain
+  if (raw.grain && typeof raw.grain === 'object') {
+    cfg.grain = {
+      enabled: raw.grain.enabled === true,
+      intensity: safeClamp(raw.grain.intensity, 0.0, 0, 0.5),
+      size: safeClamp(raw.grain.size, 1.0, 0.5, 2.0),
+    };
+  } else {
+    cfg.grain = { enabled: false, intensity: 0, size: 1.0 };
+  }
+
+  // Flicker
+  if (raw.flicker && typeof raw.flicker === 'object') {
+    cfg.flicker = {
+      enabled: raw.flicker.enabled === true,
+      intensity: safeClamp(raw.flicker.intensity, 0.0, 0, 0.5),
+      frequency: safeClamp(raw.flicker.frequency, 0.3, 0.05, 2.0),
+    };
+  } else {
+    cfg.flicker = { enabled: false, intensity: 0, frequency: 0.3 };
+  }
+
+  // Vignette
+  if (raw.vignette && typeof raw.vignette === 'object') {
+    cfg.vignette = {
+      enabled: raw.vignette.enabled === true,
+      intensity: safeClamp(raw.vignette.intensity, 0.35, 0, 1),
+    };
+  } else {
+    cfg.vignette = { enabled: false, intensity: 0 };
+  }
+
+  // Color grade
+  if (raw.color_grade && typeof raw.color_grade === 'object') {
+    const cg = raw.color_grade;
+    cfg.color_grade = {
+      enabled: cg.enabled === true,
+      preset: ['auto', 'cinematic_dark', 'cold_desaturated', 'vhs_degraded']
+        .includes(cg.preset) ? cg.preset : 'auto',
+      intensity: safeClamp(cg.intensity, 0.5, 0, 1),
+    };
+  } else {
+    cfg.color_grade = { enabled: false, preset: 'auto', intensity: 0 };
+  }
+
+  // Fade
+  if (raw.fade && typeof raw.fade === 'object') {
+    cfg.fade = {
+      fade_in: raw.fade.fade_in !== false,
+      fade_out: raw.fade.fade_out !== false,
+      duration: safeClamp(raw.fade.duration, 1.5, 0.1, 5.0),
+    };
+  } else {
+    cfg.fade = { fade_in: true, fade_out: true, duration: 1.5 };
+  }
+
+  return cfg;
+}
+
+/**
  * Build complete filter chain from effects profile
  * Fail-soft: wraps each effect builder in try/catch, continues on error
  * @param {Object} effectsProfile - Full effects profile with all effect configs
@@ -1455,6 +1562,7 @@ module.exports = {
   buildFiltersFromEffectsProfile,
   
   // Effects Config v2.0 (Roadmap #15 — Controlled Motion)
+  normalizeEffectsConfig,
   buildFiltersFromEffectsConfig,
   buildKenBurnsFromConfig,
   buildGrainFromConfig,
