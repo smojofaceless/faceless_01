@@ -1763,6 +1763,10 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
   // Merge DNA effect flags with explicit effects (explicit wins)
   // BUT if effectsProfile is provided with all disabled, it takes precedence
   let mergedEffects = { ...dnaEffectFlags, ...effects };
+
+  // Diagnostic: log legacy flags BEFORE CM override
+  console.log(`[${jobId}]   Legacy flags: vignette=${mergedEffects.vignette}, horrorGrade=${mergedEffects.horrorGrade}, filmGrain=${mergedEffects.filmGrain}`);
+  console.log(`[${jobId}]   effectsConfig: ${effectsConfig ? `enabled=${effectsConfig.enabled}, type=${typeof effectsConfig}` : 'null'}`);
   
   // v4.0: If effectsConfig (Controlled Motion) is provided, it takes highest precedence
   // and replaces the legacy individual-effect pipeline

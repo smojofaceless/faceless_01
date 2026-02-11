@@ -1772,6 +1772,14 @@ async function assembleWithRenderer(
 
   console.log(`[ASSEMBLE] Music: ${musicUrl ? 'YES' : 'NO'}, volume=${musicVolumePercent}%, ducking=${musicCfg?.ducking?.enabled || false}`);
 
+  // When Controlled Motion is active (effects_config.enabled=true), the legacy
+  // individual-effect passes (vignette, horrorGrade, filmGrain) are handled by the
+  // CM filter chain.  Send them as false from the worker so they never fire — even
+  // if the renderer's CM block fails to enter (e.g. null effectsConfig, build error).
+  // Ken Burns & fades stay true because both pipelines use them via mergedEffects.
+  const cmActive = effectsConfig?.enabled === true;
+  console.log(`[ASSEMBLE] Effects pipeline: cmActive=${cmActive}, effectsConfig=${effectsConfig ? `enabled=${effectsConfig.enabled}` : 'null'}`);
+
   // Start the render job
   const response = await fetchWithError(
     `${rendererUrl}/render`,
@@ -1789,9 +1797,9 @@ async function assembleWithRenderer(
           fadeTransitions: true,
           fadeIn: true,
           fadeOut: true,
-          filmGrain: true,
-          vignette: true,
-          horrorGrade: true,
+          filmGrain: !cmActive,
+          vignette: !cmActive,
+          horrorGrade: !cmActive,
           captionStyle: 'bold',
         },
         // v4.0: Controlled Motion effects config (overrides legacy effects when present)
