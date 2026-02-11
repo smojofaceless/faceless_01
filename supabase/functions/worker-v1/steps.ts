@@ -1,6 +1,7 @@
 // =====================================================
 // WORKER V1 STEP IMPLEMENTATIONS
 // Real work for each pipeline step
+// v3.0 - 2026-03-01 (Story Anchor + Enhanced Visual Cues: preset-aware extraction, group count enforcement, character consistency)
 // v2.0 - 2026-02-15 (Visual cue extraction for images, balanced scene count defaults, scene splitting fix)
 // v1.5 - 2026-02-12 (DB-driven image prompt config per vibe preset)
 // v1.4 - 2026-02-10 (Background Music V1: DB-driven track selection, ducking config)
@@ -1143,7 +1144,34 @@ export async function executeImagesStep(
 
   console.log(`[IMAGES] Generating ${scenes.length} images (model: ${imageModel}, style: ${artStyle}, config: ${imagePromptConfig ? 'DB' : 'legacy'})`);
 
+  // v3.0: Create/load Story Anchor for visual consistency
+  let storyAnchor: StoryAnchor | null = null;
+  const storyAnchorCacheKey = `${job.id}:story_anchor`;
+  
+  try {
+    // Check cache first
+    const cachedAnchor = await getAssetByKey(supabase, job.id, storyAnchorCacheKey);
+    if (cachedAnchor?.meta?.environment) {
+      storyAnchor = cachedAnchor.meta as unknown as StoryAnchor;
+      console.log(`[IMAGES] Story anchor loaded from cache: env="${(storyAnchor.environment || '').substring(0, 50)}...", group=${storyAnchor.isGroupStory}`);
+    } else if (job.story_text) {
+      // Create fresh story anchor
+      storyAnchor = await createStoryAnchor(job.story_text, openaiKey, vibePreset, imagePromptConfig);
+      if (storyAnchor) {
+        // Cache for continuation invocations
+        await upsertAsset(supabase, job.id, storyAnchorCacheKey, 'story_anchor', '', '', {
+          ...storyAnchor,
+          vibe_preset: vibePreset,
+        });
+        console.log(`[IMAGES] Story anchor created and cached`);
+      }
+    }
+  } catch (saErr) {
+    console.warn(`[IMAGES] Story anchor creation failed (will proceed without): ${saErr instanceof Error ? saErr.message : saErr}`);
+  }
+
   // v2.0: Extract visual cues from scenes (GPT analyzes what images should depict)
+  // v3.0: Now preset-aware — passes ImagePromptConfig + StoryAnchor for guided extraction
   // Cache visual cues as a job asset so continuation invocations don't re-extract
   let visualCues: VisualCue[] = [];
   const visualCuesCacheKey = `${job.id}:visual_cues`;
@@ -1155,8 +1183,8 @@ export async function executeImagesStep(
       visualCues = cachedCues.meta.cues as VisualCue[];
       console.log(`[IMAGES] Visual cues loaded from cache: ${visualCues.length} cues`);
     } else {
-      // Extract fresh visual cues
-      visualCues = await extractVisualCues(scenes, openaiKey, vibePreset);
+      // Extract fresh visual cues (v3.0: preset-aware)
+      visualCues = await extractVisualCues(scenes, openaiKey, vibePreset, imagePromptConfig, storyAnchor);
       if (visualCues.length > 0) {
         console.log(`[IMAGES] Visual cues extracted: ${visualCues.length} cues for ${scenes.length} scenes`);
         // Cache for continuation invocations
@@ -1173,16 +1201,30 @@ export async function executeImagesStep(
 
   // Log visual cues summary
   if (visualCues.length > 0) {
+    // v3.0: Count scene type distribution
+    const typeDistribution: Record<string, number> = {};
+    for (const vc of visualCues) {
+      typeDistribution[vc.sceneType] = (typeDistribution[vc.sceneType] || 0) + 1;
+    }
+    
     await logger.snapshot('images', 'visual_cues', {
       total_cues: visualCues.length,
       total_scenes: scenes.length,
+      scene_type_distribution: typeDistribution,
+      story_anchor: storyAnchor ? {
+        environment: (storyAnchor.environment || '').substring(0, 100),
+        isGroupStory: storyAnchor.isGroupStory,
+        groupCount: storyAnchor.groupCount,
+        horrorTone: storyAnchor.horrorTone,
+        hasCharacterDescription: !!storyAnchor.characterDescription,
+      } : null,
       sample_cues: visualCues.slice(0, 5).map(vc => ({ 
         scene: vc.sceneIndex, 
         type: vc.sceneType, 
         camera: vc.camera,
         description: (vc.description || '').substring(0, 100) 
       }))
-    }, `Visual cues extracted: ${visualCues.length} for ${scenes.length} scenes`);
+    }, `Visual cues extracted: ${visualCues.length} for ${scenes.length} scenes (types: ${JSON.stringify(typeDistribution)})`);
   }
 
   let generatedCount = 0;
@@ -1249,9 +1291,9 @@ export async function executeImagesStep(
       // Heartbeat before each image (they can be slow)
       await requireLeaseOwner(supabase, job.id, workerId, `images:scene_${i}`);
 
-      // Build prompt — uses visual cues + DB config when available, legacy otherwise
+      // Build prompt — uses visual cues + DB config + story anchor when available
       const visualCue = visualCues.find(vc => vc.sceneIndex === i);
-      const scenePrompt = buildImagePrompt(scene.text, scene.keywords, artStyle, i, scenes.length, imagePromptConfig, visualCue);
+      const scenePrompt = buildImagePrompt(scene.text, scene.keywords, artStyle, i, scenes.length, imagePromptConfig, visualCue, storyAnchor);
       
       // === EXTERNAL IDEMPOTENCY: Hash includes model+size+prompt to avoid cross-config collisions ===
       // Note: imageModel is defined at function scope from job.meta or env
@@ -1303,12 +1345,13 @@ export async function executeImagesStep(
         const cue = visualCues.find(vc => vc.sceneIndex === i);
         await logger.snapshot('images', 'prompt', { 
           scene_index: i, 
-          prompt: scenePrompt.slice(0, 800), 
+          prompt: scenePrompt.slice(0, 1200), 
           model: imageModel, 
           size: imageSize,
           visual_cue: cue ? { type: cue.sceneType, camera: cue.camera, description: (cue.description || '').slice(0, 200) } : null,
-          source: cue ? 'visual_cue' : 'raw_text'
-        }, `Scene ${i + 1}/${scenes.length} prompt`);
+          story_anchor_used: !!storyAnchor,
+          source: cue ? 'visual_cue+anchor' : 'raw_text'
+        }, `Scene ${i + 1}/${scenes.length} prompt (${cue?.sceneType || 'no_cue'})`);
       }
 
       // === LEASE GRACE CHECK: Verify enough time before expensive API call ===
@@ -1505,6 +1548,8 @@ export async function executeImagesStep(
 
 // =====================================================
 // VISUAL CUE EXTRACTION (GPT analyzes scenes for images)
+// v3.0: Now preset-aware — receives ImagePromptConfig so style rules,
+// negative constraints, and counting-horror logic guide the extraction.
 // =====================================================
 
 interface VisualCue {
@@ -1515,26 +1560,159 @@ interface VisualCue {
 }
 
 /**
+ * Lightweight Story Anchor — extracts consistent visual identity from story + preset.
+ * Cached as job asset so continuation invocations reuse it.
+ */
+interface StoryAnchor {
+  environment: string;       // primary setting description
+  characterDescription: string | null; // main character(s) appearance, null if no humans
+  recurringMotifs: string;   // visual elements to repeat across scenes
+  horrorTone: string;        // type of horror/dread
+  timeOfDay: string;         // lighting conditions
+  isGroupStory: boolean;     // whether multiple characters are present
+  groupCount: number | null; // expected group size, null if not a group story
+}
+
+/**
+ * Create a lightweight Story Anchor — visual bible for consistent image generation.
+ * This is a simplified version of run-job/openai.ts createStoryAnchor,
+ * designed to run in ~10s and provide core consistency data.
+ */
+async function createStoryAnchor(
+  storyText: string,
+  openaiKey: string,
+  vibePreset: string,
+  config: ImagePromptConfig | null,
+): Promise<StoryAnchor | null> {
+  const stylePrompt = config?.style_prompt || 'Cinematic dark photography, horror aesthetic';
+  const envHint = config?.environment || '';
+  
+  const prompt = `You are a visual director. Analyze this story and extract a consistent visual identity for generating images.
+
+ART STYLE: ${stylePrompt}
+${envHint ? `ENVIRONMENT GUIDE: ${envHint}` : ''}
+GENRE/VIBE: ${vibePreset}
+
+STORY:
+"${storyText.substring(0, 1500)}"
+
+Extract:
+1. environment: The PRIMARY setting — be specific (not just "forest" but "dense pine forest with twisted roots at dusk")
+2. characterDescription: If ANY humans appear, describe them in detail (age, clothing, hair, distinguishing features). null if no humans.
+3. recurringMotifs: Visual elements to repeat (specific objects, atmospheric details, textures mentioned in story)
+4. horrorTone: Type of horror (psychological, supernatural, counting, cosmic, folklore, body)
+5. timeOfDay: Specific lighting/time
+6. isGroupStory: true if story involves multiple characters together
+7. groupCount: Expected number of people in the group (null if not a group story)
+
+Return JSON: { "environment": "...", "characterDescription": "..." or null, "recurringMotifs": "...", "horrorTone": "...", "timeOfDay": "...", "isGroupStory": true/false, "groupCount": N or null }`;
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openaiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: 'You are a visual director. Respond only with valid JSON.' },
+          { role: 'user', content: prompt }
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.5,
+        max_tokens: 1000,
+      }),
+    });
+
+    if (!response.ok) {
+      console.warn(`[STORY_ANCHOR] GPT call failed: ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) return null;
+
+    const parsed = JSON.parse(content);
+    console.log(`[STORY_ANCHOR] Created: env="${(parsed.environment || '').substring(0, 60)}...", group=${parsed.isGroupStory}, count=${parsed.groupCount}`);
+    return parsed as StoryAnchor;
+  } catch (err) {
+    console.warn(`[STORY_ANCHOR] Creation failed: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+}
+
+/**
  * Extract visual cues from scene text using GPT-4o-mini.
- * Analyzes what each scene's IMAGE should depict (not narration text).
- * Returns per-scene descriptions, scene types, and camera suggestions.
+ * v3.0: Now preset-aware — includes style rules, negative constraints,
+ * group counting logic, and story anchor context.
  */
 async function extractVisualCues(
   scenes: Array<{ index: number; text: string; keywords: string[] }>,
   openaiKey: string,
   vibePreset: string,
+  config: ImagePromptConfig | null,
+  storyAnchor: StoryAnchor | null,
 ): Promise<VisualCue[]> {
   const sceneList = scenes.map((s, i) => 
     `Scene ${i + 1}: "${s.text.substring(0, 200)}"`
   ).join('\n');
 
-  const prompt = `You are a visual director for a short horror/mystery video. Analyze each scene's narration and describe what the STILL IMAGE should depict — not the narration text itself, but what a viewer should SEE.
+  // Build preset-aware context for the extraction
+  const styleContext = config ? `
+ART STYLE: ${config.style_prompt}
+ENVIRONMENT GUIDE: ${config.environment}
+COLOR PALETTE: ${config.color_palette}
+NEGATIVE CONSTRAINTS (things images must NEVER show): ${config.negative_prompt}` : '';
+
+  // Story anchor context for consistency
+  const anchorContext = storyAnchor ? `
+STORY ENVIRONMENT: ${storyAnchor.environment}
+${storyAnchor.characterDescription ? `CHARACTER(S): ${storyAnchor.characterDescription}` : 'NO HUMAN CHARACTERS (use objects, environments, and atmospheric shots only)'}
+RECURRING MOTIFS: ${storyAnchor.recurringMotifs}
+HORROR TONE: ${storyAnchor.horrorTone}
+TIME OF DAY: ${storyAnchor.timeOfDay}
+${storyAnchor.isGroupStory ? `GROUP STORY: Yes, ${storyAnchor.groupCount || 'unknown number of'} people` : ''}` : '';
+
+  // Special rules for counting horror (one_too_many)
+  const countingRules = (vibePreset === 'one_too_many' && storyAnchor?.isGroupStory) ? `
+COUNTING HORROR RULES (CRITICAL):
+- This is a "one too many" story — the group discovers an extra person
+- Expected group size: ${storyAnchor.groupCount || 'varies'}
+- BEFORE the reveal moment: show exactly the expected count, everyone looks normal
+- AFTER the reveal: show one extra person, with subtly unsettling expressions
+- For "implied presence" scenes (feeling watched, shadows): do NOT show extra people as humans — use shadow distortions, light anomalies, motion blur
+- For scenes examining photos/footage: ALWAYS show the wrong count
+- VARY the scene types — not every scene needs the full group. Use establishing shots, object close-ups, atmosphere shots, and individual character moments too.` : '';
+
+  // Backrooms-specific rules
+  const liminalRules = vibePreset === 'backrooms' ? `
+LIMINAL SPACE RULES:
+- Avoid showing humans unless the scene text explicitly mentions a person
+- Focus on empty impossible architecture, repeating patterns, fluorescent-lit void
+- Use POV shots, impossible corridors, empty rooms` : '';
+
+  const prompt = `You are a visual director creating image descriptions for a short horror video.
+${styleContext}
+${anchorContext}
+${countingRules}
+${liminalRules}
 
 Genre/vibe: ${vibePreset}
 
+Analyze each scene's narration and describe what the STILL IMAGE should depict — not the narration text itself, but what a viewer should SEE. Each image must match the art style and negative constraints above.
+
+IMPORTANT VARIETY RULES:
+- Mix scene types: NOT every scene should be "group". Use establishing (wide location), object (detail/prop focus), atmosphere (mood/environment), character (single person), group (multiple people)
+- Only use "group" type when the scene text specifically describes people together
+- For suspense/tension scenes without people, use "atmosphere" or "object" type
+- For scenes about locations or settings, use "establishing" type
+
 For each scene, provide:
-- description: A concise 1-2 sentence visual description of what the image should show (specific subjects, actions, environment details)
-- sceneType: One of: establishing (wide location shots), object (focus on a specific item/detail), atmosphere (mood/environment), character (person focus), group (multiple people)
+- description: A concise 1-2 sentence visual description matching the art style. Be SPECIFIC about what is visible.
+- sceneType: One of: establishing (wide location shots), object (focus on a specific item/detail), atmosphere (mood/environment), character (single person focus), group (multiple people)
 - camera: One of: wide, medium, close-up, extreme-close-up, overhead, low-angle, pov
 
 ${sceneList}
@@ -1572,7 +1750,13 @@ Respond with a JSON object: { "cues": [ { "sceneIndex": 0, "description": "...",
     const parsed = JSON.parse(content);
     const cues = parsed.cues || parsed.scenes || [];
     
-    console.log(`[VISUAL_CUES] Extracted ${cues.length} visual cues for ${scenes.length} scenes`);
+    // Log scene type distribution for diagnostics
+    const typeDistribution: Record<string, number> = {};
+    for (const cue of cues) {
+      typeDistribution[cue.sceneType] = (typeDistribution[cue.sceneType] || 0) + 1;
+    }
+    console.log(`[VISUAL_CUES] Extracted ${cues.length} cues for ${scenes.length} scenes. Types: ${JSON.stringify(typeDistribution)}`);
+    
     return cues;
   } catch (err) {
     console.warn(`[VISUAL_CUES] Extraction failed: ${err instanceof Error ? err.message : err}`);
@@ -1585,9 +1769,10 @@ Respond with a JSON object: { "cues": [ { "sceneIndex": 0, "description": "...",
  */
 /**
  * Build an image generation prompt for a scene.
- * When DB config is available (ImagePromptConfig), produces a rich multi-line prompt
- * with per-preset art style, environment, color palette, camera progression, and
- * tension escalation. Falls back to legacy flat prompt when config is null.
+ * v3.0: Now includes story anchor for consistency, group count enforcement,
+ * and character descriptions. Produces rich multi-line prompts
+ * with per-preset art style, environment, color palette, camera progression,
+ * tension escalation, and visual identity rules.
  */
 function buildImagePrompt(
   sceneText: string,
@@ -1596,7 +1781,8 @@ function buildImagePrompt(
   sceneIndex: number,
   totalScenes: number,
   config: ImagePromptConfig | null,
-  visualCue?: VisualCue
+  visualCue?: VisualCue,
+  storyAnchor?: StoryAnchor | null,
 ): string {
   // === DB-driven prompt (new path) ===
   if (config) {
@@ -1619,15 +1805,46 @@ function buildImagePrompt(
     let mood = config.mood;
     let environment = config.environment;
     if (sceneType === 'establishing') {
-      // Wide establishing shots — emphasize environment over character mood
       environment = `${config.environment}, expansive vista`;
       mood = `atmospheric, ${config.mood}`;
     } else if (sceneType === 'object') {
-      // Object focus — tight framing, detail emphasis
       mood = `focused detail, ${config.mood}`;
     }
 
+    // v3.0: Override environment with story anchor for consistency
+    if (storyAnchor?.environment && sceneType !== 'establishing') {
+      // Use story-specific environment but keep preset flavor
+      environment = storyAnchor.environment;
+    }
+
     const keywordStr = keywords.slice(0, 3).join(', ');
+
+    // v3.0: Build character/group context from story anchor
+    let characterBlock = '';
+    if (storyAnchor) {
+      if (sceneType === 'character' && storyAnchor.characterDescription) {
+        characterBlock = `Character: ${storyAnchor.characterDescription}`;
+      } else if (sceneType === 'group' && storyAnchor.isGroupStory && storyAnchor.groupCount) {
+        const count = storyAnchor.groupCount;
+        // Determine if we're before or after the reveal (roughly 65% mark)
+        const revealIndex = Math.floor(totalScenes * 0.65);
+        const isAfterReveal = sceneIndex >= revealIndex;
+        const showCount = isAfterReveal ? count + 1 : count;
+        
+        characterBlock = [
+          `GROUP: EXACTLY ${showCount} distinct people visible, each with unique clothing and hair.`,
+          storyAnchor.characterDescription ? `Characters: ${storyAnchor.characterDescription}` : '',
+          isAfterReveal ? `One person has a subtly wrong expression — smile too wide, eyes slightly off.` : `Everyone looks normal and relaxed.`,
+          `Every face must be clearly visible. No one blocked by another person.`,
+        ].filter(Boolean).join('\n');
+      }
+    }
+
+    // v3.0: Add recurring motifs for visual consistency
+    let motifsBlock = '';
+    if (storyAnchor?.recurringMotifs) {
+      motifsBlock = `Visual motifs: ${storyAnchor.recurringMotifs}`;
+    }
 
     const parts = [
       sceneDescription,
@@ -1638,6 +1855,8 @@ function buildImagePrompt(
       cameraAngle ? `Camera: ${cameraAngle}` : '',
       `Lighting: ${config.lighting}`,
       `Color: ${config.color_palette}`,
+      characterBlock,
+      motifsBlock,
       keywordStr ? `Keywords: ${keywordStr}` : '',
       '',
       config.negative_prompt,

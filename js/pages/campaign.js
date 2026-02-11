@@ -205,6 +205,11 @@ class CampaignPage {
         this.createCampaignBtn = document.getElementById('btn-create-campaign');
         this.newCampaignBtn = document.getElementById('btn-new-campaign');
         
+        // Scene count override
+        this.sceneCountInput = document.getElementById('scene-count-override');
+        this.sceneCountMinus = document.getElementById('scene-count-minus');
+        this.sceneCountPlus = document.getElementById('scene-count-plus');
+
         // ASAP test mode
         this.asapModeCheckbox = document.getElementById('asap-mode');
         
@@ -236,6 +241,21 @@ class CampaignPage {
             if (current < 30) {
                 this.videoCountInput.value = current + 1;
                 this.onFormChange();
+            }
+        });
+        
+        // Scene count +/- buttons
+        this.sceneCountMinus?.addEventListener('click', () => {
+            const current = parseInt(this.sceneCountInput.value) || 0;
+            if (current > 0) {
+                this.sceneCountInput.value = current - 1;
+            }
+        });
+        
+        this.sceneCountPlus?.addEventListener('click', () => {
+            const current = parseInt(this.sceneCountInput.value) || 0;
+            if (current < 30) {
+                this.sceneCountInput.value = current + 1;
             }
         });
         
@@ -584,6 +604,7 @@ class CampaignPage {
             platforms: this.getSelectedPlatforms(),
             startDate: this.startDateInput.value,
             postsPerDay: parseInt(this.postsPerDaySelect.value) || 3,
+            sceneCount: parseInt(this.sceneCountInput?.value) || 0,
             windows: this.getTimeWindows(),
             jitterMinutes: parseInt(this.jitterInput?.value) || 15,
             platformOffsetMinutes: parseInt(this.platformOffsetInput?.value) || 5,
@@ -928,7 +949,8 @@ class CampaignPage {
                         jitterMinutes: config.jitterMinutes,
                         platformOffsetMinutes: config.platformOffsetMinutes,
                         presetWeights: config.presetWeights,
-                        asapMode: config.asapMode
+                        asapMode: config.asapMode,
+                        sceneCount: config.sceneCount || 0
                     }
                 });
             } else {

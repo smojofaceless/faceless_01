@@ -272,6 +272,17 @@
                                         <p class="form-hint">When the first video should post</p>
                                     </div>
 
+                                    <!-- Scene Count Override (Testing) -->
+                                    <div class="form-group">
+                                        <label class="form-label" for="scene-count-override">Scenes per Video</label>
+                                        <div class="input-with-buttons">
+                                            <button type="button" class="btn btn--icon btn--ghost" id="scene-count-minus">−</button>
+                                            <input type="number" id="scene-count-override" class="input" value="0" min="0" max="30">
+                                            <button type="button" class="btn btn--icon btn--ghost" id="scene-count-plus">+</button>
+                                        </div>
+                                        <p class="form-hint">0 = auto (worker decides based on duration). Set 4-6 for quick tests.</p>
+                                    </div>
+
                                     <!-- ASAP Test Mode -->
                                     <div class="form-group">
                                         <label class="checkbox-inline">

@@ -149,6 +149,7 @@ class CampaignManager {
         };
 
         // Build jobs array for RPC
+        const sceneCountOverride = config.sceneCount || 0; // 0 = auto
         const jobs = schedule.map((s, index) => ({
             vibe_preset: s.vibe_preset,
             scheduled_post_at: s.scheduled_post_at,
@@ -160,7 +161,8 @@ class CampaignManager {
                 platform_offsets: s.platform_offsets,
                 preset_selection_method: 'weighted_random',
                 duration: config.duration || this.defaults.duration,
-                generate_by: s.generate_by
+                generate_by: s.generate_by,
+                ...(sceneCountOverride > 0 ? { scene_count: sceneCountOverride } : {})
             }
         }));
 

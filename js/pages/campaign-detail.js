@@ -1276,6 +1276,27 @@ class CampaignDetailPage {
                 .like('idempotency_key', `${prefix}%`)
                 .order('created_at', { ascending: true });
             data.assets = assets || [];
+            
+            // v3.0: Also load visual_cues and story_anchor for images step
+            if (stepName === 'images') {
+                try {
+                    const { data: vcAsset } = await supabase
+                        .from('job_assets')
+                        .select('meta')
+                        .eq('job_id', jobId)
+                        .eq('idempotency_key', `${jobId}:visual_cues`)
+                        .single();
+                    data.visualCues = vcAsset?.meta?.cues || [];
+                    
+                    const { data: saAsset } = await supabase
+                        .from('job_assets')
+                        .select('meta')
+                        .eq('job_id', jobId)
+                        .eq('idempotency_key', `${jobId}:story_anchor`)
+                        .single();
+                    data.storyAnchorFull = saAsset?.meta || null;
+                } catch { /* non-critical */ }
+            }
         }
         
         // Load scenes data
@@ -1287,6 +1308,19 @@ class CampaignDetailPage {
                 .eq('idempotency_key', `${jobId}:scenes_subtitles`)
                 .single();
             data.scenesData = scenesAsset?.meta?.scenes || [];
+        }
+        
+        // Load story anchor for story and images steps
+        if (['story', 'images'].includes(stepName)) {
+            try {
+                const { data: saAsset } = await supabase
+                    .from('job_assets')
+                    .select('meta')
+                    .eq('job_id', jobId)
+                    .eq('idempotency_key', `${jobId}:story_anchor`)
+                    .single();
+                data.storyAnchorFull = saAsset?.meta || null;
+            } catch { /* non-critical */ }
         }
         
         return data;
@@ -1368,6 +1402,12 @@ class CampaignDetailPage {
                 <span class="step-detail__kv-val">${wordCount || '-'} words</span>
                 <span class="step-detail__kv-key">Model</span>
                 <span class="step-detail__kv-val">gpt-4o</span>
+                <span class="step-detail__kv-key">Art Style</span>
+                <span class="step-detail__kv-val">${job.meta?.art_style || '-'}</span>
+                <span class="step-detail__kv-key">Scene Count</span>
+                <span class="step-detail__kv-val">${job.meta?.scene_count || 'auto'}</span>
+                <span class="step-detail__kv-key">Platform</span>
+                <span class="step-detail__kv-val">${job.meta?.platform || '-'}</span>
             </div>
         </div>`;
         
@@ -1376,6 +1416,28 @@ class CampaignDetailPage {
             html += `<div class="step-detail__section">
                 <div class="step-detail__label">📖 Story: ${this.escapeHtml(job.title || 'Untitled')}</div>
                 <div class="step-detail__story">${this.escapeHtml(job.story_text || 'No story text available')}</div>
+            </div>`;
+        }
+        
+        // Story Anchor (loaded from job asset)  
+        if (data.storyAnchorFull) {
+            const sa = data.storyAnchorFull;
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">🎯 Story Anchor (Visual Bible)</div>
+                <div class="step-detail__kv-grid">
+                    <span class="step-detail__kv-key">Environment</span>
+                    <span class="step-detail__kv-val">${this.escapeHtml(sa.environment || '-')}</span>
+                    <span class="step-detail__kv-key">Character(s)</span>
+                    <span class="step-detail__kv-val">${this.escapeHtml(sa.characterDescription || 'None (atmospheric)')}</span>
+                    <span class="step-detail__kv-key">Recurring Motifs</span>
+                    <span class="step-detail__kv-val">${this.escapeHtml(sa.recurringMotifs || '-')}</span>
+                    <span class="step-detail__kv-key">Horror Tone</span>
+                    <span class="step-detail__kv-val">${this.escapeHtml(sa.horrorTone || '-')}</span>
+                    <span class="step-detail__kv-key">Time of Day</span>
+                    <span class="step-detail__kv-val">${this.escapeHtml(sa.timeOfDay || '-')}</span>
+                    <span class="step-detail__kv-key">Group Story</span>
+                    <span class="step-detail__kv-val">${sa.isGroupStory ? `Yes (${sa.groupCount || '?'} people)` : 'No'}</span>
+                </div>
             </div>`;
         }
         
@@ -1530,6 +1592,12 @@ class CampaignDetailPage {
                 return aIdx - bIdx;
             });
         
+        // Also look for visual_cues snapshot for type distribution info
+        const vcSnap = data.snapshots.find(s => s.message?.includes('Visual cues'));
+        const vcData = vcSnap?.meta?.data || vcSnap?.meta || {};
+        const storyAnchorInfo = vcData.story_anchor || null;
+        const sceneTypeDistribution = vcData.scene_type_distribution || null;
+        
         const totalScenes = data.stepMeta?.total_scenes || progress[progress.length - 1]?.meta?.total || imageAssets.length || '?';
         
         let html = `<div class="step-detail__section">
@@ -1541,8 +1609,41 @@ class CampaignDetailPage {
                 <span class="step-detail__kv-val">${promptData.size || '-'}</span>
                 <span class="step-detail__kv-key">Generated</span>
                 <span class="step-detail__kv-val">${imageAssets.length} / ${totalScenes}</span>
+                <span class="step-detail__kv-key">Story Anchor</span>
+                <span class="step-detail__kv-val">${storyAnchorInfo ? '✅ Used' : '❌ Not used'}</span>
             </div>
         </div>`;
+        
+        // Story Anchor details (if available)
+        if (storyAnchorInfo) {
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">🎯 Story Anchor</div>
+                <div class="step-detail__kv-grid">
+                    <span class="step-detail__kv-key">Environment</span>
+                    <span class="step-detail__kv-val">${this.escapeHtml(storyAnchorInfo.environment || '-')}</span>
+                    <span class="step-detail__kv-key">Horror Tone</span>
+                    <span class="step-detail__kv-val">${storyAnchorInfo.horrorTone || '-'}</span>
+                    <span class="step-detail__kv-key">Group Story</span>
+                    <span class="step-detail__kv-val">${storyAnchorInfo.isGroupStory ? `Yes (${storyAnchorInfo.groupCount || '?'} people)` : 'No'}</span>
+                    <span class="step-detail__kv-key">Character</span>
+                    <span class="step-detail__kv-val">${storyAnchorInfo.hasCharacterDescription ? '✅ Described' : '❌ None'}</span>
+                </div>
+            </div>`;
+        }
+        
+        // Scene type distribution
+        if (sceneTypeDistribution) {
+            const types = Object.entries(sceneTypeDistribution).map(([type, count]) => `${type}: ${count}`);
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">📊 Scene Type Distribution</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    ${Object.entries(sceneTypeDistribution).map(([type, count]) => {
+                        const colors = { establishing: '#6366F1', object: '#F59E0B', atmosphere: '#10B981', character: '#3B82F6', group: '#EF4444' };
+                        return `<span style="background:${colors[type] || '#6B7280'}20;color:${colors[type] || '#6B7280'};padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600">${type}: ${count}</span>`;
+                    }).join('')}
+                </div>
+            </div>`;
+        }
         
         // Sample prompt
         if (promptData.prompt) {
@@ -1552,16 +1653,22 @@ class CampaignDetailPage {
             </div>`;
         }
         
-        // Image grid
+        // Image grid — clickable for detail modal
         if (imageAssets.length > 0) {
+            // Store image assets for modal access
+            this._imageAssets = imageAssets;
+            this._imagePromptSnapshots = data.snapshots.filter(s => s.message?.includes('prompt'));
+            this._imageScenes = data.scenesData || [];
+            this._imageStoryAnchor = storyAnchorInfo;
+            
             html += `<div class="step-detail__section">
-                <div class="step-detail__label">🎨 Generated Images (${imageAssets.length})</div>
+                <div class="step-detail__label">🎨 Generated Images (${imageAssets.length}) <span style="font-size:11px;color:var(--text-secondary);font-weight:normal">— click for details</span></div>
                 <div class="step-detail__image-grid">
                     ${imageAssets.map((a, i) => {
                         const sceneIdx = parseInt(a.idempotency_key?.split('scene_')[1] || i);
-                        return `<div class="step-detail__image-item" onclick="window.open('${a.public_url}', '_blank')">
+                        return `<div class="step-detail__image-item step-detail__image-item--clickable" data-scene-index="${sceneIdx}" onclick="window.campaignDetailPage.showImageDetail(${sceneIdx})">
                             <img src="${a.public_url}" alt="Scene ${sceneIdx + 1}" loading="lazy">
-                            <div class="step-detail__image-item__label">Scene ${sceneIdx + 1}</div>
+                            <div class="step-detail__image-item__label">Scene ${sceneIdx + 1}${a.meta?.art_style ? ` · ${a.meta.art_style}` : ''}</div>
                         </div>`;
                     }).join('')}
                 </div>
@@ -1582,6 +1689,90 @@ class CampaignDetailPage {
         }
         
         return html;
+    }
+
+    /**
+     * Show image detail modal for a specific scene
+     */
+    showImageDetail(sceneIndex) {
+        const imageAssets = this._imageAssets || [];
+        const asset = imageAssets.find(a => {
+            const idx = parseInt(a.idempotency_key?.split('scene_')[1] || '-1');
+            return idx === sceneIndex;
+        });
+        if (!asset) return;
+        
+        const meta = asset.meta || {};
+        const scenes = this._imageScenes || [];
+        const sceneData = scenes[sceneIndex] || {};
+        
+        // Find the prompt snapshot for this scene
+        const promptSnaps = this._imagePromptSnapshots || [];
+        const matchingSnap = promptSnaps.find(s => (s.meta?.data?.scene_index ?? s.meta?.scene_index) === sceneIndex);
+        const snapData = matchingSnap?.meta?.data || matchingSnap?.meta || {};
+        
+        // Build prompt — from snapshot or from asset meta
+        const prompt = snapData.prompt || meta.prompt || 'Prompt not recorded for this scene';
+        const visualCue = snapData.visual_cue || null;
+        const artStyle = meta.art_style || snapData.art_style || '-';
+        const imageModel = meta.image_model || snapData.model || '-';
+        
+        // Create modal overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'image-detail-modal-overlay';
+        overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+        
+        overlay.innerHTML = `
+            <div class="image-detail-modal">
+                <div class="image-detail-modal__header">
+                    <h3>Scene ${sceneIndex + 1} Image Details</h3>
+                    <button class="image-detail-modal__close" onclick="this.closest('.image-detail-modal-overlay').remove()">✕</button>
+                </div>
+                <div class="image-detail-modal__body">
+                    <div class="image-detail-modal__image-col">
+                        <img src="${asset.public_url}" alt="Scene ${sceneIndex + 1}" />
+                        <div class="image-detail-modal__image-actions">
+                            <button onclick="window.open('${asset.public_url}', '_blank')" class="btn-secondary-sm">🔗 Open Full Size</button>
+                        </div>
+                    </div>
+                    <div class="image-detail-modal__info-col">
+                        <div class="image-detail-modal__section">
+                            <div class="image-detail-modal__label">⚙️ Generation Config</div>
+                            <div class="image-detail-modal__kv">
+                                <span>Model</span><span>${this.escapeHtml(imageModel)}</span>
+                                <span>Art Style</span><span>${this.escapeHtml(artStyle)}</span>
+                                <span>Scene Type</span><span>${this.escapeHtml(visualCue?.type || '-')}</span>
+                                <span>Camera</span><span>${this.escapeHtml(visualCue?.camera || '-')}</span>
+                                ${meta.prompt_hash ? `<span>Prompt Hash</span><span style="font-family:monospace;font-size:11px">${meta.prompt_hash.substring(0, 16)}...</span>` : ''}
+                            </div>
+                        </div>
+                        ${visualCue ? `
+                        <div class="image-detail-modal__section">
+                            <div class="image-detail-modal__label">👁️ Visual Cue</div>
+                            <p style="font-size:13px;color:var(--text-primary);line-height:1.5">${this.escapeHtml(visualCue.description || '-')}</p>
+                        </div>` : ''}
+                        ${sceneData.text ? `
+                        <div class="image-detail-modal__section">
+                            <div class="image-detail-modal__label">📖 Scene Narration</div>
+                            <p style="font-size:13px;color:var(--text-primary);line-height:1.5">${this.escapeHtml(sceneData.text)}</p>
+                            ${sceneData.keywords?.length ? `<div style="margin-top:6px;font-size:11px;color:var(--text-secondary)">Keywords: ${sceneData.keywords.join(', ')}</div>` : ''}
+                        </div>` : ''}
+                        <div class="image-detail-modal__section">
+                            <div class="image-detail-modal__label">🧠 Full Prompt</div>
+                            <pre class="image-detail-modal__prompt">${this.escapeHtml(prompt)}</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(overlay);
+        
+        // Close on Escape
+        const escHandler = (e) => {
+            if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', escHandler); }
+        };
+        document.addEventListener('keydown', escHandler);
     }
 
     renderSubtitlesDetail(data) {
