@@ -3,6 +3,7 @@
 // Processes jobs through: Story → Uniqueness → Scenes → Voice → 
 //                         Music → Images → Subtitles → Assemble → Upload → Schedule
 // 
+// v2.8 - 2026-02-10 (503 retry: wait + retry when renderer busy during campaigns)
 // v2.7 - 2026-02-10 (Background Music V1: DB-driven tracks, ducking, fades)
 // v2.5 - 2026-02-10 (Step-level DLQ + retry eligibility tracking)
 // v2.4 - 2026-02-22 (Logger hardening: attempt + worker_id correlation)

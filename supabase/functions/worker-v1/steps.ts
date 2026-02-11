@@ -1780,43 +1780,74 @@ async function assembleWithRenderer(
   const cmActive = effectsConfig?.enabled === true;
   console.log(`[ASSEMBLE] Effects pipeline: cmActive=${cmActive}, effectsConfig=${effectsConfig ? `enabled=${effectsConfig.enabled}` : 'null'}`);
 
-  // Start the render job
-  const response = await fetchWithError(
-    `${rendererUrl}/render`,
-    {
+  // Build the render payload once (used for initial + retry)
+  const renderPayload = JSON.stringify({
+    job_id: jobId,
+    images: imageUrls,
+    audio_url: audioUrl,
+    durations: durations,
+    captions: captions,
+    effects: {
+      kenBurns: true,
+      fadeTransitions: true,
+      fadeIn: true,
+      fadeOut: true,
+      filmGrain: !cmActive,
+      vignette: !cmActive,
+      horrorGrade: !cmActive,
+      captionStyle: 'bold',
+    },
+    // v4.0: Controlled Motion effects config (overrides legacy effects when present)
+    effects_config: effectsConfig || null,
+    music_url: musicUrl,
+    music_volume: musicVolumePercent,
+    // Background Music V1: ducking + fade config for renderer
+    music_config: musicCfg ? {
+      ducking: musicCfg.ducking || { enabled: false },
+      fade: musicCfg.fade || { in_ms: 800, out_ms: 1200 },
+      loopable: meta?.music_loopable !== false, // default true; set by music step
+    } : null,
+    low_memory: true, // Safe for cloud deployment
+  });
+
+  // Start the render job — retry on 503 (renderer busy with another job)
+  // Max 2 attempts: initial + 1 retry after waiting retry_after seconds
+  const MAX_RENDER_ATTEMPTS = 2;
+  let response: Response | null = null;
+  
+  for (let attempt = 1; attempt <= MAX_RENDER_ATTEMPTS; attempt++) {
+    const res = await fetch(`${rendererUrl}/render`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        job_id: jobId,
-        images: imageUrls,
-        audio_url: audioUrl,
-        durations: durations,
-        captions: captions,
-        effects: {
-          kenBurns: true,
-          fadeTransitions: true,
-          fadeIn: true,
-          fadeOut: true,
-          filmGrain: !cmActive,
-          vignette: !cmActive,
-          horrorGrade: !cmActive,
-          captionStyle: 'bold',
-        },
-        // v4.0: Controlled Motion effects config (overrides legacy effects when present)
-        effects_config: effectsConfig || null,
-        music_url: musicUrl,
-        music_volume: musicVolumePercent,
-        // Background Music V1: ducking + fade config for renderer
-        music_config: musicCfg ? {
-          ducking: musicCfg.ducking || { enabled: false },
-          fade: musicCfg.fade || { in_ms: 800, out_ms: 1200 },
-          loopable: meta?.music_loopable !== false, // default true; set by music step
-        } : null,
-        low_memory: true, // Safe for cloud deployment
-      }),
-    },
-    'Video renderer'
-  );
+      body: renderPayload,
+    });
+
+    if (res.ok) {
+      response = res;
+      break;
+    }
+
+    // Handle 503 (server busy) — wait and retry
+    if (res.status === 503 && attempt < MAX_RENDER_ATTEMPTS) {
+      let retryAfter = 65; // Default wait
+      try {
+        const body = await res.json();
+        retryAfter = (body.retry_after || 60) + 5; // Add 5s buffer
+      } catch { /* use default */ }
+
+      console.log(`[ASSEMBLE] Renderer busy (503), waiting ${retryAfter}s before retry (attempt ${attempt}/${MAX_RENDER_ATTEMPTS})...`);
+      await new Promise(r => setTimeout(r, retryAfter * 1000));
+      continue;
+    }
+
+    // Non-503 error or final attempt — throw
+    const bodyText = await res.text().catch(() => 'Unable to read response body');
+    throw new Error(`Video renderer failed: ${res.status} ${res.statusText} - ${bodyText}`);
+  }
+
+  if (!response) {
+    throw new Error('Video renderer: all render attempts failed');
+  }
 
   const startResult = await response.json();
   const renderJobId = startResult.job_id;
