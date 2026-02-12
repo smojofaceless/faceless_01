@@ -403,7 +403,9 @@ class PostQueueService {
             lastError: p.error_message || (p.error && (typeof p.error === 'string' ? p.error : p.error.message)) || null,
             sourceJobId: p.job_id || p.source_job_id,
             batchId: p.batch_id || p.generation_batch_id,
-            raw: p
+            raw: p,
+            // Metadata fields (populated below if available)
+            metadata: null
         }));
 
         // Map pending jobs to calendar item shape
@@ -465,7 +467,120 @@ class PostQueueService {
         const allItems = [...postItems, ...pendingJobItems];
         allItems.sort((a, b) => a.scheduledAt - b.scheduledAt);
 
+        // Enrich post items with metadata (non-blocking)
+        try {
+            const postIds = postItems.map(p => p.id).filter(Boolean);
+            if (postIds.length > 0 && this.useSupabase) {
+                const metadataMap = await this._fetchMetadataForPosts(postIds);
+                for (const item of allItems) {
+                    if (item.type === 'post' && metadataMap[item.id]) {
+                        item.metadata = metadataMap[item.id];
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('📮 PostQueueService: Metadata enrichment failed (non-fatal):', e);
+        }
+
         return allItems;
+    }
+
+    /**
+     * Fetch metadata for a batch of post IDs
+     * @param {string[]} postIds
+     * @returns {Promise<Object>} Map of postId → metadata info
+     * @private
+     */
+    async _fetchMetadataForPosts(postIds) {
+        const { data, error } = await supabaseClient
+            .from('post_metadata')
+            .select('post_id, platform, status, ai_metadata, final_metadata, error, attempt_count, failure_class, next_retry_at, generated_at, edited_at')
+            .in('post_id', postIds);
+
+        if (error || !data) return {};
+
+        const map = {};
+        for (const row of data) {
+            map[row.post_id] = {
+                status: row.status,
+                aiMetadata: row.ai_metadata,
+                finalMetadata: row.final_metadata,
+                error: row.error,
+                attemptCount: row.attempt_count,
+                failureClass: row.failure_class,
+                nextRetryAt: row.next_retry_at,
+                generatedAt: row.generated_at,
+                editedAt: row.edited_at,
+                platform: row.platform
+            };
+        }
+        return map;
+    }
+
+    // ==================== Metadata Management ====================
+
+    /**
+     * Get metadata for a specific post
+     * @param {string} postId
+     * @param {string} platform
+     * @returns {Promise<Object|null>}
+     */
+    async getPostMetadata(postId, platform) {
+        if (!this.useSupabase) return null;
+
+        const { data, error } = await supabaseClient.rpc('get_post_metadata', {
+            p_post_id: postId,
+            p_platform: platform
+        });
+
+        if (error) {
+            console.error('Failed to get post metadata:', error);
+            return null;
+        }
+        return data?.[0] || null;
+    }
+
+    /**
+     * Update specific metadata fields (saves as edited)
+     * @param {string} postId
+     * @param {string} platform
+     * @param {Object} fields - Object with field names and new values
+     * @returns {Promise<boolean>}
+     */
+    async updatePostMetadata(postId, platform, fields) {
+        if (!this.useSupabase) return false;
+
+        const { error } = await supabaseClient.rpc('update_post_metadata_fields', {
+            p_post_id: postId,
+            p_platform: platform,
+            p_fields: fields
+        });
+
+        if (error) {
+            console.error('Failed to update post metadata:', error);
+            throw error;
+        }
+        return true;
+    }
+
+    /**
+     * Trigger metadata (re)generation for a post
+     * @param {string} postId
+     * @param {string} platform
+     * @param {boolean} force - Force regeneration even if metadata exists
+     * @returns {Promise<Object>}
+     */
+    async regenerateMetadata(postId, platform, force = false) {
+        if (!this.useSupabase) throw new Error('Supabase not available');
+
+        const response = await supabaseClient.functions.invoke('generate-post-metadata', {
+            body: { post_id: postId, platform, force }
+        });
+
+        if (response.error) {
+            throw new Error(response.error.message || 'Metadata generation failed');
+        }
+        return response.data;
     }
 
     /**

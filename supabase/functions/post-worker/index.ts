@@ -531,14 +531,88 @@ async function processPost(
   try {
     // Get platform adapter
     const adapter = getAdapter(post.platform);
-    
+
+    // ---- Metadata Gating ----
+    // Fetch AI-generated metadata if available; override post fields
+    let postTitle = post.title || 'Untitled';
+    let postDescription = post.description;
+    let postTags = post.tags;
+    let postMeta = post.meta || {};
+
+    try {
+      const { data: metadata } = await supabase
+        .from('post_metadata')
+        .select('status, final_metadata, ai_metadata, platform')
+        .eq('post_id', post.post_id)
+        .eq('platform', post.platform)
+        .single();
+
+      if (metadata && ['ready', 'edited'].includes(metadata.status)) {
+        const md = metadata.final_metadata || metadata.ai_metadata;
+        if (md && typeof md === 'object') {
+          // Platform-specific field mapping
+          if (post.platform === 'youtube_shorts') {
+            postTitle = (md as Record<string, unknown>).title as string || postTitle;
+            postDescription = (md as Record<string, unknown>).description as string || postDescription;
+            postTags = (md as Record<string, unknown>).tags as string[] || postTags;
+            postMeta = {
+              ...postMeta,
+              category_id: (md as Record<string, unknown>).category_id ?? 24,
+              made_for_kids: (md as Record<string, unknown>).made_for_kids ?? false,
+              metadata_source: metadata.status,
+            };
+          } else if (post.platform === 'tiktok') {
+            postTitle = (md as Record<string, unknown>).caption as string || postTitle;
+            postTags = (md as Record<string, unknown>).hashtags as string[] || postTags;
+            postMeta = {
+              ...postMeta,
+              cover_text: (md as Record<string, unknown>).cover_text,
+              metadata_source: metadata.status,
+            };
+          } else if (post.platform === 'instagram_reels') {
+            postDescription = (md as Record<string, unknown>).caption as string || postDescription;
+            postTags = (md as Record<string, unknown>).hashtags as string[] || postTags;
+            postMeta = {
+              ...postMeta,
+              alt_text: (md as Record<string, unknown>).alt_text,
+              metadata_source: metadata.status,
+            };
+          }
+          console.log(`[POST-WORKER] Using ${metadata.status} metadata for ${post.platform}`);
+        }
+      } else if (metadata && metadata.status === 'generating') {
+        // Metadata is being generated — retryable wait
+        console.log(`[POST-WORKER] Metadata still generating for ${post.post_id}/${post.platform} — retrying later`);
+        await supabase.rpc('mark_post_failed', {
+          p_post_id: post.post_id,
+          p_worker_id: workerId,
+          p_error_class: 'transient',
+          p_error_message: 'Metadata still generating — will retry',
+          p_retryable: true,
+          p_error_signature: `transient:${post.platform}:metadata_generating`,
+        });
+        return {
+          status: 'failed',
+          result: {
+            success: false,
+            error_class: 'transient',
+            error_message: 'Metadata still generating',
+          },
+        };
+      }
+      // If no metadata record exists (legacy post), fall through with original fields
+    } catch (metaErr) {
+      // Metadata lookup failed — continue with original post fields
+      console.warn(`[POST-WORKER] Metadata lookup failed (using post fields):`, metaErr);
+    }
+
     // Call platform API (passes supabase and brandId for real adapters)
     const result = await adapter.post(
       post.video_url,
-      post.title || 'Untitled',
-      post.description,
-      post.tags,
-      post.meta || {},
+      postTitle,
+      postDescription,
+      postTags,
+      postMeta,
       supabase,
       post.brand_id
     );

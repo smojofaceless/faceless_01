@@ -285,15 +285,20 @@ class Calendar {
                     <span class="calendar__day-number">${currentDate.getDate()}</span>
                     ${dayPosts.length > 0 ? `
                         <div class="calendar__day-posts">
-                            ${dayPosts.slice(0, 3).map(post => `
+                            ${dayPosts.slice(0, 3).map(post => {
+                                const metaIndicator = post.metadata?.status 
+                                    ? `<span class="calendar__meta-dot calendar__meta-dot--${post.metadata.status}" title="Metadata: ${post.metadata.status}"></span>` 
+                                    : '';
+                                return `
                                 <div class="calendar__post calendar__post--${post.status}" 
                                      data-post-id="${post.id}"
                                      style="--platform-color: ${this.getPlatformColor(post.platformId)}"
                                      title="${this.escapeHtml(post.content?.title || 'Untitled')} - ${this.formatTime(post.scheduledAt)}">
                                     <span class="calendar__post-dot"></span>
+                                    ${metaIndicator}
                                     <span class="calendar__post-title">${this.escapeHtml(post.content?.title || 'Untitled')}</span>
                                 </div>
-                            `).join('')}
+                            `}).join('')}
                             ${dayPosts.length > 3 ? `
                                 <button class="calendar__more" data-date="${dateKey}">
                                     +${dayPosts.length - 3} more
@@ -358,12 +363,17 @@ class Calendar {
                         <span class="calendar__week-day-date">${currentDate.getDate()}</span>
                     </div>
                     <div class="calendar__week-day-content">
-                        ${dayPosts.length > 0 ? dayPosts.map(post => `
+                        ${dayPosts.length > 0 ? dayPosts.map(post => {
+                            const metaBadge = post.metadata?.status 
+                                ? `<span class="calendar__meta-badge calendar__meta-badge--${post.metadata.status}">${post.metadata.status === 'ready' ? 'M' : post.metadata.status === 'edited' ? 'E' : post.metadata.status === 'failed' ? '!' : '...'}</span>` 
+                                : '';
+                            return `
                             <div class="calendar__post-card calendar__post-card--${post.status}" 
                                  data-post-id="${post.id}"
                                  style="--platform-color: ${this.getPlatformColor(post.platformId)}">
                                 <div class="calendar__post-card-header">
                                     <span class="calendar__post-time">${this.formatTime(post.scheduledAt)}</span>
+                                    ${metaBadge}
                                     <span class="calendar__post-status">${post.status}</span>
                                 </div>
                                 <div class="calendar__post-platform">
@@ -372,7 +382,7 @@ class Calendar {
                                 </div>
                                 <div class="calendar__post-title">${this.escapeHtml(post.content?.title || 'Untitled')}</div>
                             </div>
-                        `).join('') : ''}
+                        `}).join('') : ''}
                         ${daySlots.filter(slot => !dayPosts.some(p => 
                             p.scheduledAt && p.scheduledAt.getTime() === slot.time.getTime()
                         )).map(slot => `
