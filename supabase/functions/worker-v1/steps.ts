@@ -115,8 +115,48 @@ export async function executeStoryStep(
   console.log(`[STORY] Generating story for vibe=${vibePreset}, duration=${targetDuration}s (~${targetWords} words)`);
 
   try {
+    // Query recent stories for this brand+preset to avoid thematic repetition
+    let recentStories: Array<{ title: string; hook: string | null; setting?: string }> = [];
+    try {
+      const { data: recent } = await supabase
+        .from('stories')
+        .select('title, hook')
+        .eq('vibe_preset', vibePreset)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (recent && recent.length > 0) {
+        recentStories = recent;
+        console.log(`[STORY] Found ${recent.length} recent ${vibePreset} stories to avoid`);
+      }
+    } catch (e) {
+      console.warn(`[STORY] Could not fetch recent stories (non-fatal): ${e}`);
+    }
+
+    // Also check story_dna for concept/setting data from recent jobs
+    try {
+      const { data: recentDna } = await supabase
+        .from('story_dna')
+        .select('meta')
+        .eq('genre', vibePreset)
+        .eq('brand_id', job.brand_id)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (recentDna) {
+        for (const dna of recentDna) {
+          const setting = (dna.meta as Record<string, unknown>)?.setting as string;
+          if (setting) {
+            // Merge setting info into recentStories for avoidance
+            const existing = recentStories.find(s => s.title === (dna.meta as Record<string, unknown>)?.title);
+            if (existing) existing.setting = setting;
+          }
+        }
+      }
+    } catch (e) {
+      // Non-fatal
+    }
+
     // Build story prompt based on vibe preset
-    const storyPrompt = buildStoryPrompt(vibePreset, wordRange);
+    const storyPrompt = buildStoryPrompt(vibePreset, wordRange, recentStories);
 
     // Log prompt snapshot
     await logger.snapshot('story', 'prompt', storyPrompt, `OpenAI prompt for ${vibePreset} story`);
@@ -160,6 +200,9 @@ export async function executeStoryStep(
     const parsed = JSON.parse(content);
     const title = parsed.title || 'Untitled Story';
     const storyText = parsed.story || parsed.content || parsed.text;
+    // Extract concept metadata for thematic uniqueness (GPT returns these)
+    const storySetting = parsed.setting || '';
+    const storyConcept = parsed.concept || '';
 
     if (!storyText) {
       throw new Error('Story generation returned no story text');
@@ -167,6 +210,9 @@ export async function executeStoryStep(
 
     const contentHash = await computeHash(storyText);
     const titleHash = await computeHash(title);
+    // Build a concept hash from setting+concept (for thematic uniqueness, not just text)
+    const conceptString = `${storySetting}|${storyConcept}`.toLowerCase().trim();
+    const conceptHash = conceptString.length > 1 ? await computeHash(conceptString) : contentHash;
     const wordCount = storyText.split(/\s+/).length;
     const sentences = storyText.split(/(?<=[.!?])\s+/).filter((s: string) => s.trim().length > 0);
     const sentenceCount = sentences.length;
@@ -220,11 +266,14 @@ export async function executeStoryStep(
       console.warn(`[STORY] stories table insert failed (non-fatal): ${e}`);
     }
 
-    // Store asset for idempotency
+    // Store asset for idempotency (include concept metadata for uniqueness step)
     await upsertAsset(supabase, job.id, idempotencyKey, 'story', '', null, {
       title: title,
       story_text: storyText,
       content_hash: contentHash,
+      concept_hash: conceptHash,
+      setting: storySetting,
+      concept: storyConcept,
       word_count: wordCount,
       vibe_preset: vibePreset,
       generated_at: new Date().toISOString(),
@@ -243,10 +292,10 @@ export async function executeStoryStep(
 /**
  * Build story prompt based on vibe preset
  */
-function buildStoryPrompt(vibePreset: string, wordRange: { min: number; max: number }): string {
+function buildStoryPrompt(vibePreset: string, wordRange: { min: number; max: number }, recentStories?: Array<{ title: string; hook: string | null; setting?: string }>): string {
   const vibeDescriptions: Record<string, string> = {
     urban_legend: 'an urban legend or creepy internet story, featuring unexplained phenomena, "that one weird thing that happened", or local folklore that turns out to be true',
-    one_too_many: 'a chilling "one too many" counting horror story where a group realizes there\'s an extra person that shouldn\'t be there. The setting can be ANYTHING — a road trip, office retreat, school reunion, dinner party, elevator ride, hotel stay, subway commute, wedding, hike, ferry crossing. The group counts heads and the number is wrong. IMPORTANT: vary the setting, do NOT default to camping trips.',
+    one_too_many: 'a chilling "one too many" counting horror story where a group realizes there\'s an extra person that shouldn\'t be there. The setting can be ANYTHING — a road trip, office retreat, school reunion, dinner party, elevator ride, hotel stay, subway commute, wedding, hike, ferry crossing, bus trip, theater show, ski lodge, escape room, gym class, hospital waiting room, airport layover, carnival, museum tour, car wash, laundromat, library, parking garage, rooftop party, boat trip, train ride, cave tour, amusement park, food court, bowling alley, karaoke night, open house viewing, funeral, zoo trip, aquarium visit. The group counts heads and the number is wrong. CRITICAL: each story MUST use a completely different and unique setting from all previous stories.',
     backrooms: 'a liminal space or "backrooms" style horror about accidentally entering wrong places, glitches in reality, or spaces that shouldn\'t exist',
     nosleep: 'a first-person creepypasta/NoSleep style horror that starts mundane but escalates into something terrifying',
     glitch: 'a glitch in the matrix story about strange repetitions, déjà vu, NPCs acting weird, or reality not working right',
@@ -254,7 +303,18 @@ function buildStoryPrompt(vibePreset: string, wordRange: { min: number; max: num
 
   const vibeDesc = vibeDescriptions[vibePreset] || vibeDescriptions.urban_legend;
 
-  return `Create ${vibeDesc}.
+  // Build avoidance section from recent stories
+  let avoidanceSection = '';
+  if (recentStories && recentStories.length > 0) {
+    const avoidList = recentStories.map(s => {
+      const parts = [`"${s.title}"`];
+      if (s.setting) parts.push(`(setting: ${s.setting})`);
+      return parts.join(' ');
+    }).join('\n- ');
+    avoidanceSection = `\n\nDO NOT REPEAT — these stories were already created recently. You MUST use a COMPLETELY DIFFERENT setting, location, premise, and title theme:\n- ${avoidList}\n\nYour story must feel fresh and explore a setting/scenario that is NOTHING like the above. No elevators if there's an elevator story. No ferries if there's a ferry story. No trains if there's a train story. Pick something nobody has done yet.`;
+  }
+
+  return `Create ${vibeDesc}.${avoidanceSection}
 
 REQUIREMENTS:
 - Word count: ${wordRange.min}-${wordRange.max} words (this is critical for video timing)
@@ -268,7 +328,9 @@ REQUIREMENTS:
 Respond in JSON format:
 {
   "title": "Short catchy title (3-6 words)",
-  "story": "The full story text..."
+  "story": "The full story text...",
+  "setting": "One or two words describing the primary setting/location (e.g. 'elevator', 'ferry boat', 'hiking trail', 'escape room')",
+  "concept": "One sentence summarizing the core concept/premise (e.g. 'Extra person appears in stopped elevator between floors')"
 }`;
 }
 
@@ -299,6 +361,22 @@ export async function executeUniquenessStep(
   const storyHash = await computeHash(job.story_text);
   console.log(`[UNIQUENESS] Checking story hash: ${storyHash.substring(0, 16)}...`);
 
+  // Retrieve concept metadata from story asset (setting + concept for thematic uniqueness)
+  let conceptHash = storyHash;
+  let storySetting = '';
+  let storyConcept = '';
+  try {
+    const storyAsset = await getAssetByKey(supabase, job.id, `${job.id}:story_generate`);
+    if (storyAsset?.meta?.concept_hash) {
+      conceptHash = storyAsset.meta.concept_hash as string;
+      storySetting = (storyAsset.meta.setting as string) || '';
+      storyConcept = (storyAsset.meta.concept as string) || '';
+      console.log(`[UNIQUENESS] Using concept hash (setting: "${storySetting}", concept: "${storyConcept}")`);
+    }
+  } catch (e) {
+    console.warn(`[UNIQUENESS] Could not retrieve concept metadata, using full text hash`);
+  }
+
   try {
     // Check if story_dna entry exists for this job
     const { data: existingDna } = await supabase
@@ -318,19 +396,24 @@ export async function executeUniquenessStep(
       return { success: true, skipped: true, data: { story_hash: storyHash } };
     }
 
-    // Insert into story_dna (basic uniqueness tracking)
-    // full_hash = storyHash since we don't extract DNA dimensions yet
+    // Insert into story_dna (thematic uniqueness tracking)
+    // concept_hash = hash of setting+concept (thematic), full_hash = hash of full text (exact)
     const vibePreset = job.vibe_preset || (job.meta?.vibe_preset as string) || 'urban_legend';
     const { error: insertError } = await supabase
       .from('story_dna')
       .upsert({
         job_id: job.id,
         brand_id: job.brand_id,
-        concept_hash: storyHash,
+        concept_hash: conceptHash,
         full_hash: storyHash,
         genre: vibePreset,
         generation_attempt: 1,
         created_at: new Date().toISOString(),
+        meta: {
+          title: job.title,
+          setting: storySetting,
+          concept: storyConcept,
+        },
       }, { onConflict: 'job_id' });
 
     if (insertError) {
@@ -338,12 +421,12 @@ export async function executeUniquenessStep(
       // Non-fatal - continue anyway
     }
 
-    // Check for similar stories (basic collision check)
+    // Check for similar stories (concept collision check — same theme/setting)
     const { data: similarStories } = await supabase
       .from('story_dna')
       .select('id, job_id, concept_hash')
       .eq('brand_id', job.brand_id)
-      .eq('concept_hash', storyHash)
+      .eq('concept_hash', conceptHash)
       .neq('job_id', job.id)
       .limit(5);
 
