@@ -325,9 +325,12 @@ serve(async (req) => {
         console.log(`[RUN-JOB] Fresh job data: story_text=${!!freshJob.story_text}, title=${freshJob.title}`);
         result = await runAudioPhase(supabase, openaiKey, elevenLabsKey, freshJob, job_id, freshJob.meta || jobMeta);
         
-        // Heartbeat after audio phase
+        // Audio phase done → set very short lease so check-job can re-trigger for images
+        // (release_job RPC rejects "generating" status, so we use a short heartbeat instead)
         if (claimedJobId) {
-          await heartbeatJob(supabase, job_id, workerId, DEFAULT_LEASE_SECONDS, 50);
+          console.log(`[RUN-JOB] Audio phase done, setting short lease for next phase pickup`);
+          await heartbeatJob(supabase, job_id, workerId, 5, 50); // 5-second lease
+          claimedJobId = null;
         }
       } else if (currentPhase === "images") {
         // Heartbeat before images phase
@@ -348,9 +351,16 @@ serve(async (req) => {
           imageModel
         );
         
-        // Heartbeat after images phase
+        // After images phase — set short lease so check-job can re-trigger
+        // If images are done (nextPhase != "images"), set progress to 70 for assemble
+        // If more prep work needed, set progress to 55
+        // (release_job RPC rejects "generating" status, so we use a short heartbeat instead)
         if (claimedJobId) {
-          await heartbeatJob(supabase, job_id, workerId, DEFAULT_LEASE_SECONDS, 70);
+          const imagesDone = result?.nextPhase !== "images";
+          const progressAfterImages = imagesDone ? 70 : 55;
+          console.log(`[RUN-JOB] Images phase step done (imagesDone=${imagesDone}), setting short lease with progress=${progressAfterImages}`);
+          await heartbeatJob(supabase, job_id, workerId, 5, progressAfterImages); // 5-second lease
+          claimedJobId = null;
         }
       } else if (currentPhase === "assemble") {
         // Heartbeat before assemble phase (status = assembling)

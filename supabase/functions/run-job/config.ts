@@ -598,14 +598,14 @@ export function rewriteToContentOnly(input: string, _preset: string): string {
  * - gpt-4o: Good quality, ~$0.03/image (75% cheaper) - default
  * - flux: FLUX.1 Pro/Redux via Replicate, ~$0.04/image + reference conditioning
  */
-export function getImageModel(jobModel?: string): "dall-e-3" | "gpt-4o" | "flux" {
+export function getImageModel(jobModel?: string): "dall-e-3" | "gpt-image-1" | "flux" {
   // First check job-specific setting
   if (jobModel) {
     if (jobModel === "dall-e-3" || jobModel === "dalle-3" || jobModel === "dalle") {
       return "dall-e-3";
     }
     if (jobModel === "gpt-4o" || jobModel === "gpt-image-1") {
-      return "gpt-4o";
+      return "gpt-image-1";
     }
     if (jobModel === "flux" || jobModel === "replicate") {
       return "flux";
@@ -615,7 +615,7 @@ export function getImageModel(jobModel?: string): "dall-e-3" | "gpt-4o" | "flux"
   // Fall back to environment variable
   const model = Deno.env.get("IMAGE_MODEL");
   if (model === "gpt-4o" || model === "gpt-image-1") {
-    return "gpt-4o";
+    return "gpt-image-1";
   }
   if (model === "flux" || model === "replicate") {
     return "flux";
@@ -623,6 +623,6 @@ export function getImageModel(jobModel?: string): "dall-e-3" | "gpt-4o" | "flux"
   if (model === "dall-e-3" || model === "dalle-3" || model === "dalle") {
     return "dall-e-3";
   }
-  // Default to GPT-4o for balanced cost/quality
-  return "gpt-4o";
+  // Default to gpt-image-1 (cheapest: ~$0.016/image at low quality)
+  return "gpt-image-1";
 }

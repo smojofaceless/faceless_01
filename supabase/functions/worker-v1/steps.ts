@@ -1358,9 +1358,15 @@ export async function executeImagesStep(
   }
 
   // Determine which image model to use (job meta > env > default)
-  const imageModel: ImageModel = (job.meta?.image_model as ImageModel) || 
-                                  (env.IMAGE_MODEL as ImageModel) || 
-                                  DEFAULT_IMAGE_MODEL;
+  // v4.0: Validate against known models — reject gpt-4o or other non-image models
+  const VALID_IMAGE_MODELS: ImageModel[] = ['gpt-image-1', 'dall-e-2', 'dall-e-3'];
+  const rawImageModel = (job.meta?.image_model as string) || (env.IMAGE_MODEL as string) || '';
+  const imageModel: ImageModel = VALID_IMAGE_MODELS.includes(rawImageModel as ImageModel)
+    ? (rawImageModel as ImageModel)
+    : DEFAULT_IMAGE_MODEL;
+  if (rawImageModel && rawImageModel !== imageModel) {
+    console.warn(`[IMAGES] ⚠️ Invalid image model "${rawImageModel}" in job meta — falling back to "${imageModel}"`);
+  }
 
   // v1.5: Resolve image prompt config from DB (system → preset → brand → job meta)
   const vibePreset = job.vibe_preset || (job.meta?.vibe_preset as string) || 'urban_legend';
@@ -1469,8 +1475,9 @@ export async function executeImagesStep(
   // Each image covers ~8s of screen time. This builds the flat image list
   // that the renderer will receive (with per-image durations and mood levels).
   // ======================================================================
-  const LONG_SCENE_THRESHOLD = 10; // Seconds: scenes longer than this get extra images
-  const TARGET_IMAGE_DURATION = 8; // Seconds: target on-screen time per image
+  const LONG_SCENE_THRESHOLD = 12; // Seconds: scenes longer than this get extra images (was 10)
+  const TARGET_IMAGE_DURATION = 10; // Seconds: target on-screen time per image (was 8)
+  const MAX_SUB_IMAGES = 2; // Max images per long scene (was 3) — 2 is enough for variety
 
   const imageSequence: ImageSequenceEntry[] = [];
   for (let i = 0; i < scenes.length; i++) {
@@ -1480,8 +1487,8 @@ export async function executeImagesStep(
     const moodLevel = computeMoodLevel(i, scenes.length, visualCue);
     
     if (sceneDuration > LONG_SCENE_THRESHOLD) {
-      // Long scene: generate multiple images
-      const imageCount = Math.min(3, Math.ceil(sceneDuration / TARGET_IMAGE_DURATION));
+      // Long scene: generate multiple images (capped at MAX_SUB_IMAGES)
+      const imageCount = Math.min(MAX_SUB_IMAGES, Math.ceil(sceneDuration / TARGET_IMAGE_DURATION));
       const subDuration = sceneDuration / imageCount;
       for (let j = 0; j < imageCount; j++) {
         imageSequence.push({
@@ -1506,6 +1513,9 @@ export async function executeImagesStep(
   }
 
   console.log(`[IMAGES] Image sequence planned: ${imageSequence.length} images for ${scenes.length} scenes (mood_levels: ${imageSequence.map(e => e.moodLevel).join(',')})`);
+
+  // v4.0: Track previous prompt fingerprint for similarity detection
+  let previousPromptFingerprint: string | null = null;
 
   try {
     for (let seqIdx = 0; seqIdx < imageSequence.length; seqIdx++) {
@@ -1569,18 +1579,30 @@ export async function executeImagesStep(
       await requireLeaseOwner(supabase, job.id, workerId, `images:scene_${entry.sceneIndex}${entry.subIndex > 0 ? `_sub_${entry.subIndex}` : ''}`);
 
       // Build prompt — uses visual cues + DB config + story anchor when available
-      // For sub-images (multi-image long scenes), modify prompt to request different angle/moment
+      // v4.0: Sub-images get a MODIFIED visual cue (different camera, sceneType, description)
+      //        instead of the old weak suffix approach. This ensures the different framing
+      //        is baked into the core prompt, not appended at the end where it gets ignored.
       const i = entry.sceneIndex;
-      const visualCue = visualCues.find(vc => vc.sceneIndex === i);
+      const baseVisualCue = visualCues.find(vc => vc.sceneIndex === i);
       
-      let subPromptSuffix = '';
-      if (entry.subIndex > 0) {
-        // Sub-images for long scenes: request a different perspective of the same scene
-        const subAngles = ['from a different angle', 'focusing on a different detail', 'from a closer perspective'];
-        subPromptSuffix = `\n[DIFFERENT SHOT: Show this same moment ${subAngles[Math.min(entry.subIndex - 1, subAngles.length - 1)]}. Do NOT repeat the exact same composition as the previous image.]`;
+      // For sub-images: create a variant cue with different camera/type/focus
+      const effectiveCue = entry.subIndex > 0
+        ? createSubImageCue(baseVisualCue, entry.subIndex, scene.text)
+        : baseVisualCue;
+      
+      const scenePrompt = buildImagePrompt(scene.text, scene.keywords, artStyle, i, scenes.length, imagePromptConfig, effectiveCue, storyAnchor);
+      
+      // === PROMPT SIMILARITY GUARD (v4.0) ===
+      // Detect if this prompt is too similar to the previous one (within same scene's sub-images).
+      // Uses first 250 chars of the description portion as a fingerprint.
+      if (previousPromptFingerprint) {
+        const currentFingerprint = scenePrompt.substring(0, 250);
+        const overlap = computeCharOverlap(previousPromptFingerprint, currentFingerprint);
+        if (overlap > 0.85) {
+          console.warn(`[IMAGES] ⚠️ Prompt similarity warning: scene ${i}${entry.subIndex > 0 ? `_sub_${entry.subIndex}` : ''} is ${Math.round(overlap * 100)}% similar to previous image. Sub-image cue may not be diverging enough.`);
+        }
       }
-      
-      const scenePrompt = buildImagePrompt(scene.text, scene.keywords, artStyle, i, scenes.length, imagePromptConfig, visualCue, storyAnchor) + subPromptSuffix;
+      previousPromptFingerprint = scenePrompt.substring(0, 250);
       
       // === EXTERNAL IDEMPOTENCY: Hash includes model+size+prompt to avoid cross-config collisions ===
       // Note: imageModel is defined at function scope from job.meta or env
@@ -1865,6 +1887,78 @@ interface VisualCue {
   sceneType: string;      // establishing | object | atmosphere | character | group
   camera: string;         // wide, medium, close-up, overhead, etc.
   isClimax?: boolean;     // true if this is a climactic moment
+}
+
+/**
+ * v4.0: Create a meaningfully different visual cue for sub-images of long scenes.
+ * Instead of the old approach (appending "from a different angle" suffix that gets ignored),
+ * this modifies the camera, sceneType, and description so the ENTIRE prompt is different.
+ * 
+ * Strategy per sub-index:
+ *   sub 1 → DETAIL shot: close-up camera, object/character focus, zoom into a specific element
+ *   sub 2 → ATMOSPHERE shot: overhead/wide camera, environment focus, mood and space
+ */
+function createSubImageCue(baseCue: VisualCue | undefined, subIndex: number, sceneText: string): VisualCue | undefined {
+  if (!baseCue) return baseCue;
+
+  // Camera alternatives: maps base camera → [detail_alt, atmosphere_alt]
+  const cameraAlts: Record<string, [string, string]> = {
+    'wide':              ['close-up',         'overhead'],
+    'medium':            ['extreme-close-up', 'low-angle'],
+    'close-up':          ['extreme-close-up', 'wide'],
+    'extreme-close-up':  ['medium',           'overhead'],
+    'overhead':          ['close-up',         'low-angle'],
+    'low-angle':         ['close-up',         'overhead'],
+    'pov':               ['close-up',         'wide'],
+  };
+
+  const baseCamera = (baseCue.camera || 'wide').toLowerCase();
+  const [detailCam, atmoCam] = cameraAlts[baseCamera] || ['close-up', 'overhead'];
+
+  // Scene type alternatives for detail shots
+  const detailTypeMap: Record<string, string> = {
+    'group': 'character',       // Zoom from group → single character
+    'character': 'object',      // Zoom from character → detail/object
+    'establishing': 'object',   // Zoom from wide establishing → specific detail
+    'atmosphere': 'object',     // Switch from mood → concrete object
+    'object': 'atmosphere',     // If already object, switch to atmosphere
+  };
+
+  // Extract a grounding detail from the scene text (first concrete noun phrase)
+  const textSnippet = sceneText.substring(0, 120).replace(/[.!?].*$/, '');
+
+  if (subIndex === 1) {
+    return {
+      ...baseCue,
+      camera: detailCam,
+      sceneType: detailTypeMap[baseCue.sceneType] || 'object',
+      description: `DETAIL SHOT of this moment: ${textSnippet}. Focus on a specific OBJECT, HAND, FACE, or TEXTURE visible in the scene — NOT the same wide framing. Show something the viewer would notice if they paused the video.`,
+    };
+  }
+
+  // subIndex >= 2 (atmosphere/environment variant)
+  return {
+    ...baseCue,
+    camera: atmoCam,
+    sceneType: 'atmosphere',
+    description: `ENVIRONMENT SHOT of: ${textSnippet}. Show the SPACE, LIGHTING, and MOOD around the characters — walls, ceiling, floor, shadows, reflections. NOT a character or object shot. The viewer should feel the atmosphere.`,
+  };
+}
+
+/**
+ * v4.0: Simple character-level overlap ratio between two strings.
+ * Used for prompt similarity detection — if two consecutive prompts
+ * share >85% of characters, the sub-image cue isn't diverging enough.
+ */
+function computeCharOverlap(a: string, b: string): number {
+  if (!a || !b) return 0;
+  const shorter = Math.min(a.length, b.length);
+  if (shorter === 0) return 0;
+  let matches = 0;
+  for (let i = 0; i < shorter; i++) {
+    if (a[i] === b[i]) matches++;
+  }
+  return matches / shorter;
 }
 
 /**
