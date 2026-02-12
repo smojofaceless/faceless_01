@@ -2349,9 +2349,13 @@ SCENE-GROUNDING RULES:
 - MAINTAIN CONSISTENCY for: location/setting, character appearance, recurring props.
 - The BACKGROUND and CAST stay consistent, but the CAMERA FOCUS and FRAMING change every scene.
 
-VARIETY IS MANDATORY:
-- Maximum 3 scenes of type "group" out of the ENTIRE video. Most scenes should NOT be group shots.
-- At least 3 scenes should be "object" or "atmosphere" or "establishing" type.
+CINEMATOGRAPHIC SHOT SELECTION (think like a movie director / cinematographer):
+- For EACH scene, ask: "What shot best SERVES this moment in the story?"
+- A group shot is only justified when the story beat is ABOUT the group — their collective reaction, their togetherness, or the viewer needs to SEE everyone present. If the narration focuses on a detail, an emotion, a single character, or the environment, choose the shot type that matches.
+- DO NOT default to group shots. A skilled cinematographer uses wide establishing shots, tight close-ups, detail inserts, POV shots, and atmosphere shots to build tension and variety.
+- The viewer should feel like they're watching a FILM, not looking at the same group photo over and over.
+- Ensure strong variety across all scenes: mix establishing, object, atmosphere, character, and group types naturally based on what each story beat demands.
+- At least 2-3 scenes should be non-people shots (object, atmosphere, establishing) to create breathing room and tension.
 - At least 2 scenes should use close-up or extreme-close-up camera.
 - At least 1 scene should use overhead, low-angle, or pov camera.
 - If a scene has only 1-2 sentences of dialogue or narration, use an object/atmosphere/detail shot rather than showing people.
