@@ -309,7 +309,9 @@ class PostQueueService {
                 }
             }
             if (filters.platformId) {
-                query = query.contains('platforms', [filters.platformId]);
+                // New posts use singular 'platform', old posts use 'platforms' array
+                // Use OR filter to cover both
+                query = query.or(`platform.eq.${filters.platformId},platforms.cs.{${filters.platformId}}`);
             }
 
             const { data, error } = await query;
@@ -389,7 +391,7 @@ class PostQueueService {
             type: 'post',
             scheduledAt: new Date(p.scheduled_at),
             status: p.status,
-            platformId: (p.platforms && p.platforms[0]) || 'youtube',
+            platformId: p.platform || (p.platforms && p.platforms[0]) || 'youtube',
             brandId: p.brand_id,
             content: {
                 title: p.title || 'Untitled',
@@ -399,37 +401,45 @@ class PostQueueService {
                 duration: p.duration_seconds
             },
             publishedAt: p.posted_at ? new Date(p.posted_at) : null,
-            lastError: p.error_message,
-            sourceJobId: p.source_job_id,
-            batchId: p.generation_batch_id,
+            lastError: p.error_message || (p.error && (typeof p.error === 'string' ? p.error : p.error.message)) || null,
+            sourceJobId: p.job_id || p.source_job_id,
+            batchId: p.batch_id || p.generation_batch_id,
             raw: p
         }));
 
         // Map pending jobs to calendar item shape
         // Filter out jobs that already have a corresponding post
-        const importedJobIds = new Set(posts.filter(p => p.source_job_id).map(p => p.source_job_id));
+        const importedJobIds = new Set(posts.filter(p => p.job_id || p.source_job_id).map(p => p.job_id || p.source_job_id));
         const pendingJobItems = jobs
             .filter(j => !importedJobIds.has(j.id))
-            .map(j => ({
-                id: `job-${j.id}`,
-                type: 'job',
-                scheduledAt: new Date(j.scheduled_post_at),
-                status: j.status === 'pending' ? 'pending' : 'generating',
-                platformId: 'youtube',
-                brandId: j.brand_id,
-                content: {
-                    title: j.title || `${j.vibe_preset || 'Video'} (generating...)`,
-                    description: `Job status: ${j.status}`,
-                    videoUrl: null,
-                    thumbnailUrl: null,
-                    duration: null
-                },
-                publishedAt: null,
-                lastError: null,
-                sourceJobId: j.id,
-                batchId: j.batch_id,
-                raw: j
-            }));
+            .map(j => {
+                // Map job status to calendar-friendly status
+                let calStatus = 'generating';
+                if (j.status === 'pending') calStatus = 'pending';
+                else if (j.status === 'error' || j.status === 'failed') calStatus = 'failed';
+                else if (j.status === 'complete') calStatus = 'scheduled';
+
+                return {
+                    id: `job-${j.id}`,
+                    type: 'job',
+                    scheduledAt: new Date(j.scheduled_post_at),
+                    status: calStatus,
+                    platformId: 'youtube',
+                    brandId: j.brand_id,
+                    content: {
+                        title: j.title || `${j.vibe_preset || 'Video'} (${calStatus === 'failed' ? 'failed' : 'generating...'})`,
+                        description: `Job status: ${j.status}`,
+                        videoUrl: null,
+                        thumbnailUrl: null,
+                        duration: null
+                    },
+                    publishedAt: null,
+                    lastError: j.status === 'error' || j.status === 'failed' ? `Job ${j.status}` : null,
+                    sourceJobId: j.id,
+                    batchId: j.batch_id,
+                    raw: j
+                };
+            });
 
         // Combine and sort by scheduled time
         const allItems = [...postItems, ...pendingJobItems];
