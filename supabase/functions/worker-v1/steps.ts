@@ -2271,16 +2271,22 @@ function buildImagePrompt(
     // The DB config may reference a generic setting (e.g. "campfire glow")
     // that doesn't match the actual story (e.g. a train). When story anchor
     // provides timeOfDay/environment, derive setting-appropriate values.
+    // v3.2: Scene-type-aware — only reference "characters/faces" for group/character
+    // scenes. For atmosphere/establishing/object scenes, focus on environment lighting.
     let lighting = config.lighting;
     let colorPalette = config.color_palette;
     if (storyAnchor) {
       const tod = storyAnchor.timeOfDay || '';
       const env = storyAnchor.environment || '';
-      // Build story-aware lighting from anchor's timeOfDay + environment
-      lighting = `bright key lighting on all characters, ${tod ? tod + ' lighting conditions, ' : ''}practical lighting matching the setting (${env.substring(0, 80)}), ambient fill light so no face is lost in shadow`;
-      // Build story-aware color palette — keep the preset's "vivid clothing" etc.
-      // but replace setting-specific colors with story-appropriate ones
-      colorPalette = `vivid clothing colors, clear skin tones, high color contrast, colors appropriate for: ${env.substring(0, 80)}, ${tod ? tod + ' tones' : 'rich deep tones'}`;
+      const isCharacterScene = sceneType === 'group' || sceneType === 'character';
+      // Build story-aware lighting — only mention characters for character scenes
+      if (isCharacterScene) {
+        lighting = `bright key lighting on all characters, ${tod ? tod + ' lighting conditions, ' : ''}practical lighting matching the setting (${env.substring(0, 80)}), ambient fill light so no face is lost in shadow`;
+        colorPalette = `vivid clothing colors, clear skin tones, high color contrast, colors appropriate for: ${env.substring(0, 80)}, ${tod ? tod + ' tones' : 'rich deep tones'}`;
+      } else {
+        lighting = `${tod ? tod + ' lighting conditions, ' : ''}practical lighting matching the setting (${env.substring(0, 80)}), atmospheric ambient light, clear scene visibility`;
+        colorPalette = `setting-appropriate colors for: ${env.substring(0, 80)}, ${tod ? tod + ' tones, ' : ''}high contrast, rich deep tones`;
+      }
     }
 
     const keywordStr = keywords.slice(0, 3).join(', ');
