@@ -847,7 +847,7 @@ serve(async (req: Request) => {
       for (const postId of postIds) {
         const { data: post, error } = await supabase
           .from('posts')
-          .select('id, job_id, brand_id, batch_id, platform, video_url, title, description, tags, scheduled_at, attempt_count, meta, locked_by, status')
+          .select('id, job_id, brand_id, batch_id, platform, video_url, title, description, tags, scheduled_at, attempt_count, ai_metadata, locked_by, status')
           .eq('id', postId)
           .single();
         
@@ -924,7 +924,7 @@ serve(async (req: Request) => {
           tags: post.tags,
           scheduled_at: post.scheduled_at,
           attempt_count: post.attempt_count || 0,
-          meta: post.meta,
+          meta: post.ai_metadata,
         });
       }
     }

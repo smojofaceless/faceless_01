@@ -442,23 +442,37 @@ const FALLBACK_CONSTRAINTS: Record<string, PlatformConstraints> = {
   },
 };
 
+// Current hardcoded constraints version. Bump when FALLBACK_CONSTRAINTS change.
+const FALLBACK_CONSTRAINTS_VERSION = 1;
+
+interface ConstraintsResult {
+  constraints: PlatformConstraints;
+  version: number;
+}
+
 async function fetchConstraints(
   supabase: SupabaseClient,
   platform: string
-): Promise<PlatformConstraints> {
+): Promise<ConstraintsResult> {
   try {
     const { data, error } = await supabase
       .from("platform_field_constraints")
-      .select("fields")
+      .select("fields, version")
       .eq("platform", platform)
       .single();
     if (!error && data?.fields) {
-      return data.fields as PlatformConstraints;
+      return {
+        constraints: data.fields as PlatformConstraints,
+        version: (data.version as number) || FALLBACK_CONSTRAINTS_VERSION,
+      };
     }
   } catch {
     // Fall through to hardcoded
   }
-  return FALLBACK_CONSTRAINTS[platform] || {};
+  return {
+    constraints: FALLBACK_CONSTRAINTS[platform] || {},
+    version: FALLBACK_CONSTRAINTS_VERSION,
+  };
 }
 
 interface ValidationResult {
@@ -728,7 +742,7 @@ async function generateForPost(
     );
 
     // 11. Fetch constraints from DB and validate
-    const constraints = await fetchConstraints(supabase, platform);
+    const { constraints, version: constraintsVersion } = await fetchConstraints(supabase, platform);
     const validation = validateMetadata(rawMetadata, constraints);
     if (validation.errors.length > 0) {
       console.warn(
@@ -756,6 +770,7 @@ async function generateForPost(
       p_generated_by: generatedBy,
       p_worker_id: workerId,
       p_schema_version: 1,
+      p_constraints_version: constraintsVersion,
     });
 
     if (upsertErr) {
