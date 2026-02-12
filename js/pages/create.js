@@ -420,7 +420,7 @@ class CreatePageController {
                     icon: hardcoded?.icon || '🎯',
                     tagline: hardcoded?.tagline || dbTemplate.name,
                     description: hardcoded?.description || `${dbTemplate.name} preset`,
-                    weight: parseFloat(dbTemplate.weight) || 1.0,
+                    weight: parseInt(dbTemplate.weight, 10) || 100,
                     is_default: dbTemplate.is_default,
                     // Merge config_overrides with hardcoded defaults
                     defaults: {
@@ -853,7 +853,7 @@ class CreatePageController {
                                 ? `<span class="preset-card__source preset-card__source--system" title="System default">System</span>`
                                 : '';
                         const weightBadge = preset.weight && preset._source === 'database'
-                            ? `<span class="preset-card__weight" title="Campaign selection weight">${Math.round(preset.weight * 100)}%</span>`
+                            ? `<span class="preset-card__weight" title="Campaign selection weight">${Math.round(preset.weight)}%</span>`
                             : '';
                         
                         return `
