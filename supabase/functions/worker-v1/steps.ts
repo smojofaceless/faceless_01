@@ -401,15 +401,8 @@ export async function executeScenesStep(
 
     // Distribute text chunks across scenes evenly
     const chunksPerScene = textChunks.length / sceneCount;
-    const scenes: Array<{
-      index: number;
-      text: string;
-      startTime: number;
-      endTime: number;
-      keywords: string[];
-    }> = [];
-
-    const sceneDuration = duration / sceneCount;
+    // First pass: build scene texts so we can measure word counts
+    const rawScenes: Array<{ text: string; wordCount: number; keywords: string[] }> = [];
 
     for (let i = 0; i < sceneCount; i++) {
       const startIdx = Math.floor(i * chunksPerScene);
@@ -419,19 +412,55 @@ export async function executeScenesStep(
       const sceneText = textChunks.slice(startIdx, actualEnd).join(' ').trim();
 
       // Extract basic keywords (nouns/adjectives)
-      const words = sceneText.toLowerCase().split(/\s+/);
+      const words = sceneText.toLowerCase().split(/\s+/).filter(w => w.length > 0);
       const keywords = words
         .filter(w => w.length > 4)
         .slice(0, 5);
 
-      scenes.push({
-        index: i,
+      rawScenes.push({
         text: sceneText || textChunks[Math.min(i, textChunks.length - 1)] || 'Scene',
-        startTime: i * sceneDuration,
-        endTime: (i + 1) * sceneDuration,
+        wordCount: Math.max(words.length, 1),
         keywords: keywords,
       });
     }
+
+    // Second pass: assign durations proportional to word count
+    // Each scene's duration scales with its narration length.
+    // Minimum 1.5s per scene so very short phrases still get screen time.
+    const totalWords = rawScenes.reduce((sum, s) => sum + s.wordCount, 0);
+    const minSceneDuration = 1.5;
+    const reservedTime = minSceneDuration * sceneCount;
+    const flexibleTime = Math.max(0, duration - reservedTime);
+
+    const scenes: Array<{
+      index: number;
+      text: string;
+      startTime: number;
+      endTime: number;
+      keywords: string[];
+    }> = [];
+
+    let currentTime = 0;
+    for (let i = 0; i < rawScenes.length; i++) {
+      const raw = rawScenes[i];
+      // Duration = minimum + proportional share of flexible time
+      const proportion = raw.wordCount / totalWords;
+      const sceneDur = minSceneDuration + (flexibleTime * proportion);
+      const startTime = currentTime;
+      const endTime = i === rawScenes.length - 1 ? duration : currentTime + sceneDur;
+
+      scenes.push({
+        index: i,
+        text: raw.text,
+        startTime: parseFloat(startTime.toFixed(2)),
+        endTime: parseFloat(endTime.toFixed(2)),
+        keywords: raw.keywords,
+      });
+
+      currentTime = endTime;
+    }
+
+    console.log(`[SCENES] Word-proportional timing: ${scenes.map(s => `S${s.index}=${(s.endTime - s.startTime).toFixed(1)}s`).join(', ')}`);
 
     // Generate subtitle cues (word-level timing approximation)
     const wordCount = job.story_text.split(/\s+/).length;
@@ -1695,7 +1724,7 @@ LIMINAL SPACE RULES:
 - Focus on empty impossible architecture, repeating patterns, fluorescent-lit void
 - Use POV shots, impossible corridors, empty rooms` : '';
 
-  const prompt = `You are a visual director creating image descriptions for a short horror video.
+  const prompt = `You are an expert CINEMATOGRAPHER creating a shot list for a short horror video.
 ${styleContext}
 ${anchorContext}
 ${countingRules}
@@ -1703,26 +1732,39 @@ ${liminalRules}
 
 Genre/vibe: ${vibePreset}
 
-Analyze each scene's narration and describe what the STILL IMAGE should depict — not the narration text itself, but what a viewer should SEE. Each image must match the art style and negative constraints above.
+Your job: for each scene, design a CINEMATIC SHOT that tells the story visually. Think like a film director — each image is a DIFFERENT CAMERA SETUP, not the same wide shot repeated.
 
-CRITICAL SCENE-GROUNDING RULES:
-- Each visual description must focus on the DOMINANT ACTION or SUBJECT of THAT specific scene's narration.
-- Do NOT put a scene's unique focal element into a different scene (e.g. if Scene 1 mentions an elevator floor number and Scene 3 mentions counting faces, the floor number belongs ONLY in Scene 1).
-- HOWEVER, maintain CONSISTENCY across all scenes for:
-  • LOCATION/SETTING: If the story takes place in an elevator, office, car, forest — every scene should reflect that same environment unless the narration explicitly moves to a new location.
-  • CHARACTER APPEARANCE: Characters must look the same in every scene they appear in (same clothing, hair, build). Use the Story Anchor character descriptions if provided.
-  • RECURRING PROPS: If a character carries a folder, wears a specific jacket, etc., keep those details consistent.
-- Think of it as: the BACKGROUND and CAST stay consistent, but the CAMERA FOCUS changes per scene to match what's happening in that scene's narration.
+SHOT DESIGN PRINCIPLES:
+1. VARY THE SUBJECT: Not every shot shows the full group or the same thing. Some shots should be:
+   - A CLOSE-UP of a hand, a face, an object (elevator buttons, a flickering light, sweat on a palm, a number display)
+   - An OVERHEAD/birds-eye view looking straight down
+   - A POV shot from a character's perspective
+   - A DETAIL SHOT of something small but important (a name badge, a cracked mirror, fingers counting)
+   - A REACTION SHOT focused on ONE person's face
+2. FOLLOW THE NARRATIVE FOCUS: Read what the scene text is actually about:
+   - If it mentions "counting" → show hands counting or numbered objects, NOT the full group
+   - If it mentions "jolt of every floor" → show the floor indicator numbers changing, NOT people standing
+   - If it mentions a character noticing something → show THEIR face in close-up reacting
+   - If it mentions silence or unease → show an EMPTY detail (the elevator gap, emergency phone, a crack in the wall)
+3. NEVER repeat the same basic composition. If scene 1 is "group in elevator", scene 2 MUST be a different angle/subject.
+4. ESCALATE visually: start with normal/wide shots, progress to tighter, more unsettling compositions.
 
-IMPORTANT VARIETY RULES:
-- Mix scene types: NOT every scene should be "group". Use establishing (wide location), object (detail/prop focus), atmosphere (mood/environment), character (single person), group (multiple people)
-- Only use "group" type when the scene text specifically describes people together
-- For suspense/tension scenes without people, use "atmosphere" or "object" type
-- For scenes about locations or settings, use "establishing" type
+SCENE-GROUNDING RULES:
+- Each description must match the DOMINANT ACTION or SUBJECT of THAT specific scene's narration.
+- Do NOT bleed unique elements between scenes.
+- MAINTAIN CONSISTENCY for: location/setting, character appearance, recurring props.
+- The BACKGROUND and CAST stay consistent, but the CAMERA FOCUS and FRAMING change every scene.
+
+VARIETY IS MANDATORY:
+- Maximum 2 scenes of type "group" unless the story is entirely about the group acting together in every scene.
+- At least 2 scenes should be "object" or "atmosphere" or "establishing" type.
+- At least 1 scene should use close-up or extreme-close-up camera.
+- At least 1 scene should use overhead, low-angle, or pov camera.
+- If a scene has only 1-2 sentences of dialogue or narration, use an object/atmosphere/detail shot rather than showing people.
 
 For each scene, provide:
-- description: A concise 1-2 sentence visual description matching the art style. Be SPECIFIC about what is visible.
-- sceneType: One of: establishing (wide location shots), object (focus on a specific item/detail), atmosphere (mood/environment), character (single person focus), group (multiple people)
+- description: A concise 1-2 sentence visual description. Be SPECIFIC about what is visible — describe the exact subject, framing, and what makes this shot different from the others.
+- sceneType: One of: establishing (wide location), object (specific item/detail focus), atmosphere (mood/environment), character (single person), group (multiple people)
 - camera: One of: wide, medium, close-up, extreme-close-up, overhead, low-angle, pov
 
 ${sceneList}
@@ -1739,7 +1781,7 @@ Respond with a JSON object: { "cues": [ { "sceneIndex": 0, "description": "...",
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         messages: [
-          { role: 'system', content: 'You are a visual director. Respond only with valid JSON.' },
+          { role: 'system', content: 'You are an expert cinematographer designing a shot list. Each shot must be visually DISTINCT — vary subjects, angles, and framing like a real film. Respond only with valid JSON.' },
           { role: 'user', content: prompt }
         ],
         response_format: { type: 'json_object' },
