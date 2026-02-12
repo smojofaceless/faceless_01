@@ -4,16 +4,18 @@
 // 
 // Reference: JOB_SCHEDULER.md, CAMPAIGN_SYSTEM.md
 // 
+// v3.0 - 2026-02-11: Concurrency-aware scheduling (respects active worker count)
 // v2.1 - 2026-02-10: Added kill switch + auto-pause for failure clusters
 // v2.0 - 2026-02-08: Uses claim_job RPC with lease-based locking
 // 
 // This function:
 // 1. Checks global kill switch (aborts if active)
 // 2. Runs auto-pause for failure clusters (dependency outages)
-// 3. Queries for jobs where generate_by <= NOW() (via find_eligible_jobs RPC)
-// 4. Atomically claims each job via claim_job RPC (handles campaign gating, lease)
-// 5. Triggers run-job for each claimed job
-// 6. On trigger failure, releases claim via release_job RPC
+// 3. Counts currently active workers (generating + valid lease)
+// 4. Queries for jobs where generate_by <= NOW() (via find_eligible_jobs RPC)
+// 5. Only claims enough jobs to stay within MAX_CONCURRENT_WORKERS
+// 6. Triggers worker-v1 for each claimed job
+// 7. On trigger failure, releases claim via release_job RPC
 // =====================================================
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -33,7 +35,12 @@ const corsHeaders = {
 const DEFAULT_LEAD_TIME_HOURS = 24;
 
 // Maximum jobs to process per scheduler run (prevent stampedes)
-const MAX_JOBS_PER_RUN = 3;
+const MAX_JOBS_PER_RUN = 10;
+
+// Maximum concurrent workers allowed (renderer bottleneck)
+// Currently 1 renderer → only 2 workers at a time (1 rendering + 1 doing story/images)
+// When scaling to 2-3 renderers, bump this to match
+const MAX_CONCURRENT_WORKERS = 2;
 
 // Default lease duration for claimed jobs (seconds)
 const DEFAULT_LEASE_SECONDS = 900; // 15 minutes
@@ -188,6 +195,26 @@ async function claimJob(
  * Release a job claim using the release_job RPC.
  * Used when run-job fails to start.
  */
+
+/**
+ * Count currently active workers (jobs being processed right now).
+ * A job is "active" if status=generating AND lease hasn't expired.
+ */
+async function countActiveWorkers(supabase: SupabaseClient): Promise<number> {
+  const { count, error } = await supabase
+    .from('jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'generating')
+    .gt('lease_expires_at', new Date().toISOString());
+
+  if (error) {
+    console.warn(`[SCHEDULER] ⚠️ Could not count active workers: ${error.message}`);
+    return 0; // Assume none on error (safe: may trigger more than ideal)
+  }
+
+  return count ?? 0;
+}
+
 async function releaseJob(
   supabase: SupabaseClient,
   jobId: string,
@@ -424,10 +451,39 @@ serve(async (req) => {
       );
     }
     
-    console.log(`[SCHEDULER] Processing ${eligibleJobs.length} eligible jobs`);
+    // =========================================
+    // CONCURRENCY CHECK
+    // Only trigger enough workers to stay within MAX_CONCURRENT_WORKERS.
+    // This prevents renderer stampedes during campaigns.
+    // =========================================
+    
+    const activeWorkers = await countActiveWorkers(supabase);
+    const availableSlots = Math.max(0, MAX_CONCURRENT_WORKERS - activeWorkers);
+    
+    console.log(`[SCHEDULER] Concurrency: ${activeWorkers} active workers, ${availableSlots} slots available (max=${MAX_CONCURRENT_WORKERS})`);
+    
+    if (availableSlots === 0) {
+      console.log(`[SCHEDULER] All worker slots occupied — deferring ${eligibleJobs.length} jobs to next cycle`);
+      return new Response(
+        JSON.stringify({ 
+          ...result, 
+          message: `All ${MAX_CONCURRENT_WORKERS} worker slots active — deferred to next cycle`,
+          active_workers: activeWorkers,
+          max_concurrent: MAX_CONCURRENT_WORKERS,
+          deferred_jobs: eligibleJobs.length,
+          scheduler_run_id: schedulerRunId,
+          duration_ms: Date.now() - startTime
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // Only process up to available slots
+    const jobsToProcess = eligibleJobs.slice(0, availableSlots);
+    console.log(`[SCHEDULER] Processing ${jobsToProcess.length} of ${eligibleJobs.length} eligible jobs (${eligibleJobs.length - jobsToProcess.length} deferred)`);
     
     // Process each eligible job
-    for (const job of eligibleJobs) {
+    for (const job of jobsToProcess) {
       const jobDetail: SchedulerResult['details'][0] = {
         job_id: job.id,
         claimed: false,

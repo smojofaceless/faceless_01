@@ -31,6 +31,7 @@ export interface StepResult {
   success: boolean;
   skipped?: boolean;
   continuation_needed?: boolean;  // Time budget exhausted, re-invoke to continue
+  requeue?: boolean;              // Renderer busy — release job back to queued for next cycle
   error?: string;
   statusCode?: number;  // HTTP status code if applicable (for error classification)
   data?: Record<string, unknown>;

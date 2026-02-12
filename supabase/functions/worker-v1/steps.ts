@@ -2240,6 +2240,18 @@ export async function executeAssembleStep(
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     console.error(`[ASSEMBLE] ✗ Failed: ${errorMsg}`);
+    
+    // Detect renderer-busy failures — signal for re-queue instead of hard fail
+    const isRendererBusy = errorMsg.includes('503') || errorMsg.includes('Server busy') || errorMsg.includes('all render attempts failed');
+    if (isRendererBusy) {
+      console.log(`[ASSEMBLE] Renderer busy — requesting re-queue for next scheduler cycle`);
+      return { 
+        success: false, 
+        error: errorMsg,
+        requeue: true,
+      };
+    }
+    
     return { success: false, error: errorMsg };
   }
 }

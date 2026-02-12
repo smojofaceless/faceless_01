@@ -304,6 +304,41 @@ serve(async (req) => {
       stepResults[stepName] = stepResult;
       
       if (!stepResult.success) {
+        // =========================================
+        // RE-QUEUE: Renderer busy — release back to queued for next scheduler cycle
+        // This is NOT a permanent failure, just a resource contention issue
+        // =========================================
+        if (stepResult.requeue) {
+          console.log(`[WORKER-V1] 🔄 Step ${stepName} requested re-queue (renderer busy). Releasing job for next cycle.`);
+          
+          await updateStepStatus(supabase, jobId, stepName, 'pending', {
+            requeued: true,
+            reason: 'renderer_busy',
+            elapsed_ms: elapsedMs
+          });
+          
+          await logger.snapshot(stepName, 'requeued', {
+            reason: 'renderer_busy',
+            elapsed_ms: elapsedMs,
+            function_elapsed_ms: Date.now() - functionStartTime,
+          }, `Renderer busy — re-queued for next scheduler cycle`);
+          
+          // Release job as 'queued' (not 'failed') so scheduler picks it up again
+          await releaseJob(supabase, jobId, workerId, 'queued', undefined);
+          
+          return new Response(
+            JSON.stringify({
+              success: true,
+              requeued: true,
+              job_id: jobId,
+              step: stepName,
+              reason: 'renderer_busy',
+              message: 'Job released back to queue — will retry on next scheduler cycle',
+            }),
+            { status: 202, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+          );
+        }
+        
         pipelineError = `Step ${stepName} failed: ${stepResult.error}`;
         
         // Classify the failure for DLQ
