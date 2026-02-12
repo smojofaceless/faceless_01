@@ -1,7 +1,7 @@
 # Project Roadmap
 
-> **Document Version:** 2.9  
-> **Last Updated:** February 10, 2026  
+> **Document Version:** 3.0  
+> **Last Updated:** February 11, 2026  
 > **Author:** System Architect  
 > **Status:** Active Development
 
@@ -11,6 +11,7 @@
 
 | Date | Version | Changes |
 |------|---------|--------|
+| Feb 11, 2026 | 3.0 | **Scene & Image Pipeline v2**: Voice-aligned scene transitions, multi-image for long scenes (>10s), climax awareness in visual cues, per-shot mood levels for Ken Burns, micro-scene merge (<3s), story anchor group count fix, per-scene durations in assembler (no more uniform distribution). New doc: IMAGE_STORY_PIPELINE.md. Enhanced campaign detail UI with copy-paste, image sequence visualization. Weight display fix on create page. |
 | Feb 10, 2026 | 2.9 | **Background Music V1.2**: loudness_lufs/peak_db metadata, music fingerprint (config_hash) in job_assets.meta, alimiter (anti-clip), music status badge in job detail UI, Brand Music Management UI (view/upload/toggle/delete tracks per brand on brands page) |
 | Feb 10, 2026 | 2.8 | **Background Music V1 Complete**: music_tracks table, 3 RPCs, DB-driven track selection, sidechain ducking, fade in/out, brand music config in brand_templates, renderer v3.2, worker-v1 v2.7 |
 | Feb 10, 2026 | 2.7 | **Cost Controls / Rate Limits Complete**: Per-job caps, per-campaign budgets, global throttles, concurrency slots, api_usage ledger with idempotency, 11 RPCs, worker-v1 v2.6 + schedule-jobs v2.2 |
@@ -38,6 +39,10 @@
 
 | Item | Date | Notes |
 |------|------|-------|
+| **Scene & Image Pipeline v2** | Feb 11, 2026 | 6 improvements: (1) Voice-aligned scene transitions via `alignScenesToVoice()` — syncs image changes to actual spoken word timing from ElevenLabs timestamps; (2) Multi-image for long scenes (>10s) — up to 3 images per scene with varied camera angles; (3) Climax awareness — `isClimax: true` in visual cues for last 1-2 scenes, mood boost; (4) Per-shot mood levels via `computeMoodLevel()` — 1-10 scale controlling Ken Burns intensity; (5) Micro-scene merge (<3s scenes merged into neighbors); (6) Group count fix in story anchor prompt. CRITICAL FIX: assembler now reads image_sequence manifest for per-scene durations instead of uniform distribution. |
+| **Enhanced Campaign Detail Logs** | Feb 11, 2026 | Per-section copy buttons (story text, prompts, scenes, visual cues), image sequence visualization (duration bars + mood levels), voice alignment status in images detail, micro-scene merge indicators in scenes detail. |
+| **Weight Display Fix** | Feb 11, 2026 | Fixed vibe preset weights showing 9900% on create page — column migrated from DECIMAL(3,2) to INTEGER but JS still multiplied by 100. |
+| **Comprehensive Pipeline Documentation** | Feb 11, 2026 | New IMAGE_STORY_PIPELINE.md documenting all 10 pipeline steps, data flow, storage paths, idempotency, cost controls, debugging guide. Replaces outdated IMAGE_GENERATION_DEBUG.md (which described old run-job architecture). |
 | **Effects Refinement (Controlled Motion)** | Feb 10, 2026 | DB-driven, intensity-scaled, deterministic effects. 4-layer merge (system->preset->brand->job). `normalizeEffectsConfig()` centralized clamping. Brand-level ceilings (`limits`). Hardened: soft-fail, effects OFF by default, legacy pipeline always reachable. Brand Effects UI on brands page. |
 | **Background Music V1.2** | Feb 10, 2026 | V1.2 hardening: loudness_lufs/peak_db columns for per-track gain tuning, music_config_hash fingerprint in job_assets.meta for debugging, alimiter anti-clipping filter in renderer, music status badge in job detail modal, **Brand Music Management UI** on brands page (view tracks, upload MP3, preview playback, toggle active/inactive, delete). |
 | **Background Music V1** | Feb 10, 2026 | music_tracks table (3 default tracks per brand), brand music config in config_overrides, 3 RPCs, deterministic selection (hash-based), sidechain ducking + fade in/out in FFmpeg renderer v3.2, worker-v1 v2.7. |

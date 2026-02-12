@@ -1,6 +1,6 @@
 # Effects Profile System v1.0
 
-> **Last Updated:** February 10, 2026
+> **Last Updated:** February 11, 2026
 
 This document describes the intensity-based effects system for video generation.
 
@@ -314,6 +314,24 @@ Effects are applied via FFmpeg filters in the self-hosted **video-renderer** ser
 | Color Grade | `eq` + `colorbalance` filters |
 | Ken Burns | `zoompan` with motion profiles |
 
+### Per-Shot Mood Levels (Feb 11, 2026)
+
+Ken Burns motion is now controlled per-image via **mood levels** (1–10), computed by `computeMoodLevel()` in `worker-v1/steps.ts`:
+
+| Mood Range | Ken Burns Style | Description |
+|------------|----------------|-------------|
+| 1–6 | Gentle | Classic slow zoom (in or out). For establishing shots, objects, calm moments. |
+| 7–10 | Cinematic | Pan, sweep, diagonal movement. For atmosphere, climax, POV shots. |
+
+**Computation:** Base mood escalates from 3→8 across the video's progress. Adjustments are made per scene type:
+- `establishing` / `wide` → mood−1
+- `atmosphere` → mood+1  
+- `character` + `close-up` → mood+1
+- `pov` → mood+2
+- `isClimax: true` → baseMood+3 (capped at 10)
+
+The `mood_levels[]` array is sent in the assembly payload alongside `durations[]`, allowing the FFmpeg renderer to apply different Ken Burns intensity to each scene independently.
+
 ### Visual DNA → FFmpeg Binding
 
 The `ffmpeg_presets.js` file in `video-renderer/` maps Visual DNA dimensions directly to FFmpeg filter graphs:
@@ -386,3 +404,4 @@ Legacy boolean effects (e.g., `effect_vhs_tracking: true`) are automatically con
 ## Version History
 
 - **v1.0** (2025-01-30): Initial effects profile system with intensity controls
+- **v1.1** (2026-02-11): Per-shot mood levels for Ken Burns (gentle 1-6, cinematic 7-10), climax awareness boost

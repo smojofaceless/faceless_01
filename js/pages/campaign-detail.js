@@ -1332,6 +1332,9 @@ class CampaignDetailPage {
     renderStepDetail(stepName, data) {
         if (!this.stepDetailContent) return;
         
+        // Store current step data for copy helpers
+        this._currentStepData = data;
+        
         const statusBadge = data.status 
             ? `<span class="step-detail__badge step-detail__badge--${data.status === 'completed' ? 'success' : data.status === 'failed' ? 'error' : 'warning'}">${data.status}</span>`
             : '';
@@ -1413,17 +1416,23 @@ class CampaignDetailPage {
         
         // Story title & text
         if (job.title || job.story_text) {
+            const storyId = `story-text-${Date.now()}`;
             html += `<div class="step-detail__section">
-                <div class="step-detail__label">📖 Story: ${this.escapeHtml(job.title || 'Untitled')}</div>
-                <div class="step-detail__story">${this.escapeHtml(job.story_text || 'No story text available')}</div>
+                <div class="step-detail__label">📖 Story: ${this.escapeHtml(job.title || 'Untitled')}
+                    <button class="step-detail__copy-btn" onclick="window.campaignDetailPage.copyToClipboard(document.getElementById('${storyId}').textContent, this)">📋 Copy</button>
+                </div>
+                <div class="step-detail__story" id="${storyId}">${this.escapeHtml(job.story_text || 'No story text available')}</div>
             </div>`;
         }
         
         // Story Anchor (loaded from job asset)  
         if (data.storyAnchorFull) {
             const sa = data.storyAnchorFull;
+            this._storyAnchorText = JSON.stringify(sa, null, 2);
             html += `<div class="step-detail__section">
-                <div class="step-detail__label">🎯 Story Anchor (Visual Bible)</div>
+                <div class="step-detail__label">🎯 Story Anchor (Visual Bible)
+                    <button class="step-detail__copy-btn" onclick="window.campaignDetailPage.copyToClipboard(window.campaignDetailPage._storyAnchorText, this)">📋 Copy</button>
+                </div>
                 <div class="step-detail__kv-grid">
                     <span class="step-detail__kv-key">Environment</span>
                     <span class="step-detail__kv-val">${this.escapeHtml(sa.environment || '-')}</span>
@@ -1445,8 +1454,10 @@ class CampaignDetailPage {
         if (promptText) {
             const promptStr = typeof promptText === 'object' ? JSON.stringify(promptText, null, 2) : promptText;
             html += `<div class="step-detail__section">
-                <div class="step-detail__label">🧠 Story Prompt</div>
-                <div class="step-detail__pre">${this.escapeHtml(promptStr)}</div>
+                <div class="step-detail__label">🧠 Story Prompt
+                    <button class="step-detail__copy-btn" onclick="window.campaignDetailPage.copyToClipboard(document.getElementById('story-prompt-pre').textContent, this)">📋 Copy</button>
+                </div>
+                <div class="step-detail__pre" id="story-prompt-pre">${this.escapeHtml(promptStr)}</div>
             </div>`;
         }
         
@@ -1480,30 +1491,71 @@ class CampaignDetailPage {
     renderScenesDetail(data) {
         const scenes = data.scenesData || [];
         const job = data.job || {};
+        const totalDuration = parseFloat(job.meta?.duration || job.meta?.audio_duration || 60);
+        const hasTimestamps = !!job.meta?.audio_timestamps?.length;
         
         let html = `<div class="step-detail__section">
-            <div class="step-detail__label">🎬 Scene Breakdown (${scenes.length} scenes)</div>
+            <div class="step-detail__label">🎬 Scene Breakdown (${scenes.length} scenes)
+                <button class="step-detail__copy-btn" onclick="window.campaignDetailPage.copyScenesData(this)">📋 Copy All</button>
+            </div>
             <div class="step-detail__kv-grid">
                 <span class="step-detail__kv-key">Scene Count</span>
                 <span class="step-detail__kv-val">${scenes.length}</span>
                 <span class="step-detail__kv-key">Duration</span>
-                <span class="step-detail__kv-val">${job.meta?.duration || '60'}s</span>
+                <span class="step-detail__kv-val">${totalDuration}s</span>
                 <span class="step-detail__kv-key">Pace</span>
                 <span class="step-detail__kv-val">${job.meta?.pace || 'balanced'}</span>
+                <span class="step-detail__kv-key">Voice Aligned</span>
+                <span class="step-detail__kv-val">${hasTimestamps 
+                    ? '<span class="voice-aligned-badge voice-aligned-badge--yes">🎙️ Yes</span>' 
+                    : '<span class="voice-aligned-badge voice-aligned-badge--no">— No timestamps</span>'}</span>
+                <span class="step-detail__kv-key">Timing Mode</span>
+                <span class="step-detail__kv-val">${hasTimestamps ? 'Voice-aligned' : 'Word-proportional'}</span>
             </div>
         </div>`;
+        
+        // Duration bar chart
+        if (scenes.length > 0) {
+            const maxDur = Math.max(...scenes.map(s => (s.endTime || 0) - (s.startTime || 0)), 1);
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">⏱️ Scene Duration Distribution</div>
+                <div class="duration-bar-chart">
+                    ${scenes.map((s, i) => {
+                        const dur = ((s.endTime || 0) - (s.startTime || 0)).toFixed(1);
+                        const pct = Math.max(10, (dur / maxDur) * 100);
+                        const words = (s.text || '').split(/\s+/).filter(w => w).length;
+                        const isMerged = dur > 8;
+                        return `<div class="duration-bar" style="height:${pct}%;background:${isMerged ? '#F59E0B' : dur < 3.5 ? '#EF4444' : '#8B5CF6'}">
+                            <div class="duration-bar__tooltip">Scene ${i+1}: ${dur}s (${words}w)${isMerged ? ' — long' : ''}</div>
+                        </div>`;
+                    }).join('')}
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-secondary);margin-top:2px">
+                    <span>Scene 1</span><span>Scene ${scenes.length}</span>
+                </div>
+            </div>`;
+        }
         
         if (scenes.length > 0) {
             html += `<div class="step-detail__section">
                 <div class="step-detail__label">📝 Scenes</div>
                 <div style="max-height:300px;overflow-y:auto">
-                    ${scenes.map((s, i) => `
+                    ${scenes.map((s, i) => {
+                        const dur = ((s.endTime || 0) - (s.startTime || 0)).toFixed(1);
+                        const words = (s.text || '').split(/\s+/).filter(w => w).length;
+                        const wps = dur > 0 ? (words / dur).toFixed(1) : 0;
+                        return `
                         <div style="padding:8px;margin-bottom:4px;background:var(--bg-primary);border-radius:4px;border-left:3px solid var(--color-primary);font-size:12px">
-                            <strong style="color:var(--text-secondary)">Scene ${i + 1}</strong> <span style="color:var(--text-secondary);font-size:11px">(${(s.startTime || 0).toFixed(1)}s - ${(s.endTime || 0).toFixed(1)}s)</span>
+                            <div style="display:flex;align-items:center;gap:6px">
+                                <strong style="color:var(--text-secondary)">Scene ${i + 1}</strong>
+                                <span style="color:var(--text-secondary);font-size:11px">(${(s.startTime || 0).toFixed(1)}s - ${(s.endTime || 0).toFixed(1)}s = ${dur}s)</span>
+                                <span style="font-size:10px;color:var(--text-secondary)">${words}w · ${wps}w/s</span>
+                                ${parseFloat(dur) > 10 ? '<span class="multi-image-badge">multi-img</span>' : ''}
+                            </div>
                             <div style="margin-top:4px;color:var(--text-primary)">${this.escapeHtml((s.text || '').substring(0, 200))}${(s.text || '').length > 200 ? '...' : ''}</div>
                             ${s.keywords?.length ? `<div style="margin-top:4px;font-size:11px;color:var(--text-secondary)">Keywords: ${s.keywords.join(', ')}</div>` : ''}
                         </div>
-                    `).join('')}
+                    `}).join('')}
                 </div>
             </div>`;
         }
@@ -1583,6 +1635,7 @@ class CampaignDetailPage {
         const promptData = promptSnap?.meta?.data || promptSnap?.meta || {};
         const assets = data.assets || [];
         const progress = data.progress || [];
+        const job = data.job || {};
         
         const imageAssets = assets
             .filter(a => a.public_url && a.idempotency_key?.includes('image_generate'))
@@ -1598,26 +1651,81 @@ class CampaignDetailPage {
         const storyAnchorInfo = vcData.story_anchor || null;
         const sceneTypeDistribution = vcData.scene_type_distribution || null;
         
+        // Image sequence manifest
+        const imageSequence = job.meta?.image_sequence || [];
+        const hasVoiceAlignment = !!job.meta?.audio_timestamps?.length;
+        const multiImageCount = imageSequence.filter(e => e.subIndex > 0).length;
+        
         const totalScenes = data.stepMeta?.total_scenes || progress[progress.length - 1]?.meta?.total || imageAssets.length || '?';
         
         let html = `<div class="step-detail__section">
-            <div class="step-detail__label">🖼️ Image Generation</div>
+            <div class="step-detail__label">🖼️ Image Generation
+                <button class="step-detail__copy-btn" onclick="window.campaignDetailPage.copyImageSummary(this)">📋 Copy Summary</button>
+            </div>
             <div class="step-detail__kv-grid">
                 <span class="step-detail__kv-key">Model</span>
-                <span class="step-detail__kv-val">${promptData.model || data.stepMeta?.image_model || '-'}</span>
+                <span class="step-detail__kv-val">${promptData.model || data.stepMeta?.image_model || job.meta?.image_model || '-'}</span>
                 <span class="step-detail__kv-key">Size</span>
                 <span class="step-detail__kv-val">${promptData.size || '-'}</span>
                 <span class="step-detail__kv-key">Generated</span>
                 <span class="step-detail__kv-val">${imageAssets.length} / ${totalScenes}</span>
                 <span class="step-detail__kv-key">Story Anchor</span>
                 <span class="step-detail__kv-val">${storyAnchorInfo ? '✅ Used' : '❌ Not used'}</span>
+                <span class="step-detail__kv-key">Voice Aligned</span>
+                <span class="step-detail__kv-val">${hasVoiceAlignment 
+                    ? '<span class="voice-aligned-badge voice-aligned-badge--yes">🎙️ Yes</span>' 
+                    : '<span class="voice-aligned-badge voice-aligned-badge--no">— No</span>'}</span>
+                <span class="step-detail__kv-key">Multi-Image Scenes</span>
+                <span class="step-detail__kv-val">${multiImageCount > 0 ? `${multiImageCount} extra images` : 'None (all ≤10s)'}</span>
             </div>
         </div>`;
         
+        // Image Sequence Manifest — duration bars + mood levels
+        if (imageSequence.length > 0) {
+            const maxDur = Math.max(...imageSequence.map(e => e.duration || 0), 1);
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">📊 Image Sequence (${imageSequence.length} images)
+                    <button class="step-detail__copy-btn" onclick="window.campaignDetailPage.copyImageSequence(this)">📋 Copy</button>
+                </div>
+                <div class="duration-bar-chart">
+                    ${imageSequence.map((entry, i) => {
+                        const dur = (entry.duration || 0).toFixed(1);
+                        const pct = Math.max(10, ((entry.duration || 0) / maxDur) * 100);
+                        const mood = entry.moodLevel || 0;
+                        const color = mood >= 7 ? '#EF4444' : mood >= 4 ? '#F59E0B' : '#3B82F6';
+                        const isMulti = entry.subIndex > 0;
+                        return `<div class="duration-bar" style="height:${pct}%;background:${color}${isMulti ? ';border:1px dashed rgba(255,255,255,0.3)' : ''}">
+                            <div class="duration-bar__tooltip">S${entry.sceneIndex + 1}${isMulti ? '.' + (entry.subIndex + 1) : ''}: ${dur}s · mood ${mood}</div>
+                        </div>`;
+                    }).join('')}
+                </div>
+                <div style="display:flex;gap:12px;font-size:10px;color:var(--text-secondary);margin-top:4px">
+                    <span style="display:flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:#3B82F6"></span> Gentle (1-3)</span>
+                    <span style="display:flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:#F59E0B"></span> Building (4-6)</span>
+                    <span style="display:flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:#EF4444"></span> Intense (7-10)</span>
+                </div>
+            </div>`;
+            
+            // Mood level pills
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">🎭 Mood Levels (Ken Burns Intensity)</div>
+                <div class="mood-pills">
+                    ${imageSequence.map((entry, i) => {
+                        const mood = entry.moodLevel || 0;
+                        const cls = mood >= 7 ? 'mood-pill--high' : mood >= 4 ? 'mood-pill--mid' : 'mood-pill--low';
+                        return `<span class="mood-pill ${cls}" title="Scene ${entry.sceneIndex + 1}${entry.subIndex > 0 ? '.' + (entry.subIndex + 1) : ''}: mood ${mood}">${mood}</span>`;
+                    }).join('')}
+                </div>
+            </div>`;
+        }
+        
         // Story Anchor details (if available)
         if (storyAnchorInfo) {
+            this._imagesStoryAnchorText = JSON.stringify(storyAnchorInfo, null, 2);
             html += `<div class="step-detail__section">
-                <div class="step-detail__label">🎯 Story Anchor</div>
+                <div class="step-detail__label">🎯 Story Anchor
+                    <button class="step-detail__copy-btn" onclick="window.campaignDetailPage.copyToClipboard(window.campaignDetailPage._imagesStoryAnchorText, this)">📋 Copy</button>
+                </div>
                 <div class="step-detail__kv-grid">
                     <span class="step-detail__kv-key">Environment</span>
                     <span class="step-detail__kv-val">${this.escapeHtml(storyAnchorInfo.environment || '-')}</span>
@@ -1631,9 +1739,26 @@ class CampaignDetailPage {
             </div>`;
         }
         
+        // Visual Cues detail
+        if (data.visualCues?.length) {
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">👁️ Visual Cues (${data.visualCues.length})
+                    <button class="step-detail__copy-btn" onclick="window.campaignDetailPage.copyVisualCues(this)">📋 Copy</button>
+                </div>
+                <div style="max-height:200px;overflow-y:auto">
+                    ${data.visualCues.map((vc, i) => `
+                        <div style="padding:4px 8px;margin-bottom:2px;font-size:11px;background:var(--bg-primary);border-radius:3px;display:flex;gap:8px;align-items:flex-start">
+                            <strong style="color:var(--text-secondary);min-width:20px">S${(vc.sceneIndex ?? i) + 1}</strong>
+                            <span style="color:var(--text-primary);flex:1">${this.escapeHtml(vc.description || '-')}</span>
+                            <span style="font-size:10px;color:var(--text-secondary);white-space:nowrap">${vc.sceneType || '-'} · ${vc.camera || '-'}${vc.isClimax ? ' · 🔥' : ''}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>`;
+        }
+        
         // Scene type distribution
         if (sceneTypeDistribution) {
-            const types = Object.entries(sceneTypeDistribution).map(([type, count]) => `${type}: ${count}`);
             html += `<div class="step-detail__section">
                 <div class="step-detail__label">📊 Scene Type Distribution</div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -1648,8 +1773,10 @@ class CampaignDetailPage {
         // Sample prompt
         if (promptData.prompt) {
             html += `<div class="step-detail__section">
-                <div class="step-detail__label">🧠 Sample Prompt (Scene ${(promptData.scene_index || 0) + 1})</div>
-                <div class="step-detail__pre">${this.escapeHtml(promptData.prompt)}</div>
+                <div class="step-detail__label">🧠 Sample Prompt (Scene ${(promptData.scene_index || 0) + 1})
+                    <button class="step-detail__copy-btn" onclick="window.campaignDetailPage.copyToClipboard(document.getElementById('sample-prompt-pre').textContent, this)">📋 Copy</button>
+                </div>
+                <div class="step-detail__pre" id="sample-prompt-pre">${this.escapeHtml(promptData.prompt)}</div>
             </div>`;
         }
         
@@ -1660,15 +1787,20 @@ class CampaignDetailPage {
             this._imagePromptSnapshots = data.snapshots.filter(s => s.message?.includes('prompt'));
             this._imageScenes = data.scenesData || [];
             this._imageStoryAnchor = storyAnchorInfo;
+            this._imageSequence = imageSequence;
+            this._visualCues = data.visualCues || [];
             
             html += `<div class="step-detail__section">
                 <div class="step-detail__label">🎨 Generated Images (${imageAssets.length}) <span style="font-size:11px;color:var(--text-secondary);font-weight:normal">— click for details</span></div>
                 <div class="step-detail__image-grid">
                     ${imageAssets.map((a, i) => {
                         const sceneIdx = parseInt(a.idempotency_key?.split('scene_')[1] || i);
+                        const seqEntry = imageSequence.find(e => e.sceneIndex === sceneIdx && (e.subIndex || 0) === 0);
+                        const dur = seqEntry ? seqEntry.duration.toFixed(1) + 's' : '';
+                        const mood = seqEntry ? seqEntry.moodLevel : '';
                         return `<div class="step-detail__image-item step-detail__image-item--clickable" data-scene-index="${sceneIdx}" onclick="window.campaignDetailPage.showImageDetail(${sceneIdx})">
                             <img src="${a.public_url}" alt="Scene ${sceneIdx + 1}" loading="lazy">
-                            <div class="step-detail__image-item__label">Scene ${sceneIdx + 1}${a.meta?.art_style ? ` · ${a.meta.art_style}` : ''}</div>
+                            <div class="step-detail__image-item__label">S${sceneIdx + 1}${dur ? ' · ' + dur : ''}${mood ? ' · M' + mood : ''}</div>
                         </div>`;
                     }).join('')}
                 </div>
@@ -1678,7 +1810,9 @@ class CampaignDetailPage {
         // Progress log
         if (progress.length > 0) {
             html += `<div class="step-detail__section">
-                <div class="step-detail__label">📈 Progress (${progress.length} updates)</div>
+                <div class="step-detail__label">📈 Progress (${progress.length} updates)
+                    <button class="step-detail__copy-btn" onclick="window.campaignDetailPage.copyProgressLog(this)">📋 Copy</button>
+                </div>
                 <div style="max-height:200px;overflow-y:auto;font-size:12px">
                     ${progress.map(p => {
                         const time = new Date(p.created_at).toLocaleTimeString();
@@ -1717,6 +1851,10 @@ class CampaignDetailPage {
         const artStyle = meta.art_style || snapData.art_style || '-';
         const imageModel = meta.image_model || snapData.model || '-';
         
+        // Get image sequence info for this scene
+        const seqEntries = (this._imageSequence || []).filter(e => e.sceneIndex === sceneIndex);
+        const seqEntry = seqEntries[0] || {};
+        
         // Create modal overlay
         const overlay = document.createElement('div');
         overlay.className = 'image-detail-modal-overlay';
@@ -1741,8 +1879,12 @@ class CampaignDetailPage {
                             <div class="image-detail-modal__kv">
                                 <span>Model</span><span>${this.escapeHtml(imageModel)}</span>
                                 <span>Art Style</span><span>${this.escapeHtml(artStyle)}</span>
-                                <span>Scene Type</span><span>${this.escapeHtml(visualCue?.type || '-')}</span>
+                                <span>Scene Type</span><span>${this.escapeHtml(visualCue?.type || visualCue?.sceneType || '-')}</span>
                                 <span>Camera</span><span>${this.escapeHtml(visualCue?.camera || '-')}</span>
+                                <span>Duration</span><span>${seqEntry.duration ? seqEntry.duration.toFixed(1) + 's' : '-'}</span>
+                                <span>Mood Level</span><span>${seqEntry.moodLevel || '-'}</span>
+                                <span>Multi-Image</span><span>${seqEntries.length > 1 ? seqEntries.length + ' images' : 'No'}</span>
+                                ${visualCue?.isClimax ? '<span>Climax</span><span style="color:#EF4444;font-weight:600">🔥 YES</span>' : ''}
                                 ${meta.prompt_hash ? `<span>Prompt Hash</span><span style="font-family:monospace;font-size:11px">${meta.prompt_hash.substring(0, 16)}...</span>` : ''}
                             </div>
                         </div>
@@ -1758,7 +1900,10 @@ class CampaignDetailPage {
                             ${sceneData.keywords?.length ? `<div style="margin-top:6px;font-size:11px;color:var(--text-secondary)">Keywords: ${sceneData.keywords.join(', ')}</div>` : ''}
                         </div>` : ''}
                         <div class="image-detail-modal__section">
-                            <div class="image-detail-modal__label">🧠 Full Prompt</div>
+                            <div class="image-detail-modal__label" style="display:flex;justify-content:space-between;align-items:center">
+                                🧠 Full Prompt
+                                <button class="step-detail__copy-btn" onclick="navigator.clipboard.writeText(this.closest('.image-detail-modal__section').querySelector('pre').textContent).then(()=>{this.textContent='✓ Copied';setTimeout(()=>this.textContent='📋 Copy',1500)})">📋 Copy</button>
+                            </div>
                             <pre class="image-detail-modal__prompt">${this.escapeHtml(prompt)}</pre>
                         </div>
                     </div>
@@ -1796,16 +1941,32 @@ class CampaignDetailPage {
         const outputSnap = data.snapshots.find(s => s.message?.includes('output') || s.message?.includes('complete'));
         const payload = payloadSnap?.meta?.data || payloadSnap?.meta || {};
         const output = outputSnap?.meta?.data || outputSnap?.meta || {};
+        const job = data.job || {};
+        const imageSeq = job.meta?.image_sequence || [];
+        
+        this._assemblePayloadText = JSON.stringify(payload, null, 2);
         
         let html = `<div class="step-detail__section">
-            <div class="step-detail__label">🔧 Assembly Configuration</div>
+            <div class="step-detail__label">🔧 Assembly Configuration
+                <button class="step-detail__copy-btn" onclick="window.campaignDetailPage.copyToClipboard(window.campaignDetailPage._assemblePayloadText, this)">📋 Copy Payload</button>
+            </div>
             <div class="step-detail__kv-grid">
                 <span class="step-detail__kv-key">Renderer</span>
                 <span class="step-detail__kv-val">${payload.renderer_url ? 'Video Renderer' : 'N/A'}</span>
-                <span class="step-detail__kv-key">Scenes</span>
-                <span class="step-detail__kv-val">${payload.scene_count || payload.total_scenes || '-'}</span>
+                <span class="step-detail__kv-key">Images</span>
+                <span class="step-detail__kv-val">${payload.scene_count || payload.total_scenes || imageSeq.length || '-'}</span>
                 <span class="step-detail__kv-key">Effects Mode</span>
-                <span class="step-detail__kv-val">${payload.effects_mode || data.job?.meta?.effects_mode || '-'}</span>
+                <span class="step-detail__kv-val">${payload.effects_mode || job.meta?.effects_mode || '-'}</span>
+                <span class="step-detail__kv-key">Controlled Motion</span>
+                <span class="step-detail__kv-val">${payload.effects_config?.enabled ? '✅ Active' : '❌ Legacy'}</span>
+                <span class="step-detail__kv-key">Per-Scene Durations</span>
+                <span class="step-detail__kv-val">${imageSeq.length > 0 ? '✅ From image_sequence' : '⚠️ Uniform'}</span>
+                <span class="step-detail__kv-key">Mood Levels</span>
+                <span class="step-detail__kv-val">${imageSeq.length > 0 ? `✅ ${imageSeq.map(e => e.moodLevel).join(',')}` : '— N/A'}</span>
+                <span class="step-detail__kv-key">Music</span>
+                <span class="step-detail__kv-val">${payload.music_url ? '🎵 Included' : '— None'}</span>
+                <span class="step-detail__kv-key">Captions</span>
+                <span class="step-detail__kv-val">${payload.captions?.length ? `${payload.captions.length} words` : '— None'}</span>
             </div>
         </div>`;
         
@@ -1872,6 +2033,27 @@ class CampaignDetailPage {
         if (!str) return '';
         if (typeof str !== 'string') str = String(str);
         return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    /**
+     * Copy text to clipboard with visual feedback on button
+     */
+    async copyToClipboard(text, buttonEl) {
+        try {
+            await navigator.clipboard.writeText(text);
+            if (buttonEl) {
+                const orig = buttonEl.innerHTML;
+                buttonEl.innerHTML = '✓ Copied';
+                buttonEl.classList.add('step-detail__copy-btn--copied');
+                setTimeout(() => {
+                    buttonEl.innerHTML = orig;
+                    buttonEl.classList.remove('step-detail__copy-btn--copied');
+                }, 1500);
+            }
+        } catch (err) {
+            console.error('Copy failed:', err);
+            this.showToast?.('Failed to copy', 'error');
+        }
     }
 
     /**
@@ -2044,6 +2226,116 @@ class CampaignDetailPage {
             console.error('Failed to copy logs:', error);
             this.showToast('Failed to copy logs', 'error');
         }
+    }
+
+    /**
+     * Copy scenes data to clipboard
+     */
+    copyScenesData(btnEl) {
+        const job = this._currentStepData?.job || {};
+        const scenes = this._currentStepData?.scenesData || [];
+        const lines = [`Scene Breakdown — ${scenes.length} scenes, ${job.meta?.duration || '?'}s total`, ''];
+        scenes.forEach((s, i) => {
+            const dur = ((s.endTime || 0) - (s.startTime || 0)).toFixed(1);
+            const words = (s.text || '').split(/\s+/).filter(w => w).length;
+            lines.push(`Scene ${i+1} (${(s.startTime||0).toFixed(1)}s-${(s.endTime||0).toFixed(1)}s = ${dur}s, ${words}w)`);
+            lines.push(`  Text: ${s.text || ''}`);
+            if (s.keywords?.length) lines.push(`  Keywords: ${s.keywords.join(', ')}`);
+            lines.push('');
+        });
+        this.copyToClipboard(lines.join('\n'), btnEl);
+    }
+
+    /**
+     * Copy image generation summary to clipboard
+     */
+    copyImageSummary(btnEl) {
+        const job = this._currentStepData?.job || {};
+        const seq = job.meta?.image_sequence || [];
+        const assets = this._imageAssets || [];
+        const cues = this._visualCues || [];
+        const anchor = this._imageStoryAnchor;
+        
+        const lines = [`Image Generation Summary`, `Model: ${job.meta?.image_model || 'gpt-image-1'}`, `Images: ${assets.length}`, `Voice Aligned: ${job.meta?.audio_timestamps?.length ? 'Yes' : 'No'}`, ''];
+        
+        if (anchor) {
+            lines.push('--- Story Anchor ---');
+            lines.push(JSON.stringify(anchor, null, 2));
+            lines.push('');
+        }
+        
+        if (cues.length) {
+            lines.push('--- Visual Cues ---');
+            cues.forEach(vc => {
+                lines.push(`S${(vc.sceneIndex ?? 0) + 1}: [${vc.sceneType}/${vc.camera}${vc.isClimax ? '/CLIMAX' : ''}] ${vc.description}`);
+            });
+            lines.push('');
+        }
+        
+        if (seq.length) {
+            lines.push('--- Image Sequence ---');
+            seq.forEach(e => {
+                lines.push(`S${e.sceneIndex + 1}${e.subIndex > 0 ? '.' + (e.subIndex + 1) : ''}: ${e.duration?.toFixed(1)}s, mood ${e.moodLevel}`);
+            });
+        }
+        
+        this.copyToClipboard(lines.join('\n'), btnEl);
+    }
+
+    /**
+     * Copy image sequence manifest to clipboard
+     */
+    copyImageSequence(btnEl) {
+        const job = this._currentStepData?.job || {};
+        const seq = job.meta?.image_sequence || [];
+        if (!seq.length) {
+            this.copyToClipboard('No image sequence data available', btnEl);
+            return;
+        }
+        const lines = ['Image Sequence Manifest', `Total: ${seq.length} images`, ''];
+        lines.push('Scene | Sub | Duration | Mood | Asset Key');
+        lines.push('------|-----|----------|------|----------');
+        seq.forEach(e => {
+            lines.push(`S${e.sceneIndex + 1}    | ${e.subIndex || 0}   | ${(e.duration||0).toFixed(1)}s     | ${e.moodLevel || 0}    | ${e.assetKey || '-'}`);
+        });
+        this.copyToClipboard(lines.join('\n'), btnEl);
+    }
+
+    /**
+     * Copy visual cues to clipboard
+     */
+    copyVisualCues(btnEl) {
+        const cues = this._visualCues || [];
+        if (!cues.length) {
+            this.copyToClipboard('No visual cues data available', btnEl);
+            return;
+        }
+        const lines = [`Visual Cues (${cues.length} scenes)`, ''];
+        cues.forEach(vc => {
+            lines.push(`Scene ${(vc.sceneIndex ?? 0) + 1}:`);
+            lines.push(`  Type: ${vc.sceneType || '-'}`);
+            lines.push(`  Camera: ${vc.camera || '-'}`);
+            lines.push(`  Climax: ${vc.isClimax ? 'YES' : 'no'}`);
+            lines.push(`  Description: ${vc.description || '-'}`);
+            lines.push('');
+        });
+        this.copyToClipboard(lines.join('\n'), btnEl);
+    }
+
+    /**
+     * Copy progress log to clipboard
+     */
+    copyProgressLog(btnEl) {
+        const data = this._currentStepData;
+        if (!data?.progress?.length) {
+            this.copyToClipboard('No progress log data', btnEl);
+            return;
+        }
+        const lines = data.progress.map(p => {
+            const time = new Date(p.created_at).toISOString();
+            return `[${time}] ${p.message || ''}`;
+        });
+        this.copyToClipboard(lines.join('\n'), btnEl);
     }
 
     /**

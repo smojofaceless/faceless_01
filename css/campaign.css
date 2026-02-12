@@ -2606,3 +2606,127 @@
         font-size: var(--text-lg);
     }
 }
+
+/* ── Copy Button (per-section) ── */
+.step-detail__copy-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    float: right;
+    margin-top: -2px;
+}
+.step-detail__copy-btn:hover {
+    border-color: var(--brand-primary);
+    color: var(--brand-primary);
+    background: rgba(139, 92, 246, 0.08);
+}
+.step-detail__copy-btn--copied {
+    border-color: #10B981;
+    color: #10B981;
+    background: rgba(16, 185, 129, 0.08);
+}
+
+/* ── Duration Bar Chart ── */
+.duration-bar-chart {
+    display: flex;
+    gap: 2px;
+    align-items: flex-end;
+    height: 60px;
+    padding: 4px 0;
+}
+.duration-bar {
+    flex: 1;
+    min-width: 12px;
+    border-radius: 3px 3px 0 0;
+    position: relative;
+    cursor: default;
+    transition: opacity 0.15s;
+}
+.duration-bar:hover {
+    opacity: 0.8;
+}
+.duration-bar__tooltip {
+    display: none;
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 4px 8px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 10px;
+    white-space: nowrap;
+    color: var(--text-primary);
+    z-index: 10;
+    pointer-events: none;
+}
+.duration-bar:hover .duration-bar__tooltip {
+    display: block;
+}
+
+/* ── Mood Level Pills ── */
+.mood-pills {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+.mood-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 22px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    color: #fff;
+}
+.mood-pill--low { background: #3B82F6; }
+.mood-pill--mid { background: #F59E0B; }
+.mood-pill--high { background: #EF4444; }
+
+/* ── Multi-Image Badge ── */
+.multi-image-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    background: rgba(139, 92, 246, 0.15);
+    color: #8B5CF6;
+    margin-left: 4px;
+}
+
+/* ── Scene merge indicator ── */
+.scene-merge-tag {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    background: rgba(245, 158, 11, 0.15);
+    color: #F59E0B;
+    margin-left: 4px;
+}
+
+/* ── Voice alignment indicator ── */
+.voice-aligned-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+}
+.voice-aligned-badge--yes { background: rgba(16, 185, 129, 0.15); color: #10B981; }
+.voice-aligned-badge--no  { background: rgba(107, 114, 128, 0.15); color: #6B7280; }
