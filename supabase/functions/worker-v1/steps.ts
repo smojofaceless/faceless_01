@@ -2677,6 +2677,9 @@ function buildImagePrompt(
     let cueDescription = visualCue?.description || '';
     const narrationSnippet = sceneText.substring(0, 180);
 
+    // Scene-type-aware mood/environment adjustments
+    const sceneType = visualCue?.sceneType || 'atmosphere';
+
     // v5.0: Strip group/people language from non-group scene descriptions
     // GPT visual cue extraction sometimes leaks group references ("characters' faces",
     // "the group", "six people") into object/atmosphere/establishing/character scenes.
@@ -2688,9 +2691,6 @@ function buildImagePrompt(
     const sceneDescription = cueDescription
       ? `${cueDescription}\nScene narration context: ${narrationSnippet}`
       : narrationSnippet;
-
-    // Scene-type-aware mood/environment adjustments
-    const sceneType = visualCue?.sceneType || 'atmosphere';
     let mood = config.mood;
     let environment = config.environment;
     if (sceneType === 'establishing') {
