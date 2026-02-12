@@ -334,8 +334,8 @@ class PostQueueService {
     }
 
     /**
-     * Get jobs in a date range that haven't been imported to posts yet
-     * These show as "generating" or "pending" items on the calendar
+     * Get jobs in a date range for calendar display
+     * Includes ALL statuses — deduplication with posts happens in getCalendarItems()
      * @param {Date} start - Range start
      * @param {Date} end - Range end
      * @param {Object} filters - Optional filters { brandId }
@@ -348,7 +348,6 @@ class PostQueueService {
             let query = supabaseClient
                 .from('jobs')
                 .select('id, title, status, vibe_preset, scheduled_post_at, brand_id, batch_id, created_at')
-                .not('status', 'eq', 'complete')
                 .not('scheduled_post_at', 'is', null)
                 .gte('scheduled_post_at', start.toISOString())
                 .lte('scheduled_post_at', end.toISOString())
@@ -427,7 +426,7 @@ class PostQueueService {
                     platformId: 'youtube',
                     brandId: j.brand_id,
                     content: {
-                        title: j.title || `${j.vibe_preset || 'Video'} (${calStatus === 'failed' ? 'failed' : 'generating...'})`,
+                        title: j.title || `${j.vibe_preset || 'Video'} (${calStatus === 'failed' ? 'failed' : calStatus === 'scheduled' ? 'ready' : 'generating...'})`,
                         description: `Job status: ${j.status}`,
                         videoUrl: null,
                         thumbnailUrl: null,

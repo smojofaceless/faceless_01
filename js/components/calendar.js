@@ -419,7 +419,8 @@ class Calendar {
             // "More" button click
             const moreBtn = e.target.closest('.calendar__more');
             if (moreBtn && moreBtn.dataset.date) {
-                const date = new Date(moreBtn.dataset.date);
+                const parts = moreBtn.dataset.date.split('-');
+                const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
                 this.handleMoreClick(date);
                 return;
             }
@@ -437,7 +438,9 @@ class Calendar {
             if (day) {
                 // Don't trigger day click if clicking on a post or more button
                 if (!e.target.closest('[data-post-id]') && !e.target.closest('.calendar__more')) {
-                    const date = new Date(day.dataset.date);
+                    // Parse YYYY-MM-DD as local date (not UTC)
+                    const parts = day.dataset.date.split('-');
+                    const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
                     this.selectedDate = date;
                     
                     // Support both callback names
@@ -544,7 +547,12 @@ class Calendar {
     // ==================== Helper Methods ====================
 
     getDateKey(date) {
-        return date.toISOString().split('T')[0];
+        // Use LOCAL date components to avoid UTC offset shifting days
+        const d = new Date(date);
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
     }
 
     getWeekStart(date) {
