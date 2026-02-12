@@ -74,10 +74,10 @@ SELECT cron.schedule(
   'sweep-stale-leases',
   '*/5 * * * *',  -- Every 5 minutes
   $$
-  -- Sweep stale job leases
-  SELECT sweep_stale_leases(false);
+  -- Sweep stale job leases (fail jobs with expired leases or no heartbeat for 60 min)
+  SELECT * FROM sweep_stale_jobs(60, 50);
   -- Sweep stale post leases
-  SELECT sweep_stale_post_leases(false);
+  SELECT * FROM sweep_stale_post_leases(false);
   $$
 );
 
