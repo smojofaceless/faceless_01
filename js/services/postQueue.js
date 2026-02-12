@@ -347,7 +347,7 @@ class PostQueueService {
         try {
             let query = supabaseClient
                 .from('jobs')
-                .select('id, title, status, vibe_preset, scheduled_post_at, brand_id, batch_id, created_at, video_url')
+                .select('id, title, status, vibe_preset, scheduled_post_at, brand_id, batch_id, created_at')
                 .not('scheduled_post_at', 'is', null)
                 .gte('scheduled_post_at', start.toISOString())
                 .lte('scheduled_post_at', end.toISOString())
@@ -409,8 +409,29 @@ class PostQueueService {
         // Map pending jobs to calendar item shape
         // Filter out jobs that already have a corresponding post
         const importedJobIds = new Set(posts.filter(p => p.job_id || p.source_job_id).map(p => p.job_id || p.source_job_id));
-        const pendingJobItems = jobs
-            .filter(j => !importedJobIds.has(j.id))
+        const filteredJobs = jobs.filter(j => !importedJobIds.has(j.id));
+
+        // Fetch video URLs for complete jobs from job_assets
+        const completeJobIds = filteredJobs.filter(j => j.status === 'complete').map(j => j.id);
+        let videoUrlMap = {};
+        if (completeJobIds.length > 0 && typeof supabaseClient !== 'undefined') {
+            try {
+                const { data: assets } = await supabaseClient
+                    .from('job_assets')
+                    .select('job_id, url')
+                    .in('job_id', completeJobIds)
+                    .eq('type', 'final_mp4');
+                if (assets) {
+                    for (const a of assets) {
+                        videoUrlMap[a.job_id] = a.url;
+                    }
+                }
+            } catch (e) {
+                console.warn('Failed to fetch video URLs for complete jobs:', e);
+            }
+        }
+
+        const pendingJobItems = filteredJobs
             .map(j => {
                 // Map job status to calendar-friendly status
                 let calStatus = 'generating';
@@ -428,7 +449,7 @@ class PostQueueService {
                     content: {
                         title: j.title || `${j.vibe_preset || 'Video'} (${calStatus === 'failed' ? 'failed' : calStatus === 'scheduled' ? 'ready' : 'generating...'})`,
                         description: `Job status: ${j.status}`,
-                        videoUrl: j.video_url || null,
+                        videoUrl: videoUrlMap[j.id] || null,
                         thumbnailUrl: null,
                         duration: null
                     },
