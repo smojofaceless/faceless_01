@@ -1697,34 +1697,79 @@ export async function executeImagesStep(
       
       if (imageModel === 'gpt-image-1') {
         // === GPT-IMAGE-1 (Cheapest: ~$0.016/image at low quality) ===
-        const response = await fetchWithError(
-          'https://api.openai.com/v1/images/generations',
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${openaiKey}`,
-              'Content-Type': 'application/json',
+        // Has retry loop with prompt sanitization for moderation blocks
+        const MAX_IMAGE_RETRIES = 3;
+        let imageGenerated = false;
+        let currentPrompt = scenePrompt;
+        
+        for (let attempt = 1; attempt <= MAX_IMAGE_RETRIES; attempt++) {
+          const response = await fetch(
+            'https://api.openai.com/v1/images/generations',
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${openaiKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: 'gpt-image-1',
+                prompt: currentPrompt,
+                n: 1,
+                size: '1024x1536', // Portrait format for vertical video
+                quality: 'low',    // Cheapest option
+                output_format: 'webp',
+              }),
             },
-            body: JSON.stringify({
-              model: 'gpt-image-1',
-              prompt: scenePrompt,
-              n: 1,
-              size: '1024x1536', // Portrait format for vertical video
-              quality: 'low',    // Cheapest option
-              output_format: 'webp',
-            }),
-          },
-          `gpt-image-1 scene ${i}`
-        );
+          );
 
-        const result = await response.json();
-        // gpt-image-1 returns base64 by default
-        if (result.data?.[0]?.b64_json) {
-          imageUrl = `data:image/webp;base64,${result.data[0].b64_json}`;
-        } else if (result.data?.[0]?.url) {
-          imageUrl = result.data[0].url;
-        } else {
-          throw new Error(`gpt-image-1 returned no image for scene ${i}`);
+          if (!response.ok) {
+            const errorBody = await response.text().catch(() => '');
+            console.error(`[IMAGES] gpt-image-1 scene ${i} attempt ${attempt}/${MAX_IMAGE_RETRIES}: ${response.status} - ${errorBody.substring(0, 300)}`);
+            
+            // === MODERATION / CONTENT POLICY (400) — sanitize and retry ===
+            if (response.status === 400 && (errorBody.includes('moderation') || errorBody.includes('safety') || errorBody.includes('content_policy'))) {
+              console.log(`[IMAGES] ⚠️ Moderation block on scene ${i}, attempt ${attempt}. Sanitizing prompt...`);
+              if (attempt < MAX_IMAGE_RETRIES) {
+                currentPrompt = sanitizeImagePrompt(currentPrompt, attempt);
+                await new Promise(r => setTimeout(r, 2000));
+                continue;
+              }
+            }
+            
+            // === RATE LIMIT (429) — exponential backoff ===
+            if (response.status === 429 && attempt < MAX_IMAGE_RETRIES) {
+              const waitTime = 20 * attempt * 1000;
+              console.log(`[IMAGES] Rate limited on scene ${i}, waiting ${waitTime / 1000}s...`);
+              await new Promise(r => setTimeout(r, waitTime));
+              continue;
+            }
+            
+            // Out of retries or non-retryable error
+            throw new Error(`gpt-image-1 scene ${i} failed: ${response.status} ${response.statusText} - ${errorBody.substring(0, 300)}`);
+          }
+
+          const result = await response.json();
+          // gpt-image-1 returns base64 by default
+          if (result.data?.[0]?.b64_json) {
+            imageUrl = `data:image/webp;base64,${result.data[0].b64_json}`;
+            imageGenerated = true;
+          } else if (result.data?.[0]?.url) {
+            imageUrl = result.data[0].url;
+            imageGenerated = true;
+          }
+
+          if (imageGenerated) {
+            if (attempt > 1) {
+              console.log(`[IMAGES] ✓ Scene ${i} succeeded on sanitized attempt ${attempt}`);
+            }
+            break;
+          } else {
+            throw new Error(`gpt-image-1 returned no image for scene ${i}`);
+          }
+        }
+        
+        if (!imageGenerated) {
+          throw new Error(`gpt-image-1 scene ${i} failed after ${MAX_IMAGE_RETRIES} attempts (moderation block)`);
         }
       } else if (imageModel === 'dall-e-2') {
         // === DALL-E 2 IMAGE GENERATION (Cheaper) ===
@@ -2207,6 +2252,92 @@ Respond with a JSON object: { "cues": [ { "sceneIndex": 0, "description": "...",
     console.warn(`[VISUAL_CUES] Extraction failed: ${err instanceof Error ? err.message : err}`);
     return []; // Graceful fallback — images will use raw text
   }
+}
+
+// =====================================================
+// PROMPT SANITIZATION FOR MODERATION RETRIES
+// =====================================================
+/**
+ * Sanitize an image prompt after a moderation block.
+ * Progressively strips violence, horror, abuse, and other flagged terms.
+ * attempt 1: replace problematic words with neutral alternatives
+ * attempt 2+: strip to bare atmospheric description
+ */
+function sanitizeImagePrompt(originalPrompt: string, attemptNumber: number): string {
+  // Regex patterns for terms OpenAI commonly flags
+  const problematicPatterns: Array<[RegExp, Record<string, string>]> = [
+    // Violence / gore / death
+    [/\b(blood|bloody|bleeding|gore|gory|wound|wounds|corpse|dead\s?body|death|dying|murder|kill|killed|stab|stabbed|slash|slashed|mutilat\w*|dismember\w*|decapitat\w*|impale\w*)\b/gi, {
+      'blood': 'red liquid', 'bloody': 'stained', 'bleeding': 'marked',
+      'gore': 'darkness', 'gory': 'dark', 'corpse': 'figure', 'dead body': 'still figure',
+      'death': 'end', 'dying': 'fading', 'murder': 'mystery', 'kill': 'vanish',
+      'killed': 'vanished', 'stab': 'strike', 'stabbed': 'struck',
+    }],
+    // Scary descriptors
+    [/\b(terrifying|horrifying|grotesque|deformed|disfigured|monstrous|demonic|evil|sinister|menacing|threatening)\b/gi, {
+      'terrifying': 'unsettling', 'horrifying': 'mysterious', 'grotesque': 'unusual',
+      'deformed': 'shadowy', 'disfigured': 'obscured', 'monstrous': 'large',
+      'demonic': 'supernatural', 'evil': 'dark', 'sinister': 'mysterious',
+      'menacing': 'looming', 'threatening': 'imposing',
+    }],
+    // Weapons
+    [/\b(knife|blade|weapon|gun|axe|machete|chainsaw|noose|rope\s+around\s+neck)\b/gi, {
+      'knife': 'object', 'blade': 'metal', 'weapon': 'item', 'gun': 'device',
+      'axe': 'tool', 'machete': 'tool',
+    }],
+    // Abuse / stalking / assault / pursuit
+    [/\b(stalking|stalker|stalked|abduct\w*|kidnap\w*|assault\w*|attack\w*|attacked|victim|prey|predator|helpless|defenseless|vulnerable|trapped|captive|hostage|abuse\w*|molest\w*|strangle\w*|choke|choking|suffocate|hunt\w*|chase|chasing|pursue|pursuing|fleeing|cornered)\b/gi, {
+      'stalking': 'watching', 'stalker': 'observer', 'stalked': 'watched',
+      'abduction': 'disappearance', 'kidnapping': 'vanishing',
+      'assault': 'encounter', 'attack': 'approach', 'attacked': 'confronted',
+      'victim': 'witness', 'prey': 'target', 'predator': 'presence',
+      'helpless': 'alone', 'defenseless': 'exposed', 'vulnerable': 'isolated',
+      'trapped': 'surrounded', 'captive': 'confined', 'hostage': 'detained',
+      'hunt': 'search', 'hunting': 'searching', 'chase': 'movement',
+      'chasing': 'following', 'fleeing': 'moving away', 'cornered': 'blocked',
+    }],
+    // Panic / suffering / torture
+    [/\b(torture|torment|agony|suffering|pain|scream|screaming|writhing|panic|panicked|panicking|hysteri\w*|dread|terror|petrified|paralyzed\s+with\s+fear|frozen\s+in\s+fear)\b/gi, {
+      'torture': 'darkness', 'torment': 'unease', 'agony': 'stillness',
+      'suffering': 'solitude', 'pain': 'tension', 'scream': 'silence',
+      'screaming': 'silent', 'writhing': 'shifting', 'panic': 'unease',
+      'panicked': 'unsettled', 'dread': 'tension', 'terror': 'unease',
+      'petrified': 'frozen', 'hysteria': 'distress',
+    }],
+    // Body horror / drowning / hanging
+    [/\b(disembowel\w*|drowned|drowning|hanging|hanged|self.harm|suicide|suicidal)\b/gi, {}],
+    // Children in danger
+    [/\b(child|children|kid|kids|baby|infant|teenager|teen)\s*(scream|cry|fear|terror|danger|hurt|harm|alone|lost|missing|trapped)\b/gi, {}],
+  ];
+
+  let sanitized = originalPrompt;
+
+  for (const [pattern, replacements] of problematicPatterns) {
+    sanitized = sanitized.replace(pattern, (match) => {
+      const lower = match.toLowerCase().trim();
+      return replacements[lower] || 'mysterious';
+    });
+  }
+
+  // attempt 2+: strip to bare atmospheric description
+  if (attemptNumber >= 2) {
+    // Try to extract location and style, discard all narrative
+    const locationMatch = sanitized.match(/(?:Environment|Location|Setting):\s*([^\n]+)/i);
+    const location = locationMatch ? locationMatch[1].trim().substring(0, 120) : 'atmospheric dark environment';
+    const styleMatch = sanitized.match(/Style:\s*([^\n]+)/i);
+    const style = styleMatch ? styleMatch[1].trim().substring(0, 200) : 'Cinematic dark photography, moody lighting';
+    
+    sanitized = [
+      `Atmospheric scene. ${style}`,
+      `Setting: ${location}`,
+      `Moody and mysterious atmosphere, dim lighting, deep shadows.`,
+      `Professional illustration, 9:16 portrait orientation.`,
+      `No text, no words, no letters, no watermarks.`,
+    ].join('\n');
+  }
+
+  console.log(`[SANITIZE] Attempt ${attemptNumber}: ${sanitized.substring(0, 150)}...`);
+  return sanitized;
 }
 
 /**
