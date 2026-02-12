@@ -542,7 +542,7 @@ async function processPost(
     try {
       const { data: metadata } = await supabase
         .from('post_metadata')
-        .select('status, final_metadata, ai_metadata, platform')
+        .select('status, final_metadata, ai_metadata, platform, failure_class, attempt_count')
         .eq('post_id', post.post_id)
         .eq('platform', post.platform)
         .single();
@@ -599,8 +599,53 @@ async function processPost(
             error_message: 'Metadata still generating',
           },
         };
+      } else if (metadata && metadata.status === 'not_started') {
+        // Metadata queued but not started — retryable wait
+        console.log(`[POST-WORKER] Metadata not started for ${post.post_id}/${post.platform} — retrying later`);
+        await supabase.rpc('mark_post_failed', {
+          p_post_id: post.post_id,
+          p_worker_id: workerId,
+          p_error_class: 'transient',
+          p_error_message: 'Metadata not ready — will retry',
+          p_retryable: true,
+          p_error_signature: `transient:${post.platform}:metadata_not_ready`,
+        });
+        return {
+          status: 'failed',
+          result: {
+            success: false,
+            error_class: 'transient',
+            error_message: 'Metadata not ready',
+          },
+        };
+      } else if (metadata && metadata.status === 'failed') {
+        // Metadata failed — check if retryable (scheduler will retry) or permanent
+        const fc = (metadata as Record<string, unknown>).failure_class as string;
+        const isRetryable = !fc || fc === 'transient' || fc === 'dependency';
+        const attempts = (metadata as Record<string, unknown>).attempt_count as number || 0;
+        if (isRetryable && attempts < 3) {
+          console.log(`[POST-WORKER] Metadata failed but retryable (${fc}, attempt ${attempts}) for ${post.post_id}/${post.platform} — retrying later`);
+          await supabase.rpc('mark_post_failed', {
+            p_post_id: post.post_id,
+            p_worker_id: workerId,
+            p_error_class: 'transient',
+            p_error_message: `Metadata failed (${fc}) — scheduler will retry, post-worker waiting`,
+            p_retryable: true,
+            p_error_signature: `transient:${post.platform}:metadata_failed_retryable`,
+          });
+          return {
+            status: 'failed',
+            result: {
+              success: false,
+              error_class: 'transient',
+              error_message: `Metadata failed (retryable): ${fc}`,
+            },
+          };
+        }
+        // Permanent/misconfig or max retries — fall through with original post fields
+        console.warn(`[POST-WORKER] Metadata permanently failed for ${post.post_id}/${post.platform} — posting with original fields`);
       }
-      // If no metadata record exists (legacy post), fall through with original fields
+      // If no metadata record exists (legacy post) or permanently failed, fall through with original fields
     } catch (metaErr) {
       // Metadata lookup failed — continue with original post fields
       console.warn(`[POST-WORKER] Metadata lookup failed (using post fields):`, metaErr);

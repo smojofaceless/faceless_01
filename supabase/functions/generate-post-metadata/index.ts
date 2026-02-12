@@ -605,7 +605,8 @@ async function generateForPost(
   platform: string,
   force: boolean,
   openaiKey: string,
-  workerId: string
+  workerId: string,
+  generatedBy: string = 'scheduler'
 ): Promise<GenerationResult> {
   const result: GenerationResult = {
     post_id: postId,
@@ -752,6 +753,9 @@ async function generateForPost(
       p_ai_metadata: validation.cleaned,
       p_model: "gpt-4o",
       p_idempotency_key: idempotencyKey,
+      p_generated_by: generatedBy,
+      p_worker_id: workerId,
+      p_schema_version: 1,
     });
 
     if (upsertErr) {
@@ -859,10 +863,11 @@ serve(async (req: Request) => {
 
     // ---- Parse request ----
     const body = await req.json().catch(() => ({}));
-    const { post_id, platform, force = false } = body as {
+    const { post_id, platform, force = false, source = 'scheduler' } = body as {
       post_id?: string;
       platform?: string;
       force?: boolean;
+      source?: string; // 'scheduler' | 'manual' | 'api'
     };
 
     if (!post_id) {
@@ -897,7 +902,8 @@ serve(async (req: Request) => {
         p,
         force,
         openaiKey,
-        workerId
+        workerId,
+        source
       );
       results.push(genResult);
     }
