@@ -1,7 +1,7 @@
 # Story Storage & Uniqueness System
 
-> **Last Updated:** February 8, 2026  
-> **Module Version:** 2.1.0 (Write Path Contract clarified)
+> **Last Updated:** February 12, 2026  
+> **Module Version:** 2.2.0 (Rich Story Generation + Thematic Uniqueness)
 
 ---
 
@@ -9,6 +9,7 @@
 
 | Date | Version | Changes |
 |------|---------|--------|
+| Feb 12, 2026 | 2.2.0 | Rich one_too_many prompt engine with randomized trope packs. 8-dimension storytelling toolkit. Thematic avoidance prompt with concept_hash dedup. Cinematography-driven shot selection. |
 | Feb 8, 2026 | 2.1.0 | Added "Write Path Contract" section (Gap 1: when DNA tables must be written) |
 | Feb 8, 2026 | 2.1.0 | Added "Expected Empty Tables" reference (Gap 2: which tables are aggregation-only) |
 | Feb 8, 2026 | 2.1.0 | Added "Diagnosis Checklist" for empty DNA tables |

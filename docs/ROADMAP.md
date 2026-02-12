@@ -1,7 +1,7 @@
 # Project Roadmap
 
-> **Document Version:** 3.0  
-> **Last Updated:** February 11, 2026  
+> **Document Version:** 3.1  
+> **Last Updated:** February 12, 2026  
 > **Author:** System Architect  
 > **Status:** Active Development
 
@@ -11,6 +11,7 @@
 
 | Date | Version | Changes |
 |------|---------|--------|
+| Feb 12, 2026 | 3.1 | **Story Generation v2 + Bug Fixes**: (1) Rich one_too_many prompt with randomized trope packs (18 containers, 11 evidence sources, 10 glitches, 8 witnesses, 8 group types, 5 group sizes); (2) Storytelling toolkit enhancements (spatial grounding, named characters, time-skip epilogue, multi-layer evidence stacking, environmental disturbance scattering, uncanny valley descriptions); (3) Cinematography-driven shot selection (removed hardcoded group scene limits); (4) Campaign detail UI fixes (uniqueness score nested path, art style fallback, platform array handling); (5) Snapshot data extraction fix (meta.payload vs meta.data in 8 renderers). |
 | Feb 11, 2026 | 3.0 | **Scene & Image Pipeline v2**: Voice-aligned scene transitions, multi-image for long scenes (>10s), climax awareness in visual cues, per-shot mood levels for Ken Burns, micro-scene merge (<3s), story anchor group count fix, per-scene durations in assembler (no more uniform distribution). New doc: IMAGE_STORY_PIPELINE.md. Enhanced campaign detail UI with copy-paste, image sequence visualization. Weight display fix on create page. |
 | Feb 10, 2026 | 2.9 | **Background Music V1.2**: loudness_lufs/peak_db metadata, music fingerprint (config_hash) in job_assets.meta, alimiter (anti-clip), music status badge in job detail UI, Brand Music Management UI (view/upload/toggle/delete tracks per brand on brands page) |
 | Feb 10, 2026 | 2.8 | **Background Music V1 Complete**: music_tracks table, 3 RPCs, DB-driven track selection, sidechain ducking, fade in/out, brand music config in brand_templates, renderer v3.2, worker-v1 v2.7 |
@@ -39,6 +40,8 @@
 
 | Item | Date | Notes |
 |------|------|-------|
+| **Story Generation v2** | Feb 12, 2026 | Rich one_too_many prompt engine: randomized trope packs (18 containers, 11 evidence sources, 10 glitches, 8 witnesses, 6 dialogue lines), flexible narrative voice (any POV), soft storytelling toolkit (spatial grounding, named characters, time-skip epilogues, multi-layer evidence, environmental disturbance scattering, uncanny valley descriptions). Cinematography-driven shot selection (replaced hardcoded group scene limits). |
+| **Campaign Detail UI Fixes** | Feb 12, 2026 | Fixed uniqueness score nested path (`meta.meta.uniqueness_score` + 0-1→percentage), art style fallback to `'auto (from preset)'`, platform handling for `meta.platforms` array. Fixed snapshot data extraction in 8 renderers (`meta.payload` vs `meta.data`). |
 | **Scene & Image Pipeline v2** | Feb 11, 2026 | 6 improvements: (1) Voice-aligned scene transitions via `alignScenesToVoice()` — syncs image changes to actual spoken word timing from ElevenLabs timestamps; (2) Multi-image for long scenes (>10s) — up to 3 images per scene with varied camera angles; (3) Climax awareness — `isClimax: true` in visual cues for last 1-2 scenes, mood boost; (4) Per-shot mood levels via `computeMoodLevel()` — 1-10 scale controlling Ken Burns intensity; (5) Micro-scene merge (<3s scenes merged into neighbors); (6) Group count fix in story anchor prompt. CRITICAL FIX: assembler now reads image_sequence manifest for per-scene durations instead of uniform distribution. |
 | **Enhanced Campaign Detail Logs** | Feb 11, 2026 | Per-section copy buttons (story text, prompts, scenes, visual cues), image sequence visualization (duration bars + mood levels), voice alignment status in images detail, micro-scene merge indicators in scenes detail. |
 | **Weight Display Fix** | Feb 11, 2026 | Fixed vibe preset weights showing 9900% on create page — column migrated from DECIMAL(3,2) to INTEGER but JS still multiplied by 100. |
@@ -340,6 +343,31 @@ Also expanded `one_too_many` setting suggestions from ~10 to 30+ (cave tour, gym
 karaoke, funeral, zoo, bowling alley, etc.)
 
 **Test results (post-Phase 3):** cave tour, 24-hour gym, library — zero thematic overlap.
+
+**Phase 4 — Rich Story Generation (Feb 12, commits af36930, new):**
+Problem: Production worker-v1 had bare-bones prompt ("write a counting horror story").
+Sophisticated contract system existed in run-job but was never used.
+
+Fix (two iterations):
+1. **v1 — Trope Pack Engine** (commit af36930): `buildOneToManyPrompt()` with randomized
+   story seeds. Arrays: groupSizes (5), groupTypes (8), containers (18), evidenceSources (11),
+   glitches (10), witnesses (8), dialogueLines (6). Flexible narrative voice via
+   `getStorySystemPrompt()`. Separate return path for one_too_many (no forced "first-person").
+2. **v2 — Enhanced Storytelling Toolkit**: 8 toolkit dimensions (up from 6):
+   - SPATIAL GROUNDING: Physical arrangement of bodies in space
+   - NAMED CHARACTERS: At least the noticer gets a name
+   - MULTI-LAYER EVIDENCE: External confirmation + failed investigation + delayed proof
+   - ENVIRONMENTAL DISTURBANCE: 2-3 scattered wrongnesses (not dumped at once)
+   - UNCANNY VALLEY ("ALMOST RIGHT"): Specific off-ness descriptions
+   - AFTERMATH WITH TIME-SKIP: Weeks/months later epilogue
+   - Plus: RECOUNTS, VISUAL PROOF (carried from v1)
+
+**Test results (post-Phase 4 v1):** "The Seventh Shopper" — 6 strangers in convenience store
+during storm, count keeps showing 7, passing traveler confirms, handprint on glass. All counting
+horror elements present with variety from trope randomization.
+
+**Design principle:** "Don't make it too strict or each story will feel the same" — all toolkit
+items are suggestions, not requirements. Randomized seeds ensure fresh raw material each generation.
 
 **Tables now populating:**
 - [x] `stories` — title, text, content_hash, title_hash, hook, vibe_preset, source_job_id
@@ -692,7 +720,7 @@ scheduled → posting → posted
 | Preset | Status | Description |
 |--------|--------|-------------|
 | `urban_legend` | ✅ Active | Documentary folklore style |
-| `one_too_many` | ✅ Active | Counting horror style |
+| `one_too_many` | ✅ Active | Counting horror — rich trope pack engine with 8-dimension storytelling toolkit |
 | `faux_true_crime` | ⬜ Planned | True crime documentary style |
 | `historical_case_file` | ⬜ Planned | Archive/historical aesthetic |
 | `psychological_descent` | ⬜ Planned | Mental deterioration narrative |

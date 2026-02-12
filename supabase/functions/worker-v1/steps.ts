@@ -355,11 +355,13 @@ The horror comes from MATHEMATICS, not monsters. A group of N people counts and 
 
 STORYTELLING TOOLKIT (use whichever elements make your story richer):
 - RECOUNTS: The group counts multiple times, different ways (headcount, by seat, by name). Always comes up wrong.
-- EXTERNAL CONFIRMATION: An outsider (like a ${witness}) independently notices the wrong number — it's not just the group's paranoia.
-- PHYSICAL WRONGNESS: Something else breaks when the count is off (e.g. ${glitch}) — reality itself protests.
+- SPATIAL GROUNDING: Establish where everyone is physically — who sits where, who's by the door, who's in the back. When the count breaks, the reader should be able to "see" the extra person in the arrangement. The geometry of bodies in a confined space makes the wrong number visceral.
+- EXTERNAL CONFIRMATION: An outsider (like a ${witness}) independently notices the wrong number — it's not just the group's paranoia. Layer it: the outsider confirms, someone investigates later and finds nothing, then delayed proof surfaces anyway.
+- ENVIRONMENTAL DISTURBANCE: Weave 2-3 small wrongnesses throughout — things that break BECAUSE the count is off (e.g. ${glitch}). Don't dump them all at once; scatter them so the reader feels reality fraying at the seams.
 - VISUAL PROOF: Evidence surfaces later showing the wrong count (e.g. ${evidence}) — the extra person was REAL, captured on record.
-- THE EXTRA: The extra person is normal-looking. Maybe one smile is slightly off, one voice slightly delayed, one pair of eyes a little too still. But nothing obvious. That's the horror.
-- AFTERMATH: The story lingers — even after it's "over," there's proof it happened. An image, a recording, a count that's still wrong.
+- THE EXTRA — "ALMOST RIGHT": The extra person looks normal at first glance. But describe what's slightly OFF — a smile that arrives half a second late, eyes that track movement a beat behind, a voice that sounds like it learned human speech from recordings. The uncanny valley is the horror: close enough to pass, wrong enough to feel.
+- NAMED CHARACTERS: Give at least the person who FIRST notices the wrong count a name. A name makes the terror personal — "Marcus counted twice" hits harder than "someone counted twice."
+- AFTERMATH WITH TIME-SKIP: Don't just end when they escape. Push the epilogue forward — weeks later, months later. The photo resurfaces. The dashcam footage gets reviewed. Someone finds their name on a list they were never on. The proof lingers long after the event.
 
 TONE & STYLE:
 - Write like you're calmly recounting something deeply unsettling

@@ -131,9 +131,11 @@ The system prompt adapts based on the job's `vibe_preset`:
 
 ### System Prompt
 
-> "You are a master storyteller specializing in short-form horror and mystery content..."
+For `one_too_many`: Uses `getStorySystemPrompt('one_too_many')` — flexible narrative voice (any POV). Prompt built by `buildOneToManyPrompt(wordRange)` with randomized trope packs (18 containers, 11 evidence sources, 10 glitches, 8 witnesses, 8 group types, 5 group sizes, 6 dialogue lines) and 8-dimension storytelling toolkit.
 
-The prompt is built by `buildStoryPrompt(vibePreset, wordRange)` which includes the vibe description and word count constraints.
+For all other presets: Standard first-person narration system prompt. Built by `buildStoryPrompt(vibePreset, wordRange)`.
+
+Both paths include thematic avoidance from recent stories (last 20, same preset) to prevent repetition.
 
 ### Outputs
 

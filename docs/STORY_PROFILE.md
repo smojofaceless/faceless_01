@@ -1,6 +1,6 @@
 # Story Profile System v1.0
 
-> **Last Updated:** February 8, 2026
+> **Last Updated:** February 12, 2026
 
 A brand-agnostic narrative enforcement system for story generation. This system mirrors the Effects Profile system but controls narrative structure, motif recurrence, voice format compliance, and closure behavior.
 
@@ -168,14 +168,30 @@ interface StoryProfile {
 
 ### One Too Many Preset (Counting Horror)
 
-The `one_too_many` preset is a highly constrained "micro-preset" with explicit numeric logic:
+The `one_too_many` preset uses a **rich trope pack engine** (`buildOneToManyPrompt()`) with randomized story seeds and an 8-dimension storytelling toolkit.
 
-**Structural Rules:**
-- Explicit group size (N people) established early
-- Wrong count always N+1 (never varies)
-- Container math: seats, rooms, faces, photos
-- Mandatory final proof (photo/receipt/recording showing N+1)
-- Escalation MUST worsen the count inconsistency
+**Trope Pack Arrays (randomized per generation):**
+- `groupSizes`: 5 options (4→5 through 8→9)
+- `groupTypes`: 8 options (college friends, coworkers, hikers, wedding party, etc.)
+- `containers`: 18 options (van, elevator, ferry, ski lift gondola, escape room, etc.)
+- `evidenceSources`: 11 options (group photo, dashcam, security camera, receipt, etc.)
+- `glitches`: 10 options (clock resetting, doors won't unlock, GPS rerouting, etc.)
+- `witnesses`: 8 options (gas station attendant, park ranger, ferry worker, etc.)
+- `dialogueLines`: 6 options ("I think we're one too many.", "Count again.", etc.)
+
+**Storytelling Toolkit (8 dimensions — soft guidance, not rigid requirements):**
+1. **RECOUNTS**: Multiple counting methods (headcount, by seat, by name)
+2. **SPATIAL GROUNDING**: Physical arrangement — who sits where, who's by the door
+3. **EXTERNAL CONFIRMATION**: Outsider independently notices + layered evidence
+4. **ENVIRONMENTAL DISTURBANCE**: 2-3 scattered wrongnesses (reality fraying)
+5. **VISUAL PROOF**: Evidence surfaces later (photo, footage, receipt)
+6. **THE EXTRA — "ALMOST RIGHT"**: Specific uncanny valley descriptions
+7. **NAMED CHARACTERS**: The person who first notices gets a name
+8. **AFTERMATH WITH TIME-SKIP**: Weeks/months later epilogue — proof lingers
+
+**Narrative Voice:** Flexible — first-person, third-person, or "Did you know..." hooks (via `getStorySystemPrompt()`). Not forced into first-person like other presets.
+
+**Design Principle:** "Don't make it too strict or each story will feel the same" — all toolkit items are suggestions to pick from, not a checklist. Randomized seeds ensure fresh raw material.
 
 **Failure Modes (story is rejected if):**
 - Numbers drift (N→N+2 or N-1→N)
