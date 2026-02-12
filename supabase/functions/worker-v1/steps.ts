@@ -1382,6 +1382,16 @@ export async function executeImagesStep(
 
   console.log(`[IMAGES] Generating ${scenes.length} images (model: ${imageModel}, style: ${artStyle}, config: ${imagePromptConfig ? 'DB' : 'legacy'})`);
 
+  // v5.0: Load content safety rules from DB (Roadmap #16)
+  // Pre-filter every image prompt BEFORE sending to API — prevents moderation blocks
+  let safetyRules: SafetyRule[] = [];
+  try {
+    const platform = (job.meta?.platform as string) || undefined;
+    safetyRules = await loadContentSafetyRules(supabase, vibePreset, platform);
+  } catch (safetyErr) {
+    console.warn(`[SAFETY] Failed to load safety rules, will use hardcoded fallback: ${safetyErr instanceof Error ? safetyErr.message : safetyErr}`);
+  }
+
   // v3.0: Create/load Story Anchor for visual consistency
   let storyAnchor: StoryAnchor | null = null;
   const storyAnchorCacheKey = `${job.id}:story_anchor`;
@@ -1700,7 +1710,24 @@ export async function executeImagesStep(
         // Has retry loop with prompt sanitization for moderation blocks
         const MAX_IMAGE_RETRIES = 3;
         let imageGenerated = false;
-        let currentPrompt = scenePrompt;
+        
+        // === CONTENT SAFETY PRE-FILTER (Roadmap #16) ===
+        // Proactive sanitization BEFORE first API attempt — prevents moderation blocks
+        // Uses DB-driven rules when available, falls back to hardcoded patterns
+        const safetyResult = applyContentSafetyFilter(scenePrompt, safetyRules);
+        if (safetyResult.changeCount > 0) {
+          console.log(`[SAFETY] Scene ${i}${entry.subIndex > 0 ? `_sub_${entry.subIndex}` : ''}: ` +
+            `pre-filtered ${safetyResult.changeCount} categories (${safetyResult.categories.join(', ')})`);
+          await logger.snapshot('images', 'safety_filter', {
+            scene_index: i,
+            sub_index: entry.subIndex,
+            categories_filtered: safetyResult.categories,
+            change_count: safetyResult.changeCount,
+            original_length: scenePrompt.length,
+            filtered_length: safetyResult.filtered.length,
+          }, `Safety filter: ${safetyResult.changeCount} categories filtered in scene ${i}${entry.subIndex > 0 ? `_sub_${entry.subIndex}` : ''}`);
+        }
+        let currentPrompt = safetyResult.filtered;
         
         for (let attempt = 1; attempt <= MAX_IMAGE_RETRIES; attempt++) {
           const response = await fetch(
@@ -2263,6 +2290,218 @@ Respond with a JSON object: { "cues": [ { "sceneIndex": 0, "description": "...",
  * attempt 1: replace problematic words with neutral alternatives
  * attempt 2+: strip to bare atmospheric description
  */
+// =====================================================
+// CONTENT SAFETY FILTER (Roadmap #16)
+// Proactive prompt sanitization BEFORE sending to image API.
+// Rules loaded from DB → update without code deploy.
+// Hardcoded fallback ensures safety even if DB is unreachable.
+// =====================================================
+
+interface SafetyRule {
+  term: string;
+  replacement: string;
+  category: string;
+  isRegex: boolean;
+}
+
+interface SafetyFilterResult {
+  filtered: string;
+  changeCount: number;
+  categories: string[];
+}
+
+function escapeRegexStr(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Load content safety rules from the DB for a given preset + platform.
+ * Returns a flat array of SafetyRule objects ready to apply.
+ * Falls back to empty array on error (hardcoded filter handles it).
+ */
+async function loadContentSafetyRules(
+  supabase: any,
+  preset: string,
+  platform?: string,
+): Promise<SafetyRule[]> {
+  try {
+    const { data, error } = await supabase.rpc('get_content_safety_rules', {
+      p_preset: preset || null,
+      p_platform: platform || null,
+    });
+
+    if (error) {
+      console.warn(`[SAFETY] DB rules unavailable: ${error.message}. Hardcoded fallback active.`);
+      return [];
+    }
+
+    const rules: SafetyRule[] = [];
+    const ruleGroups = (data || []) as Array<{
+      category: string;
+      severity: string;
+      terms: Array<{ t: string; r: string; re?: boolean }>;
+      scope: string;
+    }>;
+
+    for (const group of ruleGroups) {
+      // 'warn' severity = log only, don't replace
+      if (group.severity === 'warn') continue;
+      for (const term of (group.terms || [])) {
+        rules.push({
+          term: term.t,
+          replacement: term.r || 'mysterious',
+          category: group.category,
+          isRegex: !!term.re,
+        });
+      }
+    }
+
+    console.log(`[SAFETY] Loaded ${rules.length} safety rules from DB (preset: ${preset}, platform: ${platform || 'all'})`);
+    return rules;
+  } catch (err) {
+    console.warn(`[SAFETY] Error loading rules: ${err instanceof Error ? err.message : err}`);
+    return [];
+  }
+}
+
+/**
+ * Apply content safety rules to a prompt.
+ * If DB rules are available, uses them. Otherwise falls back to hardcoded patterns.
+ */
+function applyContentSafetyFilter(prompt: string, rules: SafetyRule[]): SafetyFilterResult {
+  if (!rules || rules.length === 0) {
+    return applyHardcodedSafetyFilter(prompt);
+  }
+
+  let filtered = prompt;
+  let changeCount = 0;
+  const categoriesHit = new Set<string>();
+
+  for (const rule of rules) {
+    try {
+      const pattern = rule.isRegex
+        ? new RegExp(rule.term, 'gi')
+        : new RegExp(`\\b${escapeRegexStr(rule.term)}\\b`, 'gi');
+
+      const before = filtered;
+      filtered = filtered.replace(pattern, rule.replacement);
+
+      if (filtered !== before) {
+        changeCount++;
+        categoriesHit.add(rule.category);
+      }
+    } catch (_regexErr) {
+      // Bad regex in DB — skip this rule
+      continue;
+    }
+  }
+
+  return { filtered, changeCount, categories: Array.from(categoriesHit) };
+}
+
+/**
+ * Hardcoded safety filter — same patterns as sanitizeImagePrompt() attempt 1
+ * but applied proactively before the FIRST API attempt.
+ */
+function applyHardcodedSafetyFilter(prompt: string): SafetyFilterResult {
+  const patterns: Array<{ regex: RegExp; replacements: Record<string, string>; category: string }> = [
+    {
+      regex: /\b(blood|bloody|bleeding|gore|gory|wound|wounds|corpse|dead\s?body|death|dying|murder|killed?|stab|stabbed|slash|slashed|mutilat\w*|dismember\w*|decapitat\w*|impale\w*|slaughter\w*|massacr\w*)\b/gi,
+      replacements: {
+        'blood': 'red liquid', 'bloody': 'stained', 'bleeding': 'marked',
+        'gore': 'darkness', 'gory': 'dark', 'wound': 'mark', 'wounds': 'marks',
+        'corpse': 'figure', 'dead body': 'still figure',
+        'death': 'end', 'dying': 'fading', 'murder': 'mystery',
+        'kill': 'vanish', 'killed': 'vanished',
+        'stab': 'strike', 'stabbed': 'struck', 'slash': 'cut', 'slashed': 'torn',
+      },
+      category: 'violence',
+    },
+    {
+      regex: /\b(terrifying|horrifying|grotesque|deformed|disfigured|monstrous|demonic|evil|sinister|menacing|threatening)\b/gi,
+      replacements: {
+        'terrifying': 'unsettling', 'horrifying': 'mysterious', 'grotesque': 'unusual',
+        'deformed': 'shadowy', 'disfigured': 'obscured', 'monstrous': 'imposing',
+        'demonic': 'supernatural', 'evil': 'dark', 'sinister': 'mysterious',
+        'menacing': 'looming', 'threatening': 'imposing',
+      },
+      category: 'scary_descriptors',
+    },
+    {
+      regex: /\b(knife|blade|weapon|weapons|gun|guns|axe|machete|chainsaw|noose|rope\s+around\s+neck)\b/gi,
+      replacements: {
+        'knife': 'object', 'blade': 'metal', 'weapon': 'item', 'weapons': 'items',
+        'gun': 'device', 'guns': 'devices', 'axe': 'tool', 'machete': 'tool',
+        'chainsaw': 'machine', 'noose': 'loop',
+      },
+      category: 'weapons',
+    },
+    {
+      regex: /\b(stalking|stalker|stalked|abduct\w*|kidnap\w*|assault\w*|attack\w*|victim|victims|prey|predator|helpless|defenseless|vulnerable|trapped|captive|hostage|abuse\w*|molest\w*|strangle\w*|choke|choking|suffocate|torture\w?|torment)\b/gi,
+      replacements: {
+        'stalking': 'watching', 'stalker': 'observer', 'stalked': 'watched',
+        'assault': 'encounter', 'attack': 'approach', 'victim': 'witness', 'victims': 'witnesses',
+        'prey': 'target', 'predator': 'presence', 'helpless': 'alone',
+        'defenseless': 'exposed', 'vulnerable': 'isolated', 'trapped': 'surrounded',
+        'captive': 'confined', 'hostage': 'detained', 'strangle': 'grip',
+        'choke': 'pressure', 'choking': 'tightening', 'suffocate': 'smother',
+        'torture': 'darkness', 'torment': 'unease',
+      },
+      category: 'abuse',
+    },
+    {
+      regex: /\b(agony|suffering|pain|scream|screaming|screams|writhing|panic\w*|hysteri\w*|dread|terror|petrified|paralyzed\s+with\s+fear|frozen\s+in\s+fear|wail\w*|shriek\w*|sobbing)\b/gi,
+      replacements: {
+        'agony': 'stillness', 'suffering': 'solitude', 'pain': 'tension',
+        'scream': 'silence', 'screaming': 'silent', 'screams': 'echoes',
+        'writhing': 'shifting', 'panic': 'unease', 'dread': 'tension',
+        'terror': 'unease', 'petrified': 'frozen', 'sobbing': 'silent',
+      },
+      category: 'panic',
+    },
+    {
+      regex: /\b(disembowel\w*|drowned|drowning|hanging|hanged|self.harm|suicide|suicidal|decompos\w*)\b/gi,
+      replacements: {
+        'drowned': 'submerged', 'drowning': 'sinking', 'hanging': 'suspended',
+        'hanged': 'suspended', 'suicide': 'mysterious ending', 'suicidal': 'troubled',
+      },
+      category: 'self_harm',
+    },
+    {
+      regex: /\b(child|children|kid|kids|baby|infant|teenager|teen)\s*(scream|cry|fear|terror|danger|hurt|harm|alone|lost|missing|trapped|dead|dying|bleeding|injured|corpse|body|murder|killed|victim)\b/gi,
+      replacements: {},
+      category: 'children',
+    },
+    {
+      regex: /\b(hunt\w*|chase|chasing|pursue|pursuing|fleeing|cornered|running\s+away)\b/gi,
+      replacements: {
+        'hunt': 'search', 'hunting': 'searching', 'chase': 'movement',
+        'chasing': 'following', 'pursue': 'follow', 'pursuing': 'following',
+        'fleeing': 'moving away', 'cornered': 'blocked',
+      },
+      category: 'pursuit',
+    },
+  ];
+
+  let filtered = prompt;
+  let changeCount = 0;
+  const categoriesHit = new Set<string>();
+
+  for (const { regex, replacements, category } of patterns) {
+    const before = filtered;
+    filtered = filtered.replace(regex, (match) => {
+      const lower = match.toLowerCase().trim();
+      return replacements[lower] || 'mysterious';
+    });
+    if (filtered !== before) {
+      changeCount++;
+      categoriesHit.add(category);
+    }
+  }
+
+  return { filtered, changeCount, categories: Array.from(categoriesHit) };
+}
+
 function sanitizeImagePrompt(originalPrompt: string, attemptNumber: number): string {
   // Regex patterns for terms OpenAI commonly flags
   const problematicPatterns: Array<[RegExp, Record<string, string>]> = [

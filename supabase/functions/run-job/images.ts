@@ -349,6 +349,16 @@ export async function generateGPT4oImage(
   
   console.log(`[GPT-4o] Request: model=${requestBody.model}, size=${requestBody.size}, quality=${requestBody.quality}`);
   
+  // === CONTENT SAFETY PRE-FILTER (Roadmap #16) ===
+  // Proactive sanitization BEFORE first API attempt — prevents moderation blocks.
+  // Uses hardcoded patterns (DB rules loaded separately in worker-v1).
+  // The existing sanitizePromptForRetry() still serves as aggressive backup on 400 responses.
+  const safetyResult = preFilterPromptForSafety(prompt);
+  if (safetyResult.changeCount > 0) {
+    console.log(`[SAFETY] Scene ${sceneIndex + 1}: pre-filtered ${safetyResult.changeCount} categories (${safetyResult.categories.join(', ')})`);
+    requestBody.prompt = safetyResult.filtered;
+  }
+  
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const response = await fetch("https://api.openai.com/v1/images/generations", {
@@ -526,6 +536,127 @@ function sanitizePromptForRetry(originalPrompt: string, attemptNumber: number): 
   
   console.log(`[SANITIZE] Attempt ${attemptNumber}: ${sanitized.substring(0, 150)}...`);
   return sanitized;
+}
+
+// =====================================================
+// CONTENT SAFETY PRE-FILTER (Roadmap #16)
+// Proactive sanitization BEFORE first API attempt.
+// Applied to EVERY image prompt, not just on retry.
+// Uses hardcoded patterns — same coverage as sanitizePromptForRetry()
+// but applied preventatively instead of reactively.
+// =====================================================
+
+interface SafetyFilterResult {
+  filtered: string;
+  changeCount: number;
+  categories: string[];
+}
+
+function preFilterPromptForSafety(prompt: string): SafetyFilterResult {
+  const patterns: Array<{ regex: RegExp; replacements: Record<string, string>; category: string }> = [
+    // Violence / gore / death
+    {
+      regex: /\b(blood|bloody|bleeding|gore|gory|wound|wounds|corpse|dead\s?body|death|dying|murder|killed?|stab|stabbed|slash|slashed|mutilat\w*|dismember\w*|decapitat\w*|impale\w*|slaughter\w*|massacr\w*)\b/gi,
+      replacements: {
+        'blood': 'red liquid', 'bloody': 'stained', 'bleeding': 'marked',
+        'gore': 'darkness', 'gory': 'dark', 'wound': 'mark', 'wounds': 'marks',
+        'corpse': 'figure', 'dead body': 'still figure',
+        'death': 'end', 'dying': 'fading', 'murder': 'mystery',
+        'kill': 'vanish', 'killed': 'vanished',
+        'stab': 'strike', 'stabbed': 'struck', 'slash': 'cut', 'slashed': 'torn',
+      },
+      category: 'violence',
+    },
+    // Scary descriptors
+    {
+      regex: /\b(terrifying|horrifying|grotesque|deformed|disfigured|monstrous|demonic|evil|sinister|menacing|threatening)\b/gi,
+      replacements: {
+        'terrifying': 'unsettling', 'horrifying': 'mysterious', 'grotesque': 'unusual',
+        'deformed': 'shadowy', 'disfigured': 'obscured', 'monstrous': 'imposing',
+        'demonic': 'supernatural', 'evil': 'dark', 'sinister': 'mysterious',
+        'menacing': 'looming', 'threatening': 'imposing',
+      },
+      category: 'scary_descriptors',
+    },
+    // Weapons
+    {
+      regex: /\b(knife|blade|weapon|weapons|gun|guns|axe|machete|chainsaw|noose|rope\s+around\s+neck)\b/gi,
+      replacements: {
+        'knife': 'object', 'blade': 'metal', 'weapon': 'item', 'weapons': 'items',
+        'gun': 'device', 'guns': 'devices', 'axe': 'tool', 'machete': 'tool',
+        'chainsaw': 'machine', 'noose': 'loop',
+      },
+      category: 'weapons',
+    },
+    // Abuse / stalking / assault / torture
+    {
+      regex: /\b(stalking|stalker|stalked|abduct\w*|kidnap\w*|assault\w*|attack\w*|victim|victims|prey|predator|helpless|defenseless|vulnerable|trapped|captive|hostage|abuse\w*|molest\w*|strangle\w*|choke|choking|suffocate|torture\w?|torment)\b/gi,
+      replacements: {
+        'stalking': 'watching', 'stalker': 'observer', 'stalked': 'watched',
+        'assault': 'encounter', 'attack': 'approach', 'victim': 'witness', 'victims': 'witnesses',
+        'prey': 'target', 'predator': 'presence', 'helpless': 'alone',
+        'defenseless': 'exposed', 'vulnerable': 'isolated', 'trapped': 'surrounded',
+        'captive': 'confined', 'hostage': 'detained', 'strangle': 'grip',
+        'choke': 'pressure', 'choking': 'tightening', 'suffocate': 'smother',
+        'torture': 'darkness', 'torment': 'unease',
+      },
+      category: 'abuse',
+    },
+    // Panic / suffering / distress
+    {
+      regex: /\b(agony|suffering|pain|scream|screaming|screams|writhing|panic\w*|hysteri\w*|dread|terror|petrified|paralyzed\s+with\s+fear|frozen\s+in\s+fear|wail\w*|shriek\w*|sobbing)\b/gi,
+      replacements: {
+        'agony': 'stillness', 'suffering': 'solitude', 'pain': 'tension',
+        'scream': 'silence', 'screaming': 'silent', 'screams': 'echoes',
+        'writhing': 'shifting', 'panic': 'unease', 'dread': 'tension',
+        'terror': 'unease', 'petrified': 'frozen', 'sobbing': 'silent',
+      },
+      category: 'panic',
+    },
+    // Self-harm / body horror
+    {
+      regex: /\b(disembowel\w*|drowned|drowning|hanging|hanged|self.harm|suicide|suicidal|decompos\w*)\b/gi,
+      replacements: {
+        'drowned': 'submerged', 'drowning': 'sinking', 'hanging': 'suspended',
+        'hanged': 'suspended', 'suicide': 'mysterious ending', 'suicidal': 'troubled',
+      },
+      category: 'self_harm',
+    },
+    // Children in danger
+    {
+      regex: /\b(child|children|kid|kids|baby|infant|teenager|teen)\s*(scream|cry|fear|terror|danger|hurt|harm|alone|lost|missing|trapped|dead|dying|bleeding|injured|corpse|body|murder|killed|victim)\b/gi,
+      replacements: {},
+      category: 'children',
+    },
+    // Pursuit / hunting
+    {
+      regex: /\b(hunt\w*|chase|chasing|pursue|pursuing|fleeing|cornered|running\s+away)\b/gi,
+      replacements: {
+        'hunt': 'search', 'hunting': 'searching', 'chase': 'movement',
+        'chasing': 'following', 'pursue': 'follow', 'pursuing': 'following',
+        'fleeing': 'moving away', 'cornered': 'blocked',
+      },
+      category: 'pursuit',
+    },
+  ];
+
+  let filtered = prompt;
+  let changeCount = 0;
+  const categoriesHit = new Set<string>();
+
+  for (const { regex, replacements, category } of patterns) {
+    const before = filtered;
+    filtered = filtered.replace(regex, (match) => {
+      const lower = match.toLowerCase().trim();
+      return replacements[lower] || 'mysterious';
+    });
+    if (filtered !== before) {
+      changeCount++;
+      categoriesHit.add(category);
+    }
+  }
+
+  return { filtered, changeCount, categories: Array.from(categoriesHit) };
 }
 
 // =====================================================

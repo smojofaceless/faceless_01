@@ -709,12 +709,12 @@ scheduled → posting → posted
 
 ---
 
-### 16. Content Safety Filters
+### 16. Content Safety Filters ✅
 
-- [ ] Platform constraints enforcement (`platform_constraints`)
-- [ ] Preset forbidden word lists
-- [ ] Auto-reject unsafe content
-- [ ] Logging of filtered content
+- [x] Platform constraints enforcement — `content_safety_rules` table with `platform:youtube_shorts`, `platform:tiktok` scopes
+- [x] Preset forbidden word lists — DB-driven rules per preset (`preset:one_too_many`, `preset:analog_horror`)
+- [x] Auto-reject unsafe content — proactive pre-filter in both worker-v1 (DB-driven) and run-job (hardcoded) BEFORE first API attempt; covers 9 categories: violence, abuse, weapons, body_horror, children, panic, self_harm, scary_descriptors, pursuit
+- [x] Logging of filtered content — step logger snapshots with categories filtered, change count, lengths; `log_safety_filter_event()` RPC for structured DB logging
 
 ---
 
