@@ -20,7 +20,7 @@
  * Related: ROADMAP.md Item #6 "Cost Controls / Rate Limits"
  */
 
-import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { SupabaseClient } from "npm:@supabase/supabase-js@2.39.3";
 
 export type ServiceType = 'openai_text' | 'openai_image' | 'elevenlabs' | 'ffmpeg_renderer' | 'creatomate';
 

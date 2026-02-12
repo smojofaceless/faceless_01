@@ -498,16 +498,16 @@ export async function executeScenesStep(
     const words = job.story_text.split(/\s+/);
     
     const subtitleCues: Array<{ start: number; end: number; text: string }> = [];
-    let currentTime = 0;
+    let subCueTime = 0;
 
     for (const word of words) {
       const wordDuration = 1 / wordsPerSecond;
       subtitleCues.push({
-        start: currentTime,
-        end: currentTime + wordDuration,
+        start: subCueTime,
+        end: subCueTime + wordDuration,
         text: word,
       });
-      currentTime += wordDuration;
+      subCueTime += wordDuration;
     }
 
     // Store asset
@@ -1518,7 +1518,7 @@ export async function executeImagesStep(
       if (existingImage?.public_url) {
         console.log(`[IMAGES] Scene ${entry.sceneIndex}${entry.subIndex > 0 ? `_sub_${entry.subIndex}` : ''} already generated, skipping`);
         skippedCount++;
-        scenesCompleted.push(i);
+        scenesCompleted.push(entry.sceneIndex);
         continue;
       }
 
@@ -2527,7 +2527,7 @@ export async function executeAssembleStep(
         audioUrl,
         duration,
         job.meta,
-        effectsConfig,
+        effectsConfig as Record<string, unknown> | null,
         functionStartTime
       );
     } else if (creatomateKey) {

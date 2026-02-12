@@ -30,7 +30,7 @@ export interface LogMeta {
   progress_pct?: number;
   
   // Snapshot data (truncated)
-  snapshot_type?: 'prompt' | 'response' | 'payload' | 'output';
+  snapshot_type?: 'prompt' | 'response' | 'payload' | 'output' | 'warn' | 'requeued' | 'continuation_pause' | 'voice_alignment' | 'visual_cues' | 'sequence';
   prompt?: string;
   response?: string;
   payload?: Record<string, unknown>;
@@ -150,7 +150,7 @@ export class StepLogger {
    */
   async snapshot(
     stepName: string,
-    snapshotType: 'prompt' | 'response' | 'payload' | 'output',
+    snapshotType: 'prompt' | 'response' | 'payload' | 'output' | 'warn' | 'requeued' | 'continuation_pause' | 'voice_alignment' | 'visual_cues' | 'sequence',
     data: unknown,
     message?: string
   ): Promise<void> {

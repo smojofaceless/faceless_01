@@ -13,6 +13,7 @@ export interface ClassifiedFailure {
   step: string;
   class: FailureClass;
   error: string;
+  message?: string; // Human-readable error message
   error_code?: string;
   at: string; // ISO timestamp
   signature: string; // Hash for clustering

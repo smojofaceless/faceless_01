@@ -34,6 +34,7 @@ export interface StepResult {
   requeue?: boolean;              // Renderer busy — release job back to queued for next cycle
   error?: string;
   statusCode?: number;  // HTTP status code if applicable (for error classification)
+  elapsed_ms?: number;  // Step execution duration in milliseconds
   data?: Record<string, unknown>;
 }
 
@@ -585,7 +586,7 @@ export async function markAssetBadQuality(
     .from('job_assets')
     .update({
       meta: supabase.rpc('jsonb_set', {
-        target: supabase.raw('meta'),
+        target: (supabase as any).raw('meta'),
         path: '{quality_ok}',
         new_value: false
       })
