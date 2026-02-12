@@ -2013,7 +2013,7 @@ function createSubImageCue(baseCue: VisualCue | undefined, subIndex: number, sce
     ...baseCue,
     camera: atmoCam,
     sceneType: 'atmosphere',
-    description: `ENVIRONMENT SHOT of: ${textSnippet}. Show the SPACE, LIGHTING, and MOOD around the characters — walls, ceiling, floor, shadows, reflections. NOT a character or object shot. The viewer should feel the atmosphere.`,
+    description: `ENVIRONMENT SHOT of: ${textSnippet}. Show the SPACE, LIGHTING, and MOOD of the scene — walls, ceiling, floor, shadows, reflections. NOT a character or group shot. The viewer should feel the atmosphere of the empty space.`,
   };
 }
 
@@ -2215,11 +2215,18 @@ SCENE-GROUNDING RULES:
 - The BACKGROUND and CAST stay consistent, but the CAMERA FOCUS and FRAMING change every scene.
 
 VARIETY IS MANDATORY:
-- Maximum 2 scenes of type "group" unless the story is entirely about the group acting together in every scene.
-- At least 2 scenes should be "object" or "atmosphere" or "establishing" type.
-- At least 1 scene should use close-up or extreme-close-up camera.
+- Maximum 3 scenes of type "group" out of the ENTIRE video. Most scenes should NOT be group shots.
+- At least 3 scenes should be "object" or "atmosphere" or "establishing" type.
+- At least 2 scenes should use close-up or extreme-close-up camera.
 - At least 1 scene should use overhead, low-angle, or pov camera.
 - If a scene has only 1-2 sentences of dialogue or narration, use an object/atmosphere/detail shot rather than showing people.
+
+SCENE TYPE DESCRIPTION RULES (CRITICAL):
+- If sceneType is "object": Description must focus on a SPECIFIC PHYSICAL OBJECT (buttons, mirror, display, hands, floor indicator, a crack). Do NOT mention groups of people, characters' faces, or crowds in the description.
+- If sceneType is "atmosphere": Description must focus on the SPACE and ENVIRONMENT (walls, lighting, reflections, empty corridors, shadows). Do NOT describe people or groups — describe what the PLACE looks like without focusing on anyone in it.
+- If sceneType is "establishing": Description must show the LOCATION as a wide establishing shot. People may be present as tiny background elements but are NOT the subject.
+- If sceneType is "character": Description focuses on ONE specific person — their face, hands, or reaction. NOT a group.
+- ONLY when sceneType is "group" should the description focus on multiple people together.
 
 CLIMAX RULE:
 - The last 1-2 scenes are the CLIMAX — the most dramatic, frightening moment.
@@ -2580,6 +2587,59 @@ function sanitizeImagePrompt(originalPrompt: string, attemptNumber: number): str
 }
 
 /**
+ * v5.0: Strip group/people language from visual cue descriptions
+ * for non-group scenes. GPT sometimes leaks "characters' faces",
+ * "the group", "six people" etc. into object/atmosphere/character scenes,
+ * causing the image model to render crowds in every frame.
+ */
+function stripGroupLanguage(description: string, sceneType: string): string {
+  if (!description) return description;
+  let stripped = description;
+
+  // Remove explicit group references
+  // "featuring six characters pressed together" → "featuring the scene"
+  stripped = stripped.replace(/\b(featuring|showing|depicting|with|of)\s+(the\s+)?(full\s+)?group\b/gi, '$1 the scene');
+  stripped = stripped.replace(/\b(the|a)\s+group\s+(of\s+\w+\s+)?/gi, 'the scene ');
+  stripped = stripped.replace(/\bcrowd\s+of\s+\w+/gi, 'the scene');
+  
+  // Remove "N characters/people/faces" patterns
+  // "with six characters pressed together" → "with the cramped space"
+  stripped = stripped.replace(/\b(two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(characters?|people|persons?|figures?|faces?|individuals?|colleagues?|coworkers?|friends?|members?)\b/gi, 'the setting');
+  
+  // Remove "characters' faces", "everyone looks", "the others"
+  stripped = stripped.replace(/\b(the\s+)?(characters'?|everyone'?s?|everyone)\s+(faces?|expressions?|reactions?|looks?)\b/gi, 'the atmosphere');
+  stripped = stripped.replace(/\bexpressions?\s+of\s+the\s+others\b/gi, 'the atmosphere');
+  stripped = stripped.replace(/\b(the\s+)?others\s+(reflecting|showing|displaying)\b/gi, 'the scene $2');
+  
+  // Remove "people standing/sitting/gathered"
+  stripped = stripped.replace(/\b(people|characters?|everyone)\s+(standing|sitting|gathered|pressed|crammed|crowded|huddled)\b/gi, 'the space');
+  
+  // Remove "stumbling out" group actions
+  stripped = stripped.replace(/\bthe\s+group\s+\w+ing\b/gi, 'the scene');
+  stripped = stripped.replace(/\bwith\s+the\s+group\b/gi, 'in the space');
+  
+  // For object scenes: reinforce the object focus
+  if (sceneType === 'object') {
+    // If the description still mentions multiple people, prepend focus instruction
+    if (/\b(group|characters|people|everyone|faces)\b/i.test(stripped)) {
+      stripped = stripped.replace(/\b(group|characters|people|everyone)\b/gi, 'surroundings');
+    }
+  }
+  
+  // For atmosphere scenes: ensure environment focus
+  if (sceneType === 'atmosphere') {
+    if (/\b(group|characters|people|everyone|faces)\b/i.test(stripped)) {
+      stripped = stripped.replace(/\b(group|characters|people|everyone)\b/gi, 'the environment');
+    }
+  }
+
+  // Clean up double spaces
+  stripped = stripped.replace(/\s{2,}/g, ' ').trim();
+  
+  return stripped;
+}
+
+/**
  * Build a DALL-E prompt for a scene
  */
 /**
@@ -2614,8 +2674,17 @@ function buildImagePrompt(
 
     // Scene description: combine visual cue with narration for grounding
     // Always include narration context so the image matches the specific scene
-    const cueDescription = visualCue?.description || '';
+    let cueDescription = visualCue?.description || '';
     const narrationSnippet = sceneText.substring(0, 180);
+
+    // v5.0: Strip group/people language from non-group scene descriptions
+    // GPT visual cue extraction sometimes leaks group references ("characters' faces",
+    // "the group", "six people") into object/atmosphere/establishing/character scenes.
+    // These cause the image model to render crowds in every frame.
+    if (sceneType !== 'group') {
+      cueDescription = stripGroupLanguage(cueDescription, sceneType);
+    }
+
     const sceneDescription = cueDescription
       ? `${cueDescription}\nScene narration context: ${narrationSnippet}`
       : narrationSnippet;
