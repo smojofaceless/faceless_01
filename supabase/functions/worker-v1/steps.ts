@@ -172,7 +172,7 @@ export async function executeStoryStep(
         messages: [
           {
             role: 'system',
-            content: `You are a master storyteller specializing in short-form horror and mystery content. You create gripping, atmospheric stories perfect for TikTok/Reels narration. Your stories are ALWAYS first-person narration that feels personal and immediate.`
+            content: getStorySystemPrompt(vibePreset),
           },
           {
             role: 'user',
@@ -290,12 +290,107 @@ export async function executeStoryStep(
 }
 
 /**
+ * Build a rich one_too_many prompt with randomized story seed ingredients.
+ * These are SUGGESTIONS, not rigid requirements — GPT picks what serves the story.
+ */
+function buildOneToManyPrompt(wordRange: { min: number; max: number }): string {
+  // Randomize story seeds so each generation gets different raw material
+  const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
+  const groupSizes = [
+    { start: 4, extra: 5 }, { start: 5, extra: 6 }, { start: 6, extra: 7 },
+    { start: 7, extra: 8 }, { start: 8, extra: 9 },
+  ];
+  const groupTypes = [
+    'college friends on a road trip', 'coworkers at a team retreat', 'family members on a camping trip',
+    'hikers in a guided group', 'wedding party staying at a cabin', 'students on a field trip',
+    'old friends reuniting for a birthday', 'neighbors evacuating together',
+  ];
+  const containers = [
+    'rented van', 'hotel hallway', 'elevator', 'subway car', 'lakeside cabin', 'ferry deck',
+    'bus', 'mountain lodge', 'rental car', 'campfire circle', 'motel room', 'train car',
+    'small boat', 'ski lift gondola', 'escape room', 'tour bus', 'basement', 'dorm common room',
+  ];
+  const evidenceSources = [
+    'group photo on someone\'s phone', 'dashcam footage', 'security camera still',
+    'bathroom mirror reflection', 'group selfie', 'receipt showing wrong headcount',
+    'polaroid from that night', 'CCTV playback at gas station', 'hotel key card log',
+    'restaurant bill showing wrong covers', 'video doorbell footage',
+  ];
+  const glitches = [
+    'clock keeps resetting to the same time', 'doors won\'t unlock from inside',
+    'windows won\'t roll down', 'radio playing the same song on loop',
+    'GPS rerouting to a dead end', 'phones showing different times',
+    'camera missing frames', 'no cell service despite full bars',
+    'lights flicker whenever someone mentions the count', 'engine dies when they try to leave',
+  ];
+  const witnesses = [
+    'gas station attendant', 'security guard', 'motel clerk', 'toll booth operator',
+    'restaurant host', 'park ranger', 'bus driver', 'ferry worker',
+  ];
+  const dialogueLines = [
+    'I think we\'re one too many.', 'Wait... count again.', 'That can\'t be right.',
+    'Who\'s the extra?', 'The number\'s wrong.', 'Count them again.',
+  ];
+
+  // Pick random seeds for this generation
+  const size = pick(groupSizes);
+  const group = pick(groupTypes);
+  const container = pick(containers);
+  const evidence = pick(evidenceSources);
+  const glitch = pick(glitches);
+  const witness = pick(witnesses);
+  const dialogue = pick(dialogueLines);
+
+  return `a counting horror story — the "one too many" subgenre. A group of people realizes there is one extra person among them who shouldn't be there.
+
+STORY SEED (use these as inspiration — adapt freely to serve YOUR story):
+- Group: ${size.start} ${group}
+- Setting/Container: ${container}
+- The count keeps showing ${size.extra} instead of ${size.start}
+- Possible dialogue: "${dialogue}"
+
+THE COUNTING HORROR FORMULA (the core that makes this genre work):
+The horror comes from MATHEMATICS, not monsters. A group of N people counts and gets N+1. They recount. Still N+1. The extra person looks normal — that's what makes it terrifying. Nobody can agree on who doesn't belong because everyone looks like they fit.
+
+STORYTELLING TOOLKIT (use whichever elements make your story richer):
+- RECOUNTS: The group counts multiple times, different ways (headcount, by seat, by name). Always comes up wrong.
+- EXTERNAL CONFIRMATION: An outsider (like a ${witness}) independently notices the wrong number — it's not just the group's paranoia.
+- PHYSICAL WRONGNESS: Something else breaks when the count is off (e.g. ${glitch}) — reality itself protests.
+- VISUAL PROOF: Evidence surfaces later showing the wrong count (e.g. ${evidence}) — the extra person was REAL, captured on record.
+- THE EXTRA: The extra person is normal-looking. Maybe one smile is slightly off, one voice slightly delayed, one pair of eyes a little too still. But nothing obvious. That's the horror.
+- AFTERMATH: The story lingers — even after it's "over," there's proof it happened. An image, a recording, a count that's still wrong.
+
+TONE & STYLE:
+- Write like you're calmly recounting something deeply unsettling
+- Use SPECIFIC numbers ("there were ${size.start} of us", "the count showed ${size.extra}") — vague counts kill counting horror
+- Ground the reader in physical details (What does the space look like? Where is everyone sitting? What does the air feel like?)
+- Short punchy sentences for tension. Longer flowing ones for unease.
+- The hook should grab attention in the first 3 seconds — "Did you know..." hooks, shocking statements, or immediate immersion all work
+- End with something that lingers — unresolved, a final image, proof that won't go away
+
+Word count: ${wordRange.min}-${wordRange.max} words (critical for video timing).
+Each story MUST use a completely different and unique setting from all previous stories`;
+}
+
+/**
+ * Get preset-specific system prompt for story generation.
+ * Some presets work better with different narrative voices.
+ */
+function getStorySystemPrompt(vibePreset: string): string {
+  if (vibePreset === 'one_too_many') {
+    return `You are a master storyteller specializing in short-form horror and mystery content for TikTok/Reels narration. For counting horror stories, you can use ANY narrative voice that best serves the story — first-person ("I counted again..."), third-person documentary ("They counted again..."), or even a "Did you know..." factual hook style. Choose whichever voice makes THIS particular story most gripping. You write like a calm, factual narrator recounting something deeply unsettling — the horror comes from the math not adding up, not from gore or monsters.`;
+  }
+  return `You are a master storyteller specializing in short-form horror and mystery content. You create gripping, atmospheric stories perfect for TikTok/Reels narration. Your stories are ALWAYS first-person narration that feels personal and immediate.`;
+}
+
+/**
  * Build story prompt based on vibe preset
  */
 function buildStoryPrompt(vibePreset: string, wordRange: { min: number; max: number }, recentStories?: Array<{ title: string; hook: string | null; setting?: string }>): string {
   const vibeDescriptions: Record<string, string> = {
     urban_legend: 'an urban legend or creepy internet story, featuring unexplained phenomena, "that one weird thing that happened", or local folklore that turns out to be true',
-    one_too_many: 'a chilling "one too many" counting horror story where a group realizes there\'s an extra person that shouldn\'t be there. The setting can be ANYTHING — a road trip, office retreat, school reunion, dinner party, elevator ride, hotel stay, subway commute, wedding, hike, ferry crossing, bus trip, theater show, ski lodge, escape room, gym class, hospital waiting room, airport layover, carnival, museum tour, car wash, laundromat, library, parking garage, rooftop party, boat trip, train ride, cave tour, amusement park, food court, bowling alley, karaoke night, open house viewing, funeral, zoo trip, aquarium visit. The group counts heads and the number is wrong. CRITICAL: each story MUST use a completely different and unique setting from all previous stories.',
+    one_too_many: buildOneToManyPrompt(wordRange),
     backrooms: 'a liminal space or "backrooms" style horror about accidentally entering wrong places, glitches in reality, or spaces that shouldn\'t exist',
     nosleep: 'a first-person creepypasta/NoSleep style horror that starts mundane but escalates into something terrifying',
     glitch: 'a glitch in the matrix story about strange repetitions, déjà vu, NPCs acting weird, or reality not working right',
@@ -312,6 +407,20 @@ function buildStoryPrompt(vibePreset: string, wordRange: { min: number; max: num
       return parts.join(' ');
     }).join('\n- ');
     avoidanceSection = `\n\nDO NOT REPEAT — these stories were already created recently. You MUST use a COMPLETELY DIFFERENT setting, location, premise, and title theme:\n- ${avoidList}\n\nYour story must feel fresh and explore a setting/scenario that is NOTHING like the above. No elevators if there's an elevator story. No ferries if there's a ferry story. No trains if there's a train story. Pick something nobody has done yet.`;
+  }
+
+  // For one_too_many, the prompt already includes all requirements (word count, tone, style)
+  // so we just append avoidance + JSON format. For other presets, use the standard requirements block.
+  if (vibePreset === 'one_too_many') {
+    return `Create ${vibeDesc}.${avoidanceSection}
+
+Respond in JSON format:
+{
+  "title": "Short catchy title (3-6 words)",
+  "story": "The full story text...",
+  "setting": "One or two words describing the primary setting/location (e.g. 'van road trip', 'ferry deck', 'escape room')",
+  "concept": "One sentence summarizing the core concept/premise (e.g. 'Extra person appears during van road trip to gas station')"
+}`;
   }
 
   return `Create ${vibeDesc}.${avoidanceSection}
