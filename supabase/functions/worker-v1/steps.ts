@@ -2173,6 +2173,22 @@ function buildImagePrompt(
       environment = storyAnchor.environment;
     }
 
+    // v3.1: Override lighting and color_palette with story anchor context
+    // The DB config may reference a generic setting (e.g. "campfire glow")
+    // that doesn't match the actual story (e.g. a train). When story anchor
+    // provides timeOfDay/environment, derive setting-appropriate values.
+    let lighting = config.lighting;
+    let colorPalette = config.color_palette;
+    if (storyAnchor) {
+      const tod = storyAnchor.timeOfDay || '';
+      const env = storyAnchor.environment || '';
+      // Build story-aware lighting from anchor's timeOfDay + environment
+      lighting = `bright key lighting on all characters, ${tod ? tod + ' lighting conditions, ' : ''}practical lighting matching the setting (${env.substring(0, 80)}), ambient fill light so no face is lost in shadow`;
+      // Build story-aware color palette — keep the preset's "vivid clothing" etc.
+      // but replace setting-specific colors with story-appropriate ones
+      colorPalette = `vivid clothing colors, clear skin tones, high color contrast, colors appropriate for: ${env.substring(0, 80)}, ${tod ? tod + ' tones' : 'rich deep tones'}`;
+    }
+
     const keywordStr = keywords.slice(0, 3).join(', ');
 
     // v3.0: Build character/group context from story anchor
@@ -2209,8 +2225,8 @@ function buildImagePrompt(
       `Environment: ${environment}`,
       `Mood: ${mood}, tension level ${tensionLevel}/10`,
       cameraAngle ? `Camera: ${cameraAngle}` : '',
-      `Lighting: ${config.lighting}`,
-      `Color: ${config.color_palette}`,
+      `Lighting: ${lighting}`,
+      `Color: ${colorPalette}`,
       characterBlock,
       motifsBlock,
       keywordStr ? `Keywords: ${keywordStr}` : '',
