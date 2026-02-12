@@ -2617,6 +2617,20 @@ function stripGroupLanguage(description: string, sceneType: string): string {
   // Remove "stumbling out" group actions
   stripped = stripped.replace(/\bthe\s+group\s+\w+ing\b/gi, 'the scene');
   stripped = stripped.replace(/\bwith\s+the\s+group\b/gi, 'in the space');
+
+  // Remove first-person group references from narration text
+  // "We were squeezed together" → "The space was squeezed together"
+  // "our shoulders" → "the shoulders"
+  // "my friends" → ""
+  stripped = stripped.replace(/\bwe\s+(were|are|had|have|could|would|should|all|both)\b/gi, 'the space was');
+  stripped = stripped.replace(/\b(amongst|among|between)\s+us\b/gi, '$1 the space');
+  stripped = stripped.replace(/\b(my|our)\s+(friends?|group|colleagues?|companions?|crew)\b/gi, 'the surroundings');
+  stripped = stripped.replace(/\b(his|her|their)\s+friends?\b/gi, 'the surroundings');
+  stripped = stripped.replace(/\b(our|their)\s+/gi, 'the ');
+  stripped = stripped.replace(/\blike\s+sardines\b/gi, 'tightly');
+  stripped = stripped.replace(/\bsqueezed\s+together\b/gi, 'cramped');
+  stripped = stripped.replace(/\bI\s+glanced\s+around\s+at\b/gi, 'A glance across');
+  stripped = stripped.replace(/\b(let'?s|let\s+us)\s+/gi, '');
   
   // For object scenes: reinforce the object focus
   if (sceneType === 'object') {
@@ -2684,13 +2698,29 @@ function buildImagePrompt(
     // GPT visual cue extraction sometimes leaks group references ("characters' faces",
     // "the group", "six people") into object/atmosphere/establishing/character scenes.
     // These cause the image model to render crowds in every frame.
+    // v5.1: Also strip from narration snippet — raw story text like "We were squeezed
+    // together" or "my friends" causes groups even when cue description is clean.
+    let cleanNarration = narrationSnippet;
     if (sceneType !== 'group') {
       cueDescription = stripGroupLanguage(cueDescription, sceneType);
+      cleanNarration = stripGroupLanguage(narrationSnippet, sceneType);
     }
 
-    const sceneDescription = cueDescription
-      ? `${cueDescription}\nScene narration context: ${narrationSnippet}`
-      : narrationSnippet;
+    // v5.1: Scene-type reinforcement — explicit instruction before scene description
+    // to override any remaining group signals in the text
+    const sceneTypeInstruction: Record<string, string> = {
+      'object': 'FOCUS: Close-up of a single OBJECT or detail. Do NOT show groups of people.',
+      'atmosphere': 'FOCUS: Empty space, environment, mood. Do NOT show groups of people.',
+      'establishing': 'FOCUS: Wide establishing shot of the LOCATION. People may appear as tiny background elements only.',
+      'character': 'FOCUS: ONE single person only — their face, hands, or body language. Do NOT show a group.',
+    };
+    const reinforcement = sceneType !== 'group' ? (sceneTypeInstruction[sceneType] || '') : '';
+
+    const sceneDescription = [
+      reinforcement,
+      cueDescription,
+      cleanNarration ? `Scene context: ${cleanNarration}` : '',
+    ].filter(Boolean).join('\n');
     let mood = config.mood;
     let environment = config.environment;
     if (sceneType === 'establishing') {
@@ -2757,6 +2787,14 @@ function buildImagePrompt(
       motifsBlock = `Visual motifs: ${storyAnchor.recurringMotifs}`;
     }
 
+    // v5.1: For non-group scenes, reinforce "no groups" in the negative prompt
+    let negativePrompt = config.negative_prompt || '';
+    if (sceneType !== 'group') {
+      negativePrompt = negativePrompt
+        ? `${negativePrompt}\nABSOLUTELY NO: groups of people, crowds, multiple faces, multiple figures standing together.`
+        : `ABSOLUTELY NO: groups of people, crowds, multiple faces, multiple figures standing together.`;
+    }
+
     const parts = [
       sceneDescription,
       '',
@@ -2770,7 +2808,7 @@ function buildImagePrompt(
       motifsBlock,
       keywordStr ? `Keywords: ${keywordStr}` : '',
       '',
-      config.negative_prompt,
+      negativePrompt,
       config.suffix,
     ].filter(Boolean);
 
