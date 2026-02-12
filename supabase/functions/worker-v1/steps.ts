@@ -1623,7 +1623,11 @@ export async function executeImagesStep(
   const imageSequence: ImageSequenceEntry[] = [];
   for (let i = 0; i < scenes.length; i++) {
     const scene = scenes[i];
-    const sceneDuration = scene.endTime - scene.startTime;
+    // Use start-to-start gap (not endTime - startTime) so inter-scene pauses
+    // (natural speech gaps between scenes) are included in the image display time.
+    // This ensures cumulative image start times match voice-aligned scene starts.
+    const nextSceneStart = i < scenes.length - 1 ? scenes[i + 1].startTime : audioDuration;
+    const sceneDuration = Math.max(nextSceneStart - scene.startTime, 0.5); // min 0.5s
     const visualCue = visualCues.find(vc => vc.sceneIndex === i);
     const moodLevel = computeMoodLevel(i, scenes.length, visualCue);
     
@@ -3161,18 +3165,27 @@ export async function executeAssembleStep(
 
   const audioUrl = audioAsset.public_url;
   
-  // Handle duration - can be number or object {minSeconds, maxSeconds}
+  // Use AUDIO duration as the authoritative timeline for image sync.
+  // The voice narration defines how long the video actually is — images must sync to it.
+  // Fallback to meta.duration only if audio_duration_ms is unavailable.
+  const audioDurationMs = job.meta?.audio_duration_ms as number | undefined;
   let duration: number;
-  const rawDuration = job.meta?.duration;
-  if (typeof rawDuration === 'number') {
-    duration = rawDuration;
-  } else if (rawDuration && typeof rawDuration === 'object') {
-    const durObj = rawDuration as { minSeconds?: number; maxSeconds?: number };
-    const minSec = durObj.minSeconds || 60;
-    const maxSec = durObj.maxSeconds || 90;
-    duration = Math.round((minSec + maxSec) / 2);
+  if (audioDurationMs && audioDurationMs > 0) {
+    duration = Math.round(audioDurationMs / 1000);
+    console.log(`[ASSEMBLE] Using audio duration as timeline: ${duration}s (from audio_duration_ms=${audioDurationMs})`);
   } else {
-    duration = 60; // Default
+    const rawDuration = job.meta?.duration;
+    if (typeof rawDuration === 'number') {
+      duration = rawDuration;
+    } else if (rawDuration && typeof rawDuration === 'object') {
+      const durObj = rawDuration as { minSeconds?: number; maxSeconds?: number };
+      const minSec = durObj.minSeconds || 60;
+      const maxSec = durObj.maxSeconds || 90;
+      duration = Math.round((minSec + maxSec) / 2);
+    } else {
+      duration = 60; // Default
+    }
+    console.log(`[ASSEMBLE] No audio_duration_ms, using meta.duration: ${duration}s`);
   }
 
   console.log(`[ASSEMBLE] Assembling video: ${imageUrls.length} images, ${duration}s duration`);
