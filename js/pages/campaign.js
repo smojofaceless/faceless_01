@@ -107,6 +107,8 @@ class CampaignPage {
     constructor() {
         this.currentBrand = null;
         this.presetWeights = {};
+        this.brandPresets = [];
+        this.presetWeightsDirty = false;
         this.schedulePreview = [];
         this.debounceTimer = null;
         this.isAdvancedMode = false;
@@ -406,23 +408,39 @@ class CampaignPage {
     async loadPresetWeights() {
         if (!this.currentBrand?.id) {
             this.presetWeights = { urban_legend: 60, one_too_many: 40 };
+            this.presetWeightsDirty = false;
             this.renderPresetWeights();
             return;
         }
         
         try {
-            // Use campaignManager to load weights
-            if (typeof campaignManager !== 'undefined') {
-                this.presetWeights = await campaignManager._loadPresetWeights(this.currentBrand.id);
+            // Use brandManager to load full preset data (includes IDs for saving)
+            if (typeof brandManager !== 'undefined') {
+                this.brandPresets = await brandManager.getVibePresets(this.currentBrand.id);
+                if (this.brandPresets && this.brandPresets.length > 0) {
+                    // Convert decimal weights to percentages
+                    const totalWeight = this.brandPresets.reduce((sum, p) => sum + parseFloat(p.weight), 0);
+                    this.presetWeights = {};
+                    for (const p of this.brandPresets) {
+                        const pct = totalWeight > 0 ? Math.round((parseFloat(p.weight) / totalWeight) * 100) : 0;
+                        this.presetWeights[p.template_type] = pct;
+                    }
+                } else {
+                    this.brandPresets = [];
+                    this.presetWeights = { urban_legend: 60, one_too_many: 40 };
+                }
             } else {
-                // Fallback to defaults
+                this.brandPresets = [];
                 this.presetWeights = { urban_legend: 60, one_too_many: 40 };
             }
             
+            this.presetWeightsDirty = false;
             this.renderPresetWeights();
         } catch (error) {
             console.error('Failed to load preset weights:', error);
+            this.brandPresets = [];
             this.presetWeights = { urban_legend: 60, one_too_many: 40 };
+            this.presetWeightsDirty = false;
             this.renderPresetWeights();
         }
     }
@@ -464,12 +482,30 @@ class CampaignPage {
             slider.addEventListener('input', (e) => {
                 valueDisplay.textContent = `${e.target.value}%`;
                 this.presetWeights[preset] = parseInt(e.target.value);
+                this.presetWeightsDirty = true;
                 this.normalizePresetWeights(preset);
                 this.onFormChange();
             });
             
             container.appendChild(item);
         });
+
+        // Add "Save to Brand" button if in advanced mode and presets exist
+        if (this.isAdvancedMode && presets.length > 0) {
+            const saveRow = document.createElement('div');
+            saveRow.className = 'preset-weight-save-row';
+            saveRow.innerHTML = `
+                <button class="btn btn--sm btn--secondary preset-weight-save-btn" id="save-weights-to-brand" ${!this.presetWeightsDirty ? 'disabled' : ''}>
+                    Save to Brand
+                </button>
+                <span class="preset-weight-save-hint" id="save-weights-hint">
+                    ${this.presetWeightsDirty ? 'Unsaved changes' : 'Weights match brand defaults'}
+                </span>
+            `;
+            container.appendChild(saveRow);
+
+            saveRow.querySelector('#save-weights-to-brand').addEventListener('click', () => this.saveWeightsToBrand());
+        }
     }
 
     /**
@@ -502,6 +538,41 @@ class CampaignPage {
         
         // Re-render to show updated values
         this.renderPresetWeights();
+    }
+
+    /**
+     * Save current preset weights back to brand_templates in DB
+     */
+    async saveWeightsToBrand() {
+        if (!this.currentBrand?.id || !this.brandPresets?.length) return;
+
+        const btn = document.getElementById('save-weights-to-brand');
+        const hint = document.getElementById('save-weights-hint');
+
+        try {
+            if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+
+            // Convert percentage weights back to decimals and match to preset IDs
+            const total = Object.values(this.presetWeights).reduce((a, b) => a + b, 0) || 100;
+            const updates = this.brandPresets.map(p => ({
+                id: p.id,
+                weight: (this.presetWeights[p.template_type] || 0) / total
+            }));
+
+            await brandManager.updateVibePresetWeights(this.currentBrand.id, updates);
+            this.presetWeightsDirty = false;
+
+            if (hint) hint.textContent = 'Saved!';
+            if (btn) { btn.textContent = 'Save to Brand'; btn.disabled = true; }
+
+            // Show success toast if available
+            if (typeof toast !== 'undefined') toast.success('Preset weights saved to brand');
+        } catch (e) {
+            console.error('Failed to save weights to brand:', e);
+            if (hint) hint.textContent = 'Save failed: ' + e.message;
+            if (btn) { btn.disabled = false; btn.textContent = 'Save to Brand'; }
+            if (typeof toast !== 'undefined') toast.error('Failed to save weights');
+        }
     }
 
     /**

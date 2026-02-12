@@ -856,6 +856,138 @@ class BrandManager {
     }
 
     // =================================================================
+    // VIBE PRESETS (brand_templates CRUD)
+    // =================================================================
+
+    /**
+     * Load all vibe presets for a brand from brand_templates.
+     * Returns array of { id, template_type, name, weight, is_default, config_overrides }.
+     * @param {string} brandId
+     * @returns {Promise<Array>}
+     */
+    async getVibePresets(brandId) {
+        if (!this.useSupabase) return [];
+        const { data, error } = await supabaseClient
+            .from('brand_templates')
+            .select('id, template_type, name, weight, is_default, config_overrides')
+            .eq('brand_id', brandId)
+            .order('weight', { ascending: false });
+
+        if (error) {
+            console.error('Failed to load vibe presets:', error);
+            return [];
+        }
+        return data || [];
+    }
+
+    /**
+     * Add a vibe preset to a brand.
+     * @param {string} brandId
+     * @param {string} templateType - e.g. 'urban_legend', 'one_too_many'
+     * @param {string} name - Display name e.g. 'Urban Legend'
+     * @param {number} weight - Selection weight (0.00 - 1.00)
+     * @param {boolean} isDefault - Whether this is the default template
+     * @returns {Promise<Object>} The inserted row
+     */
+    async addVibePreset(brandId, templateType, name, weight = 0.5, isDefault = false) {
+        if (!this.useSupabase) throw new Error('Vibe presets require Supabase');
+
+        // If this is being set as default, unset previous defaults first
+        if (isDefault) {
+            await supabaseClient
+                .from('brand_templates')
+                .update({ is_default: false })
+                .eq('brand_id', brandId)
+                .eq('is_default', true);
+        }
+
+        const { data, error } = await supabaseClient
+            .from('brand_templates')
+            .insert({
+                brand_id: brandId,
+                template_type: templateType,
+                name: name,
+                weight: weight,
+                is_default: isDefault,
+                config_overrides: {}
+            })
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Failed to add vibe preset:', error);
+            throw error;
+        }
+        console.log(`🎭 Vibe preset "${name}" added to brand ${brandId}`);
+        return data;
+    }
+
+    /**
+     * Update a vibe preset's weight and/or default status.
+     * @param {string} presetId - brand_templates.id
+     * @param {Object} updates - { weight?, is_default? }
+     * @returns {Promise<void>}
+     */
+    async updateVibePreset(presetId, updates) {
+        if (!this.useSupabase) throw new Error('Vibe presets require Supabase');
+
+        const { error } = await supabaseClient
+            .from('brand_templates')
+            .update(updates)
+            .eq('id', presetId);
+
+        if (error) {
+            console.error('Failed to update vibe preset:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Update weights for all presets of a brand at once.
+     * @param {string} brandId
+     * @param {Array<{id: string, weight: number}>} presetWeights
+     * @returns {Promise<void>}
+     */
+    async updateVibePresetWeights(brandId, presetWeights) {
+        if (!this.useSupabase) throw new Error('Vibe presets require Supabase');
+
+        // Update each preset's weight
+        for (const { id, weight } of presetWeights) {
+            const { error } = await supabaseClient
+                .from('brand_templates')
+                .update({ weight })
+                .eq('id', id)
+                .eq('brand_id', brandId);
+
+            if (error) {
+                console.error(`Failed to update weight for preset ${id}:`, error);
+                throw error;
+            }
+        }
+        console.log(`🎭 Updated ${presetWeights.length} preset weights for brand ${brandId}`);
+    }
+
+    /**
+     * Remove a vibe preset from a brand.
+     * @param {string} presetId - brand_templates.id
+     * @returns {Promise<void>}
+     */
+    async removeVibePreset(presetId) {
+        if (!this.useSupabase) throw new Error('Vibe presets require Supabase');
+
+        const { error } = await supabaseClient
+            .from('brand_templates')
+            .delete()
+            .eq('id', presetId);
+
+        if (error) {
+            console.error('Failed to remove vibe preset:', error);
+            throw error;
+        }
+        console.log(`🎭 Vibe preset ${presetId} removed`);
+    }
+
+    // =================================================================
     // EFFECTS CONFIG (brand-level config_overrides.effects)
     // =================================================================
 
