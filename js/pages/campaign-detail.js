@@ -1406,11 +1406,11 @@ class CampaignDetailPage {
                 <span class="step-detail__kv-key">Model</span>
                 <span class="step-detail__kv-val">gpt-4o</span>
                 <span class="step-detail__kv-key">Art Style</span>
-                <span class="step-detail__kv-val">${job.meta?.art_style || '-'}</span>
+                <span class="step-detail__kv-val">${job.meta?.art_style || job.meta?.steps?.images?.meta?.art_style || 'auto (from preset)'}</span>
                 <span class="step-detail__kv-key">Scene Count</span>
                 <span class="step-detail__kv-val">${job.meta?.scene_count || 'auto'}</span>
                 <span class="step-detail__kv-key">Platform</span>
-                <span class="step-detail__kv-val">${job.meta?.platform || '-'}</span>
+                <span class="step-detail__kv-val">${job.meta?.platform && job.meta.platform !== 'default' ? job.meta.platform : (job.meta?.platforms?.length ? job.meta.platforms.join(', ') : '-')}</span>
             </div>
         </div>`;
         
@@ -1467,20 +1467,28 @@ class CampaignDetailPage {
     renderUniquenessDetail(data) {
         const job = data.job || {};
         const meta = data.stepMeta || {};
-        const score = job.uniqueness_score ?? meta.uniqueness_score ?? '-';
+        // stepMeta is {meta: {uniqueness_score: 0.95, ...}, status: "complete"}
+        // Score is 0-1 scale from worker, convert to percentage for display
+        const innerMeta = meta.meta || {};
+        const rawScore = innerMeta.uniqueness_score ?? meta.uniqueness_score ?? job.uniqueness_score;
+        const score = rawScore !== undefined && rawScore !== null
+            ? Math.round(rawScore <= 1 ? rawScore * 100 : rawScore)
+            : '-';
         
         let html = `<div class="step-detail__section">
             <div class="step-detail__label">🔍 Uniqueness Score</div>
-            <div style="font-size:32px;font-weight:700;color:${score >= 70 ? '#10B981' : score >= 40 ? '#F59E0B' : '#EF4444'}">${score}%</div>
+            <div style="font-size:32px;font-weight:700;color:${score !== '-' && score >= 70 ? '#10B981' : score !== '-' && score >= 40 ? '#F59E0B' : '#EF4444'}">${score}%</div>
         </div>`;
         
-        if (meta.similar_count !== undefined) {
+        // Show collision info from step result data
+        const collisionCount = innerMeta.collision_count ?? innerMeta.has_collision ?? meta.collision_count ?? meta.similar_count;
+        if (collisionCount !== undefined) {
             html += `<div class="step-detail__section">
                 <div class="step-detail__kv-grid">
                     <span class="step-detail__kv-key">Similar Stories Found</span>
-                    <span class="step-detail__kv-val">${meta.similar_count || 0}</span>
-                    <span class="step-detail__kv-key">Threshold</span>
-                    <span class="step-detail__kv-val">${meta.threshold || 'default'}</span>
+                    <span class="step-detail__kv-val">${collisionCount || 0}</span>
+                    <span class="step-detail__kv-key">Story Hash</span>
+                    <span class="step-detail__kv-val" style="font-family:monospace;font-size:11px">${(innerMeta.story_hash || meta.story_hash || '-').substring(0, 16)}...</span>
                 </div>
             </div>`;
         }
@@ -1929,7 +1937,7 @@ class CampaignDetailPage {
                 <span class="step-detail__kv-key">Caption Style</span>
                 <span class="step-detail__kv-val">${job.meta?.caption_style || 'default'}</span>
                 <span class="step-detail__kv-key">Platform</span>
-                <span class="step-detail__kv-val">${job.meta?.platform || '-'}</span>
+                <span class="step-detail__kv-val">${job.meta?.platform && job.meta.platform !== 'default' ? job.meta.platform : (job.meta?.platforms?.length ? job.meta.platforms.join(', ') : '-')}</span>
             </div>
         </div>`;
         
@@ -2005,7 +2013,7 @@ class CampaignDetailPage {
             <div class="step-detail__label">📅 Schedule Details</div>
             <div class="step-detail__kv-grid">
                 <span class="step-detail__kv-key">Platform</span>
-                <span class="step-detail__kv-val">${output.platform || data.job?.meta?.platform || '-'}</span>
+                <span class="step-detail__kv-val">${output.platform || output.platforms?.join(', ') || (data.job?.meta?.platform && data.job.meta.platform !== 'default' ? data.job.meta.platform : (data.job?.meta?.platforms?.length ? data.job.meta.platforms.join(', ') : '-'))}</span>
                 <span class="step-detail__kv-key">Scheduled For</span>
                 <span class="step-detail__kv-val">${output.scheduled_at ? new Date(output.scheduled_at).toLocaleString() : '-'}</span>
                 <span class="step-detail__kv-key">Post ID</span>
