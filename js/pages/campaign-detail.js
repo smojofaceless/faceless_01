@@ -1387,9 +1387,10 @@ class CampaignDetailPage {
         const job = data.job || {};
         const promptSnapshot = data.snapshots.find(s => s.message?.includes('prompt'));
         const responseSnapshot = data.snapshots.find(s => s.message?.includes('Generated') || s.message?.includes('response'));
-        const promptText = promptSnapshot?.meta?.data || promptSnapshot?.details || '';
-        const storyPreview = responseSnapshot?.meta?.story_preview || responseSnapshot?.meta?.data?.story_preview || '';
-        const wordCount = responseSnapshot?.meta?.word_count || responseSnapshot?.meta?.data?.word_count || job.story_word_count || '';
+        const promptText = promptSnapshot?.meta?.payload || promptSnapshot?.meta?.data || promptSnapshot?.details || '';
+        const responseData = responseSnapshot?.meta?.payload || responseSnapshot?.meta?.data || responseSnapshot?.meta || {};
+        const storyPreview = responseData.story_preview || responseSnapshot?.meta?.story_preview || '';
+        const wordCount = responseData.word_count || responseSnapshot?.meta?.word_count || job.story_word_count || '';
         
         let html = '';
         
@@ -1576,8 +1577,8 @@ class CampaignDetailPage {
         const resultSnap = data.snapshots.find(s => s.message?.includes('result') || s.message?.includes('response'));
         const payload = payloadSnap?.meta || payloadSnap?.details || {};
         const result = resultSnap?.meta || resultSnap?.details || {};
-        const payloadData = payload.data || payload;
-        const resultData = result.data || result;
+        const payloadData = payload.payload || payload.data || payload;
+        const resultData = result.payload || result.data || result;
         
         let html = `<div class="step-detail__section">
             <div class="step-detail__label">🎙️ Voice Configuration</div>
@@ -1619,7 +1620,7 @@ class CampaignDetailPage {
 
     renderMusicDetail(data) {
         const outputSnap = data.snapshots.find(s => s.message?.includes('Selected') || s.message?.includes('output'));
-        const snapData = outputSnap?.meta?.data || outputSnap?.meta || {};
+        const snapData = outputSnap?.meta?.payload || outputSnap?.meta?.data || outputSnap?.meta || {};
         
         let html = `<div class="step-detail__section">
             <div class="step-detail__label">🎵 Track Selection</div>
@@ -1640,7 +1641,7 @@ class CampaignDetailPage {
 
     renderImagesDetail(data) {
         const promptSnap = data.snapshots.find(s => s.message?.includes('prompt'));
-        const promptData = promptSnap?.meta?.data || promptSnap?.meta || {};
+        const promptData = promptSnap?.meta?.payload || promptSnap?.meta?.data || promptSnap?.meta || {};
         const assets = data.assets || [];
         const progress = data.progress || [];
         const job = data.job || {};
@@ -1655,7 +1656,7 @@ class CampaignDetailPage {
         
         // Also look for visual_cues snapshot for type distribution info
         const vcSnap = data.snapshots.find(s => s.message?.includes('Visual cues'));
-        const vcData = vcSnap?.meta?.data || vcSnap?.meta || {};
+        const vcData = vcSnap?.meta?.payload || vcSnap?.meta?.data || vcSnap?.meta || {};
         const storyAnchorInfo = vcData.story_anchor || null;
         const sceneTypeDistribution = vcData.scene_type_distribution || null;
         
@@ -1850,8 +1851,8 @@ class CampaignDetailPage {
         
         // Find the prompt snapshot for this scene
         const promptSnaps = this._imagePromptSnapshots || [];
-        const matchingSnap = promptSnaps.find(s => (s.meta?.data?.scene_index ?? s.meta?.scene_index) === sceneIndex);
-        const snapData = matchingSnap?.meta?.data || matchingSnap?.meta || {};
+        const matchingSnap = promptSnaps.find(s => (s.meta?.payload?.scene_index ?? s.meta?.data?.scene_index ?? s.meta?.scene_index) === sceneIndex);
+        const snapData = matchingSnap?.meta?.payload || matchingSnap?.meta?.data || matchingSnap?.meta || {};
         
         // Build prompt — from snapshot or from asset meta
         const prompt = snapData.prompt || meta.prompt || 'Prompt not recorded for this scene';
@@ -1947,8 +1948,8 @@ class CampaignDetailPage {
     renderAssembleDetail(data) {
         const payloadSnap = data.snapshots.find(s => s.message?.includes('payload'));
         const outputSnap = data.snapshots.find(s => s.message?.includes('output') || s.message?.includes('complete'));
-        const payload = payloadSnap?.meta?.data || payloadSnap?.meta || {};
-        const output = outputSnap?.meta?.data || outputSnap?.meta || {};
+        const payload = payloadSnap?.meta?.payload || payloadSnap?.meta?.data || payloadSnap?.meta || {};
+        const output = outputSnap?.meta?.payload || outputSnap?.meta?.data || outputSnap?.meta || {};
         const job = data.job || {};
         const imageSeq = job.meta?.image_sequence || [];
         
@@ -1990,7 +1991,7 @@ class CampaignDetailPage {
 
     renderUploadDetail(data) {
         const outputSnap = data.snapshots.find(s => s.message?.includes('output'));
-        const output = outputSnap?.meta?.data || outputSnap?.meta || {};
+        const output = outputSnap?.meta?.payload || outputSnap?.meta?.data || outputSnap?.meta || {};
         
         let html = `<div class="step-detail__section">
             <div class="step-detail__label">☁️ Upload Details</div>
@@ -2007,7 +2008,7 @@ class CampaignDetailPage {
 
     renderScheduleDetail(data) {
         const outputSnap = data.snapshots.find(s => s.message?.includes('output'));
-        const output = outputSnap?.meta?.data || outputSnap?.meta || {};
+        const output = outputSnap?.meta?.payload || outputSnap?.meta?.data || outputSnap?.meta || {};
         
         let html = `<div class="step-detail__section">
             <div class="step-detail__label">📅 Schedule Details</div>
