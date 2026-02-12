@@ -1,0 +1,138 @@
+﻿{
+    "success":  true,
+    "config":  {
+                   "vibe_preset":  "one_too_many",
+                   "duration":  75,
+                   "scene_count":  8,
+                   "has_brand_config":  true,
+                   "art_style":  "uncanny-illustrated"
+               },
+    "story_anchor":  {
+                         "environment":  "cramped office elevator with brushed steel walls and dingy fluorescent panel lighting",
+                         "characterDescription":  "A diverse group of eleven office workers, including Claire with short brown hair and glasses, Sam with a scruffy beard and a plaid shirt, Mike with slicked-back dark hair, and various others showing distinct expressions of confusion and fear. Each character is illustrated with detailed facial features, showcasing their emotions clearly.",
+                         "recurringMotifs":  "bold clean black ink outlines, flat cel-shaded coloring with bright saturated hues, sharp line work, slight chromatic aberration on edges, unnaturally wide eyes, anxious glances",
+                         "horrorTone":  "psychological",
+                         "timeOfDay":  "dimly lit with harsh fluorescent lighting creating stark shadows",
+                         "isGroupStory":  true,
+                         "groupCount":  12
+                     },
+    "scenes":  [
+                   {
+                       "scene":  1,
+                       "time":  "0.0s â 12.6s",
+                       "duration":  "12.6s",
+                       "words":  30,
+                       "text":  "We crowded into the rickety elevator on the way back from our company retreat, laughing and chatting, voices bouncing off the metal walls. Dingy lights cast shadows over our faces.",
+                       "visual_cue":  {
+                                          "type":  "group",
+                                          "camera":  "wide",
+                                          "description":  "A wide shot capturing the cramped elevator filled with eleven office workers, laughter frozen in time as they face each other, the brushed steel walls reflecting their lively expressions under the harsh fluorescent lights."
+                                      }
+                   },
+                   {
+                       "scene":  2,
+                       "time":  "12.6s â 21.2s",
+                       "duration":  "8.5s",
+                       "words":  19,
+                       "text":  "I could feel the jolt of every floor we passed. It was Claire who first noticed something was wrong.",
+                       "visual_cue":  {
+                                          "type":  "object",
+                                          "camera":  "close-up",
+                                          "description":  "A close-up of the elevator floor indicator, showing the numbers changing as the elevator ascends, emphasizing the jolt of every floor passed while the blurry chaos of the group is reflected in the brushed steel."
+                                      }
+                   },
+                   {
+                       "scene":  3,
+                       "time":  "21.2s â 27.9s",
+                       "duration":  "6.7s",
+                       "words":  14,
+                       "text":  "Wait, she said, her voice slicing through our chatter. Werent there eleven of us?",
+                       "visual_cue":  {
+                                          "type":  "character",
+                                          "camera":  "medium",
+                                          "description":  "A medium shot focused on Claire, her expression shifting from joy to confusion, her mouth open mid-sentence as she breaks through the laughter, capturing the moment of realization."
+                                      }
+                   },
+                   {
+                       "scene":  4,
+                       "time":  "27.9s â 37.1s",
+                       "duration":  "9.3s",
+                       "words":  21,
+                       "text":  "We all glanced around. There were twelve faces, too many for our group. My heart hammered, each thud echoing around us.",
+                       "visual_cue":  {
+                                          "type":  "group",
+                                          "camera":  "overhead",
+                                          "description":  "An overhead shot of the group as they look around in panic, their faces filled with fear and confusion, the elevator\u0027s metal ceiling creating a claustrophobic atmosphere."
+                                      }
+                   },
+                   {
+                       "scene":  5,
+                       "time":  "37.1s â 42.3s",
+                       "duration":  "5.2s",
+                       "words":  10,
+                       "text":  "I started counting, sweaty palms gripping the rail. Sam, Mike...",
+                       "visual_cue":  {
+                                          "type":  "object",
+                                          "camera":  "close-up",
+                                          "description":  "A detail shot of sweaty palms gripping the elevator rail, fingers trembling slightly, showcasing the tension as the character begins to count, emphasizing the dread building in the elevator."
+                                      }
+                   },
+                   {
+                       "scene":  6,
+                       "time":  "42.3s â 45.0s",
+                       "duration":  "2.6s",
+                       "words":  3,
+                       "text":  "Claire... Me: twelve.",
+                       "visual_cue":  {
+                                          "type":  "group",
+                                          "camera":  "low-angle",
+                                          "description":  "A low-angle shot of the group, with Mike and Sam visibly stressed, as they count out loud, their faces distorted slightly by the harsh overhead light, capturing the rising sense of panic."
+                                      }
+                   },
+                   {
+                       "scene":  7,
+                       "time":  "45.0s â 54.2s",
+                       "duration":  "9.3s",
+                       "words":  21,
+                       "text":  "An uneasy silence settled as the elevator juddered to a halt. We all turned, eyes searching for the stranger among friends.",
+                       "visual_cue":  {
+                                          "type":  "character",
+                                          "camera":  "medium",
+                                          "description":  "A medium shot focusing on Claire\u0027s face, her eyes wide with horror as she realizes the count is off, her expression a mix of disbelief and fear, highlighting her emotional response."
+                                      }
+                   },
+                   {
+                       "scene":  8,
+                       "time":  "54.2s â 75.0s",
+                       "duration":  "20.8s",
+                       "words":  52,
+                       "text":  "My focus was drawn to a figure standing too still, too silent. The elevator doors opened to our floor, but the figure stayed put. As we hurried out, stealing anxious glances behind, I could have sworn those unnaturally wide eyes watched us with a knowing smile, as if saying, See you soon.",
+                       "visual_cue":  {
+                                          "type":  "atmosphere",
+                                          "camera":  "wide",
+                                          "description":  "An atmosphere shot capturing the elevator\u0027s dimly lit interior, with the emergency phone hanging ominously on the wall, casting unsettling shadows and creating a sense of unease in the silence."
+                                      }
+                   }
+               ],
+    "distributions":  {
+                          "scene_types":  {
+                                              "group":  3,
+                                              "object":  2,
+                                              "character":  3,
+                                              "atmosphere":  1
+                                          },
+                          "cameras":  {
+                                          "wide":  2,
+                                          "close-up":  3,
+                                          "medium":  2,
+                                          "overhead":  1,
+                                          "low-angle":  1
+                                      }
+                      },
+    "timing":  {
+                   "scene_split_ms":  1,
+                   "story_anchor_ms":  3350,
+                   "visual_cues_ms":  10004,
+                   "total_ms":  13432
+               }
+}

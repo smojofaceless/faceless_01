@@ -460,7 +460,37 @@ export async function executeScenesStep(
       currentTime = endTime;
     }
 
-    console.log(`[SCENES] Word-proportional timing: ${scenes.map(s => `S${s.index}=${(s.endTime - s.startTime).toFixed(1)}s`).join(', ')}`);
+    console.log(`[SCENES] Word-proportional timing (pre-merge): ${scenes.map(s => `S${s.index}=${(s.endTime - s.startTime).toFixed(1)}s`).join(', ')}`);
+
+    // Merge micro-scenes: any scene under 3s gets merged with its neighbor
+    const MIN_SCENE_DURATION = 3.0;
+    let merged = true;
+    while (merged) {
+      merged = false;
+      for (let i = 0; i < scenes.length; i++) {
+        const dur = scenes[i].endTime - scenes[i].startTime;
+        if (dur < MIN_SCENE_DURATION && scenes.length > 2) {
+          // Merge with the shorter neighbor (prefer next, fallback to prev)
+          const mergeWith = i < scenes.length - 1 ? i + 1 : i - 1;
+          const kept = Math.min(i, mergeWith);
+          const removed = Math.max(i, mergeWith);
+          scenes[kept].text = scenes[kept].text + ' ' + scenes[removed].text;
+          scenes[kept].startTime = Math.min(scenes[kept].startTime, scenes[removed].startTime);
+          scenes[kept].endTime = Math.max(scenes[kept].endTime, scenes[removed].endTime);
+          // Merge keywords (deduplicate, keep first 5)
+          const allKw = [...new Set([...scenes[kept].keywords, ...scenes[removed].keywords])];
+          scenes[kept].keywords = allKw.slice(0, 5);
+          scenes.splice(removed, 1);
+          // Re-index
+          for (let j = 0; j < scenes.length; j++) scenes[j].index = j;
+          merged = true;
+          console.log(`[SCENES] Merged micro-scene (${dur.toFixed(1)}s) → now ${scenes.length} scenes`);
+          break;
+        }
+      }
+    }
+
+    console.log(`[SCENES] Final timing: ${scenes.map(s => `S${s.index}=${(s.endTime - s.startTime).toFixed(1)}s`).join(', ')}`);
 
     // Generate subtitle cues (word-level timing approximation)
     const wordCount = job.story_text.split(/\s+/).length;
@@ -1129,6 +1159,144 @@ async function musicFallback(
 type ImageModel = 'gpt-image-1' | 'dall-e-2' | 'dall-e-3';
 const DEFAULT_IMAGE_MODEL: ImageModel = 'gpt-image-1'; // Cheapest: ~$0.016/image at low quality
 
+/**
+ * Voice-Aligned Scene Re-alignment (Improvement #1)
+ * Matches scene text boundaries to actual voice word timestamps so each scene's
+ * start/end time reflects when those words are actually spoken.
+ * 
+ * This is called at the start of the images step (which runs after voice).
+ * Falls back to original timing if timestamps are unavailable or matching fails.
+ */
+function alignScenesToVoice(
+  scenes: Array<{ index: number; text: string; startTime: number; endTime: number; keywords: string[] }>,
+  audioTimestamps: Array<{ word: string; start: number; end: number }>,
+  totalDuration: number,
+): Array<{ index: number; text: string; startTime: number; endTime: number; keywords: string[] }> {
+  if (!audioTimestamps || audioTimestamps.length === 0) {
+    console.log(`[VOICE_ALIGN] No audio timestamps available, keeping original timing`);
+    return scenes;
+  }
+
+  // Normalize a word for matching: lowercase, strip punctuation
+  const normalize = (w: string) => w.toLowerCase().replace(/[^a-z0-9']/g, '');
+
+  // Build normalized voice word list
+  const voiceWords = audioTimestamps.map(t => ({
+    normalized: normalize(t.word),
+    start: t.start,
+    end: t.end,
+  }));
+
+  let voiceIdx = 0;
+  const aligned = [];
+
+  for (let si = 0; si < scenes.length; si++) {
+    const scene = scenes[si];
+    // Split scene text into words and normalize
+    const sceneWords = scene.text.split(/\s+/).map(w => normalize(w)).filter(w => w.length > 0);
+    
+    if (sceneWords.length === 0) {
+      // Empty scene text — use original timing
+      aligned.push({ ...scene });
+      continue;
+    }
+
+    // Find matching voice words sequentially
+    const matchStart = voiceIdx;
+    let wordsMatched = 0;
+
+    for (const sw of sceneWords) {
+      // Search ahead up to 5 positions to handle minor mismatches
+      let found = false;
+      for (let look = 0; look < 5 && voiceIdx + look < voiceWords.length; look++) {
+        if (voiceWords[voiceIdx + look].normalized === sw) {
+          voiceIdx = voiceIdx + look + 1;
+          wordsMatched++;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        // Skip this word — minor mismatch (punctuation split, etc.)
+        voiceIdx++;
+        wordsMatched++;
+      }
+    }
+
+    // Determine scene timing from matched voice words
+    if (matchStart < voiceWords.length && voiceIdx > matchStart) {
+      const startTime = voiceWords[matchStart].start;
+      const endIdx = Math.min(voiceIdx - 1, voiceWords.length - 1);
+      const endTime = voiceWords[endIdx].end;
+      
+      aligned.push({
+        ...scene,
+        startTime: parseFloat(startTime.toFixed(3)),
+        endTime: parseFloat(Math.max(endTime, startTime + 0.5).toFixed(3)), // Min 0.5s
+      });
+    } else {
+      // Fallback to original timing
+      aligned.push({ ...scene });
+    }
+  }
+
+  // Last scene: extend to total audio duration (covers any trailing silence)
+  if (aligned.length > 0 && audioTimestamps.length > 0) {
+    const lastVoiceEnd = audioTimestamps[audioTimestamps.length - 1].end;
+    const audioDuration = Math.max(lastVoiceEnd, totalDuration);
+    aligned[aligned.length - 1].endTime = parseFloat(audioDuration.toFixed(3));
+  }
+
+  // Log alignment results
+  const originalDurations = scenes.map(s => (s.endTime - s.startTime).toFixed(1));
+  const alignedDurations = aligned.map(s => (s.endTime - s.startTime).toFixed(1));
+  console.log(`[VOICE_ALIGN] Original: ${originalDurations.join(', ')}s`);
+  console.log(`[VOICE_ALIGN] Aligned:  ${alignedDurations.join(', ')}s`);
+
+  return aligned;
+}
+
+/**
+ * Compute Ken Burns mood level from visual cue data.
+ * mood 1-6: classic (gentle zoom), 7-10: cinematic (pan, sweep, diagonal).
+ * Climax scenes always get high mood for dramatic motion.
+ */
+function computeMoodLevel(
+  sceneIndex: number,
+  totalScenes: number,
+  visualCue?: VisualCue,
+): number {
+  // Base tension: escalates from 3 → 8 across the video
+  const progress = sceneIndex / Math.max(totalScenes - 1, 1);
+  const baseMood = Math.round(3 + progress * 5);
+
+  // Climax boost: last 1-2 scenes get max drama
+  if (visualCue?.isClimax) {
+    return Math.min(10, baseMood + 3);
+  }
+
+  // Scene type adjustments
+  const type = visualCue?.sceneType || 'atmosphere';
+  const camera = visualCue?.camera || 'medium';
+  
+  let mood = baseMood;
+  
+  // Establishing/wide shots: calmer motion
+  if (type === 'establishing' || camera === 'wide') mood = Math.max(2, mood - 1);
+  // Object/detail close-ups: moderate
+  if (type === 'object' && camera.includes('close')) mood = Math.min(6, mood);
+  // Atmosphere shots: slightly elevated
+  if (type === 'atmosphere') mood = Math.min(8, mood + 1);
+  // Group shots: moderate
+  if (type === 'group') mood = Math.min(7, mood);
+  // Character close-ups: moderate-high
+  if (type === 'character' && camera.includes('close')) mood = Math.min(8, mood + 1);
+  // POV shots: cinematic
+  if (camera === 'pov') mood = Math.min(9, mood + 2);
+
+  return Math.max(1, Math.min(10, mood));
+}
+
 export async function executeImagesStep(
   supabase: SupabaseClient,
   job: Job,
@@ -1143,15 +1311,50 @@ export async function executeImagesStep(
     return { success: false, error: 'No scene data found - run scenes step first' };
   }
 
-  const scenes = sceneAsset.meta.scenes as Array<{
+  const rawScenes = sceneAsset.meta.scenes as Array<{
     index: number;
     text: string;
+    startTime: number;
+    endTime: number;
     keywords: string[];
   }>;
 
   const openaiKey = env.OPENAI_API_KEY;
   if (!openaiKey) {
     return { success: false, error: 'OPENAI_API_KEY not configured' };
+  }
+
+  // Handle duration (same logic as scenes step)
+  const rawDuration = job.meta?.duration;
+  let duration: number;
+  if (typeof rawDuration === 'number') {
+    duration = rawDuration;
+  } else if (rawDuration && typeof rawDuration === 'object') {
+    const durObj = rawDuration as { minSeconds?: number; maxSeconds?: number; min?: number; max?: number };
+    duration = Math.round(((durObj.minSeconds ?? durObj.min ?? 60) + (durObj.maxSeconds ?? durObj.max ?? 90)) / 2);
+  } else {
+    duration = 60;
+  }
+
+  // ======================================================================
+  // VOICE-ALIGNED SCENE TRANSITIONS (Improvement #1)
+  // Re-align scene start/end times to match actual voice word timestamps.
+  // This runs AFTER voice synthesis (which produces word-level timing).
+  // ======================================================================
+  const audioTimestamps = job.meta?.audio_timestamps as Array<{ word: string; start: number; end: number }> | undefined;
+  const audioDurationMs = job.meta?.audio_duration_ms as number | undefined;
+  const audioDuration = audioDurationMs ? audioDurationMs / 1000 : duration;
+  
+  const scenes = alignScenesToVoice(rawScenes, audioTimestamps || [], audioDuration);
+  
+  // Log alignment info
+  if (audioTimestamps && audioTimestamps.length > 0) {
+    await logger.snapshot('images', 'voice_alignment', {
+      original_timing: rawScenes.map(s => ({ i: s.index, dur: parseFloat((s.endTime - s.startTime).toFixed(1)) })),
+      aligned_timing: scenes.map(s => ({ i: s.index, dur: parseFloat((s.endTime - s.startTime).toFixed(1)) })),
+      voice_words: audioTimestamps.length,
+      audio_duration_s: audioDuration,
+    }, `Voice-aligned ${scenes.length} scenes using ${audioTimestamps.length} word timestamps`);
   }
 
   // Determine which image model to use (job meta > env > default)
@@ -1260,15 +1463,60 @@ export async function executeImagesStep(
   let skippedCount = 0;
   const scenesCompleted: number[] = [];
 
+  // ======================================================================
+  // IMAGE SEQUENCE PLANNING (Improvement #2: Multi-image for long scenes)
+  // For scenes >10s, we generate multiple images to maintain visual interest.
+  // Each image covers ~8s of screen time. This builds the flat image list
+  // that the renderer will receive (with per-image durations and mood levels).
+  // ======================================================================
+  const LONG_SCENE_THRESHOLD = 10; // Seconds: scenes longer than this get extra images
+  const TARGET_IMAGE_DURATION = 8; // Seconds: target on-screen time per image
+
+  const imageSequence: ImageSequenceEntry[] = [];
+  for (let i = 0; i < scenes.length; i++) {
+    const scene = scenes[i];
+    const sceneDuration = scene.endTime - scene.startTime;
+    const visualCue = visualCues.find(vc => vc.sceneIndex === i);
+    const moodLevel = computeMoodLevel(i, scenes.length, visualCue);
+    
+    if (sceneDuration > LONG_SCENE_THRESHOLD) {
+      // Long scene: generate multiple images
+      const imageCount = Math.min(3, Math.ceil(sceneDuration / TARGET_IMAGE_DURATION));
+      const subDuration = sceneDuration / imageCount;
+      for (let j = 0; j < imageCount; j++) {
+        imageSequence.push({
+          sceneIndex: i,
+          subIndex: j,
+          duration: parseFloat(subDuration.toFixed(2)),
+          moodLevel: j === imageCount - 1 ? Math.min(10, moodLevel + 1) : moodLevel, // Slight escalation on last sub-image
+          assetKey: j === 0 ? `${job.id}:image_generate:scene_${i}` : `${job.id}:image_generate:scene_${i}_sub_${j}`,
+        });
+      }
+      console.log(`[IMAGES] Scene ${i}: ${sceneDuration.toFixed(1)}s → ${imageCount} images (${subDuration.toFixed(1)}s each)`);
+    } else {
+      // Normal scene: single image
+      imageSequence.push({
+        sceneIndex: i,
+        subIndex: 0,
+        duration: parseFloat(sceneDuration.toFixed(2)),
+        moodLevel,
+        assetKey: `${job.id}:image_generate:scene_${i}`,
+      });
+    }
+  }
+
+  console.log(`[IMAGES] Image sequence planned: ${imageSequence.length} images for ${scenes.length} scenes (mood_levels: ${imageSequence.map(e => e.moodLevel).join(',')})`);
+
   try {
-    for (let i = 0; i < scenes.length; i++) {
-      const scene = scenes[i];
-      const idempotencyKey = `${job.id}:image_generate:scene_${i}`;
+    for (let seqIdx = 0; seqIdx < imageSequence.length; seqIdx++) {
+      const entry = imageSequence[seqIdx];
+      const scene = scenes[entry.sceneIndex];
+      const idempotencyKey = entry.assetKey;
 
       // Check if this scene image already exists
       const existingImage = await getAssetByKey(supabase, job.id, idempotencyKey);
       if (existingImage?.public_url) {
-        console.log(`[IMAGES] Scene ${i} already generated, skipping`);
+        console.log(`[IMAGES] Scene ${entry.sceneIndex}${entry.subIndex > 0 ? `_sub_${entry.subIndex}` : ''} already generated, skipping`);
         skippedCount++;
         scenesCompleted.push(i);
         continue;
@@ -1284,20 +1532,20 @@ export async function executeImagesStep(
         const timeRemainingMs = WALL_CLOCK_BUDGET_MS - elapsedMs;
         
         if (timeRemainingMs < IMAGE_RESERVE_MS) {
-          console.log(`[IMAGES] ⏰ Time budget exhausted: ${Math.round(elapsedMs / 1000)}s elapsed, ${Math.round(timeRemainingMs / 1000)}s remaining (need ${IMAGE_RESERVE_MS / 1000}s). Pausing at scene ${i + 1}/${scenes.length}.`);
+          console.log(`[IMAGES] ⏰ Time budget exhausted: ${Math.round(elapsedMs / 1000)}s elapsed, ${Math.round(timeRemainingMs / 1000)}s remaining (need ${IMAGE_RESERVE_MS / 1000}s). Pausing at image ${seqIdx + 1}/${imageSequence.length}.`);
           
           // Update step status with progress before pausing
           await updateStepStatus(supabase, job.id, 'images', 'running', {
             scenes_done: scenesCompleted,
-            current_scene: i,
-            total_scenes: scenes.length,
-            progress_pct: Math.round((scenesCompleted.length / scenes.length) * 100),
+            current_image: seqIdx,
+            total_images: imageSequence.length,
+            progress_pct: Math.round((scenesCompleted.length / imageSequence.length) * 100),
             image_model: imageModel,
             paused_for_continuation: true,
           });
           
-          await logger.progress('images', scenesCompleted.length, scenes.length,
-            `⏰ Time budget pause: ${scenesCompleted.length}/${scenes.length} scenes done (${Math.round(elapsedMs / 1000)}s elapsed)`,
+          await logger.progress('images', scenesCompleted.length, imageSequence.length,
+            `⏰ Time budget pause: ${scenesCompleted.length}/${imageSequence.length} images done (${Math.round(elapsedMs / 1000)}s elapsed)`,
             { paused: true, elapsed_ms: elapsedMs }
           );
           
@@ -1309,7 +1557,7 @@ export async function executeImagesStep(
               generated: generatedCount,
               skipped: skippedCount,
               completed: scenesCompleted.length,
-              total: scenes.length,
+              total: imageSequence.length,
               elapsed_ms: elapsedMs,
               reason: 'wall_clock_budget',
             }
@@ -1318,11 +1566,21 @@ export async function executeImagesStep(
       }
 
       // Heartbeat before each image (they can be slow)
-      await requireLeaseOwner(supabase, job.id, workerId, `images:scene_${i}`);
+      await requireLeaseOwner(supabase, job.id, workerId, `images:scene_${entry.sceneIndex}${entry.subIndex > 0 ? `_sub_${entry.subIndex}` : ''}`);
 
       // Build prompt — uses visual cues + DB config + story anchor when available
+      // For sub-images (multi-image long scenes), modify prompt to request different angle/moment
+      const i = entry.sceneIndex;
       const visualCue = visualCues.find(vc => vc.sceneIndex === i);
-      const scenePrompt = buildImagePrompt(scene.text, scene.keywords, artStyle, i, scenes.length, imagePromptConfig, visualCue, storyAnchor);
+      
+      let subPromptSuffix = '';
+      if (entry.subIndex > 0) {
+        // Sub-images for long scenes: request a different perspective of the same scene
+        const subAngles = ['from a different angle', 'focusing on a different detail', 'from a closer perspective'];
+        subPromptSuffix = `\n[DIFFERENT SHOT: Show this same moment ${subAngles[Math.min(entry.subIndex - 1, subAngles.length - 1)]}. Do NOT repeat the exact same composition as the previous image.]`;
+      }
+      
+      const scenePrompt = buildImagePrompt(scene.text, scene.keywords, artStyle, i, scenes.length, imagePromptConfig, visualCue, storyAnchor) + subPromptSuffix;
       
       // === EXTERNAL IDEMPOTENCY: Hash includes model+size+prompt to avoid cross-config collisions ===
       // Note: imageModel is defined at function scope from job.meta or env
@@ -1336,11 +1594,12 @@ export async function executeImagesStep(
       // Quality guard: only reuse if quality_ok !== false
       const existingPromptHash = await getAssetByKey(supabase, job.id, promptHashKey, true);
       if (existingPromptHash?.public_url) {
-        console.log(`[IMAGES] Scene ${i} prompt hash match (billing protection), copying existing asset`);
+        console.log(`[IMAGES] Scene ${i}${entry.subIndex > 0 ? `_sub_${entry.subIndex}` : ''} prompt hash match (billing protection), copying existing asset`);
         // Copy the existing asset to the scene key
         await upsertAsset(supabase, job.id, idempotencyKey, 'dalle_image', 
           existingPromptHash.storage_path, existingPromptHash.public_url, {
             scene_index: i,
+            sub_index: entry.subIndex,
             prompt: scenePrompt,
             prompt_hash: promptHash,
             art_style: artStyle,
@@ -1348,60 +1607,61 @@ export async function executeImagesStep(
             copied_from: existingPromptHash.idempotency_key,
           });
         skippedCount++;
-        scenesCompleted.push(i);
+        scenesCompleted.push(seqIdx);
         continue;
       }
 
       // === RUNNING CHECKPOINT: Update step status with progress ===
       await updateStepStatus(supabase, job.id, 'images', 'running', {
         scenes_done: scenesCompleted,
-        current_scene: i,
-        total_scenes: scenes.length,
-        progress_pct: Math.round((scenesCompleted.length / scenes.length) * 100),
+        current_image: seqIdx,
+        total_images: imageSequence.length,
+        progress_pct: Math.round((scenesCompleted.length / imageSequence.length) * 100),
         image_model: imageModel,
       });
 
       // Log progress event
-      await logger.progress('images', i + 1, scenes.length, 
-        `scene ${i + 1}/${scenes.length} generating (model=${imageModel}, ${imageSize})`,
-        { model: imageModel, scene_index: i }
+      await logger.progress('images', seqIdx + 1, imageSequence.length, 
+        `image ${seqIdx + 1}/${imageSequence.length} generating (scene ${i}${entry.subIndex > 0 ? ` sub ${entry.subIndex}` : ''}, model=${imageModel}, ${imageSize})`,
+        { model: imageModel, scene_index: i, sub_index: entry.subIndex }
       );
 
-      console.log(`[IMAGES] Generating scene ${i + 1}/${scenes.length} with ${imageModel} (hash: ${promptHash.slice(0, 8)}...)`);
+      console.log(`[IMAGES] Generating image ${seqIdx + 1}/${imageSequence.length} (scene ${i}${entry.subIndex > 0 ? ` sub ${entry.subIndex}` : ''}) with ${imageModel} (hash: ${promptHash.slice(0, 8)}...)`);
 
       // Log prompt snapshot (first, every 5th, and last — balance storage vs visibility)
-      if (i === 0 || i === scenes.length - 1 || i % 5 === 0) {
+      if (seqIdx === 0 || seqIdx === imageSequence.length - 1 || seqIdx % 5 === 0) {
         const cue = visualCues.find(vc => vc.sceneIndex === i);
         await logger.snapshot('images', 'prompt', { 
           scene_index: i, 
+          sub_index: entry.subIndex,
           prompt: scenePrompt.slice(0, 1200), 
           model: imageModel, 
           size: imageSize,
           visual_cue: cue ? { type: cue.sceneType, camera: cue.camera, description: (cue.description || '').slice(0, 200) } : null,
           story_anchor_used: !!storyAnchor,
           source: cue ? 'visual_cue+anchor' : 'raw_text'
-        }, `Scene ${i + 1}/${scenes.length} prompt (${cue?.sceneType || 'no_cue'})`);
+        }, `Image ${seqIdx + 1}/${imageSequence.length} prompt (scene ${i}${entry.subIndex > 0 ? ` sub ${entry.subIndex}` : ''}, ${cue?.sceneType || 'no_cue'})`);
       }
 
       // === LEASE GRACE CHECK: Verify enough time before expensive API call ===
-      await requireLeaseGrace(supabase, job.id, workerId, `${imageModel} scene ${i}`);
+      await requireLeaseGrace(supabase, job.id, workerId, `${imageModel} scene ${i}${entry.subIndex > 0 ? ` sub ${entry.subIndex}` : ''}`);
 
       // === COST CONTROL: Check budget + acquire slot before gpt-image-1 call ===
       const costHelper = new CostControlHelper(supabase, job.id, workerId);
       let costSlotAcquired = false;
       try {
-        await assertCanSpend(costHelper, 'openai_image', `scene_${i}`, 1);
+        await assertCanSpend(costHelper, 'openai_image', `scene_${i}${entry.subIndex > 0 ? `_sub_${entry.subIndex}` : ''}`, 1);
         costSlotAcquired = true;
       } catch (costError) {
         if (isCostLimitError(costError)) {
           // Cost limit reached - fail with clear message for DLQ (class: misconfig)
-          console.error(`[IMAGES] ❌ Cost limit hit at scene ${i}: ${costError instanceof Error ? costError.message : costError}`);
+          console.error(`[IMAGES] ❌ Cost limit hit at image ${seqIdx} (scene ${i}): ${costError instanceof Error ? costError.message : costError}`);
           return { 
             success: false, 
             error: `cost_limit_exceeded: openai_image (gpt-image-1) - ${costError instanceof Error ? costError.message : 'budget reached'}`,
             data: { 
-              scenes_completed: scenesCompleted.length,
-              scenes_total: scenes.length,
+              images_completed: scenesCompleted.length,
+              images_total: imageSequence.length,
               cost_limit_hit: true,
               failure_class: 'misconfig'  // Signal to DLQ this is operator-actionable
             }
@@ -1500,8 +1760,9 @@ export async function executeImagesStep(
         }
       }
 
-      // Upload to storage (using standardized path)
-      const storagePath = pathForImage(job.brand_id, job.id, i);
+      // Upload to storage (using standardized path — sub-images get suffixed path)
+      const imageStorageIdx = entry.subIndex > 0 ? `${i}_sub_${entry.subIndex}` : String(i);
+      const storagePath = pathForImage(job.brand_id, job.id, parseInt(imageStorageIdx) || i) + (entry.subIndex > 0 ? `_sub_${entry.subIndex}` : '');
       const publicUrl = await uploadRemoteToStorage(
         supabase,
         STORAGE_BUCKET,
@@ -1512,6 +1773,7 @@ export async function executeImagesStep(
       // Store asset with scene key
       await upsertAsset(supabase, job.id, idempotencyKey, 'dalle_image', storagePath, publicUrl, {
         scene_index: i,
+        sub_index: entry.subIndex,
         prompt: scenePrompt,
         prompt_hash: promptHash,
         art_style: artStyle,
@@ -1521,6 +1783,7 @@ export async function executeImagesStep(
       // Also store asset with prompt hash key (for external idempotency)
       await upsertAsset(supabase, job.id, promptHashKey, 'dalle_image', storagePath, publicUrl, {
         scene_index: i,
+        sub_index: entry.subIndex,
         prompt: scenePrompt,
         prompt_hash: promptHash,
         art_style: artStyle,
@@ -1528,12 +1791,12 @@ export async function executeImagesStep(
       });
 
       generatedCount++;
-      scenesCompleted.push(i);
-      console.log(`[IMAGES] ✓ Scene ${i + 1} uploaded (${imageModel}): ${publicUrl}`);
+      scenesCompleted.push(seqIdx);
+      console.log(`[IMAGES] ✓ Image ${seqIdx + 1}/${imageSequence.length} (scene ${i}${entry.subIndex > 0 ? ` sub ${entry.subIndex}` : ''}) uploaded (${imageModel}): ${publicUrl}`);
 
       // === COST CONTROL: Record usage + release slot ===
       if (costSlotAcquired) {
-        const costIdempotencyKey = `job:${job.id}:openai_image:scene_${i}:${promptHash.slice(0, 16)}`;
+        const costIdempotencyKey = `job:${job.id}:openai_image:scene_${i}${entry.subIndex > 0 ? `_sub_${entry.subIndex}` : ''}:${promptHash.slice(0, 16)}`;
         await costHelper.recordUsage(
           'openai_image',
           costIdempotencyKey,
@@ -1543,30 +1806,45 @@ export async function executeImagesStep(
             estimated_cost_cents: imageModel === 'gpt-image-1' ? 2 : (imageModel === 'dall-e-3' ? 8 : 4)
           },
           'images',
-          `scene_${i}`
+          `scene_${i}${entry.subIndex > 0 ? `_sub_${entry.subIndex}` : ''}`
         );
-        await costHelper.releaseSlot('openai_image', `scene_${i}`);
+        await costHelper.releaseSlot('openai_image', `scene_${i}${entry.subIndex > 0 ? `_sub_${entry.subIndex}` : ''}`);
       }
     }
 
-    // Update job meta with image URLs
-    const allImageAssets = await getAssetsByPrefix(supabase, job.id, `${job.id}:image_generate:`);
-    const imageUrls = allImageAssets
-      .sort((a, b) => {
-        const aIdx = parseInt(a.idempotency_key.split('scene_')[1] || '0');
-        const bIdx = parseInt(b.idempotency_key.split('scene_')[1] || '0');
-        return aIdx - bIdx;
-      })
-      .map(a => a.public_url)
-      .filter(Boolean);
+    // ======================================================================
+    // BUILD IMAGE SEQUENCE MANIFEST (for assemble step)
+    // Resolve all asset URLs and save the ordered sequence with durations + mood levels.
+    // This replaces the assembler's uniform-duration calculation.
+    // ======================================================================
+    const resolvedSequence: ImageSequenceEntry[] = [];
+    for (const entry of imageSequence) {
+      const asset = await getAssetByKey(supabase, job.id, entry.assetKey);
+      resolvedSequence.push({
+        ...entry,
+        url: asset?.public_url || undefined,
+      });
+    }
+
+    // Also save legacy image_urls for backward compat
+    const imageUrls = resolvedSequence.map(e => e.url).filter(Boolean);
 
     await updateJobMeta(supabase, job.id, {
       image_urls: imageUrls,
       image_model: imageModel,
+      image_sequence: resolvedSequence,
     });
 
-    console.log(`[IMAGES] ✓ Complete: ${generatedCount} generated, ${skippedCount} skipped`);
-    return { success: true, data: { generated: generatedCount, skipped: skippedCount, total: scenes.length } };
+    console.log(`[IMAGES] ✓ Complete: ${generatedCount} generated, ${skippedCount} skipped, ${resolvedSequence.length} total images in sequence`);
+    await logger.snapshot('images', 'sequence', {
+      total_images: resolvedSequence.length,
+      scenes: scenes.length,
+      durations: resolvedSequence.map(e => e.duration),
+      mood_levels: resolvedSequence.map(e => e.moodLevel),
+      multi_image_scenes: resolvedSequence.filter(e => e.subIndex > 0).length,
+    }, `Image sequence: ${resolvedSequence.length} images, ${resolvedSequence.filter(e => e.subIndex > 0).length} sub-images`);
+
+    return { success: true, data: { generated: generatedCount, skipped: skippedCount, total: resolvedSequence.length } };
 
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
@@ -1586,6 +1864,21 @@ interface VisualCue {
   description: string;   // What the IMAGE should depict
   sceneType: string;      // establishing | object | atmosphere | character | group
   camera: string;         // wide, medium, close-up, overhead, etc.
+  isClimax?: boolean;     // true if this is a climactic moment
+}
+
+/**
+ * Computed image sequence entry — represents one image in the final video.
+ * For normal scenes: 1 entry per scene. For long scenes (>10s): multiple entries per scene.
+ * This is stored in job.meta.image_sequence and read by the assemble step.
+ */
+interface ImageSequenceEntry {
+  sceneIndex: number;     // Original scene index
+  subIndex: number;       // 0 for first/only image, 1+ for multi-image long scenes
+  duration: number;       // Duration this image will display (seconds)
+  moodLevel: number;      // Ken Burns mood intensity (1-10)
+  assetKey: string;       // Asset idempotency key for lookup
+  url?: string;           // Resolved public URL (populated at end of images step)
 }
 
 /**
@@ -1632,7 +1925,7 @@ Extract:
 4. horrorTone: Type of horror (psychological, supernatural, counting, cosmic, folklore, body)
 5. timeOfDay: Specific lighting/time
 6. isGroupStory: true if story involves multiple characters together
-7. groupCount: Expected number of people in the group (null if not a group story)
+7. groupCount: The EXPECTED number of people (what the group SHOULD be). For "one too many" stories where the group discovers an extra person, return the NORMAL count BEFORE the extra person is noticed — NOT the total with the stranger included.
 
 Return JSON: { "environment": "...", "characterDescription": "..." or null, "recurringMotifs": "...", "horrorTone": "...", "timeOfDay": "...", "isGroupStory": true/false, "groupCount": N or null }`;
 
@@ -1762,14 +2055,20 @@ VARIETY IS MANDATORY:
 - At least 1 scene should use overhead, low-angle, or pov camera.
 - If a scene has only 1-2 sentences of dialogue or narration, use an object/atmosphere/detail shot rather than showing people.
 
+CLIMAX RULE:
+- The last 1-2 scenes are the CLIMAX — the most dramatic, frightening moment.
+- These scenes MUST show the story's most powerful visual (the monster revealed, the impossible face, the terrifying realization). Never waste the climax on an atmosphere/establishing shot.
+- The final scene should be the image that lingers in the viewer's mind.
+
 For each scene, provide:
 - description: A concise 1-2 sentence visual description. Be SPECIFIC about what is visible — describe the exact subject, framing, and what makes this shot different from the others.
 - sceneType: One of: establishing (wide location), object (specific item/detail focus), atmosphere (mood/environment), character (single person), group (multiple people)
 - camera: One of: wide, medium, close-up, extreme-close-up, overhead, low-angle, pov
+- isClimax: true if this is one of the last 1-2 scenes and represents the story's most dramatic moment, false otherwise
 
 ${sceneList}
 
-Respond with a JSON object: { "cues": [ { "sceneIndex": 0, "description": "...", "sceneType": "...", "camera": "..." }, ... ] }`;
+Respond with a JSON object: { "cues": [ { "sceneIndex": 0, "description": "...", "sceneType": "...", "camera": "...", "isClimax": false }, ... ] }`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -2316,9 +2615,36 @@ async function assembleWithRenderer(
   effectsConfig: Record<string, unknown> | null = null,
   functionStartTime?: number
 ): Promise<string> {
-  // Calculate durations per scene (equal distribution)
-  const sceneDuration = duration / imageUrls.length;
-  const durations = imageUrls.map(() => sceneDuration);
+  // ======================================================================
+  // PER-SCENE DURATIONS + MOOD LEVELS (Improvements #1, #2, #4)
+  // Use the image_sequence manifest from the images step instead of
+  // uniform distribution. Falls back to equal distribution if not available.
+  // ======================================================================
+  const imageSequence = meta?.image_sequence as ImageSequenceEntry[] | undefined;
+  let durations: number[];
+  let moodLevels: number[];
+  
+  if (imageSequence && Array.isArray(imageSequence) && imageSequence.length === imageUrls.length) {
+    // Use voice-aligned, word-proportional durations from the images step
+    durations = imageSequence.map(e => e.duration);
+    moodLevels = imageSequence.map(e => e.moodLevel);
+    
+    // Ensure durations sum to total duration (normalize if voice alignment shifted things)
+    const durSum = durations.reduce((s, d) => s + d, 0);
+    if (Math.abs(durSum - duration) > 1) {
+      const scale = duration / durSum;
+      durations = durations.map(d => parseFloat((d * scale).toFixed(2)));
+      console.log(`[ASSEMBLE] Normalized durations: sum ${durSum.toFixed(1)}s → ${duration}s (scale=${scale.toFixed(3)})`);
+    }
+    
+    console.log(`[ASSEMBLE] Using image_sequence: ${durations.length} images with per-scene durations (${durations.map(d => d.toFixed(1)).join(',')}s) and mood_levels (${moodLevels.join(',')})`);
+  } else {
+    // Fallback: equal distribution (legacy behavior)
+    const sceneDuration = duration / imageUrls.length;
+    durations = imageUrls.map(() => sceneDuration);
+    moodLevels = []; // Let renderer use defaults
+    console.log(`[ASSEMBLE] Fallback: equal distribution ${sceneDuration.toFixed(1)}s × ${imageUrls.length} images (no image_sequence in meta)`);
+  }
 
   // Get word-level timestamps for captions (from voice synthesis step)
   const captions = Array.isArray(meta?.audio_timestamps) ? meta.audio_timestamps : [];
@@ -2372,6 +2698,8 @@ async function assembleWithRenderer(
       fade: musicCfg.fade || { in_ms: 800, out_ms: 1200 },
       loopable: meta?.music_loopable !== false, // default true; set by music step
     } : null,
+    // v5.0: Per-scene mood levels for intelligent Ken Burns selection (Improvement #4)
+    mood_levels: moodLevels,
     low_memory: true, // Safe for cloud deployment
   });
 

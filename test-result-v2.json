@@ -1,0 +1,253 @@
+﻿{
+    "success":  true,
+    "config":  {
+                   "vibe_preset":  "one_too_many",
+                   "duration":  75,
+                   "scene_count":  8,
+                   "has_brand_config":  true,
+                   "art_style":  "uncanny-illustrated"
+               },
+    "story_anchor":  {
+                         "environment":  "cramped office elevator with brushed steel walls and flickering fluorescent panel lighting",
+                         "characterDescription":  "Five friends with distinct appearances: Claire with short black hair and glasses, Jake with tousled brown hair and a hoodie, Mia with bright red hair and a denim jacket, Sam with curly blonde hair and a graphic tee, and Alex with a buzz cut and a leather jacket. The sixth person is an indistinct shadowy figure with a vague smile, details obscured.",
+                         "recurringMotifs":  "flickering lights, cramped space, heavy shadows, visible breath in the cold air, and a metallic sheen on the elevator walls",
+                         "horrorTone":  "psychological dread and paranoia",
+                         "timeOfDay":  "dimly lit, late evening with an eerie glow from the elevator lights",
+                         "isGroupStory":  true,
+                         "groupCount":  5
+                     },
+    "scenes":  [
+                   {
+                       "scene":  1,
+                       "time":  "0.0s â 11.4s",
+                       "duration":  "11.4s",
+                       "words":  20,
+                       "text":  "We were five friends heading to the rooftop bar. The elevator was old, cramped, barely big enough for our group.",
+                       "visual_cue":  {
+                                          "type":  "group",
+                                          "camera":  "wide",
+                                          "description":  "A wide shot of the cramped elevator filled with five friends, each showing distinct expressions of excitement. The brushed steel walls reflect their vibrant clothing and the flickering fluorescent lights above.",
+                                          "isClimax":  false
+                                      }
+                   },
+                   {
+                       "scene":  2,
+                       "time":  "11.4s â 23.8s",
+                       "duration":  "12.4s",
+                       "words":  22,
+                       "text":  "The doors closed with a heavy thud. Claire hit the button for floor twelve. The elevator jolted upward, groaning with every floor.",
+                       "visual_cue":  {
+                                          "type":  "object",
+                                          "camera":  "close-up",
+                                          "description":  "A close-up of Claire\u0027s hand pressing the button for floor twelve, with the flickering light above casting an eerie glow on her face, highlighting her focused expression.",
+                                          "isClimax":  false
+                                      }
+                   },
+                   {
+                       "scene":  3,
+                       "time":  "23.8s â 32.3s",
+                       "duration":  "8.5s",
+                       "words":  14,
+                       "text":  "Someone joked about it breaking down. No one laughed. I looked around the elevator.",
+                       "visual_cue":  {
+                                          "type":  "group",
+                                          "camera":  "medium",
+                                          "description":  "A medium shot capturing the group inside the elevator, with Jake joking but the tension visible in their faces. The metallic sheen of the elevator walls reflects the unease among them.",
+                                          "isClimax":  false
+                                      }
+                   },
+                   {
+                       "scene":  4,
+                       "time":  "32.3s â 38.2s",
+                       "duration":  "6.0s",
+                       "words":  9,
+                       "text":  "There were six of us. I counted again. Six.",
+                       "visual_cue":  {
+                                          "type":  "object",
+                                          "camera":  "overhead",
+                                          "description":  "An overhead shot focusing on the floor indicator above the elevator doors, showing the numbers changing rapidly, emphasizing the unsettling feeling as the elevator jolts.",
+                                          "isClimax":  false
+                                      }
+                   },
+                   {
+                       "scene":  5,
+                       "time":  "38.2s â 49.2s",
+                       "duration":  "10.9s",
+                       "words":  19,
+                       "text":  "I knew every face. But I could not figure out who the extra person was. Claire counted out loud.",
+                       "visual_cue":  {
+                                          "type":  "character",
+                                          "camera":  "close-up",
+                                          "description":  "A tight close-up of Claire\u0027s face as she counts the friends aloud, her expression shifting from confidence to confusion, while the others look on with furrowed brows.",
+                                          "isClimax":  false
+                                      }
+                   },
+                   {
+                       "scene":  6,
+                       "time":  "49.2s â 55.6s",
+                       "duration":  "6.5s",
+                       "words":  10,
+                       "text":  "She stopped at six. Her voice cracked. The lights flickered.",
+                       "visual_cue":  {
+                                          "type":  "group",
+                                          "camera":  "medium",
+                                          "description":  "A medium shot showing the flickering lights reflecting off the group as Claire\u0027s voice cracks, capturing the moment of realization and growing tension as shadows loom around them.",
+                                          "isClimax":  false
+                                      }
+                   },
+                   {
+                       "scene":  7,
+                       "time":  "55.6s â 66.6s",
+                       "duration":  "10.9s",
+                       "words":  19,
+                       "text":  "In the dark, someone whispered my name. It was not any of my friends. The elevator stopped between floors.",
+                       "visual_cue":  {
+                                          "type":  "atmosphere",
+                                          "camera":  "low-angle",
+                                          "description":  "A low-angle shot from the corner of the elevator, focusing on the space beside the group, where a vague shadowy figure is barely visible, enhancing the feeling of dread and paranoia.",
+                                          "isClimax":  false
+                                      }
+                   },
+                   {
+                       "scene":  8,
+                       "time":  "66.6s â 75.0s",
+                       "duration":  "8.4s",
+                       "words":  14,
+                       "text":  "We all looked at each other. No one moved. The person beside me smiled.",
+                       "visual_cue":  {
+                                          "type":  "character",
+                                          "camera":  "close-up",
+                                          "description":  "A close-up of Mia\u0027s terrified face as she hears a whisper, her eyes wide in fear, capturing the moment just before the group realizes they are not alone.",
+                                          "isClimax":  true
+                                      }
+                   }
+               ],
+    "distributions":  {
+                          "scene_types":  {
+                                              "group":  3,
+                                              "object":  2,
+                                              "character":  3,
+                                              "atmosphere":  1
+                                          },
+                          "cameras":  {
+                                          "wide":  1,
+                                          "close-up":  3,
+                                          "medium":  2,
+                                          "overhead":  1,
+                                          "low-angle":  1,
+                                          "extreme-close-up":  1
+                                      }
+                      },
+    "image_sequence":  {
+                           "total_images":  12,
+                           "multi_image_scenes":  4,
+                           "entries":  [
+                                           {
+                                               "sceneIndex":  0,
+                                               "subIndex":  0,
+                                               "duration":  5.71,
+                                               "moodLevel":  2
+                                           },
+                                           {
+                                               "sceneIndex":  0,
+                                               "subIndex":  1,
+                                               "duration":  5.71,
+                                               "moodLevel":  2
+                                           },
+                                           {
+                                               "sceneIndex":  1,
+                                               "subIndex":  0,
+                                               "duration":  6.2,
+                                               "moodLevel":  4
+                                           },
+                                           {
+                                               "sceneIndex":  1,
+                                               "subIndex":  1,
+                                               "duration":  6.2,
+                                               "moodLevel":  4
+                                           },
+                                           {
+                                               "sceneIndex":  2,
+                                               "subIndex":  0,
+                                               "duration":  8.45,
+                                               "moodLevel":  4
+                                           },
+                                           {
+                                               "sceneIndex":  3,
+                                               "subIndex":  0,
+                                               "duration":  5.96,
+                                               "moodLevel":  5
+                                           },
+                                           {
+                                               "sceneIndex":  4,
+                                               "subIndex":  0,
+                                               "duration":  5.46,
+                                               "moodLevel":  6
+                                           },
+                                           {
+                                               "sceneIndex":  4,
+                                               "subIndex":  1,
+                                               "duration":  5.46,
+                                               "moodLevel":  6
+                                           },
+                                           {
+                                               "sceneIndex":  5,
+                                               "subIndex":  0,
+                                               "duration":  6.46,
+                                               "moodLevel":  7
+                                           },
+                                           {
+                                               "sceneIndex":  6,
+                                               "subIndex":  0,
+                                               "duration":  5.46,
+                                               "moodLevel":  8
+                                           },
+                                           {
+                                               "sceneIndex":  6,
+                                               "subIndex":  1,
+                                               "duration":  5.46,
+                                               "moodLevel":  8
+                                           },
+                                           {
+                                               "sceneIndex":  7,
+                                               "subIndex":  0,
+                                               "duration":  8.44,
+                                               "moodLevel":  10
+                                           }
+                                       ],
+                           "mood_levels":  [
+                                               2,
+                                               2,
+                                               4,
+                                               4,
+                                               4,
+                                               5,
+                                               6,
+                                               6,
+                                               7,
+                                               8,
+                                               8,
+                                               10
+                                           ],
+                           "durations":  [
+                                             5.71,
+                                             5.71,
+                                             6.2,
+                                             6.2,
+                                             8.45,
+                                             5.96,
+                                             5.46,
+                                             5.46,
+                                             6.46,
+                                             5.46,
+                                             5.46,
+                                             8.44
+                                         ]
+                       },
+    "timing":  {
+                   "scene_split_ms":  1,
+                   "story_anchor_ms":  3855,
+                   "visual_cues_ms":  18222,
+                   "total_ms":  22203
+               }
+}
