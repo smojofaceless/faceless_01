@@ -347,7 +347,7 @@ class PostQueueService {
         try {
             let query = supabaseClient
                 .from('jobs')
-                .select('id, title, status, vibe_preset, scheduled_post_at, brand_id, batch_id, created_at')
+                .select('id, title, status, vibe_preset, scheduled_post_at, brand_id, batch_id, created_at, video_url')
                 .not('scheduled_post_at', 'is', null)
                 .gte('scheduled_post_at', start.toISOString())
                 .lte('scheduled_post_at', end.toISOString())
@@ -428,7 +428,7 @@ class PostQueueService {
                     content: {
                         title: j.title || `${j.vibe_preset || 'Video'} (${calStatus === 'failed' ? 'failed' : calStatus === 'scheduled' ? 'ready' : 'generating...'})`,
                         description: `Job status: ${j.status}`,
-                        videoUrl: null,
+                        videoUrl: j.video_url || null,
                         thumbnailUrl: null,
                         duration: null
                     },

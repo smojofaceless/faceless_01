@@ -298,7 +298,13 @@
             : { name: post.platformId };
 
         const isJob = post.type === 'job';
-        const statusLabel = isJob ? (post.status === 'pending' ? 'Pending Generation' : 'Generating...') : post.status;
+        const isJobComplete = isJob && (post.status === 'scheduled' || post.raw?.status === 'complete');
+        const statusLabel = isJob 
+            ? (post.status === 'pending' ? 'Pending Generation' 
+               : isJobComplete ? 'Complete' 
+               : post.status === 'failed' ? 'Failed' 
+               : 'Generating...') 
+            : post.status;
 
         // Build modal content
         elements.postModalBody.innerHTML = `
@@ -381,8 +387,8 @@
                     </div>
                 ` : isJob ? `
                     <div class="post-detail__preview" style="text-align: center; padding: 24px; background: var(--surface-secondary); border-radius: 8px; color: var(--text-muted);">
-                        <div style="font-size: 32px; margin-bottom: 8px;">&#9881;</div>
-                        <p style="margin: 0;">Video is being generated...</p>
+                        <div style="font-size: 32px; margin-bottom: 8px;">${isJobComplete ? '&#10003;' : '&#9881;'}</div>
+                        <p style="margin: 0;">${isJobComplete ? 'Video complete — ready to publish' : 'Video is being generated...'}</p>
                     </div>
                 ` : ''}
             </div>
@@ -492,6 +498,7 @@
         const classes = {
             published: 'success',
             posted: 'success',
+            complete: 'success',
             scheduled: 'warning',
             failed: 'error',
             draft: 'default',
