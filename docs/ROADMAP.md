@@ -311,17 +311,40 @@ With "FAIL stale by default" policy, upstream dependency outages (OpenAI/ElevenL
 
 ### 5. ✅ FIX STORY UNIQUENESS PIPELINE — COMPLETE
 
-> **Status:** ✅ FIXED (February 8, 2026)
+> **Status:** ✅ FIXED + UPGRADED (February 12, 2026)
 
-**Root causes found and fixed:**
+**Phase 1 — Pipeline Fix (Feb 8):**
 1. RLS policies missing service_role access
 2. Legacy columns (`threat_id`, `ending_id`) were NOT NULL but code uses split columns
 3. `visual_dna` table missing `brand_id` column
 
+**Phase 2 — Tables Populating Fix (Feb 12, commit af1aabc):**
+1. worker-v1 never wrote to `stories` table → added insert in `executeStoryStep()`
+2. `story_dna` upsert silently failed (11 NOT NULL columns) → migration made them nullable
+3. Missing `brand_id`/`genre` columns on `story_dna` → added via migration
+
+**Phase 3 — Thematic Uniqueness (Feb 12, commit b07d044):**
+Problem: `concept_hash` was just hash(full_text), so two elevator stories with different
+words passed as "unique." 3 of 6 test stories were about elevators, 3 about passengers.
+
+Fix (three layers):
+1. **Avoidance prompt:** Query last 20 stories (same preset) + story_dna settings, include
+   in GPT prompt as "DO NOT REPEAT" list with settings/titles
+2. **Concept extraction:** GPT returns `setting` and `concept` fields (e.g. "elevator",
+   "Extra person in stopped elevator"). Stored in story asset meta.
+3. **Concept hashing:** `concept_hash = SHA-256(setting|concept)` separate from
+   `full_hash = SHA-256(story_text)`. Collision check uses concept_hash for thematic dedup.
+   `story_dna.meta` stores `{title, setting, concept}` for future avoidance queries.
+
+Also expanded `one_too_many` setting suggestions from ~10 to 30+ (cave tour, gym, aquarium,
+karaoke, funeral, zoo, bowling alley, etc.)
+
+**Test results (post-Phase 3):** cave tour, 24-hour gym, library — zero thematic overlap.
+
 **Tables now populating:**
-- [x] `stories`
-- [x] `story_dna`
-- [x] `visual_dna`
+- [x] `stories` — title, text, content_hash, title_hash, hook, vibe_preset, source_job_id
+- [x] `story_dna` — concept_hash (thematic), full_hash (exact), meta (title/setting/concept)
+- [ ] `visual_dna` — not yet populated by worker-v1
 
 **Reference:** [DNA_AND_DB_OPTION1_IMPLEMENTATION_PLAN.md](DNA_AND_DB_OPTION1_IMPLEMENTATION_PLAN.md)
 
@@ -341,8 +364,12 @@ To-do inside this item:
 - [x] Check RLS / permissions
 - [x] Check if uniqueness runs in all paths
 - [x] Add hard logging
+- [x] Fix story_dna nullable columns (migration 20260234001)
+- [x] Add story_dna brand_id/genre columns (migration 20260234002)
+- [x] Thematic avoidance prompt + concept hashing
 - [ ] Add "Uniqueness test" button (admin-only) — deferred
 - [ ] Backfill existing stories — deferred
+- [ ] Populate `visual_dna` — deferred
 
 </details>
 
