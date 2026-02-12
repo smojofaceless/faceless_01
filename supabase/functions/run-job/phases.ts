@@ -355,7 +355,7 @@ export async function runPreviewMode(
         art_style: jobMeta.art_style || "cinematic-dark",
         art_style_name: artStyleConfig.name,
         scene_count: sceneCount,
-        image_model: jobMeta.image_model || "gpt-4o",
+        image_model: jobMeta.image_model || "gpt-image-1",
         // The actual prompt/DNA used
         story_prompt: storyPrompt,
         // Model info
@@ -1604,7 +1604,7 @@ export async function runImagesPhase(
           const { imageJobId } = await startParallelImageGeneration(
             job_id,
             parallelScenes,
-            resolvedImageModel as "gpt-4o" | "dall-e-3" | "flux",
+            resolvedImageModel as "gpt-4o" | "gpt-image-1" | "dall-e-3" | "flux",
             styleConfig.name,
             storyAnchor
           );
@@ -2168,7 +2168,7 @@ export async function runImagesPhase(
       // Save to database IMMEDIATELY
       // Determine correct source/type based on actual model used
       const assetSource = resolvedImageModel === "flux" ? "ai" : 
-                          resolvedImageModel === "gpt-4o" ? "ai" : "dalle";
+                          (resolvedImageModel === "gpt-4o" || resolvedImageModel === "gpt-image-1") ? "ai" : "dalle";
       
       // Check if URL is from Supabase Storage (permanent) vs temporary
       const isSupabaseUrl = imageUrl?.includes('supabase.co');

@@ -430,17 +430,26 @@ export async function generateGPT4oImage(
 // =====================================================
 function sanitizePromptForRetry(originalPrompt: string, attemptNumber: number): string {
   // Remove potentially problematic words/phrases that OpenAI may flag
+  // Covers: violence, gore, abuse, stalking, assault, weapons, children in danger, torture
   const problematicTerms = [
     // Violence/gore
-    /\b(blood|bloody|bleeding|gore|gory|wound|wounds|injured|injury|dead body|corpse|death|dying|murder|kill|stab|cut|slash|mutilat)/gi,
+    /\b(blood|bloody|bleeding|gore|gory|wound|wounds|injured|injury|dead body|corpse|death|dying|murder|kill|stab|cut|slash|mutilat\w*)/gi,
     // Scary faces/figures
     /\b(terrifying|horrifying|grotesque|deformed|disfigured|monstrous|demonic|evil|sinister|menacing|threatening)/gi,
     // Weapons
-    /\b(knife|blade|weapon|gun|axe|machete|chainsaw)/gi,
+    /\b(knife|blade|weapon|gun|axe|machete|chainsaw|noose|rope around neck)/gi,
     // Children in danger
-    /\b(child|children|kid|kids|baby|infant|teenager|teen)\s*(scream|cry|fear|terror|danger|hurt|harm)/gi,
+    /\b(child|children|kid|kids|baby|infant|teenager|teen)\s*(scream|cry|fear|terror|danger|hurt|harm|alone|lost|missing|trapped)/gi,
     // Torture/suffering
-    /\b(torture|torment|agony|suffering|pain|scream|screaming)/gi,
+    /\b(torture|torment|agony|suffering|pain|scream|screaming|writhing)/gi,
+    // Abuse/stalking/assault (triggers "abuse" safety violation)
+    /\b(stalking|stalker|stalked|abduct\w*|kidnap\w*|assault\w*|attack\w*|victim|prey|predator|helpless|defenseless|vulnerable|trapped|captive|hostage|abuse\w*|molest\w*|strangle\w*|choke|choking|suffocate)/gi,
+    // Pursuit/hunting people
+    /\b(hunt\w*|chase|chasing|pursue|pursuing|fleeing|running away|escape|cornered)/gi,
+    // Distress/fear intensifiers
+    /\b(panic|panicked|panicking|hysteri\w*|dread|terror|petrified|paralyzed with fear|frozen in fear)/gi,
+    // Body horror
+    /\b(dismember\w*|decapitat\w*|disembowel\w*|impale\w*|hanging|hanged|drowned|drowning)/gi,
   ];
   
   let sanitized = originalPrompt;
@@ -486,10 +495,33 @@ function sanitizePromptForRetry(originalPrompt: string, attemptNumber: number): 
     });
   }
   
-  // Second attempt: make it even more generic
+  // Add replacements for the new abuse/stalking/pursuit terms
+  const abuseReplacements: Record<string, string> = {
+    'stalking': 'watching', 'stalker': 'observer', 'stalked': 'watched',
+    'abduction': 'disappearance', 'kidnapping': 'vanishing', 'kidnapped': 'vanished',
+    'assault': 'encounter', 'attack': 'approach', 'attacked': 'confronted',
+    'victim': 'witness', 'prey': 'target', 'predator': 'presence',
+    'helpless': 'alone', 'defenseless': 'exposed', 'vulnerable': 'isolated',
+    'trapped': 'surrounded', 'captive': 'confined', 'hostage': 'detained',
+    'hunt': 'search', 'hunting': 'searching', 'chase': 'pursuit', 'chasing': 'following',
+    'fleeing': 'moving away', 'cornered': 'blocked',
+    'panic': 'unease', 'panicked': 'unsettled', 'dread': 'tension',
+    'terror': 'unease', 'petrified': 'frozen', 'hysteria': 'distress',
+    'strangle': 'grip', 'choke': 'pressure', 'suffocate': 'smother',
+  };
+  sanitized = sanitized.replace(
+    /\b(stalking|stalker|stalked|abduct\w*|kidnap\w*|assault\w*|attack\w*|victim|prey|predator|helpless|defenseless|vulnerable|trapped|captive|hostage|hunt\w*|chase|chasing|fleeing|cornered|panic\w*|dread|terror|petrified|hysteri\w*|strangle\w*|choke|choking|suffocate)/gi,
+    (match) => abuseReplacements[match.toLowerCase()] || 'mysterious'
+  );
+  
+  // Second attempt: make it even more generic - strip everything to atmospheric description
   if (attemptNumber >= 2) {
-    // Strip to just atmospheric description
-    sanitized = `Atmospheric cinematic scene. Dark moody lighting. ${sanitized.substring(0, 150)}. Professional photography style, 9:16 portrait orientation.`;
+    // Extract just the STYLE LOCK and scene location, discard the narrative
+    const styleMatch = sanitized.match(/STYLE LOCK:[\s\S]*?(?=SCENE|GLOBAL NEGATIVE|$)/);
+    const styleSection = styleMatch ? styleMatch[0].substring(0, 200) : 'Cinematic dark photography, moody lighting';
+    const locationMatch = sanitized.match(/Location:\s*([^\n]+)/);
+    const location = locationMatch ? locationMatch[1].trim() : 'atmospheric dark environment';
+    sanitized = `Atmospheric cinematic photograph. ${styleSection}. Setting: ${location}. Moody and mysterious atmosphere. Professional photography style, 9:16 portrait orientation. No text, no words, no people in distress.`;
   }
   
   console.log(`[SANITIZE] Attempt ${attemptNumber}: ${sanitized.substring(0, 150)}...`);
@@ -564,7 +596,7 @@ export async function generateImage(
   openaiKey: string,
   prompt: string,
   sceneIndex: number,
-  imageModel: "dall-e-3" | "gpt-4o" | "flux",
+  imageModel: "dall-e-3" | "gpt-4o" | "gpt-image-1" | "flux",
   referenceImageUrl?: string,
   strict: boolean = true  // If true, fail instead of falling back to another model
 ): Promise<string | null> {
@@ -587,14 +619,14 @@ export async function generateImage(
     }
   }
   
-  // Try GPT-4o
-  if (imageModel === "gpt-4o") {
+  // Try GPT-image-1 (also matches legacy "gpt-4o" key)
+  if (imageModel === "gpt-image-1" || imageModel === "gpt-4o") {
     try {
       const result = await generateGPT4oImage(openaiKey, prompt, sceneIndex);
       if (result) return result;
     } catch (gptError) {
       if (strict) throw gptError;
-      console.log(`[IMAGE] GPT-4o error, falling back to DALL-E 3:`, gptError);
+      console.log(`[IMAGE] gpt-image-1 error, falling back to DALL-E 3:`, gptError);
     }
   }
   

@@ -655,7 +655,7 @@ export function canUseParallelImageGeneration(): boolean {
 export async function startParallelImageGeneration(
   jobId: string,
   scenes: ParallelImageScene[],
-  imageModel: "gpt-4o" | "dall-e-3" | "flux",
+  imageModel: "gpt-4o" | "gpt-image-1" | "dall-e-3" | "flux",
   artStyle: string,
   storyAnchor?: any
 ): Promise<{ imageJobId: string; statusUrl: string }> {
