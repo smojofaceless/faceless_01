@@ -637,7 +637,7 @@ async function executeStep(
     case 'subtitles':
       return executeSubtitlesStep(supabase, job, workerId, env, logger);
     case 'assemble':
-      return executeAssembleStep(supabase, job, workerId, env, logger);
+      return executeAssembleStep(supabase, job, workerId, env, logger, functionStartTime);
     case 'upload':
       return executeUploadStep(supabase, job, workerId, env, logger);
     case 'schedule':

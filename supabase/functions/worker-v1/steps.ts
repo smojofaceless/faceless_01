@@ -2009,7 +2009,8 @@ export async function executeAssembleStep(
   job: Job,
   workerId: string,
   env: Record<string, string>,
-  logger: StepLogger
+  logger: StepLogger,
+  functionStartTime?: number
 ): Promise<StepResult> {
   const idempotencyKey = `${job.id}:video_assemble`;
 
@@ -2185,7 +2186,8 @@ export async function executeAssembleStep(
         audioUrl,
         duration,
         job.meta,
-        effectsConfig
+        effectsConfig,
+        functionStartTime
       );
     } else if (creatomateKey) {
       console.log(`[ASSEMBLE] Using Creatomate`);
@@ -2257,7 +2259,8 @@ async function assembleWithRenderer(
   audioUrl: string,
   duration: number,
   meta: Record<string, unknown>,
-  effectsConfig: Record<string, unknown> | null = null
+  effectsConfig: Record<string, unknown> | null = null,
+  functionStartTime?: number
 ): Promise<string> {
   // Calculate durations per scene (equal distribution)
   const sceneDuration = duration / imageUrls.length;
@@ -2319,8 +2322,8 @@ async function assembleWithRenderer(
   });
 
   // Start the render job — retry on 503 (renderer busy with another job)
-  // Max 2 attempts: initial + 1 retry after waiting retry_after seconds
-  const MAX_RENDER_ATTEMPTS = 2;
+  // Max 4 attempts for campaigns where multiple jobs may queue up
+  const MAX_RENDER_ATTEMPTS = 4;
   let response: Response | null = null;
   
   for (let attempt = 1; attempt <= MAX_RENDER_ATTEMPTS; attempt++) {
@@ -2366,10 +2369,17 @@ async function assembleWithRenderer(
 
   console.log(`[ASSEMBLE] Render job started: ${renderJobId}, polling for completion...`);
 
-  // Poll for completion (max 90 seconds - fits within Edge Function's 2 min limit)
-  // If rendering takes longer, the worker will timeout and the job can be retried.
-  // On retry, assemble will check for existing asset first, then check render status.
-  const maxWaitMs = 90 * 1000;  // 90 seconds (reduced from 5 minutes)
+  // Poll for completion — use remaining wall-clock budget for smart timeout
+  // With waitUntil() we have up to 400s total. Calculate how much is left.
+  // Minimum 120s, maximum 180s poll window.
+  let maxWaitMs = 150 * 1000; // default 150s
+  if (functionStartTime) {
+    const elapsedMs = Date.now() - functionStartTime;
+    const remainingMs = WALL_CLOCK_BUDGET_MS - elapsedMs;
+    // Use 80% of remaining time for polling, leave 20% for upload/schedule
+    maxWaitMs = Math.max(120_000, Math.min(180_000, Math.floor(remainingMs * 0.8)));
+    console.log(`[ASSEMBLE] Wall-clock: ${Math.round(elapsedMs / 1000)}s elapsed, ${Math.round(remainingMs / 1000)}s remaining → poll timeout ${Math.round(maxWaitMs / 1000)}s`);
+  }
   const pollIntervalMs = 5000;
   const startTime = Date.now();
 
