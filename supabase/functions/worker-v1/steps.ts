@@ -166,29 +166,72 @@ export async function executeStoryStep(
     }
 
     const contentHash = await computeHash(storyText);
+    const titleHash = await computeHash(title);
+    const wordCount = storyText.split(/\s+/).length;
+    const sentences = storyText.split(/(?<=[.!?])\s+/).filter((s: string) => s.trim().length > 0);
+    const sentenceCount = sentences.length;
+    const avgSentenceLength = sentenceCount > 0 ? wordCount / sentenceCount : 0;
 
     // Log response snapshot (truncated story)
-    await logger.snapshot('story', 'response', { title, story_preview: storyText.slice(0, 300), word_count: storyText.split(/\s+/).length }, 'Generated story');
+    await logger.snapshot('story', 'response', { title, story_preview: storyText.slice(0, 300), word_count: wordCount }, 'Generated story');
 
     // Update job
     await updateJobFields(supabase, job.id, {
       title: title,
       story_text: storyText,
-      story_word_count: storyText.split(/\s+/).length,
+      story_word_count: wordCount,
     });
+
+    // Write to stories table for uniqueness tracking
+    // This populates the canonical story registry that story_dna references
+    try {
+      const { data: existingStory } = await supabase
+        .from('stories')
+        .select('id')
+        .eq('content_hash', contentHash)
+        .limit(1)
+        .maybeSingle();
+
+      if (existingStory) {
+        console.log(`[STORY] Story already in stories table (hash collision, id=${existingStory.id})`);
+      } else {
+        const { error: storyInsertError } = await supabase
+          .from('stories')
+          .insert({
+            title,
+            story_text: storyText,
+            content_hash: contentHash,
+            title_hash: titleHash,
+            word_count: wordCount,
+            sentence_count: sentenceCount,
+            avg_sentence_length: Math.round(avgSentenceLength * 100) / 100,
+            hook: storyText.split(/[.!?]/)[0]?.trim() || title,
+            vibe_preset: vibePreset,
+            source_job_id: job.id,
+          });
+
+        if (storyInsertError) {
+          console.warn(`[STORY] stories table insert warning: ${storyInsertError.message}`);
+        } else {
+          console.log(`[STORY] ✓ Inserted into stories table (hash: ${contentHash.substring(0, 16)})`);
+        }
+      }
+    } catch (e) {
+      console.warn(`[STORY] stories table insert failed (non-fatal): ${e}`);
+    }
 
     // Store asset for idempotency
     await upsertAsset(supabase, job.id, idempotencyKey, 'story', '', null, {
       title: title,
       story_text: storyText,
       content_hash: contentHash,
-      word_count: storyText.split(/\s+/).length,
+      word_count: wordCount,
       vibe_preset: vibePreset,
       generated_at: new Date().toISOString(),
     });
 
-    console.log(`[STORY] ✓ Generated: "${title}" (${storyText.split(/\s+/).length} words)`);
-    return { success: true, data: { title, word_count: storyText.split(/\s+/).length } };
+    console.log(`[STORY] ✓ Generated: "${title}" (${wordCount} words)`);
+    return { success: true, data: { title, word_count: wordCount } };
 
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
@@ -276,12 +319,17 @@ export async function executeUniquenessStep(
     }
 
     // Insert into story_dna (basic uniqueness tracking)
+    // full_hash = storyHash since we don't extract DNA dimensions yet
+    const vibePreset = job.vibe_preset || (job.meta?.vibe_preset as string) || 'urban_legend';
     const { error: insertError } = await supabase
       .from('story_dna')
       .upsert({
         job_id: job.id,
         brand_id: job.brand_id,
         concept_hash: storyHash,
+        full_hash: storyHash,
+        genre: vibePreset,
+        generation_attempt: 1,
         created_at: new Date().toISOString(),
       }, { onConflict: 'job_id' });
 
