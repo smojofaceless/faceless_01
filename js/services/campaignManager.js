@@ -591,7 +591,7 @@ class CampaignManager {
 
             if (error || !data || data.length === 0) {
                 console.warn('[CampaignManager] No brand_templates found, using defaults');
-                return { urban_legend: 0.6, one_too_many: 0.4 };
+                return { urban_legend: 60, one_too_many: 40 };
             }
 
             // Convert to weights object
@@ -603,7 +603,7 @@ class CampaignManager {
             return weights;
         } catch (err) {
             console.error('[CampaignManager] Error loading preset weights:', err);
-            return { urban_legend: 0.6, one_too_many: 0.4 };
+            return { urban_legend: 60, one_too_many: 40 };
         }
     }
 

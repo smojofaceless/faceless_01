@@ -798,12 +798,7 @@
                     </div>
                     <div class="fx-select-row">
                         <select class="form-control form-control--sm" id="ip-vibe-preset" style="max-width:280px">
-                            <option value="urban_legend">📜 Urban Legend</option>
-                            <option value="one_too_many">👥 One Too Many</option>
-                            <option value="backrooms">🚪 Backrooms</option>
-                            <option value="nosleep">😱 NoSleep</option>
-                            <option value="glitch">⚡ Glitch</option>
-                            <option value="analog_horror">📼 Analog Horror</option>
+                            <option value="">Loading...</option>
                         </select>
                         <button class="btn btn--secondary btn--sm" id="ip-load-preset" style="margin-left:8px">Load Preset Defaults</button>
                     </div>
@@ -2262,13 +2257,51 @@
             const brand = allBrands.find(b => b.id === brandId);
             document.getElementById('ip-brand-name').textContent = brand?.name || brandId;
 
-            // Load resolved config (merged: system → preset → brand)
+            // Populate vibe preset dropdown from brand's DB presets
             const vibeSelect = document.getElementById('ip-vibe-preset');
+            await populateVibeDropdown(vibeSelect, brandId);
+
             const vibe = vibeSelect.value || 'urban_legend';
             await loadImagePromptConfig(brandId, vibe);
 
             modal.classList.add('active');
             document.body.style.overflow = 'hidden';
+        }
+
+        // Icon map for known preset types
+        const VIBE_ICONS = {
+            urban_legend: '📜', one_too_many: '👥', backrooms: '🚪',
+            nosleep: '😱', glitch: '⚡', analog_horror: '📼'
+        };
+
+        async function populateVibeDropdown(selectEl, brandId) {
+            try {
+                const presets = await brandManager.getVibePresets(brandId);
+                selectEl.innerHTML = '';
+                if (presets && presets.length > 0) {
+                    // Show brand's configured presets (sorted by weight desc)
+                    for (const p of presets) {
+                        const icon = VIBE_ICONS[p.template_type] || '🎭';
+                        const opt = document.createElement('option');
+                        opt.value = p.template_type;
+                        opt.textContent = `${icon} ${p.name}`;
+                        if (p.is_default) opt.selected = true;
+                        selectEl.appendChild(opt);
+                    }
+                } else {
+                    // Fallback: show system defaults
+                    selectEl.innerHTML = `
+                        <option value="urban_legend">📜 Urban Legend</option>
+                        <option value="one_too_many">👥 One Too Many</option>
+                    `;
+                }
+            } catch (e) {
+                console.error('Failed to populate vibe dropdown:', e);
+                selectEl.innerHTML = `
+                    <option value="urban_legend">📜 Urban Legend</option>
+                    <option value="one_too_many">👥 One Too Many</option>
+                `;
+            }
         }
 
         function closeImagePromptModal() {
@@ -3474,9 +3507,9 @@ Respond in JSON:
                         </div>
                         <div class="vibe-active-item__slider-row">
                             <input type="range" class="vibe-weight-slider" data-id="${preset.id}"
-                                min="0" max="100" step="1" value="${Math.round(weight * 100)}"
+                                min="1" max="100" step="1" value="${Math.round(weight)}"
                                 style="--slider-color: ${color}">
-                            <span class="vibe-active-item__weight-val" id="vibe-val-${preset.id}">${(weight * 100).toFixed(0)}</span>
+                            <span class="vibe-active-item__weight-val" id="vibe-val-${preset.id}">${Math.round(weight)}</span>
                         </div>
                     </div>
                 `;
@@ -3487,8 +3520,7 @@ Respond in JSON:
                 slider.addEventListener('input', (e) => {
                     const presetId = e.target.dataset.id;
                     const rawVal = parseInt(e.target.value);
-                    const weight = rawVal / 100;
-                    vibesModifiedWeights[presetId] = weight;
+                    vibesModifiedWeights[presetId] = rawVal;
 
                     // Update value display
                     const valEl = document.getElementById(`vibe-val-${presetId}`);
@@ -3553,8 +3585,8 @@ Respond in JSON:
             try {
                 statusEl.textContent = `Adding ${name}...`;
                 const isFirst = vibesPresets.length === 0;
-                // Default weight: 0.5 for new presets
-                await brandManager.addVibePreset(vibesBrandId, templateType, name, 0.50, isFirst);
+                // Default weight: 50 (integer scale, used for weighted-random selection)
+                await brandManager.addVibePreset(vibesBrandId, templateType, name, 50, isFirst);
                 toast.success(`Added ${name} preset`);
                 vibesModifiedWeights = {}; // reset local changes
                 await loadVibePresets();

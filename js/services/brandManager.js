@@ -889,7 +889,7 @@ class BrandManager {
      * @param {boolean} isDefault - Whether this is the default template
      * @returns {Promise<Object>} The inserted row
      */
-    async addVibePreset(brandId, templateType, name, weight = 0.5, isDefault = false) {
+    async addVibePreset(brandId, templateType, name, weight = 50, isDefault = false) {
         if (!this.useSupabase) throw new Error('Vibe presets require Supabase');
 
         // If this is being set as default, unset previous defaults first
