@@ -178,6 +178,11 @@ async function uploadToSupabase(localPath, jobId) {
 
 /**
  * Update job status in Supabase (if configured)
+ * 
+ * IMPORTANT: The renderer must NOT set jobs.status to 'complete' or 'failed'.
+ * Status management is the worker pipeline's responsibility — it needs to run
+ * upload + schedule steps after assembly. The renderer only sets video_url
+ * and saves the video asset to job_assets.
  */
 async function updateJobInSupabase(jobId, supabaseJobId, status, videoUrl = null) {
   if (!supabase || !supabaseJobId) {
@@ -186,24 +191,26 @@ async function updateJobInSupabase(jobId, supabaseJobId, status, videoUrl = null
   }
   
   try {
-    console.log(`[${jobId}] Updating Supabase job ${supabaseJobId} to ${status}, videoUrl: ${videoUrl ? 'YES' : 'NO'}`);
+    console.log(`[${jobId}] Updating Supabase job ${supabaseJobId}: render ${status}, videoUrl: ${videoUrl ? 'YES' : 'NO'}`);
     
+    // Only update video_url and progress — never touch status.
+    // The worker pipeline manages status transitions (upload → schedule → complete).
     const updates = {
-      progress: status === 'complete' ? 100 : status === 'failed' ? 0 : 85,
       updated_at: new Date().toISOString(),
     };
     
-    if (status === 'complete') {
-      updates.status = 'complete';
-    } else if (status === 'failed') {
-      updates.status = 'failed';
+    if (status === 'complete' && videoUrl) {
+      updates.video_url = videoUrl;
+      // Don't set progress to 100 — worker still needs upload + schedule steps
+      updates.progress = 90;
     }
+    // NOTE: Do NOT set updates.status — let the worker pipeline handle it
     
     const { error: jobError } = await supabase.from('jobs').update(updates).eq('id', supabaseJobId);
     if (jobError) {
       console.error(`[${jobId}] Jobs table update error:`, jobError);
     } else {
-      console.log(`[${jobId}] ✓ Jobs table updated`);
+      console.log(`[${jobId}] ✓ Jobs table updated (video_url=${videoUrl ? 'SET' : 'unchanged'}, status=NOT_TOUCHED)`);
     }
     
     // If we have a video URL, save it to job_assets
@@ -224,7 +231,8 @@ async function updateJobInSupabase(jobId, supabaseJobId, status, videoUrl = null
         type: 'final_mp4',
         storage_path: videoUrl,
         public_url: videoUrl,
-        meta: { renderer: 'ffmpeg', completed_at: new Date().toISOString() },
+        idempotency_key: `${supabaseJobId}:video_assemble`,
+        meta: { renderer: 'ffmpeg', completed_at: new Date().toISOString(), quality_ok: true },
       }).select();
       
       if (insertError) {
