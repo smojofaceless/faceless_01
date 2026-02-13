@@ -1472,25 +1472,39 @@ function toASSTime(seconds) {
 }
 
 /**
- * Create ASS subtitle file from captions
- * Word-by-word display with scary word highlighting
+ * Create ASS subtitle file from captions — CHUNKED with active-word highlighting
+ *
+ * Instead of flashing one word at a time, groups words into 2-4 word chunks.
+ * The full chunk is displayed for its entire duration. Within the chunk, the
+ * currently-spoken word is highlighted in a different color (yellow by default)
+ * while the other words remain white. This:
+ *   - Matches the style of top viral Shorts/Reels/TikToks
+ *   - Hides small timing offsets (±100ms invisible when chunk is on screen 0.5-1s)
+ *   - Gives viewers time to read ahead
+ *   - Looks more professional than single-word flash
  */
 async function createASSSubtitles(captions, outputPath, options = {}) {
   const {
     captionStyle = 'bold',
     highlightScary = true,
+    wordsPerChunk = 3,       // 2-4 words per chunk feels best
   } = options;
   
   const style = CAPTION_STYLES[captionStyle] || CAPTION_STYLES.bold;
   
-  // Get style colors (with defaults for backward compatibility)
-  const primaryColor = style.primaryColor || '&H00FFFFFF';
-  const outlineColor = style.outlineColor || '&H00000000';
+  // Get style colors
+  const primaryColor = style.primaryColor || '&H00FFFFFF';   // White (default text)
+  const outlineColor = style.outlineColor || '&H00000000';   // Black outline
   const outlineWidth = style.outline || 4;
   const isItalic = style.italic ? 1 : 0;
+  const fontBold = style.fontWeight === 'bold' ? 1 : 0;
   
-  // ASS header with style definitions
-  // PlayResY/PlayResX set the virtual resolution for positioning
+  // Highlight color for active word: Yellow in ASS BGR format
+  const highlightColor = '&H0000FFFF';  // Yellow (BGR)
+  // Scary word color: Red
+  const scaryColor = '&H001D1DFF';      // Bright red (BGR)
+  
+  // ASS header
   const header = `[Script Info]
 Title: Horror Story Captions
 ScriptType: v4.00+
@@ -1500,37 +1514,77 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${style.fontName},${style.fontSize},${primaryColor},&H000000FF,${outlineColor},&H80000000,${style.fontWeight === 'bold' ? 1 : 0},${isItalic},0,0,100,100,0,0,1,${outlineWidth},2,2,30,30,400,1
-Style: Scary,${style.fontName},${Math.round(style.fontSize * 1.1)},&H000000FF,&H000000FF,${outlineColor},&H80000000,1,0,0,0,100,100,0,0,1,${outlineWidth},2,2,30,30,400,1
+Style: Default,${style.fontName},${style.fontSize},${primaryColor},&H000000FF,${outlineColor},&H80000000,${fontBold},${isItalic},0,0,100,100,0,0,1,${outlineWidth},2,2,30,30,400,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `;
   
+  // === Build chunks ===
+  const chunks = [];
+  for (let i = 0; i < captions.length; i += wordsPerChunk) {
+    const chunkWords = captions.slice(i, i + wordsPerChunk);
+    if (chunkWords.length === 0) continue;
+    
+    // Chunk timing: first word start → last word end
+    const chunkStart = chunkWords[0].start;
+    const chunkEnd = chunkWords[chunkWords.length - 1].end;
+    
+    chunks.push({
+      words: chunkWords,
+      start: chunkStart,
+      end: chunkEnd,
+    });
+  }
+  
   const events = [];
   
-  for (const caption of captions) {
-    const word = caption.word || '';
-    const cleanWord = word.toLowerCase().replace(/[^a-z]/g, '');
-    const isScary = highlightScary && SCARY_WORDS.has(cleanWord);
+  for (const chunk of chunks) {
+    const chunkStartASS = toASSTime(chunk.start);
+    const chunkEndASS = toASSTime(chunk.end);
     
-    // Add small buffer to prevent gaps
-    const startTime = toASSTime(caption.start);
-    const endTime = toASSTime(caption.end + 0.05);
-    const styleName = isScary ? 'Scary' : 'Default';
-    
-    // Escape special ASS characters and add pop animation
-    const escapedWord = word.replace(/\\/g, '\\\\').replace(/\{/g, '\\{').replace(/\}/g, '\\}');
-    
-    // Use transform for pop-in effect
-    const animatedText = `{\\fscx80\\fscy80\\t(0,80,\\fscx100\\fscy100)}${escapedWord}`;
-    
-    events.push(`Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,${animatedText}`);
+    // For each word in the chunk, create a dialogue line that shows
+    // the FULL chunk text, but with the active word highlighted.
+    // Each word gets its own time slice within the chunk's total duration.
+    for (let wIdx = 0; wIdx < chunk.words.length; wIdx++) {
+      const wordCap = chunk.words[wIdx];
+      const wordStart = toASSTime(wordCap.start);
+      // Word end: use next word's start if available, else chunk end
+      const wordEnd = wIdx < chunk.words.length - 1 
+        ? toASSTime(chunk.words[wIdx + 1].start)
+        : chunkEndASS;
+      
+      // Build the full chunk text with the active word highlighted
+      const textParts = [];
+      for (let j = 0; j < chunk.words.length; j++) {
+        const w = chunk.words[j].word || '';
+        const escapedWord = w.replace(/\\/g, '\\\\').replace(/\{/g, '\\{').replace(/\}/g, '\\}');
+        const cleanWord = w.toLowerCase().replace(/[^a-z]/g, '');
+        
+        if (j === wIdx) {
+          // === ACTIVE WORD: highlighted + slight scale up ===
+          const isScary = highlightScary && SCARY_WORDS.has(cleanWord);
+          const activeColor = isScary ? scaryColor : highlightColor;
+          textParts.push(`{\\c${activeColor}\\fscx110\\fscy110}${escapedWord}{\\c${primaryColor}\\fscx100\\fscy100}`);
+        } else {
+          // Inactive word: default color
+          const isScary = highlightScary && SCARY_WORDS.has(cleanWord);
+          if (isScary) {
+            textParts.push(`{\\c${scaryColor}}${escapedWord}{\\c${primaryColor}}`);
+          } else {
+            textParts.push(escapedWord);
+          }
+        }
+      }
+      
+      const fullText = textParts.join(' ');
+      events.push(`Dialogue: 0,${wordStart},${wordEnd},Default,,0,0,0,,${fullText}`);
+    }
   }
   
   const assContent = header + events.join('\n');
   await fs.writeFile(outputPath, assContent, 'utf8');
-  console.log(`  ✓ Created ASS subtitle file with ${events.length} words`);
+  console.log(`  ✓ Created ASS subtitle file: ${chunks.length} chunks, ${events.length} events (${captions.length} words, ${wordsPerChunk}/chunk)`);
   
   return outputPath;
 }
