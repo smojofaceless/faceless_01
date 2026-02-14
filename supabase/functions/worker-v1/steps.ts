@@ -177,6 +177,12 @@ REQUIREMENTS:
 - Single main horror concept — don't dilute with multiple scares
 - End on an UNRESOLVED note. No explanations. No comfort. No escape.
 
+SETTING RULES (CRITICAL — this is what makes this preset DIFFERENT):
+- Set the story in MODERN, EVERYDAY environments: apartments, offices, bedrooms, cars, convenience stores, parking garages, hospital waiting rooms, school hallways, rideshare cars
+- Horror should involve TECHNOLOGY or DOMESTIC life: phones, cameras, smart speakers, baby monitors, GPS, notifications, browser history, Ring doorbells, smart locks
+- Do NOT use: foggy forests, rural backroads, abandoned buildings in the woods, small-town folklore, "the old legend says", roadside diners, campfire settings
+- Characters should be regular modern people (rideshare drivers, remote workers, college students, parents, night shift workers) NOT investigators, researchers, or folklore experts
+
 STRUCTURE (MANDATORY):
 [HOOK] — First 1-2 sentences. Immediate unease within 5 seconds of narration.
 [ESCALATION] — Build tension around one central disturbing concept.
@@ -185,8 +191,8 @@ STRUCTURE (MANDATORY):
 
 STYLE RULES:
 - No gore or explicit violence — psychological horror only
-- Every sentence must be visually filmable (describe scenes, not abstractions)
-- Include at least ONE specific sensory detail per beat (sound, smell, texture, visual)
+- Every sentence must be visually filmable as a 2D illustrated scene (describe scenes, not abstractions)
+- Include at least ONE specific sensory detail per beat (phone vibrating, LED blinking, notification chime, door clicking)
 - Punchy sentences for narration pacing — no long-winded paragraphs${avoidanceSection}
 
 Respond in JSON format:
@@ -561,7 +567,7 @@ function getStorySystemPrompt(vibePreset: string): string {
     return `You are a master storyteller specializing in short-form horror and mystery content for TikTok/Reels narration. For counting horror stories, you can use ANY narrative voice that best serves the story — first-person ("I counted again..."), third-person documentary ("They counted again..."), or even a "Did you know..." factual hook style. Choose whichever voice makes THIS particular story most gripping. You write like a calm, factual narrator recounting something deeply unsettling — the horror comes from the math not adding up, not from gore or monsters.`;
   }
   if (vibePreset === 'reddit_trending_horror') {
-    return `You are a master storyteller who creates ORIGINAL, cinematic horror scripts for 60-90 second animated videos, inspired by the kinds of stories that trend on Reddit horror communities. Third-person dramatic storyteller voice — calm, deliberate, chilling. You expand on scenario seeds to create rich, atmospheric horror narratives. Every sentence must be visually filmable. No Reddit references whatsoever.`;
+    return `You are a master storyteller who creates ORIGINAL horror scripts for 60-second animated shorts. Your stories capture the feeling of modern internet horror — the kind of posts that get millions of views on Reddit. CRUCIAL TONE DIFFERENCES from traditional horror: your stories are set in MODERN, EVERYDAY environments (apartments, offices, cars, phones, smart homes) NOT rural backroads or foggy forests. The horror comes from technology, domestic spaces, and personal encounters — NOT from folklore, legends, or authority cover-ups. Third-person dramatic storyteller voice — calm, deliberate, deeply unsettling. Every sentence must be visually filmable as a 2D illustrated scene. No Reddit references, no usernames, no "OP".`;
   }
   return `You are a master storyteller specializing in short-form horror and mystery content. You create gripping, atmospheric stories perfect for TikTok/Reels narration. Your stories are ALWAYS first-person narration that feels personal and immediate.`;
 }

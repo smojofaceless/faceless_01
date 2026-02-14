@@ -1409,7 +1409,7 @@ class CampaignDetailPage {
                 <span class="step-detail__kv-key">Vibe Preset</span>
                 <span class="step-detail__kv-val">${job.vibe_preset || job.meta?.vibe_preset || '-'}</span>
                 <span class="step-detail__kv-key">Duration</span>
-                <span class="step-detail__kv-val">${job.meta?.duration || job.meta?.length_preset || '-'}s</span>
+                <span class="step-detail__kv-val">${this.formatMetaDuration(job.meta?.duration, job.meta?.length_preset, job.meta?.audio_duration_ms)}</span>
                 <span class="step-detail__kv-key">Word Count</span>
                 <span class="step-detail__kv-val">${wordCount || '-'} words</span>
                 <span class="step-detail__kv-key">Model</span>
@@ -1485,7 +1485,7 @@ class CampaignDetailPage {
                     <span class="step-detail__kv-key">Environment</span>
                     <span class="step-detail__kv-val">${this.escapeHtml(sa.environment || '-')}</span>
                     <span class="step-detail__kv-key">Character(s)</span>
-                    <span class="step-detail__kv-val">${this.escapeHtml(sa.characterDescription || 'None (atmospheric)')}</span>
+                    <span class="step-detail__kv-val">${this.escapeHtml(this.formatCharacterDescription(sa.characterDescription))}</span>
                     <span class="step-detail__kv-key">Recurring Motifs</span>
                     <span class="step-detail__kv-val">${this.escapeHtml(sa.recurringMotifs || '-')}</span>
                     <span class="step-detail__kv-key">Horror Tone</span>
@@ -2171,6 +2171,63 @@ class CampaignDetailPage {
         const mins = Math.floor(ms / 60000);
         const secs = Math.floor((ms % 60000) / 1000);
         return `${mins}m ${secs}s`;
+    }
+
+    /**
+     * Format meta.duration which can be a number, string, or object like {minSeconds, maxSeconds}
+     */
+    formatMetaDuration(duration, lengthPreset, audioDurationMs) {
+        // Prefer actual audio duration if available
+        if (audioDurationMs && typeof audioDurationMs === 'number' && audioDurationMs > 0) {
+            return `${(audioDurationMs / 1000).toFixed(1)}s (audio)`;
+        }
+        if (duration == null) {
+            return lengthPreset ? `${lengthPreset}s` : '-';
+        }
+        if (typeof duration === 'number') {
+            return `${duration}s`;
+        }
+        if (typeof duration === 'string') {
+            return `${duration}s`;
+        }
+        if (typeof duration === 'object') {
+            const min = duration.minSeconds || duration.min || null;
+            const max = duration.maxSeconds || duration.max || null;
+            if (min && max) return `${min}-${max}s`;
+            if (min) return `${min}s+`;
+            if (max) return `≤${max}s`;
+            // Try target
+            if (duration.target) return `~${duration.target}s`;
+        }
+        return lengthPreset ? `${lengthPreset}s` : '-';
+    }
+
+    /**
+     * Format characterDescription which may be a string, null, or object
+     */
+    formatCharacterDescription(desc) {
+        if (!desc) return 'None (atmospheric)';
+        if (typeof desc === 'string') return desc;
+        if (typeof desc === 'object') {
+            // AI may return {name, description, appearance, ...}
+            if (desc.description) return desc.description;
+            if (desc.appearance) return desc.appearance;
+            if (desc.name && desc.details) return `${desc.name}: ${desc.details}`;
+            if (desc.name) return desc.name;
+            // Array of characters
+            if (Array.isArray(desc)) {
+                return desc.map(c => {
+                    if (typeof c === 'string') return c;
+                    return c.description || c.name || JSON.stringify(c);
+                }).join('; ');
+            }
+            // Last resort: readable key-value pairs
+            const entries = Object.entries(desc).filter(([_, v]) => v);
+            if (entries.length > 0) {
+                return entries.map(([k, v]) => `${k}: ${v}`).join(', ');
+            }
+        }
+        return String(desc);
     }
 
     /**

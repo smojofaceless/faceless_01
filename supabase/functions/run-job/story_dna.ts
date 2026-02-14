@@ -228,83 +228,92 @@ export const GENRE_PROFILES: Record<string, GenreProfile> = {
 
   // ===== REDDIT TRENDING HORROR - Internet Horror Retelling Engine =====
   // Transforms trending Reddit horror posts into original animated horror.
-  // Optimized for modern suburban/domestic settings, psychological horror,
-  // and clean illustration style with muted forest tones.
+  // KEY DIFFERENTIATOR from urban_legend:
+  //   - Modern era (smartphones, smart homes, apps) NOT retro
+  //   - Domestic/suburban settings NOT rural backroads
+  //   - Technology-mediated threats (cameras, devices, apps) NOT folklore entities
+  //   - Personal encounter narration NOT documentary/oral history
+  //   - Domestic closing images (dark window, phone screen) NOT treeline/empty road
+  //   - Paranoia/violation emotions NOT dread/isolation
   reddit_trending_horror: {
     name: "Reddit Trending Horror",
     description: "Modern internet horror retold as chilling animated shorts — Reddit's scariest posts turned cinematic",
     weights: {
-      // Boost modern eras (internet, smartphones, suburbs)
+      // MODERN eras only — smartphones, smart homes, forums
       era: {
-        "2000s_early": 1.5,       // Forums, early internet
+        "2000s_early": 1.6,       // Peak Reddit horror era
         "1990s_late": 1.3,        // Dial-up era creepy
-        "1980s_late": 1.0,
-        "1970s_late": 0.7,        // Too analog for reddit tone
-        "1960s_late": 0.5,
+        "1980s_late": 0.6,        // Too retro — that's urban_legend territory
+        "1970s_late": 0.3,        // Way too analog
+        "1960s_late": 0.2,        // Suppress hard — this is urban_legend DNA
       },
-      // Boost domestic/suburban settings (reddit stories happen at home)
+      // DOMESTIC/SUBURBAN — Reddit horror happens at home, at work, in your car
       location: {
-        "suburban_sprawl": 1.6,   // Houses, neighborhoods
-        "small_towns": 1.4,       // Everyday horror
-        "forest_trail": 1.3,      // Camping/hiking stories
-        "lakeside_cabins": 1.2,
-        "motel_room": 1.2,
-        "college_campus": 1.2,
-        "rural_highway": 1.0,
-        "national_parks": 0.8,
+        "suburban_sprawl": 1.7,   // #1: Houses, apartments, neighborhoods
+        "college_campus": 1.4,    // Dorm rooms, campus at night
+        "motel_room": 1.3,       // Travel horror
+        "small_towns": 1.0,      // Neutral (shared with UL, don't over-boost)
+        "forest_trail": 0.8,     // Suppress — too UL
+        "lakeside_cabins": 0.7,  // Suppress — too UL
+        "rural_highway": 0.5,    // Suppress hard — core UL territory
+        "national_parks": 0.5,   // Suppress — core UL territory
       },
-      // Boost personal/witness narration styles
+      // PERSONAL/DIGITAL narration — internet storytelling, not folklore
       narrative_artifact: {
-        "witness_interview": 1.5,  // "Let me tell you what happened"
-        "forum_post": 1.4,         // Internet storytelling tone
-        "oral_history": 1.3,
-        "documentary_narration": 1.2,
-        "police_memo": 0.8,
-        "research_footnote": 0.6,
+        "forum_post": 1.6,         // #1: Internet storytelling tone
+        "witness_interview": 1.4,  // "Let me tell you what happened"
+        "oral_history": 0.8,       // Suppress — core UL artifact
+        "documentary_narration": 0.7, // Suppress — core UL artifact
+        "newspaper_recap": 0.5,    // Suppress — too formal
+        "police_memo": 0.6,
+        "research_footnote": 0.4,
       },
-      // Boost psychological/domestic threats
+      // TECHNOLOGY-MEDIATED and domestic intrusion threats
       threat_behavior: {
-        "watching": 1.5,
-        "appearing": 1.4,
-        "following": 1.3,
-        "waiting": 1.3,
-        "mimicking": 1.2,
-        "broadcasting": 0.8,
+        "mimicking": 1.6,         // #1: Something copying you — peak internet horror
+        "appearing": 1.5,         // Showing up where it shouldn't
+        "watching": 1.2,          // De-boost vs UL (1.4→1.2)
+        "waiting": 1.1,           // Slight presence
+        "following": 1.0,         // Neutral (UL has 1.3)
+        "broadcasting": 1.3,      // Boost — messages, calls, signals (UL has 0.7)
       },
-      // Boost every-day-gone-wrong manifestations
+      // MODERN manifestations — shadows, distortions, digital glitches
       threat_manifestation: {
-        "humanoid_faceless": 1.4,
-        "shadow_independent": 1.3,
-        "humanoid_tall": 1.2,
-        "distortion_visual": 1.2,
-        "humanoid_dated": 1.0,
-        "light_geometric": 0.7,
+        "shadow_independent": 1.5, // #1: Autonomous shadow — internet horror staple
+        "distortion_visual": 1.4,  // Visual wrongness, uncanny valley
+        "humanoid_faceless": 1.0,  // Neutral (UL has 1.3, don't re-boost)
+        "humanoid_tall": 0.8,     // Suppress — too Slenderman/UL
+        "humanoid_dated": 0.6,    // Suppress — period clothing = UL territory
+        "vehicle_black": 0.5,     // Suppress — black van = UL territory
+        "light_geometric": 1.2,   // Boost — screen glows, device lights
       },
-      // Boost unresolved / ongoing / disturbing endings
+      // ONGOING/UNRESOLVED — "it's still happening" Reddit horror feel
       ending_knowledge: {
-        "ongoing": 1.5,            // Still happening
-        "unresolved": 1.4,
-        "suppressed": 1.2,
-        "cyclical": 1.1,
-        "inherited": 1.0,
-        "partial": 0.7,
+        "ongoing": 1.6,            // #1: "Update: it happened again last night"
+        "unresolved": 1.3,
+        "cyclical": 1.2,          // Boost — it repeats (UL has 1.1)
+        "suppressed": 0.8,        // Suppress — authority suppression = UL
+        "inherited": 0.7,         // Suppress — generational = UL
+        "partial": 1.0,           // The poster only knows part of the truth
       },
-      // Boost domestic/night imagery
+      // DOMESTIC closing images — NOT treeline/empty road (that's UL)
       ending_imagery: {
-        "watching_treeline": 1.3,
-        "empty_road": 1.2,
-        "fog_rolling": 1.1,
-        "children_dreaming": 1.0,
-        "sealed_files": 0.9,
+        "watching_treeline": 0.6,  // Suppress hard — core UL imagery
+        "empty_road": 0.5,        // Suppress hard — core UL imagery
+        "fog_rolling": 0.8,       // Slightly suppress
+        "children_dreaming": 1.2,  // Domestic — kid involved
+        "sealed_files": 0.6,      // Suppress — authority = UL
+        // These are conceptual guides for the AI even if not literal weight keys:
+        // dark_window, phone_screen, empty_hallway, device_blinking
       },
-      // Boost dread and unease (internet horror is psychological)
+      // VIOLATION/PARANOIA emotions — your safe space is compromised
       emotion: {
-        "dread": 1.5,
-        "unease": 1.4,
-        "paranoia": 1.3,
-        "recognition": 1.2,
-        "isolation": 1.1,
-        "insignificance": 0.7,
+        "paranoia": 1.6,          // #1: Am I being watched? (flip from UL where dread is #1)
+        "unease": 1.4,            // Something is off in my own home
+        "recognition": 1.3,       // Boost — "wait, I know that face" internet horror
+        "dread": 1.0,             // Neutral (UL has 1.4 — don't compete)
+        "isolation": 0.8,         // Suppress — physical isolation = UL territory
+        "insignificance": 0.5,    // Suppress — cosmic = different genre entirely
       },
     },
   },
