@@ -259,7 +259,7 @@ async function updateJobInSupabase(jobId, supabaseJobId, status, videoUrl = null
  * @param moodLevel - 1-10 mood intensity. 1-6 = Classic, 7-10 = Cinematic
  */
 function getKenBurnsFilter(index, duration, width = 1080, height = 1920, moodLevel = 5) {
-  const frames = Math.floor(duration * 30); // 30fps
+  const frames = Math.round(duration * 30); // 30fps — Math.round prevents cumulative frame loss across scenes
   // Use 2x scale instead of 8x to reduce memory usage significantly
   const scaledW = width * 2;
   const scaledH = height * 2;
@@ -530,18 +530,33 @@ async function createVideoFromImages(jobId, images, durations, outputPath, optio
  * Add audio to video
  */
 async function addAudioToVideo(videoPath, audioPath, outputPath) {
+  // Get audio duration to use as explicit target instead of -shortest
+  const audioDuration = await getMediaDuration(audioPath);
+  console.log(`[addAudioToVideo] Audio duration: ${audioDuration}s`);
+  
   return new Promise((resolve, reject) => {
+    const outputOpts = [
+      '-c:v', 'copy',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-map', '0:v:0',
+      '-map', '1:a:0',
+    ];
+    
+    // Use explicit -t instead of -shortest to prevent truncating the last image.
+    // -shortest would cut whichever stream is shorter, eating the last scene's
+    // display time when normalization inflated the video beyond audio length.
+    if (audioDuration > 0) {
+      outputOpts.push('-t', String(audioDuration));
+    } else {
+      // Fallback: use -shortest if we can't determine audio duration
+      outputOpts.push('-shortest');
+    }
+    
     ffmpeg()
       .input(videoPath)
       .input(audioPath)
-      .outputOptions([
-        '-c:v', 'copy',
-        '-c:a', 'aac',
-        '-b:a', '192k',
-        '-shortest',
-        '-map', '0:v:0',
-        '-map', '1:a:0',
-      ])
+      .outputOptions(outputOpts)
       .output(outputPath)
       .on('end', resolve)
       .on('error', (err) => {

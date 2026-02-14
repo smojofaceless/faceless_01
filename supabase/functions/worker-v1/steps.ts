@@ -2455,7 +2455,17 @@ export async function executeImagesStep(
     // (natural speech gaps between scenes) are included in the image display time.
     // This ensures cumulative image start times match voice-aligned scene starts.
     const nextSceneStart = i < scenes.length - 1 ? scenes[i + 1].startTime : audioDuration;
-    const sceneDuration = Math.max(nextSceneStart - scene.startTime, 0.5); // min 0.5s
+    let sceneDuration = Math.max(nextSceneStart - scene.startTime, 0.5); // min 0.5s
+
+    // BUG FIX: Account for TTS leading silence before the first spoken word.
+    // Scene 0's startTime is the first word timestamp (e.g. 0.3s), so without
+    // this padding, sum(all durations) = audioDuration - firstWordStart, making
+    // the total image video shorter than the audio. This causes cumulative
+    // drift where images lag behind narration.
+    if (i === 0 && scene.startTime > 0) {
+      sceneDuration += scene.startTime;
+      console.log(`[IMAGES] Scene 0: added ${scene.startTime.toFixed(3)}s leading silence padding (total: ${sceneDuration.toFixed(2)}s)`);
+    }
     const visualCue = visualCues.find(vc => vc.sceneIndex === i);
     const moodLevel = computeMoodLevel(i, scenes.length, visualCue);
     
@@ -4106,9 +4116,20 @@ export async function executeAssembleStep(
 
   const imageUrls = imageAssets
     .sort((a, b) => {
-      const aIdx = parseInt(a.idempotency_key.split('scene_')[1] || '0');
-      const bIdx = parseInt(b.idempotency_key.split('scene_')[1] || '0');
-      return aIdx - bIdx;
+      // Parse scene_X or scene_X_sub_Y from idempotency key
+      // e.g. "jobid:image_generate:scene_3" → sceneIdx=3, subIdx=0
+      // e.g. "jobid:image_generate:scene_3_sub_1" → sceneIdx=3, subIdx=1
+      const parseKey = (key: string) => {
+        const part = key.split('scene_')[1] || '0';
+        const segments = part.split('_sub_');
+        return {
+          scene: parseInt(segments[0]) || 0,
+          sub: segments.length > 1 ? parseInt(segments[1]) || 0 : 0,
+        };
+      };
+      const ak = parseKey(a.idempotency_key);
+      const bk = parseKey(b.idempotency_key);
+      return ak.scene !== bk.scene ? ak.scene - bk.scene : ak.sub - bk.sub;
     })
     .map(a => a.public_url)
     .filter(Boolean) as string[];
@@ -4121,7 +4142,9 @@ export async function executeAssembleStep(
   const audioDurationMs = job.meta?.audio_duration_ms as number | undefined;
   let duration: number;
   if (audioDurationMs && audioDurationMs > 0) {
-    duration = Math.round(audioDurationMs / 1000);
+    // Use precise float seconds — Math.round() was causing normalization to
+    // inflate/deflate all scene durations, creating cumulative image-narration drift.
+    duration = parseFloat((audioDurationMs / 1000).toFixed(2));
     console.log(`[ASSEMBLE] Using audio duration as timeline: ${duration}s (from audio_duration_ms=${audioDurationMs})`);
   } else {
     const rawDuration = job.meta?.duration;
@@ -4343,10 +4366,18 @@ async function assembleWithRenderer(
     
     // Ensure durations sum to total duration (normalize if voice alignment shifted things)
     const durSum = durations.reduce((s, d) => s + d, 0);
-    if (Math.abs(durSum - duration) > 1) {
+    const driftSeconds = Math.abs(durSum - duration);
+    if (driftSeconds > 0.5) {
+      // Only normalize if drift is significant (>0.5s). Small drifts (<0.5s) are
+      // absorbed naturally and normalizing them can introduce worse per-scene rounding errors.
       const scale = duration / durSum;
-      durations = durations.map(d => parseFloat((d * scale).toFixed(2)));
-      console.log(`[ASSEMBLE] Normalized durations: sum ${durSum.toFixed(1)}s → ${duration}s (scale=${scale.toFixed(3)})`);
+      durations = durations.map(d => parseFloat((d * scale).toFixed(3)));
+      // Re-adjust last scene to absorb any rounding remainder
+      const adjustedSum = durations.reduce((s, d) => s + d, 0);
+      durations[durations.length - 1] += parseFloat((duration - adjustedSum).toFixed(3));
+      console.log(`[ASSEMBLE] Normalized durations: sum ${durSum.toFixed(2)}s → ${duration}s (drift=${driftSeconds.toFixed(2)}s, scale=${scale.toFixed(4)})`);
+    } else {
+      console.log(`[ASSEMBLE] Duration drift ${driftSeconds.toFixed(2)}s within tolerance — no normalization needed`);
     }
     
     console.log(`[ASSEMBLE] Using image_sequence: ${durations.length} images with per-scene durations (${durations.map(d => d.toFixed(1)).join(',')}s) and mood_levels (${moodLevels.join(',')})`);
