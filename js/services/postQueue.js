@@ -62,7 +62,7 @@ class PostQueueService {
             theme: postData.theme,
             niche: postData.niche,
             generation_batch_id: postData.batchId || postData.generation_batch_id,
-            platforms: postData.platforms || ['youtube'],
+            platforms: postData.platforms || ['youtube_shorts', 'instagram_reels', 'facebook_reels'],
             status: postData.status || this.STATUS.DRAFT,
             scheduled_at: postData.scheduledAt || postData.scheduled_at,
             posted_at: null,
@@ -446,7 +446,7 @@ class PostQueueService {
                     type: 'job',
                     scheduledAt: new Date(j.scheduled_post_at),
                     status: calStatus,
-                    platformId: 'youtube',
+                    platformId: j.meta?.platforms?.[0] || 'youtube_shorts',
                     brandId: j.brand_id,
                     content: {
                         title: j.title || `${j.vibe_preset || 'Video'} (${calStatus === 'failed' ? 'failed' : calStatus === 'scheduled' ? 'ready' : 'generating...'})`,

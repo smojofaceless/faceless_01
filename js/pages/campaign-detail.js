@@ -450,15 +450,23 @@ class CampaignDetailPage {
             const preset = job.vibe_preset || job.meta?.vibe_preset || 'Unknown';
             const platforms = job.meta?.platforms || [];
             
-            const platformIcons = {
-                tiktok: '🎵',
-                reels: '📱',
-                shorts: '▶️'
+            const platformSvgs = {
+                youtube_shorts: { icon: `<svg viewBox="0 0 24 24" fill="#FF0000" width="16" height="16"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814z"/><polygon fill="#FFF" points="9.545 15.568 15.818 12 9.545 8.432"/></svg>`, label: 'YouTube Shorts' },
+                youtube: { icon: `<svg viewBox="0 0 24 24" fill="#FF0000" width="16" height="16"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814z"/><polygon fill="#FFF" points="9.545 15.568 15.818 12 9.545 8.432"/></svg>`, label: 'YouTube' },
+                tiktok: { icon: `<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-5.2 1.74 2.89 2.89 0 012.31-4.64 2.93 2.93 0 01.88.13V9.4a6.84 6.84 0 00-1-.05A6.33 6.33 0 005 20.1a6.34 6.34 0 0010.86-4.43v-7a8.16 8.16 0 004.77 1.52v-3.4a4.85 4.85 0 01-1-.1z"/></svg>`, label: 'TikTok' },
+                instagram_reels: { icon: `<svg viewBox="0 0 24 24" fill="none" stroke="#E4405F" stroke-width="2" width="16" height="16"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>`, label: 'Instagram Reels' },
+                instagram: { icon: `<svg viewBox="0 0 24 24" fill="none" stroke="#E4405F" stroke-width="2" width="16" height="16"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>`, label: 'Instagram' },
+                facebook_reels: { icon: `<svg viewBox="0 0 24 24" fill="#1877F2" width="16" height="16"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>`, label: 'Facebook Reels' },
+                facebook: { icon: `<svg viewBox="0 0 24 24" fill="#1877F2" width="16" height="16"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>`, label: 'Facebook' }
             };
             
-            const platformsHtml = platforms.map(p => 
-                `<span title="${p}">${platformIcons[p] || '📺'}</span>`
-            ).join(' ');
+            const platformsHtml = platforms.map(p => {
+                const info = platformSvgs[p];
+                if (info) {
+                    return `<span class="platform-icon" title="${info.label}">${info.icon}</span>`;
+                }
+                return `<span class="platform-icon" title="${p}">📺</span>`;
+            }).join(' ');
             
             // Get failure info if this job is failed
             const failureInfo = this.failureInfoMap?.[job.id];
@@ -1285,7 +1293,7 @@ class CampaignDetailPage {
                         .select('meta')
                         .eq('job_id', jobId)
                         .eq('idempotency_key', `${jobId}:visual_cues`)
-                        .single();
+                        .maybeSingle();
                     data.visualCues = vcAsset?.meta?.cues || [];
                     
                     const { data: saAsset } = await supabase
@@ -1293,7 +1301,7 @@ class CampaignDetailPage {
                         .select('meta')
                         .eq('job_id', jobId)
                         .eq('idempotency_key', `${jobId}:story_anchor`)
-                        .single();
+                        .maybeSingle();
                     data.storyAnchorFull = saAsset?.meta || null;
                 } catch { /* non-critical */ }
             }
@@ -1306,7 +1314,7 @@ class CampaignDetailPage {
                 .select('*')
                 .eq('job_id', jobId)
                 .eq('idempotency_key', `${jobId}:scenes_subtitles`)
-                .single();
+                .maybeSingle();
             data.scenesData = scenesAsset?.meta?.scenes || [];
         }
         
@@ -1318,7 +1326,7 @@ class CampaignDetailPage {
                     .select('meta')
                     .eq('job_id', jobId)
                     .eq('idempotency_key', `${jobId}:story_anchor`)
-                    .single();
+                    .maybeSingle();
                 data.storyAnchorFull = saAsset?.meta || null;
             } catch { /* non-critical */ }
         }
@@ -1414,6 +1422,45 @@ class CampaignDetailPage {
                 <span class="step-detail__kv-val">${job.meta?.platform && job.meta.platform !== 'default' ? job.meta.platform : (job.meta?.platforms?.length ? job.meta.platforms.join(', ') : '-')}</span>
             </div>
         </div>`;
+        
+        // Horror Scenario section (for reddit_trending_horror preset)
+        const vibePreset = job.vibe_preset || job.meta?.vibe_preset || '';
+        const scenarioCategory = job.meta?.scenario_category;
+        const scenarioStyle = job.meta?.scenario_subreddit_style;
+        const scenarioFear = job.meta?.scenario_fear_type;
+        const scenarioSetting = job.meta?.scenario_setting_hint;
+        
+        if (scenarioCategory || vibePreset === 'reddit_trending_horror') {
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">🎯 Horror Scenario</div>`;
+            
+            if (scenarioCategory) {
+                const styleLabels = {
+                    'nosleep': 'r/nosleep',
+                    'letsnotmeet': 'r/letsnotmeet',
+                    'creepypasta': 'r/creepypasta',
+                    'paranormal': 'r/paranormal',
+                    'shortscarystories': 'r/shortscarystories',
+                };
+                html += `<div class="step-detail__kv-grid">
+                    <span class="step-detail__kv-key">Category</span>
+                    <span class="step-detail__kv-val" style="text-transform:capitalize">${this.escapeHtml(scenarioCategory.replace(/_/g, ' '))}</span>
+                    <span class="step-detail__kv-key">Style</span>
+                    <span class="step-detail__kv-val" style="color:var(--color-primary)">${styleLabels[scenarioStyle] || this.escapeHtml(scenarioStyle || 'horror')}</span>
+                    <span class="step-detail__kv-key">Core Fear</span>
+                    <span class="step-detail__kv-val" style="text-transform:capitalize">${this.escapeHtml(scenarioFear || '-')}</span>
+                    ${scenarioSetting ? `<span class="step-detail__kv-key">Setting Theme</span>
+                    <span class="step-detail__kv-val" style="text-transform:capitalize">${this.escapeHtml(scenarioSetting)}</span>` : ''}
+                    <span class="step-detail__kv-key">Source</span>
+                    <span class="step-detail__kv-val">Reddit-inspired curated scenario</span>
+                </div>`;
+            } else {
+                html += `<div style="padding:8px;font-size:12px;color:var(--text-secondary);background:var(--bg-primary);border-radius:4px">
+                    ℹ️ Reddit-inspired preset — scenario data not available for this job (generated before scenario tracking was enabled)
+                </div>`;
+            }
+            html += `</div>`;
+        }
         
         // Story title & text
         if (job.title || job.story_text) {
@@ -1619,22 +1666,72 @@ class CampaignDetailPage {
     }
 
     renderMusicDetail(data) {
-        const outputSnap = data.snapshots.find(s => s.message?.includes('Selected') || s.message?.includes('output'));
+        const job = data.job || {};
+        const assets = data.assets || [];
+        
+        // Primary source: job_assets meta (richest data from music_select step)
+        const musicAsset = assets.find(a => a.idempotency_key?.includes('music_select') || a.idempotency_key?.includes('music'));
+        const assetMeta = musicAsset?.meta || {};
+        
+        // Secondary source: snapshot data
+        const outputSnap = data.snapshots.find(s => s.message?.includes('Selected') || s.message?.includes('output') || s.message?.includes('snapshot'));
         const snapData = outputSnap?.meta?.payload || outputSnap?.meta?.data || outputSnap?.meta || {};
+        
+        // Tertiary source: job.meta
+        const jobMeta = job.meta || {};
+        
+        // Resolve track info with fallback chain: asset meta → snapshot → job meta
+        const trackName = assetMeta.display_name || assetMeta.track_id || snapData.display_name || snapData.track_id || snapData.track_name || snapData.selected_track || jobMeta.music_track_id || '-';
+        const trackMood = assetMeta.mood || snapData.mood || '';
+        const trackDuration = assetMeta.duration_seconds || snapData.duration_seconds || '';
+        const trackLoopable = assetMeta.loopable ?? snapData.loopable ?? jobMeta.music_loopable;
+        const volume = snapData.volume ?? assetMeta.volume ?? '';
+        const duckingEnabled = snapData.ducking_enabled ?? assetMeta.ducking_enabled;
+        const fadeIn = snapData.fade_in_ms ?? assetMeta.fade_in_ms ?? '';
+        const fadeOut = snapData.fade_out_ms ?? assetMeta.fade_out_ms ?? '';
+        const musicSource = assetMeta.source || snapData.source || '';
+        const musicUrl = assetMeta.music_url || jobMeta.music_url || '';
         
         let html = `<div class="step-detail__section">
             <div class="step-detail__label">🎵 Track Selection</div>
             <div class="step-detail__kv-grid">
                 <span class="step-detail__kv-key">Track</span>
-                <span class="step-detail__kv-val">${snapData.track_name || snapData.selected_track || '-'}</span>
-                <span class="step-detail__kv-key">Volume</span>
-                <span class="step-detail__kv-val">${snapData.volume ?? snapData.ducking_volume ?? '-'}</span>
-                <span class="step-detail__kv-key">Fade In</span>
-                <span class="step-detail__kv-val">${snapData.fade_in_ms ? snapData.fade_in_ms + 'ms' : '-'}</span>
-                <span class="step-detail__kv-key">Fade Out</span>
-                <span class="step-detail__kv-val">${snapData.fade_out_ms ? snapData.fade_out_ms + 'ms' : '-'}</span>
+                <span class="step-detail__kv-val" style="font-weight:600">${this.escapeHtml(String(trackName))}</span>
+                ${trackMood ? `<span class="step-detail__kv-key">Mood</span>
+                <span class="step-detail__kv-val">${this.escapeHtml(String(trackMood))}</span>` : ''}
+                ${trackDuration ? `<span class="step-detail__kv-key">Duration</span>
+                <span class="step-detail__kv-val">${Number(trackDuration).toFixed(1)}s</span>` : ''}
+                ${trackLoopable !== undefined ? `<span class="step-detail__kv-key">Loopable</span>
+                <span class="step-detail__kv-val">${trackLoopable ? '✅ Yes' : '❌ No'}</span>` : ''}
+                ${musicSource ? `<span class="step-detail__kv-key">Source</span>
+                <span class="step-detail__kv-val">${this.escapeHtml(String(musicSource))}</span>` : ''}
             </div>
         </div>`;
+        
+        // Mixing config
+        if (volume !== '' || fadeIn !== '' || fadeOut !== '') {
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">🎛️ Mixing</div>
+                <div class="step-detail__kv-grid">
+                    ${volume !== '' ? `<span class="step-detail__kv-key">Volume</span>
+                    <span class="step-detail__kv-val">${volume}</span>` : ''}
+                    ${duckingEnabled !== undefined ? `<span class="step-detail__kv-key">Voice Ducking</span>
+                    <span class="step-detail__kv-val">${duckingEnabled ? '✅ Enabled' : '❌ Off'}</span>` : ''}
+                    ${fadeIn !== '' ? `<span class="step-detail__kv-key">Fade In</span>
+                    <span class="step-detail__kv-val">${fadeIn}ms</span>` : ''}
+                    ${fadeOut !== '' ? `<span class="step-detail__kv-key">Fade Out</span>
+                    <span class="step-detail__kv-val">${fadeOut}ms</span>` : ''}
+                </div>
+            </div>`;
+        }
+        
+        // Audio player for the music track
+        if (musicUrl) {
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">🔊 Track Preview</div>
+                <audio controls style="width:100%;margin-top:4px" src="${this.escapeHtml(musicUrl)}">Your browser does not support audio</audio>
+            </div>`;
+        }
         
         return html;
     }

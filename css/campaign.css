@@ -658,6 +658,114 @@
    Form Elements
    ========================================================================== */
 
+/* ---- Setup Rows: 2-column grid for compact form groupings ---- */
+.campaign-basics .card-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+}
+
+/* Remove default margin-bottom from form-groups inside the new layout */
+.campaign-basics .form-group {
+    margin-bottom: 0;
+}
+
+.setup-row {
+    display: grid;
+    gap: var(--space-5);
+}
+
+.setup-row--2col {
+    grid-template-columns: 1fr 1fr;
+}
+
+.setup-row--testing {
+    grid-template-columns: 1fr 1fr;
+    padding: var(--space-4);
+    background: var(--color-bg-dark);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-xl);
+}
+
+@media (max-width: 640px) {
+    .setup-row--2col,
+    .setup-row--testing {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ---- Divider between form sections ---- */
+.setup-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--color-border-default) 20%, var(--color-border-default) 80%, transparent);
+    margin: var(--space-2) 0;
+}
+
+/* ---- Form Labels with inline icon ---- */
+.campaign-basics .form-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.campaign-basics .form-label svg {
+    opacity: 0.5;
+    flex-shrink: 0;
+}
+
+.campaign-basics .form-label--sm {
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-secondary);
+}
+
+/* ---- Compact form group (for testing row) ---- */
+.form-group--compact {
+    gap: var(--space-1);
+}
+
+.form-group--compact .form-hint {
+    margin-top: 2px;
+}
+
+/* ---- Small input-with-buttons variant ---- */
+.input-with-buttons--sm {
+    gap: var(--space-1);
+}
+
+.input-with-buttons--sm .input--sm {
+    max-width: 72px;
+    height: 32px;
+    font-size: var(--text-sm);
+    padding: var(--space-1) var(--space-2);
+}
+
+.btn--xs {
+    width: 30px;
+    height: 30px;
+    font-size: var(--text-base);
+    padding: 0;
+    min-width: unset;
+}
+
+/* ---- Checkbox inline icon ---- */
+.checkbox-inline__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.checkbox-inline__icon svg {
+    opacity: 0.6;
+}
+
+.checkbox-inline:has(input:checked) .checkbox-inline__icon svg {
+    opacity: 1;
+    stroke: var(--color-accent-primary);
+}
+
 /* Brand Display (Read-only) */
 .brand-display {
     display: flex;
@@ -756,12 +864,30 @@
 
 .checkbox-card__icon {
     font-size: var(--text-2xl);
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.checkbox-card__icon svg {
+    display: block;
 }
 
 .checkbox-card__label {
-    font-size: var(--text-sm);
+    font-size: var(--text-xs);
     font-weight: var(--font-semibold);
     color: var(--color-text-primary);
+    letter-spacing: 0.01em;
+}
+
+/* Unselected platform cards: desaturate the icon */
+.checkbox-card input:not(:checked) + .checkbox-card__content .checkbox-card__icon svg {
+    filter: grayscale(0.7) opacity(0.5);
+}
+
+.checkbox-card input:checked + .checkbox-card__content .checkbox-card__icon svg {
+    filter: none;
 }
 
 /* Inline Checkbox (for ASAP mode etc) */
@@ -965,6 +1091,13 @@
     overflow: hidden;
 }
 
+/* Card title with inline SVG icon support */
+.campaign-basics .card-title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
 .schedule-preview .card-header {
     padding: var(--space-4) var(--space-5);
     border-bottom: 1px solid var(--color-border-subtle);
@@ -1072,12 +1205,23 @@
 }
 
 .platform-icon {
-    font-size: var(--text-sm);
-    opacity: 0.7;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.8;
+    vertical-align: middle;
+}
+
+.platform-icon svg {
+    display: block;
 }
 
 .platform-icon.active {
     opacity: 1;
+}
+
+.platform-icon + .platform-icon {
+    margin-left: var(--space-1);
 }
 
 /* ==========================================================================

@@ -170,18 +170,11 @@ class MetaService {
         if (!connection) return;
         
         try {
-            const { data: user } = await supabaseClient.auth.getUser();
-            if (!user?.user?.id) {
-                console.error('No authenticated user for saving tokens');
-                return;
-            }
-
             // Save Instagram token
             if (connection.instagramAccountId) {
-                await supabaseClient
+                const { error: igError } = await supabaseClient
                     .from('platform_tokens')
                     .upsert({
-                        user_id: user.user.id,
                         brand_id: this.currentBrandId,
                         platform: 'instagram',
                         access_token: connection.accessToken,
@@ -191,6 +184,7 @@ class MetaService {
                         platform_channel_id: connection.instagramAccountId,
                         platform_channel_name: connection.instagramUsername,
                         is_valid: true,
+                        last_used_at: new Date().toISOString(),
                         metadata: {
                             facebook_page_id: connection.facebookPageId,
                             facebook_page_name: connection.facebookPageName
@@ -198,14 +192,14 @@ class MetaService {
                     }, {
                         onConflict: 'brand_id,platform'
                     });
+                if (igError) throw igError;
             }
 
             // Save Facebook token
             if (connection.facebookPageId) {
-                await supabaseClient
+                const { error: fbError } = await supabaseClient
                     .from('platform_tokens')
                     .upsert({
-                        user_id: user.user.id,
                         brand_id: this.currentBrandId,
                         platform: 'facebook',
                         access_token: connection.accessToken,
@@ -215,6 +209,7 @@ class MetaService {
                         platform_channel_id: connection.facebookPageId,
                         platform_channel_name: connection.facebookPageName,
                         is_valid: true,
+                        last_used_at: new Date().toISOString(),
                         metadata: {
                             page_access_token: connection.facebookPageToken,
                             instagram_account_id: connection.instagramAccountId,
@@ -223,6 +218,7 @@ class MetaService {
                     }, {
                         onConflict: 'brand_id,platform'
                     });
+                if (fbError) throw fbError;
             }
 
             console.log('📸 Saved Meta tokens to Supabase');

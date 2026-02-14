@@ -301,6 +301,21 @@ const PRESET_EFFECT_SUMMARY = {
     colorPreset: "cold",
     mood: "Dread, anticipation",
   },
+
+  reddit_trending_horror: {
+    label: "Reddit Trending Horror",
+    description: "Clean animated horror — eerie but polished, no heavy VHS",
+    activeEffects: [
+      { name: "Ken Burns", key: "kenburns", intensity: 0.30, label: "Subtle slow zoom" },
+      { name: "Vignette", key: "vignette", intensity: 0.40, label: "Light vignette" },
+      { name: "Film Grain", key: "film_grain", intensity: 0.15, label: "Minimal grain" },
+      { name: "Color Grade", key: "color_grade", intensity: 0.55, preset: "cool_muted", label: "Cool desaturated tones" },
+      { name: "Light Flicker", key: "light_flicker", intensity: 0.15, label: "Very subtle flicker" },
+    ],
+    inactiveEffects: ["VHS", "Glitch", "Scanlines"],
+    colorPreset: "cool_muted",
+    mood: "Eerie, clean, cinematic unease",
+  },
 };
 
 /**

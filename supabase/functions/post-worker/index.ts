@@ -4,6 +4,7 @@
 // 
 // Reference: POST_QUEUE.md, ROADMAP.md Item #9
 // 
+// v3.0 - 2026-02-12: Real Instagram Reels + Facebook Reels adapters
 // v2.0 - 2026-02-10: Real YouTube adapter with OAuth token refresh
 // v1.0 - 2026-02-23: Initial implementation with stub adapters
 // 
@@ -11,7 +12,7 @@
 // 1. Checks global kill switch
 // 2. Receives post_id (or claims from queue)
 // 3. Validates post ownership (lease)
-// 4. Calls platform adapter (YouTube = real, others = stubbed)
+// 4. Calls platform adapter (YouTube, Instagram, Facebook = real; TikTok = stubbed)
 // 5. Updates post status (posted/failed)
 // =====================================================
 
@@ -21,7 +22,7 @@ import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2.39.3";
 // =====================================================
 // VERSION
 // =====================================================
-const VERSION = "2.0";
+const VERSION = "3.0";
 
 // =====================================================
 // CONFIGURATION
@@ -467,12 +468,448 @@ class YouTubeAdapter implements PlatformAdapter {
   }
 }
 
-/**
- * Instagram adapter (stubbed)
- */
-class InstagramAdapter extends StubAdapter {
-  constructor() {
-    super('instagram');
+// =====================================================
+// REAL INSTAGRAM REELS ADAPTER
+// Uses Instagram Graph API with 3-step publish flow:
+//   1. Create media container (REELS with video_url)
+//   2. Poll for processing completion
+//   3. Publish the container
+// =====================================================
+
+class InstagramReelsAdapter implements PlatformAdapter {
+  name = 'instagram_reels';
+  private API_BASE = 'https://graph.facebook.com/v18.0';
+
+  async post(
+    videoUrl: string,
+    title: string,
+    description: string | null,
+    tags: string[] | null,
+    meta: Record<string, unknown>,
+    supabase?: SupabaseClient,
+    brandId?: string
+  ): Promise<PlatformResult> {
+    console.log(`[Instagram] Starting Reels upload: "${title?.slice(0, 50)}"`);
+
+    if (!videoUrl) {
+      return { success: false, error_class: 'misconfig', error_message: 'Instagram requires a video URL' };
+    }
+    if (!supabase || !brandId) {
+      return { success: false, error_class: 'misconfig', error_message: 'Instagram adapter requires supabase client and brand_id' };
+    }
+
+    try {
+      // Get Instagram token from platform_tokens
+      const { data: tokenData, error: tokenError } = await supabase
+        .from('platform_tokens')
+        .select('*')
+        .eq('brand_id', brandId)
+        .eq('platform', 'instagram')
+        .single();
+
+      if (tokenError || !tokenData) {
+        console.error('[Instagram] Token lookup failed:', tokenError?.message);
+        return { success: false, error_class: 'misconfig', error_message: 'Instagram not connected for this brand. Please connect in Settings.' };
+      }
+
+      if (!tokenData.is_valid) {
+        return { success: false, error_class: 'misconfig', error_message: 'Instagram token is invalid. Please reconnect in Settings.' };
+      }
+
+      const accessToken = tokenData.access_token;
+      const instagramAccountId = tokenData.platform_channel_id;
+
+      if (!instagramAccountId) {
+        return { success: false, error_class: 'misconfig', error_message: 'No Instagram account ID found. Please reconnect in Settings.' };
+      }
+
+      // Build caption from metadata
+      const caption = description || title || '';
+      const hashtags = tags || [];
+      const fullCaption = hashtags.length > 0
+        ? `${caption}\n\n${hashtags.map(h => h.startsWith('#') ? h : `#${h}`).join(' ')}`
+        : caption;
+
+      console.log(`[Instagram] Account ID: ${instagramAccountId}`);
+      console.log(`[Instagram] Caption: ${fullCaption.slice(0, 100)}...`);
+
+      // Step 1: Create media container
+      console.log('[Instagram] Step 1: Creating media container...');
+      const containerResponse = await fetch(
+        `${this.API_BASE}/${instagramAccountId}/media`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            media_type: 'REELS',
+            video_url: videoUrl,
+            caption: fullCaption,
+            share_to_feed: true,
+            access_token: accessToken
+          })
+        }
+      );
+
+      const containerData = await containerResponse.json();
+      console.log('[Instagram] Container response:', JSON.stringify(containerData));
+
+      if (containerData.error) {
+        const errMsg = containerData.error.message || 'Container creation failed';
+        const errCode = containerData.error.code;
+        // Classify error
+        let errClass: 'transient' | 'dependency' | 'misconfig' | 'permanent' = 'transient';
+        if (errCode === 190 || errCode === 10) errClass = 'misconfig'; // token/permission
+        else if (errCode === 2 || errCode === 4) errClass = 'dependency'; // service unavailable / rate limit
+        return { success: false, error_class: errClass, error_message: `Instagram container error: ${errMsg}` };
+      }
+
+      const containerId = containerData.id;
+      console.log(`[Instagram] Container ID: ${containerId}`);
+
+      // Step 2: Poll for processing completion
+      console.log('[Instagram] Step 2: Waiting for video processing...');
+      let status = 'IN_PROGRESS';
+      let attempts = 0;
+      const maxAttempts = 60; // ~5 minutes
+
+      while (status === 'IN_PROGRESS' && attempts < maxAttempts) {
+        await new Promise(r => setTimeout(r, 5000)); // 5 second intervals
+        attempts++;
+
+        const statusResponse = await fetch(
+          `${this.API_BASE}/${containerId}?fields=status_code,status&access_token=${accessToken}`
+        );
+        const statusData = await statusResponse.json();
+        console.log(`[Instagram] Processing status (attempt ${attempts}):`, JSON.stringify(statusData));
+
+        status = statusData.status_code || 'IN_PROGRESS';
+
+        if (statusData.status === 'ERROR' || status === 'ERROR') {
+          return { success: false, error_class: 'dependency', error_message: 'Video processing failed on Instagram servers' };
+        }
+      }
+
+      if (status !== 'FINISHED') {
+        return { success: false, error_class: 'dependency', error_message: `Video processing timed out. Final status: ${status}` };
+      }
+
+      console.log('[Instagram] Video processing complete!');
+
+      // Step 3: Publish the container
+      console.log('[Instagram] Step 3: Publishing...');
+      const publishResponse = await fetch(
+        `${this.API_BASE}/${instagramAccountId}/media_publish`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            creation_id: containerId,
+            access_token: accessToken
+          })
+        }
+      );
+
+      const publishData = await publishResponse.json();
+      console.log('[Instagram] Publish response:', JSON.stringify(publishData));
+
+      if (publishData.error) {
+        return { success: false, error_class: 'dependency', error_message: `Instagram publish failed: ${publishData.error.message}` };
+      }
+
+      // Get permalink
+      let permalink = `https://www.instagram.com/reel/${publishData.id}/`;
+      try {
+        const mediaResponse = await fetch(
+          `${this.API_BASE}/${publishData.id}?fields=id,permalink&access_token=${accessToken}`
+        );
+        const mediaData = await mediaResponse.json();
+        if (mediaData.permalink) permalink = mediaData.permalink;
+      } catch {
+        console.warn('[Instagram] Could not fetch permalink, using default');
+      }
+
+      console.log(`[Instagram] ✅ Published! ID: ${publishData.id}, URL: ${permalink}`);
+
+      // Update last_used_at
+      await supabase
+        .from('platform_tokens')
+        .update({ last_used_at: new Date().toISOString() })
+        .eq('id', tokenData.id);
+
+      return {
+        success: true,
+        platform_post_id: publishData.id,
+        platform_url: permalink,
+      };
+
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[Instagram] Unexpected error:', message);
+      return { success: false, error_class: 'transient', error_message: message };
+    }
+  }
+}
+
+// =====================================================
+// REAL FACEBOOK REELS ADAPTER
+// Uses Facebook Graph API with 3-step Reel publish flow:
+//   1. Start upload (with file_url — Facebook downloads the video)
+//   2. Poll for processing 
+//   3. Finish (publish)
+// Falls back to regular video post if Reel upload fails
+// =====================================================
+
+class FacebookReelsAdapter implements PlatformAdapter {
+  name = 'facebook_reels';
+  private API_BASE = 'https://graph.facebook.com/v18.0';
+
+  async post(
+    videoUrl: string,
+    title: string,
+    description: string | null,
+    tags: string[] | null,
+    meta: Record<string, unknown>,
+    supabase?: SupabaseClient,
+    brandId?: string
+  ): Promise<PlatformResult> {
+    console.log(`[Facebook] Starting Reels upload: "${title?.slice(0, 50)}"`);
+
+    if (!videoUrl) {
+      return { success: false, error_class: 'misconfig', error_message: 'Facebook requires a video URL' };
+    }
+    if (!supabase || !brandId) {
+      return { success: false, error_class: 'misconfig', error_message: 'Facebook adapter requires supabase client and brand_id' };
+    }
+
+    try {
+      // Get Facebook token — look for 'facebook' platform first, fall back to 'instagram' (shares token set)
+      let tokenData: Record<string, unknown> | null = null;
+      let pageToken: string | null = null;
+      let pageId: string | null = null;
+
+      // Try facebook token first
+      const { data: fbToken } = await supabase
+        .from('platform_tokens')
+        .select('*')
+        .eq('brand_id', brandId)
+        .eq('platform', 'facebook')
+        .single();
+
+      if (fbToken) {
+        tokenData = fbToken as Record<string, unknown>;
+        pageId = fbToken.platform_channel_id;
+        // Page access token is stored in metadata.page_access_token
+        pageToken = (fbToken.metadata as Record<string, unknown>)?.page_access_token as string || fbToken.access_token;
+      } else {
+        // Fall back to instagram token which may have facebook metadata
+        const { data: igToken } = await supabase
+          .from('platform_tokens')
+          .select('*')
+          .eq('brand_id', brandId)
+          .eq('platform', 'instagram')
+          .single();
+
+        if (igToken) {
+          tokenData = igToken as Record<string, unknown>;
+          const igMeta = (igToken.metadata as Record<string, unknown>) || {};
+          pageId = igMeta.facebook_page_id as string || null;
+          pageToken = igToken.access_token; // User token (may work for page posting if user has permissions)
+        }
+      }
+
+      if (!tokenData) {
+        return { success: false, error_class: 'misconfig', error_message: 'Facebook not connected for this brand. Please connect in Settings.' };
+      }
+
+      if (!pageId) {
+        return { success: false, error_class: 'misconfig', error_message: 'No Facebook Page ID found. Please reconnect in Settings and select a page.' };
+      }
+
+      if (!pageToken) {
+        return { success: false, error_class: 'misconfig', error_message: 'No Facebook Page access token found. Please reconnect in Settings.' };
+      }
+
+      if ((tokenData as Record<string, unknown>).is_valid === false) {
+        return { success: false, error_class: 'misconfig', error_message: 'Facebook token is invalid. Please reconnect in Settings.' };
+      }
+
+      // Build description
+      const postDescription = description || title || '';
+
+      console.log(`[Facebook] Page ID: ${pageId}`);
+      console.log(`[Facebook] Description: ${postDescription.slice(0, 100)}...`);
+
+      // Step 1: Initialize Reel upload with file_url
+      console.log('[Facebook] Step 1: Initializing Reel upload with video URL...');
+      const initResponse = await fetch(
+        `${this.API_BASE}/${pageId}/video_reels`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            upload_phase: 'start',
+            file_url: videoUrl,
+            access_token: pageToken
+          })
+        }
+      );
+
+      const initData = await initResponse.json();
+      console.log('[Facebook] Init response:', JSON.stringify(initData));
+
+      if (initData.error) {
+        const errMsg = initData.error.message || 'Failed to initialize upload';
+        // If Reel API not available, fall back to regular video
+        if (initData.error.code === 100 || errMsg.includes('not supported')) {
+          console.log('[Facebook] Reel API not available, falling back to regular video...');
+          return this.uploadAsRegularVideo(videoUrl, title, postDescription, pageId, pageToken, supabase, tokenData);
+        }
+        let errClass: 'transient' | 'dependency' | 'misconfig' | 'permanent' = 'transient';
+        if (initData.error.code === 190 || initData.error.code === 10) errClass = 'misconfig';
+        else if (initData.error.code === 2 || initData.error.code === 4) errClass = 'dependency';
+        return { success: false, error_class: errClass, error_message: `Facebook Reel init error: ${errMsg}` };
+      }
+
+      const videoId = initData.video_id;
+      console.log(`[Facebook] Video ID: ${videoId}`);
+
+      // Step 2: Poll for processing
+      console.log('[Facebook] Step 2: Polling for video processing...');
+      let attempts = 0;
+      const maxAttempts = 24; // ~2 minutes
+      let lastStatus = 'unknown';
+
+      while (attempts < maxAttempts) {
+        await new Promise(r => setTimeout(r, 5000));
+        attempts++;
+
+        try {
+          const statusResponse = await fetch(
+            `${this.API_BASE}/${videoId}?fields=status&access_token=${pageToken}`
+          );
+          const statusData = await statusResponse.json();
+          console.log(`[Facebook] Video status (attempt ${attempts}):`, JSON.stringify(statusData));
+
+          if (statusData.status) {
+            lastStatus = statusData.status.video_status || 'unknown';
+            if (lastStatus === 'ready' || lastStatus === 'complete') {
+              console.log('[Facebook] Video is ready!');
+              break;
+            } else if (lastStatus === 'error') {
+              return { success: false, error_class: 'dependency', error_message: 'Video processing failed on Facebook servers' };
+            }
+          }
+        } catch {
+          console.log(`[Facebook] Status check error on attempt ${attempts}, continuing...`);
+        }
+      }
+
+      // Step 3: Finish (publish) — try regardless of polling status
+      console.log(`[Facebook] Step 3: Publishing (last status: ${lastStatus})...`);
+      const finishResponse = await fetch(
+        `${this.API_BASE}/${pageId}/video_reels`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            upload_phase: 'finish',
+            video_id: videoId,
+            video_state: 'PUBLISHED',
+            description: postDescription,
+            access_token: pageToken
+          })
+        }
+      );
+
+      const finishData = await finishResponse.json();
+      console.log('[Facebook] Finish response:', JSON.stringify(finishData));
+
+      if (finishData.error) {
+        // If not uploaded yet, fall back to regular video
+        if (finishData.error.error_subcode === 1363130 || finishData.error.message?.includes('not uploaded')) {
+          console.log('[Facebook] Reel finish failed, falling back to regular video...');
+          return this.uploadAsRegularVideo(videoUrl, title, postDescription, pageId, pageToken, supabase, tokenData);
+        }
+        return { success: false, error_class: 'dependency', error_message: `Facebook Reel publish failed: ${finishData.error.message}` };
+      }
+
+      const platformUrl = `https://www.facebook.com/reel/${videoId}`;
+      console.log(`[Facebook] ✅ Reel published! Video ID: ${videoId}, URL: ${platformUrl}`);
+
+      // Update last_used_at
+      const tokenId = (tokenData as Record<string, unknown>).id;
+      if (tokenId) {
+        await supabase
+          .from('platform_tokens')
+          .update({ last_used_at: new Date().toISOString() })
+          .eq('id', tokenId);
+      }
+
+      return {
+        success: true,
+        platform_post_id: videoId,
+        platform_url: platformUrl,
+      };
+
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[Facebook] Unexpected error:', message);
+      return { success: false, error_class: 'transient', error_message: message };
+    }
+  }
+
+  /**
+   * Fallback: Upload as regular Facebook video (not Reel)
+   */
+  private async uploadAsRegularVideo(
+    videoUrl: string,
+    title: string,
+    description: string,
+    pageId: string,
+    pageToken: string,
+    supabase: SupabaseClient,
+    tokenData: Record<string, unknown>
+  ): Promise<PlatformResult> {
+    console.log('[Facebook] Uploading as regular video (fallback)...');
+
+    const response = await fetch(
+      `https://graph.facebook.com/v18.0/${pageId}/videos`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file_url: videoUrl,
+          title: title || '',
+          description: description || '',
+          access_token: pageToken
+        })
+      }
+    );
+
+    const data = await response.json();
+    console.log('[Facebook] Video upload response:', JSON.stringify(data));
+
+    if (data.error) {
+      return { success: false, error_class: 'dependency', error_message: `Facebook video upload failed: ${data.error.message}` };
+    }
+
+    const platformUrl = `https://www.facebook.com/watch/?v=${data.id}`;
+    console.log(`[Facebook] ✅ Video posted! ID: ${data.id}, URL: ${platformUrl}`);
+
+    // Update last_used_at
+    const tokenId = tokenData.id;
+    if (tokenId) {
+      await supabase
+        .from('platform_tokens')
+        .update({ last_used_at: new Date().toISOString() })
+        .eq('id', tokenId as string);
+    }
+
+    return {
+      success: true,
+      platform_post_id: data.id,
+      platform_url: platformUrl,
+    };
   }
 }
 
@@ -480,13 +917,19 @@ class InstagramAdapter extends StubAdapter {
  * Get adapter for platform
  */
 function getAdapter(platform: string): PlatformAdapter {
-  switch (platform.toLowerCase()) {
+  const p = platform.toLowerCase();
+  switch (p) {
     case 'tiktok':
       return new TikTokAdapter();
     case 'youtube':
+    case 'youtube_shorts':
       return new YouTubeAdapter();
     case 'instagram':
-      return new InstagramAdapter();
+    case 'instagram_reels':
+      return new InstagramReelsAdapter();
+    case 'facebook':
+    case 'facebook_reels':
+      return new FacebookReelsAdapter();
     default:
       // Generic stub for unknown platforms
       return new StubAdapter(platform);
@@ -569,12 +1012,19 @@ async function processPost(
               cover_text: (md as Record<string, unknown>).cover_text,
               metadata_source: metadata.status,
             };
-          } else if (post.platform === 'instagram_reels') {
+          } else if (post.platform === 'instagram_reels' || post.platform === 'instagram') {
             postDescription = (md as Record<string, unknown>).caption as string || postDescription;
             postTags = (md as Record<string, unknown>).hashtags as string[] || postTags;
             postMeta = {
               ...postMeta,
               alt_text: (md as Record<string, unknown>).alt_text,
+              metadata_source: metadata.status,
+            };
+          } else if (post.platform === 'facebook' || post.platform === 'facebook_reels') {
+            postDescription = (md as Record<string, unknown>).caption as string || (md as Record<string, unknown>).description as string || postDescription;
+            postTags = (md as Record<string, unknown>).hashtags as string[] || postTags;
+            postMeta = {
+              ...postMeta,
               metadata_source: metadata.status,
             };
           }
@@ -672,7 +1122,7 @@ async function processPost(
         p_meta: {
           posted_by: workerId,
           adapter: adapter.name,
-          adapter_version: adapter.name === 'youtube' ? 'real_1.0' : 'stub_1.0',
+          adapter_version: ['youtube', 'instagram_reels', 'facebook_reels'].includes(adapter.name) ? 'real_1.0' : 'stub_1.0',
         },
       });
       

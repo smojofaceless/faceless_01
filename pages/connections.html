@@ -489,6 +489,9 @@
             if (META_CONFIG.appId) {
                 metaService.init(META_CONFIG.appId, META_CONFIG.appSecret);
             }
+
+            // Auto-sync Meta tokens to Supabase on page load
+            setTimeout(() => syncMetaTokensToSupabase(), 2000);
         }
         
         // Update YouTube service with current brand context
@@ -866,8 +869,24 @@
                 } else {
                     Toast.warning('Connection status unknown');
                 }
+                // Also sync tokens to Supabase (server-side auto-poster needs them)
+                await syncMetaTokensToSupabase();
             } catch (error) {
                 Toast.error(`Test failed: ${error.message}`);
+            }
+        }
+
+        /**
+         * Sync Meta tokens from localStorage to Supabase so server-side auto-poster can use them.
+         * Called on page load if connected, and after test/connect.
+         */
+        async function syncMetaTokensToSupabase() {
+            try {
+                if (!metaService.isConnected()) return;
+                await metaService.saveTokensToSupabase();
+                console.log('📸 Meta tokens synced to Supabase');
+            } catch (e) {
+                console.warn('📸 Meta token sync failed:', e.message);
             }
         }
 

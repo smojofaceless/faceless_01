@@ -387,22 +387,26 @@ serve(async (req) => {
         // Release job as 'queued' so next invocation can claim it
         await releaseJob(supabase, jobId, workerId, 'queued', undefined);
         
-        // Self-invoke: fire-and-forget re-invocation for continuation
+        // Self-invoke for continuation — await the HTTP response (not the pipeline)
+        // to confirm the new invocation was accepted. Previous fire-and-forget approach
+        // silently swallowed failures, leaving jobs stuck on "assemble" indefinitely.
         try {
           const selfUrl = `${env.SUPABASE_URL}/functions/v1/worker-v1`;
           console.log(`[WORKER-V1] 🔄 Self-invoking for continuation: ${selfUrl}`);
           
-          // Don't await — fire and forget
-          fetch(selfUrl, {
+          const selfResp = await fetch(selfUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
             },
             body: JSON.stringify({ job_id: jobId }),
-          }).catch(err => {
-            console.warn(`[WORKER-V1] Self-invoke fetch error (non-fatal): ${err}`);
           });
+          console.log(`[WORKER-V1] Self-invoke response: ${selfResp.status}`);
+          if (!selfResp.ok) {
+            const errBody = await selfResp.text().catch(() => '');
+            console.warn(`[WORKER-V1] Self-invoke returned ${selfResp.status}: ${errBody.slice(0, 200)}`);
+          }
         } catch (invokeErr) {
           console.warn(`[WORKER-V1] Self-invoke error (non-fatal, scheduler will retry): ${invokeErr}`);
         }

@@ -14,7 +14,8 @@ const NicheConfigs = {
             { value: 'scary-story', label: 'Scary Story', icon: '👻' },
             { value: 'urban-legend', label: 'Urban Legend', icon: '📜' },
             { value: 'creepypasta', label: 'Creepypasta', icon: '🕯️' },
-            { value: 'true-crime', label: 'True Crime', icon: '🔍' }
+            { value: 'true-crime', label: 'True Crime', icon: '🔍' },
+            { value: 'reddit-horror', label: 'Reddit Trending Horror', icon: '🔥' }
         ],
         visualStyles: [
             { value: 'dark-cinematic', label: '🌑 Dark Cinematic', prompt: 'dark cinematic horror photography, moody lighting, shadows, atmospheric fog, 4K' },

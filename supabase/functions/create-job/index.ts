@@ -11,7 +11,7 @@ interface CreateJobRequest {
   // Content settings
   theme?: string;
   // v4.0: Only two active story engines. Deprecated presets map to urban_legend on backend.
-  vibe_preset?: "urban_legend" | "one_too_many";
+  vibe_preset?: "urban_legend" | "one_too_many" | "reddit_trending_horror";
   length_preset?: "short" | "medium" | "long" | "30" | "45" | "60" | "90" | "120";
   visual_preset?: "forest" | "hallway" | "attic" | "foggy" | "rain";
   visual_source?: "pexels" | "ai";

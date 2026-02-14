@@ -453,6 +453,8 @@ export interface StoryGenerationOptions {
   story_profile?: PartialStoryProfile;
   niche?: string;  // For template selection (horror, food, finance, etc.)
   vibe_preset?: string;  // For preset selection
+  /** Reddit-inspired horror scenario injection (for reddit_trending_horror preset) */
+  scenario_prompt?: string;
 }
 
 export interface StoryGenerationResult {
@@ -654,10 +656,19 @@ export async function generateStoryWithDNA(
   const recentConcepts = await getRecentlyUsedConcepts(supabase, 7, 10);
   const negativeMemory = buildNegativeMemoryInjection(recentConcepts);
   
-  // Build the full contract prompt
-  const contractPrompt = negativeMemory 
-    ? contract.prompt + '\n' + negativeMemory 
-    : contract.prompt;
+  // Build the full contract prompt with optional scenario injection
+  let contractPrompt = contract.prompt;
+  
+  // Inject Reddit-inspired scenario context if provided (reddit_trending_horror preset)
+  if (storyOptions?.scenario_prompt) {
+    contractPrompt += '\n' + storyOptions.scenario_prompt;
+    console.log(`[STORY-CONTRACT] Scenario prompt injected into contract`);
+  }
+  
+  // Append negative memory if available
+  if (negativeMemory) {
+    contractPrompt += '\n' + negativeMemory;
+  }
   
   // System prompt for contract-based generation
   // Check for counting horror special case

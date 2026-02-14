@@ -289,12 +289,18 @@ class Calendar {
                                 const metaIndicator = post.metadata?.status 
                                     ? `<span class="calendar__meta-dot calendar__meta-dot--${post.metadata.status}" title="Metadata: ${post.metadata.status}"></span>` 
                                     : '';
+                                // Consolidated: show multi-platform dots
+                                const platformDots = post.isConsolidated
+                                    ? post.platformIds.map(pid => 
+                                        `<span class="calendar__post-dot" style="--platform-color: ${this.getPlatformColor(pid)}" title="${pid}"></span>`
+                                      ).join('')
+                                    : `<span class="calendar__post-dot"></span>`;
                                 return `
-                                <div class="calendar__post calendar__post--${post.status}" 
+                                <div class="calendar__post calendar__post--${post.status} ${post.isConsolidated ? 'calendar__post--consolidated' : ''}" 
                                      data-post-id="${post.id}"
                                      style="--platform-color: ${this.getPlatformColor(post.platformId)}"
-                                     title="${this.escapeHtml(post.content?.title || 'Untitled')} - ${this.formatTime(post.scheduledAt)}">
-                                    <span class="calendar__post-dot"></span>
+                                     title="${this.escapeHtml(post.content?.title || 'Untitled')} - ${this.formatTime(post.scheduledAt)}${post.isConsolidated ? ' (' + post.platformIds.length + ' platforms)' : ''}">
+                                    <span class="calendar__platform-dots">${platformDots}</span>
                                     ${metaIndicator}
                                     <span class="calendar__post-title">${this.escapeHtml(post.content?.title || 'Untitled')}</span>
                                 </div>
@@ -367,8 +373,19 @@ class Calendar {
                             const metaBadge = post.metadata?.status 
                                 ? `<span class="calendar__meta-badge calendar__meta-badge--${post.metadata.status}">${post.metadata.status === 'ready' ? 'M' : post.metadata.status === 'edited' ? 'E' : post.metadata.status === 'failed' ? '!' : '...'}</span>` 
                                 : '';
+                            // Platform chips for consolidated items
+                            const platformRow = post.isConsolidated
+                                ? `<div class="calendar__post-platforms">
+                                    ${post.platformIds.map(pid => 
+                                        `<span class="calendar__platform-chip" style="--platform-color: ${this.getPlatformColor(pid)}">${this.getPlatformShortName(pid)}</span>`
+                                    ).join('')}
+                                   </div>`
+                                : `<div class="calendar__post-platform">
+                                    <span class="calendar__platform-dot"></span>
+                                    ${this.escapeHtml(post.platformId)}
+                                   </div>`;
                             return `
-                            <div class="calendar__post-card calendar__post-card--${post.status}" 
+                            <div class="calendar__post-card calendar__post-card--${post.status} ${post.isConsolidated ? 'calendar__post-card--consolidated' : ''}" 
                                  data-post-id="${post.id}"
                                  style="--platform-color: ${this.getPlatformColor(post.platformId)}">
                                 <div class="calendar__post-card-header">
@@ -376,10 +393,7 @@ class Calendar {
                                     ${metaBadge}
                                     <span class="calendar__post-status">${post.status}</span>
                                 </div>
-                                <div class="calendar__post-platform">
-                                    <span class="calendar__platform-dot"></span>
-                                    ${this.escapeHtml(post.platformId)}
-                                </div>
+                                ${platformRow}
                                 <div class="calendar__post-title">${this.escapeHtml(post.content?.title || 'Untitled')}</div>
                             </div>
                         `}).join('') : ''}
@@ -488,7 +502,26 @@ class Calendar {
     findPostById(postId) {
         // Check cached Supabase items first
         if (this._useSupabase && this._cachedItems.length > 0) {
-            return this._cachedItems.find(item => item.id === postId) || null;
+            const direct = this._cachedItems.find(item => item.id === postId);
+            if (direct) {
+                // If this item is part of a consolidated group, return the group
+                if (direct.sourceJobId) {
+                    const siblings = this._cachedItems.filter(
+                        i => i.sourceJobId && i.sourceJobId === direct.sourceJobId
+                    );
+                    if (siblings.length > 1) {
+                        const primary = siblings[0];
+                        return {
+                            ...primary,
+                            isConsolidated: true,
+                            platforms: siblings,
+                            platformIds: siblings.map(p => p.platformId),
+                        };
+                    }
+                }
+                return direct;
+            }
+            return null;
         }
         // Fall back to postManager
         if (typeof postManager !== 'undefined') {
@@ -590,7 +623,50 @@ class Calendar {
             if (!grouped[key]) grouped[key] = [];
             grouped[key].push(post);
         });
+        // Consolidate each day's posts by sourceJobId
+        for (const key of Object.keys(grouped)) {
+            grouped[key] = this.consolidateByJob(grouped[key]);
+        }
         return grouped;
+    }
+
+    /**
+     * Consolidate calendar items that share the same sourceJobId into one entry.
+     * Items without a sourceJobId remain standalone.
+     * @param {Array} items - Array of calendar items for a single day
+     * @returns {Array} Consolidated items
+     */
+    consolidateByJob(items) {
+        const groups = {};
+        const standalone = [];
+
+        for (const item of items) {
+            const key = item.sourceJobId;
+            if (key) {
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(item);
+            } else {
+                standalone.push(item);
+            }
+        }
+
+        const consolidated = [];
+        for (const [jobId, posts] of Object.entries(groups)) {
+            if (posts.length === 1) {
+                consolidated.push(posts[0]);
+            } else {
+                // Build consolidated item from the first post
+                const primary = posts[0];
+                consolidated.push({
+                    ...primary,
+                    isConsolidated: true,
+                    platforms: posts,
+                    platformIds: posts.map(p => p.platformId),
+                });
+            }
+        }
+
+        return [...consolidated, ...standalone].sort((a, b) => a.scheduledAt - b.scheduledAt);
     }
 
     formatTime(date) {
@@ -604,13 +680,36 @@ class Calendar {
     getPlatformColor(platformId) {
         const colors = {
             instagram: '#E4405F',
+            instagram_reels: '#E4405F',
             tiktok: '#000000',
             youtube: '#FF0000',
+            youtube_shorts: '#FF0000',
             facebook: '#1877F2',
+            facebook_reels: '#1877F2',
             threads: '#000000',
             twitter: '#1DA1F2'
         };
         return colors[platformId] || '#666666';
+    }
+
+    /**
+     * Get short display name for a platform
+     * @param {string} platformId
+     * @returns {string}
+     */
+    getPlatformShortName(platformId) {
+        const names = {
+            youtube_shorts: 'YT',
+            tiktok: 'TT',
+            instagram_reels: 'IG',
+            facebook_reels: 'FB',
+            youtube: 'YT',
+            instagram: 'IG',
+            facebook: 'FB',
+            twitter: 'X',
+            threads: 'TH'
+        };
+        return names[platformId] || platformId?.substring(0, 2)?.toUpperCase() || '??';
     }
 }
 

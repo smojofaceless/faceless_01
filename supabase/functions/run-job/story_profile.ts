@@ -824,6 +824,104 @@ export const PRESET_STORY_PROFILES: Record<string, PartialStoryProfile> = {
       core_anomaly: "count_mismatch",
     },
   },
+
+  // =====================================================
+  // REDDIT_TRENDING_HORROR - Internet Horror Retelling Engine
+  // =====================================================
+  // Transforms trending Reddit horror posts into original
+  // 60-90 second animated horror scripts.
+  //
+  // STRUCTURAL RULES:
+  // - Third-person dramatic storyteller voice
+  // - Hook within first 5 seconds of narration
+  // - Single central disturbing concept
+  // - Clear tension curve (hook → escalation → climax → ending)
+  // - Sharp unresolved ending (no explanation)
+  // - 130-180 words (strict for 60-90s TTS timing)
+  // - No usernames, no Reddit references, no "OP said"
+  // - Every sentence must be visually filmable
+  //
+  // FAILURE MODES:
+  // - Word count outside 130-180 = fail
+  // - Reddit references present = fail
+  // - Ending provides explanation = fail
+  // - Abstract non-visual sentences = fail
+  // =====================================================
+  reddit_trending_horror: {
+    profile_name: "reddit_trending_horror",
+
+    voiceFormat: {
+      format: "dramatic_storyteller",
+      structuralMarkers: [],
+      enforceMarkers: false,
+      povConstraint: "third",
+      styleNotes: "Calm but uneasy third-person dramatic narrator. Like someone found the scariest Reddit post and turned it into a cinematic nightmare. No usernames, no Reddit references, no 'OP said'.",
+    },
+
+    motif: {
+      minMentions: 2,
+      shouldEscalate: true,
+      distribution: "spread",
+    },
+
+    uniqueElement: {
+      minAppearances: 1,
+      requireEscalation: false,
+      finalMentionPosition: "any",
+      enforce: false,
+    },
+
+    beatStructure: {
+      beatCount: 4,
+      beatLabels: ["HOOK", "ESCALATION", "CLIMAX", "ENDING"],
+      requireGroundingDetail: true,
+      groundingTypes: ["sound", "object", "texture", "visual"],
+      minWordsPerBeat: 25,
+      maxWordsPerBeat: 55,
+      minGroundingPerBeat: 1,
+      repairOnMissingGrounding: true,
+    },
+
+    embodiment: {
+      eraLevel: "objects",
+      requirePeriodObjects: false,
+      requireLocationSensory: true,
+    },
+
+    authority: {
+      style: "absent",
+      minDetailSentences: 0,
+    },
+
+    ending: {
+      antiClosure: 0.95,
+      enforceFinalImage: true,
+      allowedEndingTypes: ["unresolved", "ongoing", "open_loop"],
+      endingStyle: "open_loop",
+    },
+
+    wordCount: {
+      target: 155,
+      variance: 25,
+      priority: "structure",
+      strictEnforcement: true,
+    },
+
+    visualReadiness: {
+      failOnMissingGrounding: false,
+      warnOnMissingGrounding: true,
+      failOnMissingEnvironment: false,
+      warnOnMissingEnvironment: true,
+      failOnAbstract: true,
+      minScoreForReady: 30,
+    },
+
+    genreFlags: {
+      preset_category: "reddit-sourced",
+      core_anomaly: "internet_horror",
+      source_transform: "reddit_to_original",
+    },
+  },
   
   // =====================================================
   // DEPRECATED PRESETS - ARCHIVED

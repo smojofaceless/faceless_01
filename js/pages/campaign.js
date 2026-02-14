@@ -96,6 +96,38 @@ const PRESET_CATALOG = {
             bestFor: 'Experienced creators who want complete narrative and visual control',
             exampleHook: '"Your story, your rules."'
         }
+    },
+    reddit_trending_horror: {
+        id: 'reddit_trending_horror',
+        name: 'Reddit Trending Horror',
+        icon: '🔥',
+        tagline: 'Internet nightmares retold',
+        description: 'Pulls trending horror posts from Reddit (r/nosleep, r/creepypasta, r/letsnotmeet, etc.), extracts the core fear concept, and transforms them into original 60–90 second animated horror scripts. No copying — cinematic retellings that feel like chilling animated shorts.',
+        defaults: {
+            vibe_preset: 'reddit_trending_horror',
+            era: 'modern',
+            tone: 0.65,
+            ending: 'unresolved',
+            visual_style: 'cinematic_dark',
+            color_palette: 'muted_forest',
+            motion_profile: 'subtle_kenburns'
+        },
+        visual: {
+            gradient: 'linear-gradient(145deg, #0d1f0d 0%, #1a0f0a 30%, #0a1a0a 60%, #050a05 100%)',
+            overlay: 'radial-gradient(ellipse at 40% 70%, rgba(239, 68, 68, 0.20), transparent 60%)',
+            accentColor: '#ef4444',
+            accentBg: 'rgba(239, 68, 68, 0.15)',
+            artStyle: 'Uncanny Illustrated Horror',
+            colorPalette: 'Muted Forest',
+            motionProfile: 'Subtle Ken Burns'
+        },
+        details: {
+            era: 'Modern',
+            ending: 'Unresolved',
+            effects: ['Subtle Ken Burns zoom', 'Light vignette', 'Minimal film grain', 'Cool color grade'],
+            bestFor: 'Reddit-sourced horror retellings, internet creepypasta adaptations, viral horror shorts',
+            exampleHook: '"The post had 4,000 upvotes. The comments were all begging OP to move out immediately."'
+        }
     }
 };
 
@@ -116,7 +148,7 @@ class CampaignPage {
         // Default config (per CAMPAIGN_SYSTEM.md Section 5)
         this.defaultConfig = {
             videoCount: 7,
-            platforms: ['tiktok', 'reels', 'shorts'],
+            platforms: ['youtube_shorts', 'instagram_reels', 'facebook_reels'],
             postsPerDay: 3,
             windows: [
                 { time: '08:00', label: 'Morning' },
@@ -418,12 +450,19 @@ class CampaignPage {
             if (typeof brandManager !== 'undefined') {
                 this.brandPresets = await brandManager.getVibePresets(this.currentBrand.id);
                 if (this.brandPresets && this.brandPresets.length > 0) {
-                    // Convert decimal weights to percentages
-                    const totalWeight = this.brandPresets.reduce((sum, p) => sum + parseFloat(p.weight), 0);
+                    // Weights are stored as integers (1-100); use directly
+                    // If legacy decimals (<=1.0), convert to integer
                     this.presetWeights = {};
                     for (const p of this.brandPresets) {
-                        const pct = totalWeight > 0 ? Math.round((parseFloat(p.weight) / totalWeight) * 100) : 0;
-                        this.presetWeights[p.template_type] = pct;
+                        const raw = parseFloat(p.weight) || 0;
+                        this.presetWeights[p.template_type] = raw <= 1 ? Math.round(raw * 100) : Math.round(raw);
+                    }
+                    // Normalize so they sum to 100
+                    const total = Object.values(this.presetWeights).reduce((a, b) => a + b, 0);
+                    if (total > 0 && total !== 100) {
+                        for (const key of Object.keys(this.presetWeights)) {
+                            this.presetWeights[key] = Math.round((this.presetWeights[key] / total) * 100);
+                        }
                     }
                 } else {
                     this.brandPresets = [];
@@ -552,11 +591,10 @@ class CampaignPage {
         try {
             if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
 
-            // Convert percentage weights back to decimals and match to preset IDs
-            const total = Object.values(this.presetWeights).reduce((a, b) => a + b, 0) || 100;
+            // Save raw integer weights (1-100) directly
             const updates = this.brandPresets.map(p => ({
                 id: p.id,
-                weight: (this.presetWeights[p.template_type] || 0) / total
+                weight: this.presetWeights[p.template_type] || 0
             }));
 
             await brandManager.updateVibePresetWeights(this.currentBrand.id, updates);
@@ -690,7 +728,7 @@ class CampaignPage {
     generateSimplePreview(config) {
         const preview = [];
         const startDate = new Date(config.startDate + 'T00:00:00');
-        const presets = Object.keys(config.presetWeights);
+        const weights = config.presetWeights || {};
         
         for (let i = 0; i < config.videoCount; i++) {
             const dayOffset = Math.floor(i / config.postsPerDay);
@@ -702,8 +740,8 @@ class CampaignPage {
             const [hours, minutes] = (config.windows[windowIndex] || '12:00').split(':');
             scheduledDate.setHours(parseInt(hours), parseInt(minutes), 0, 0);
             
-            // Random preset selection
-            const preset = presets[Math.floor(Math.random() * presets.length)];
+            // Weighted random preset selection
+            const preset = this._weightedRandomPreset(weights);
             
             preview.push({
                 scheduledAt: scheduledDate.toISOString(),
@@ -713,6 +751,23 @@ class CampaignPage {
         }
         
         return preview;
+    }
+
+    /**
+     * Select a preset using weighted random (same algorithm as campaignManager)
+     */
+    _weightedRandomPreset(weights) {
+        const entries = Object.entries(weights);
+        if (entries.length === 0) return 'urban_legend';
+        
+        const totalWeight = entries.reduce((sum, [_, w]) => sum + w, 0);
+        let roll = Math.random() * totalWeight;
+        
+        for (const [preset, weight] of entries) {
+            roll -= weight;
+            if (roll <= 0) return preset;
+        }
+        return entries[0][0];
     }
 
     /**
@@ -761,15 +816,23 @@ class CampaignPage {
                     hour12: true
                 });
                 
-                const platformIcons = {
-                    tiktok: '🎵',
-                    reels: '📱',
-                    shorts: '▶️'
+                const platformSvgs = {
+                    youtube_shorts: { icon: `<svg viewBox="0 0 24 24" fill="#FF0000" width="14" height="14"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814z"/><polygon fill="#FFF" points="9.545 15.568 15.818 12 9.545 8.432"/></svg>`, label: 'YouTube Shorts' },
+                    youtube: { icon: `<svg viewBox="0 0 24 24" fill="#FF0000" width="14" height="14"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814z"/><polygon fill="#FFF" points="9.545 15.568 15.818 12 9.545 8.432"/></svg>`, label: 'YouTube' },
+                    tiktok: { icon: `<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-5.2 1.74 2.89 2.89 0 012.31-4.64 2.93 2.93 0 01.88.13V9.4a6.84 6.84 0 00-1-.05A6.33 6.33 0 005 20.1a6.34 6.34 0 0010.86-4.43v-7a8.16 8.16 0 004.77 1.52v-3.4a4.85 4.85 0 01-1-.1z"/></svg>`, label: 'TikTok' },
+                    instagram_reels: { icon: `<svg viewBox="0 0 24 24" fill="none" stroke="#E4405F" stroke-width="2" width="14" height="14"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>`, label: 'Instagram Reels' },
+                    instagram: { icon: `<svg viewBox="0 0 24 24" fill="none" stroke="#E4405F" stroke-width="2" width="14" height="14"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>`, label: 'Instagram' },
+                    facebook_reels: { icon: `<svg viewBox="0 0 24 24" fill="#1877F2" width="14" height="14"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>`, label: 'Facebook Reels' },
+                    facebook: { icon: `<svg viewBox="0 0 24 24" fill="#1877F2" width="14" height="14"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>`, label: 'Facebook' }
                 };
                 
-                const platformsHtml = (item.platforms || []).map(p => 
-                    `<span class="platform-icon active">${platformIcons[p] || '📺'}</span>`
-                ).join('');
+                const platformsHtml = (item.platforms || []).map(p => {
+                    const info = platformSvgs[p];
+                    if (info) {
+                        return `<span class="platform-icon active" title="${info.label}">${info.icon}</span>`;
+                    }
+                    return `<span class="platform-icon active" title="${p}">📺</span>`;
+                }).join('');
                 
                 // Support both preset and vibe_preset property names
                 const presetName = item.preset || item.vibe_preset;
@@ -821,9 +884,9 @@ class CampaignPage {
             
             const weight = this.presetWeights[id];
             const isActive = weight > 0;
-            const weightPercent = weight ? Math.round(weight * 100) : (weight || 0);
-            // Normalize: if weights are decimals (0.6) vs integers (60)
-            const displayWeight = weightPercent > 1 ? weightPercent : Math.round((weight || 0) * 100);
+            // Weights are already percentages (60, 40). Clamp to 0-100 as safety.
+            const displayWeight = Math.min(100, Math.max(0, Math.round(weight || 0)));
+            console.log(`[PRESET] ${id}: raw weight=${weight}, display=${displayWeight}%`);
             
             return `
                 <div class="preset-card ${isActive ? 'preset-card--active' : ''}" 
@@ -857,7 +920,7 @@ class CampaignPage {
 
         const weight = this.presetWeights[presetId];
         const isActive = weight > 0;
-        const displayWeight = weight > 1 ? weight : Math.round((weight || 0) * 100);
+        const displayWeight = Math.round(weight || 0);
         
         this.presetModalContent.innerHTML = `
             <div class="preset-detail">
@@ -1015,6 +1078,7 @@ class CampaignPage {
                     platforms: config.platforms,
                     startDate: config.startDate,
                     postsPerDay: config.postsPerDay,
+                    precomputedSchedule: this.schedulePreview || null,
                     config: {
                         windows: config.windows,
                         jitterMinutes: config.jitterMinutes,

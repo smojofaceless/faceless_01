@@ -89,6 +89,7 @@ CREATE INDEX IF NOT EXISTS idx_story_dna_job_id ON story_dna(job_id);
 -- CONCEPT USAGE TRACKING VIEW
 -- Helps identify overused concepts
 -- =====================================================
+DROP VIEW IF EXISTS story_dna_concept_usage CASCADE;
 CREATE OR REPLACE VIEW story_dna_concept_usage AS
 SELECT 
     threat_id,
@@ -105,6 +106,7 @@ ORDER BY usage_count DESC;
 -- COMPONENT FREQUENCY VIEW
 -- Shows which individual components are most/least used
 -- =====================================================
+DROP VIEW IF EXISTS story_dna_component_frequency CASCADE;
 CREATE OR REPLACE VIEW story_dna_component_frequency AS
 WITH 
 threat_freq AS (
@@ -137,6 +139,7 @@ ORDER BY component_type, count DESC;
 -- =====================================================
 -- DAILY GENERATION STATS VIEW
 -- =====================================================
+DROP VIEW IF EXISTS story_dna_daily_stats CASCADE;
 CREATE OR REPLACE VIEW story_dna_daily_stats AS
 SELECT 
     DATE(created_at) as generation_date,
@@ -154,13 +157,22 @@ ORDER BY generation_date DESC;
 ALTER TABLE story_dna ENABLE ROW LEVEL SECURITY;
 
 -- Allow all operations (MVP - personal use only)
-CREATE POLICY "Allow all operations on story_dna" ON story_dna
-    FOR ALL USING (true) WITH CHECK (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'story_dna' AND policyname = 'Allow all operations on story_dna'
+  ) THEN
+    CREATE POLICY "Allow all operations on story_dna" ON story_dna
+      FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
 
 -- =====================================================
 -- FUNCTION: Get least-used components
 -- Returns components that should be prioritized for variety
 -- =====================================================
+DROP FUNCTION IF EXISTS get_underused_components(TEXT, INTEGER);
+DROP FUNCTION IF EXISTS get_underused_components(TEXT, INTEGER, INTEGER);
 CREATE OR REPLACE FUNCTION get_underused_components(
     p_component_type TEXT,
     p_limit INTEGER DEFAULT 5
@@ -182,6 +194,7 @@ $$ LANGUAGE plpgsql;
 -- FUNCTION: Check concept uniqueness
 -- Returns true if the concept hash doesn't exist recently
 -- =====================================================
+DROP FUNCTION IF EXISTS is_concept_unique(TEXT, INTEGER);
 CREATE OR REPLACE FUNCTION is_concept_unique(
     p_concept_hash TEXT,
     p_lookback_days INTEGER DEFAULT 60
@@ -204,6 +217,7 @@ $$ LANGUAGE plpgsql;
 -- FUNCTION: Get DNA statistics
 -- Returns overall system health metrics
 -- =====================================================
+DROP FUNCTION IF EXISTS get_dna_statistics();
 CREATE OR REPLACE FUNCTION get_dna_statistics()
 RETURNS TABLE(
     total_generated BIGINT,

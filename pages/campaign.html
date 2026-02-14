@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Create Campaign - ContentEngine</title>
     
     <!-- Core Design System -->
@@ -210,98 +213,137 @@
                         <!-- Left Column: Configuration -->
                         <div class="campaign-config">
 
-                            <!-- Basic Settings (Auto Mode) -->
+                            <!-- Quick Setup -->
                             <div class="card campaign-basics">
                                 <div class="card-header">
-                                    <h3 class="card-title">⚡ Quick Setup</h3>
+                                    <h3 class="card-title">
+                                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" style="opacity:0.6">
+                                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                                        </svg>
+                                        Quick Setup
+                                    </h3>
                                 </div>
                                 <div class="card-body">
-                                    <!-- Brand Display (Read-only) -->
-                                    <div class="form-group">
-                                        <label class="form-label">Brand</label>
-                                        <div class="brand-display">
-                                            <span class="brand-display__emoji" id="brand-emoji">👻</span>
-                                            <span class="brand-display__name" id="brand-name">Stories That Stalk</span>
+
+                                    <!-- Row 1: Brand + Video Count side by side -->
+                                    <div class="setup-row setup-row--2col">
+                                        <div class="form-group">
+                                            <label class="form-label">
+                                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                                                Brand
+                                            </label>
+                                            <div class="brand-display">
+                                                <span class="brand-display__emoji" id="brand-emoji">👻</span>
+                                                <span class="brand-display__name" id="brand-name">Stories That Stalk</span>
+                                            </div>
                                         </div>
-                                        <p class="form-hint">Brand is read from the global navbar selection</p>
+                                        <div class="form-group">
+                                            <label class="form-label" for="video-count">
+                                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                                                Videos
+                                            </label>
+                                            <div class="input-with-buttons">
+                                                <button type="button" class="btn btn--icon btn--ghost" id="video-count-minus">−</button>
+                                                <input type="number" id="video-count" class="input" value="7" min="1" max="30">
+                                                <button type="button" class="btn btn--icon btn--ghost" id="video-count-plus">+</button>
+                                            </div>
+                                            <p class="form-hint">1–30 per campaign</p>
+                                        </div>
                                     </div>
 
-                                    <!-- Video Count -->
+                                    <!-- Row 2: Platforms — full width, horizontal cards with brand SVGs -->
                                     <div class="form-group">
-                                        <label class="form-label" for="video-count">Number of Videos</label>
-                                        <div class="input-with-buttons">
-                                            <button type="button" class="btn btn--icon btn--ghost" id="video-count-minus">−</button>
-                                            <input type="number" id="video-count" class="input" value="7" min="1" max="30">
-                                            <button type="button" class="btn btn--icon btn--ghost" id="video-count-plus">+</button>
-                                        </div>
-                                        <p class="form-hint">1-30 videos per campaign</p>
-                                    </div>
-
-                                    <!-- Platforms -->
-                                    <div class="form-group">
-                                        <label class="form-label">Target Platforms</label>
+                                        <label class="form-label">
+                                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                                            Target Platforms
+                                        </label>
                                         <div class="platform-checkboxes">
                                             <label class="checkbox-card">
-                                                <input type="checkbox" name="platform" value="tiktok" checked>
+                                                <input type="checkbox" name="platform" value="youtube_shorts" checked>
                                                 <span class="checkbox-card__content">
-                                                    <span class="checkbox-card__icon">🎵</span>
-                                                    <span class="checkbox-card__label">TikTok</span>
+                                                    <span class="checkbox-card__icon">
+                                                        <svg viewBox="0 0 24 24" fill="#FF0000" width="22" height="22"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814z"/><polygon fill="#FFF" points="9.545 15.568 15.818 12 9.545 8.432"/></svg>
+                                                    </span>
+                                                    <span class="checkbox-card__label">YouTube Shorts</span>
                                                 </span>
                                             </label>
                                             <label class="checkbox-card">
-                                                <input type="checkbox" name="platform" value="reels" checked>
+                                                <input type="checkbox" name="platform" value="instagram_reels" checked>
                                                 <span class="checkbox-card__content">
-                                                    <span class="checkbox-card__icon">📱</span>
-                                                    <span class="checkbox-card__label">Reels</span>
+                                                    <span class="checkbox-card__icon">
+                                                        <svg viewBox="0 0 24 24" fill="none" stroke="#E4405F" stroke-width="2" width="22" height="22"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
+                                                    </span>
+                                                    <span class="checkbox-card__label">Instagram Reels</span>
                                                 </span>
                                             </label>
                                             <label class="checkbox-card">
-                                                <input type="checkbox" name="platform" value="shorts" checked>
+                                                <input type="checkbox" name="platform" value="facebook_reels" checked>
                                                 <span class="checkbox-card__content">
-                                                    <span class="checkbox-card__icon">▶️</span>
-                                                    <span class="checkbox-card__label">Shorts</span>
+                                                    <span class="checkbox-card__icon">
+                                                        <svg viewBox="0 0 24 24" fill="#1877F2" width="22" height="22"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                                                    </span>
+                                                    <span class="checkbox-card__label">Facebook Reels</span>
                                                 </span>
                                             </label>
                                         </div>
                                     </div>
 
-                                    <!-- Start Date -->
-                                    <div class="form-group">
-                                        <label class="form-label" for="start-date">Start Date</label>
-                                        <input type="date" id="start-date" class="input">
-                                        <p class="form-hint">When the first video should post</p>
-                                    </div>
+                                    <!-- Divider -->
+                                    <div class="setup-divider"></div>
 
-                                    <!-- Scene Count Override (Testing) -->
-                                    <div class="form-group">
-                                        <label class="form-label" for="scene-count-override">Scenes per Video</label>
-                                        <div class="input-with-buttons">
-                                            <button type="button" class="btn btn--icon btn--ghost" id="scene-count-minus">−</button>
-                                            <input type="number" id="scene-count-override" class="input" value="0" min="0" max="30">
-                                            <button type="button" class="btn btn--icon btn--ghost" id="scene-count-plus">+</button>
+                                    <!-- Row 3: Schedule settings — Start Date + Posts/Day side by side -->
+                                    <div class="setup-row setup-row--2col">
+                                        <div class="form-group">
+                                            <label class="form-label" for="start-date">
+                                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                                                Start Date
+                                            </label>
+                                            <input type="date" id="start-date" class="input">
+                                            <p class="form-hint">When the first video posts</p>
                                         </div>
-                                        <p class="form-hint">0 = auto (worker decides based on duration). Set 4-6 for quick tests.</p>
+                                        <div class="form-group">
+                                            <label class="form-label" for="posts-per-day">
+                                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                                                Posts Per Day
+                                            </label>
+                                            <select id="posts-per-day" class="input">
+                                                <option value="1">1 post / day</option>
+                                                <option value="2">2 posts / day</option>
+                                                <option value="3" selected>3 posts / day</option>
+                                            </select>
+                                            <p class="form-hint">Spread across time windows</p>
+                                        </div>
                                     </div>
 
-                                    <!-- ASAP Test Mode -->
-                                    <div class="form-group">
-                                        <label class="checkbox-inline">
-                                            <input type="checkbox" id="asap-mode">
-                                            <span class="checkbox-inline__label">🚀 Schedule ASAP (test mode)</span>
-                                        </label>
-                                        <p class="form-hint">First post in ~5 min, ignores time windows</p>
+                                    <!-- Divider -->
+                                    <div class="setup-divider"></div>
+
+                                    <!-- Row 4: Testing controls — compact row -->
+                                    <div class="setup-row setup-row--testing">
+                                        <div class="form-group form-group--compact">
+                                            <label class="form-label form-label--sm" for="scene-count-override">
+                                                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                                                Scenes / Video
+                                            </label>
+                                            <div class="input-with-buttons input-with-buttons--sm">
+                                                <button type="button" class="btn btn--icon btn--ghost btn--xs" id="scene-count-minus">−</button>
+                                                <input type="number" id="scene-count-override" class="input input--sm" value="0" min="0" max="30">
+                                                <button type="button" class="btn btn--icon btn--ghost btn--xs" id="scene-count-plus">+</button>
+                                            </div>
+                                            <p class="form-hint">0 = auto</p>
+                                        </div>
+                                        <div class="form-group form-group--compact">
+                                            <label class="checkbox-inline">
+                                                <input type="checkbox" id="asap-mode">
+                                                <span class="checkbox-inline__icon">
+                                                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                                                </span>
+                                                <span class="checkbox-inline__label">ASAP Mode</span>
+                                            </label>
+                                            <p class="form-hint">Posts in ~5 min, skips windows</p>
+                                        </div>
                                     </div>
 
-                                    <!-- Posts Per Day -->
-                                    <div class="form-group">
-                                        <label class="form-label" for="posts-per-day">Posts Per Day</label>
-                                        <select id="posts-per-day" class="input">
-                                            <option value="1">1 post/day</option>
-                                            <option value="2">2 posts/day</option>
-                                            <option value="3" selected>3 posts/day</option>
-                                        </select>
-                                        <p class="form-hint">Platform spread across post windows</p>
-                                    </div>
                                 </div>
                             </div>
 
@@ -467,6 +509,6 @@
     <script src="../js/components/toast.js"></script>
     
     <!-- Page Controller -->
-    <script src="../js/pages/campaign.js"></script>
+    <script src="../js/pages/campaign.js?v=nocache-1749782400"></script>
 </body>
 </html>

@@ -28,6 +28,7 @@ import {
   type ThemeGuidance,
 } from "./stories.ts";
 import { searchPexelsForKeywords, searchVideosForScenes } from "./pexels.ts";
+import { pickHorrorScenario, buildScenarioPromptInjection, getScenarioIndex, type HorrorScenario } from "./scenarios.ts";
 import { generateImage, getLastReplicateInputs, uploadRemoteImageToStorage } from "./images.ts";
 import { 
   assembleVideoWithCreatomate, 
@@ -147,6 +148,7 @@ export async function runPreviewMode(
   let storyId: string | null = null;
   let similarityInfo: { similarityScore: number; mostSimilarTitle: string | null; isLikelyUnique: boolean } | null = null;
   let themeGuidance: ThemeGuidance | undefined;
+  let pickedScenario: HorrorScenario | null = null;
   
   if (useDNA) {
     // === DNA-BASED GENERATION (v5.0 - with Visual DNA sync) ===
@@ -155,12 +157,21 @@ export async function runPreviewMode(
     console.log(`[PREVIEW] Target platform: ${targetPlatform}`);
     
     // Build story options from job config
-    const storyOptions = {
+    const storyOptions: Record<string, any> = {
       story_mode: (job as any).story_mode || 'auto',
       story_profile: (job as any).story_profile,
       niche: (job as any).niche || 'horror',
       vibe_preset: job.vibe_preset || genreProfile,
     };
+    
+    // ── Reddit-inspired scenario injection (reddit_trending_horror preset) ──
+    if (job.vibe_preset === 'reddit_trending_horror') {
+      // Get recent settings from job meta to avoid repetition
+      const recentSettings: string[] = jobMeta.recent_scenario_settings || [];
+      pickedScenario = pickHorrorScenario(recentSettings);
+      storyOptions.scenario_prompt = buildScenarioPromptInjection(pickedScenario);
+      console.log(`[PREVIEW] Reddit-inspired scenario: "${pickedScenario.category}" (${pickedScenario.subreddit_style})`);
+    }
     
     const dnaResult = await generateStoryWithDNA(
       supabase,
@@ -274,6 +285,14 @@ export async function runPreviewMode(
         compliance: (dnaInfo as any).compliance,
         raw_story: (dnaInfo as any).raw_story,
       } : null,
+      // Reddit-inspired scenario metadata (reddit_trending_horror preset)
+      ...(pickedScenario ? {
+        scenario_category: pickedScenario.category,
+        scenario_subreddit_style: pickedScenario.subreddit_style,
+        scenario_fear_type: pickedScenario.core_fear,
+        scenario_setting_hint: pickedScenario.setting_hint,
+        scenario_index: getScenarioIndex(pickedScenario),
+      } : {}),
     },
   });
 
@@ -631,12 +650,21 @@ export async function runAudioPhase(
     
     if (useDNA) {
       // DNA-based generation for guaranteed uniqueness and preset compliance
-      const storyOptions = {
+      const storyOptions: Record<string, any> = {
         story_mode: jobMeta.story_mode || 'auto',
         story_profile: jobMeta.story_profile,
         niche: jobMeta.theme || 'horror',
         vibe_preset: job.vibe_preset || genreProfile,
       };
+      
+      // ── Reddit-inspired scenario injection (reddit_trending_horror preset) ──
+      let audioScenario: HorrorScenario | null = null;
+      if (job.vibe_preset === 'reddit_trending_horror') {
+        const recentSettings: string[] = jobMeta.recent_scenario_settings || [];
+        audioScenario = pickHorrorScenario(recentSettings);
+        storyOptions.scenario_prompt = buildScenarioPromptInjection(audioScenario);
+        console.log(`[AUDIO] Reddit-inspired scenario: "${audioScenario.category}" (${audioScenario.subreddit_style})`);
+      }
       
       const dnaResult = await generateStoryWithDNA(
         supabase,
@@ -655,7 +683,7 @@ export async function runAudioPhase(
       };
       
       // Store DNA info in job meta for later phases
-      const updatedMeta = {
+      const updatedMeta: Record<string, any> = {
         ...jobMeta,
         visual_dna: dnaResult.visual_dna || null,
         story_dna: dnaResult.dna || null,
@@ -664,6 +692,14 @@ export async function runAudioPhase(
           contract_summary: dnaResult.contract_summary,
           compliance: dnaResult.compliance,
         },
+        // Reddit-inspired scenario metadata
+        ...(audioScenario ? {
+          scenario_category: audioScenario.category,
+          scenario_subreddit_style: audioScenario.subreddit_style,
+          scenario_fear_type: audioScenario.core_fear,
+          scenario_setting_hint: audioScenario.setting_hint,
+          scenario_index: getScenarioIndex(audioScenario),
+        } : {}),
       };
       
       // CRITICAL: Update local jobMeta reference so later spreads include DNA info

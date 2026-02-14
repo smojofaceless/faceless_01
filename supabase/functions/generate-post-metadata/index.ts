@@ -148,6 +148,39 @@ const PLATFORM_CONFIGS: Record<string, PlatformPromptConfig> = {
 - NEVER include slurs, explicit gore, or self-harm references
 `,
   },
+
+  facebook_reels: {
+    platform: "Facebook Reels",
+    systemSuffix: "Optimize for Facebook Reels discovery and engagement.",
+    outputSchema: {
+      title:
+        "string — max 80 chars. Hook-driven, curiosity-gap style. Works as video title on Facebook.",
+      description:
+        "string — max 300 chars. Story-style teaser with suspense. End with engagement CTA (Share, Follow).",
+      hashtags:
+        "string[] — 5-8 hashtags. Mix of broad horror + niche. No # prefix in array.",
+    },
+    example: {
+      title: "They Counted 6 People. There Were 7.",
+      description:
+        "Six strangers shelter in a store during a storm. Every headcount comes back as seven.\n\nWho is the extra person?\n\n👉 Follow for more horror stories.",
+      hashtags: [
+        "horror",
+        "scary",
+        "scarystory",
+        "creepy",
+        "horrorreels",
+        "paranormal",
+      ],
+    },
+    guidance: `
+- Title: short punchy hook, 40-80 chars, curiosity gap or numbers
+- Description: tease the mystery, NO spoilers, end with Follow/Share CTA
+- Hashtags: 5-8, mix broad ("horror","scary") + niche ("countinghorror")
+- Facebook Reels audience skews slightly older — tone can be slightly more narrative
+- NEVER include slurs, explicit gore, or self-harm references
+`,
+  },
 };
 
 // ---------------------------------------------------------------------------

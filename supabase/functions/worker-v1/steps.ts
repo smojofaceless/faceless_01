@@ -33,6 +33,10 @@ import {
   getImagePromptConfigForJob,
   ImagePromptConfig,
   ELEVENLABS_VOICE_ID,
+  OPENAI_TTS_MODEL,
+  OPENAI_TTS_VOICE,
+  OPENAI_TTS_INSTRUCTIONS,
+  TtsProvider,
   STORAGE_BUCKET,
   updateStepStatus,
   WALL_CLOCK_BUDGET_MS,
@@ -54,6 +58,145 @@ import {
   isCostLimitError,
   assertCanSpend 
 } from "./costControl.ts";
+
+// =====================================================
+// REDDIT-INSPIRED HORROR SCENARIO SYSTEM
+// Curated rotating horror themes drawn from the types of
+// stories that trend on horror subreddits (nosleep, 
+// creepypasta, letsnotmeet, paranormal, etc.)
+// =====================================================
+
+interface HorrorScenario {
+  category: string;       // e.g. "stalker", "paranormal", "glitch"
+  subreddit_style: string;  // which subreddit genre this resembles
+  premise: string;        // 2-3 sentence scenario seed
+  setting_hint: string;   // suggested setting type
+  fear_type: string;      // core fear being exploited
+}
+
+/**
+ * Curated pool of horror scenarios inspired by trending Reddit horror content.
+ * Each scenario captures the "DNA" of the kind of stories that go viral on 
+ * horror subreddits — without needing live API access.
+ */
+const HORROR_SCENARIOS: HorrorScenario[] = [
+  // --- r/nosleep style (first-person escalating horror) ---
+  { category: 'home_invasion', subreddit_style: 'nosleep', premise: 'Someone realizes the person who has been entering their home while they are away has been living in their attic for months. They find food wrappers, a makeshift bed, and a notebook with detailed logs of the homeowner\'s daily schedule.',  setting_hint: 'suburban house', fear_type: 'violation of safe space' },
+  { category: 'digital_horror', subreddit_style: 'nosleep', premise: 'A person discovers their smart home cameras have been recording someone standing in their bedroom doorway every night at 3:17 AM for the past two weeks. The figure is wearing the homeowner\'s own clothes.', setting_hint: 'smart home', fear_type: 'surveillance & identity' },
+  { category: 'childhood_memory', subreddit_style: 'nosleep', premise: 'An adult returns to their childhood home and finds a door in the basement that they have absolutely no memory of. Behind it is a room with children\'s drawings on the walls — drawings that depict events from their own life that haven\'t happened yet.', setting_hint: 'childhood home', fear_type: 'repressed memory' },
+  { category: 'doppelganger', subreddit_style: 'nosleep', premise: 'A night shift worker at a convenience store watches security footage from the previous night and sees themselves already working the shift — stocking shelves, serving customers, doing everything exactly as they would. But they weren\'t there that night.', setting_hint: 'convenience store', fear_type: 'identity duplication' },
+  { category: 'isolation', subreddit_style: 'nosleep', premise: 'During a severe winter storm, a family realizes their nearest neighbor\'s house — visible from their kitchen window for 15 years — has never actually existed. The lot is empty. But someone has been waving at them from that window every evening.', setting_hint: 'rural winter home', fear_type: 'false familiarity' },
+  { category: 'medical_horror', subreddit_style: 'nosleep', premise: 'A patient wakes up from routine surgery to find the hospital completely empty. Not abandoned — the lights are on, machines are running, coffee is still warm — but every single person is gone. Then they hear their own voice being paged over the intercom.', setting_hint: 'hospital', fear_type: 'abandonment & identity' },
+  { category: 'technology', subreddit_style: 'nosleep', premise: 'A person\'s GPS keeps rerouting them to the same abandoned gas station no matter where they try to drive. When they finally stop and go inside, they find photographs of themselves at every age, pinned to the wall in chronological order — including ages they haven\'t reached yet.', setting_hint: 'abandoned gas station', fear_type: 'predestination' },
+  { category: 'sleep_horror', subreddit_style: 'nosleep', premise: 'Someone sets up a sleep recording app and discovers they\'ve been having full, coherent conversations in their sleep — with a voice that responds. The voice knows things about them that nobody else knows.', setting_hint: 'bedroom', fear_type: 'unconscious vulnerability' },
+
+  // --- r/letsnotmeet style (real encounter horror) ---
+  { category: 'stalker', subreddit_style: 'letsnotmeet', premise: 'A rideshare driver picks up a passenger who knows their name, their address, and the names of their children — but has never met them before. The passenger smiles and says "I\'ve been your neighbor for six months."', setting_hint: 'car at night', fear_type: 'being watched' },
+  { category: 'wrong_person', subreddit_style: 'letsnotmeet', premise: 'A jogger running their usual trail at dusk notices someone running behind them, matching their exact pace. When they speed up, the person speeds up. When they slow down, the person slows down. When they stop and turn around, the trail is empty — but they can still hear footsteps.', setting_hint: 'wooded trail', fear_type: 'pursuit' },
+  { category: 'social_horror', subreddit_style: 'letsnotmeet', premise: 'After moving to a new town, a person is warmly welcomed by every neighbor. But they start noticing every neighbor has the same mannerism — the same head tilt, the same way of ending sentences. And nobody in town has any photos from before five years ago.', setting_hint: 'small town', fear_type: 'collective deception' },
+  { category: 'workplace', subreddit_style: 'letsnotmeet', premise: 'A night security guard at a storage facility starts finding handwritten notes in lockers that haven\'t been opened in years. The notes are addressed to them by name and describe what they did earlier that same day.', setting_hint: 'storage facility', fear_type: 'omniscient observer' },
+
+  // --- r/creepypasta style (folk horror / internet legend) ---
+  { category: 'ritual', subreddit_style: 'creepypasta', premise: 'A hiker discovers a circle of trees in the forest where every trunk has been carved with the same symbol. Their compass stops working inside the circle. Their phone shows a photo in the gallery they didn\'t take — it\'s a photo of themselves, taken from behind, from inside the tree circle. The timestamp is tomorrow.', setting_hint: 'deep forest', fear_type: 'ancient ritual' },
+  { category: 'cursed_object', subreddit_style: 'creepypasta', premise: 'A thrift store employee finds a music box that plays a melody nobody recognizes. Everyone who listens to it starts humming the same tune involuntarily. One by one, they stop coming to work. The employee finds them all standing in a field outside town, humming in unison, staring at something in the sky that nobody else can see.', setting_hint: 'small town thrift store', fear_type: 'memetic contagion' },
+  { category: 'urban_decay', subreddit_style: 'creepypasta', premise: 'An urban explorer finds a subway station that doesn\'t appear on any map. The platform is pristine, as if it was built yesterday. A train arrives on schedule. The passengers are all wearing clothes from different decades. One of them waves and mouths: "You\'re next."', setting_hint: 'underground subway', fear_type: 'temporal displacement' },
+  { category: 'folklore', subreddit_style: 'creepypasta', premise: 'In a coastal village, fishermen follow a centuries-old rule: never go to sea on the seventh day of the seventh month. A newcomer breaks the rule. When they return, they look twenty years older and refuse to speak about what they saw. Their boat is covered in handprints from the inside.', setting_hint: 'coastal village', fear_type: 'forbidden knowledge' },
+
+  // --- r/paranormal style (unexplained phenomena) ---
+  { category: 'haunting', subreddit_style: 'paranormal', premise: 'After their grandmother\'s funeral, a family discovers her voice still comes through the baby monitor every night, singing the same lullaby. The baby stops crying when it plays. But one night the voice says something new: "I\'m not the only one who comes."', setting_hint: 'family home', fear_type: 'afterlife communication' },
+  { category: 'time_slip', subreddit_style: 'paranormal', premise: 'A photographer develops film from a vintage camera bought at an estate sale. The photos show their own apartment — but decades old, with different furniture. In every photo, someone is sitting in the exact spot where the photographer sleeps. The last photo shows the person looking directly at the camera, holding a sign that reads today\'s date.', setting_hint: 'apartment', fear_type: 'temporal bleed' },
+  { category: 'entity', subreddit_style: 'paranormal', premise: 'A family\'s dog starts barking at the same empty corner of the living room every evening at sunset. One day, the youngest child casually mentions "the tall man" who stands there. They say he\'s always been there. He just recently started moving.', setting_hint: 'family home', fear_type: 'invisible presence' },
+  { category: 'location_horror', subreddit_style: 'paranormal', premise: 'A hotel guest requests a room change because they hear whispering from the walls. They\'re moved three times. The whispering follows. The front desk clerk finally admits: "Every guest in that wing hears whispering. We don\'t know what they say because it\'s always in a language we can\'t identify."', setting_hint: 'old hotel', fear_type: 'inescapable presence' },
+
+  // --- r/shortscarystories style (tight, twist-heavy) ---
+  { category: 'twist', subreddit_style: 'shortscarystories', premise: 'A 911 operator receives a call from a child reporting an intruder in their home. As protocol demands, they keep the child talking and calm. Twenty minutes later, responding officers arrive to find the child safe — but the 911 operator\'s own home has been broken into. The intruder left a recording of the entire 911 call playing on repeat.', setting_hint: 'call center / home', fear_type: 'misdirection' },
+  { category: 'mirror', subreddit_style: 'shortscarystories', premise: 'A person notices their reflection blinks a half-second late. They test it for days, recording themselves in front of mirrors. The delay grows longer each day. On the seventh day, the reflection doesn\'t move at all. It just stands there, watching, while they back away.', setting_hint: 'bathroom', fear_type: 'self-alienation' },
+  { category: 'routine', subreddit_style: 'shortscarystories', premise: 'Every morning, a commuter passes the same man standing at the same bus stop. The man never gets on a bus. One day the commuter waves. The man walks over, sits next to them on the bus, and whispers: "I\'ve been waiting for you to notice me for four hundred and twelve days."', setting_hint: 'city bus', fear_type: 'patient predator' },
+  { category: 'family', subreddit_style: 'shortscarystories', premise: 'A parent checking the baby monitor at 2 AM sees a second figure standing over the crib. They sprint to the nursery — empty, just the baby sleeping peacefully. When they return to the monitor screen, there are now two figures standing over the crib. And one of them looks exactly like the parent.', setting_hint: 'nursery', fear_type: 'parental dread' },
+];
+
+/**
+ * Pick a random horror scenario, avoiding recently used categories.
+ * Returns the scenario plus metadata for storage.
+ */
+function pickHorrorScenario(recentSettings?: string[]): HorrorScenario & { scenario_index: number } {
+  let pool = HORROR_SCENARIOS.map((s, i) => ({ ...s, scenario_index: i }));
+  
+  // If we have recent settings, deprioritize matching categories
+  if (recentSettings && recentSettings.length > 0) {
+    const recentLower = recentSettings.map(s => s.toLowerCase());
+    const unused = pool.filter(s => 
+      !recentLower.some(r => 
+        r.includes(s.setting_hint.toLowerCase()) || 
+        r.includes(s.category.toLowerCase())
+      )
+    );
+    if (unused.length >= 3) pool = unused;
+  }
+  
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/**
+ * Build the prompt for generating a Reddit-inspired horror story from a curated scenario seed.
+ */
+function buildRedditInspiredPrompt(
+  scenario: HorrorScenario,
+  wordRange: { min: number; max: number },
+  recentStories?: Array<{ title: string; hook: string | null; setting?: string }>
+): string {
+  let avoidanceSection = '';
+  if (recentStories && recentStories.length > 0) {
+    const avoidList = recentStories.map(s => {
+      const parts = [`"${s.title}"`];
+      if (s.setting) parts.push(`(setting: ${s.setting})`);
+      return parts.join(' ');
+    }).join('\n- ');
+    avoidanceSection = `\n\nDO NOT REPEAT — these stories were already created recently:\n- ${avoidList}\n\nYour story must feel completely fresh and explore a DIFFERENT angle than any of the above.`;
+  }
+
+  return `Write an original short horror story inspired by this scenario seed. The scenario is a STARTING POINT — you should expand, twist, and make it your own.
+
+SCENARIO SEED (${scenario.subreddit_style} style):
+"""
+${scenario.premise}
+"""
+
+GENRE STYLE: ${scenario.subreddit_style === 'nosleep' ? 'r/nosleep — first-person account, starts normal, escalates into genuine terror' :
+  scenario.subreddit_style === 'letsnotmeet' ? 'r/letsnotmeet — true-crime-feeling encounter with a deeply unsettling person or situation' :
+  scenario.subreddit_style === 'creepypasta' ? 'r/creepypasta — internet legend feel, folklore-adjacent, viral horror mythology' :
+  scenario.subreddit_style === 'paranormal' ? 'r/paranormal — unexplained phenomena reported with earnest sincerity' :
+  'r/shortscarystories — tight, punchy, twist-heavy micro horror'}
+
+CORE FEAR: ${scenario.fear_type}
+
+REQUIREMENTS:
+- Word count: ${wordRange.min}-${wordRange.max} words (STRICT — controls video timing!)
+- Use the scenario as INSPIRATION only — add your own details, characters, twist
+- Third-person dramatic storyteller voice — calm, deliberate, chilling
+- Single main horror concept — don't dilute with multiple scares
+- End on an UNRESOLVED note. No explanations. No comfort. No escape.
+
+STRUCTURE (MANDATORY):
+[HOOK] — First 1-2 sentences. Immediate unease within 5 seconds of narration.
+[ESCALATION] — Build tension around one central disturbing concept.
+[CLIMAX] — Peak moment of horror or realization.
+[ENDING] — Sharp, unsettling. Leaves the viewer disturbed.
+
+STYLE RULES:
+- No gore or explicit violence — psychological horror only
+- Every sentence must be visually filmable (describe scenes, not abstractions)
+- Include at least ONE specific sensory detail per beat (sound, smell, texture, visual)
+- Punchy sentences for narration pacing — no long-winded paragraphs${avoidanceSection}
+
+Respond in JSON format:
+{
+  "title": "Short catchy title (3-6 words)",
+  "story": "The full story text...",
+  "setting": "One or two words describing the primary setting/location",
+  "concept": "One sentence summarizing the core concept/premise"
+}`;
+}
 
 // =====================================================
 // STEP 1: STORY GENERATION
@@ -156,7 +299,18 @@ export async function executeStoryStep(
     }
 
     // Build story prompt based on vibe preset
-    const storyPrompt = buildStoryPrompt(vibePreset, wordRange, recentStories);
+    // For reddit_trending_horror, pick a curated horror scenario and build a Reddit-inspired prompt
+    let horrorScenario: (HorrorScenario & { scenario_index: number }) | null = null;
+    let storyPrompt: string;
+
+    if (vibePreset === 'reddit_trending_horror') {
+      const recentSettings = recentStories?.map(s => s.setting).filter(Boolean) as string[] || [];
+      horrorScenario = pickHorrorScenario(recentSettings);
+      console.log(`[STORY] Reddit-inspired scenario: "${horrorScenario.category}" (${horrorScenario.subreddit_style} style, fear: ${horrorScenario.fear_type})`);
+      storyPrompt = buildRedditInspiredPrompt(horrorScenario, wordRange, recentStories);
+    } else {
+      storyPrompt = buildStoryPrompt(vibePreset, wordRange, recentStories);
+    }
 
     // Log prompt snapshot
     await logger.snapshot('story', 'prompt', storyPrompt, `OpenAI prompt for ${vibePreset} story`);
@@ -277,9 +431,32 @@ export async function executeStoryStep(
       word_count: wordCount,
       vibe_preset: vibePreset,
       generated_at: new Date().toISOString(),
+      // Include Reddit-inspired scenario metadata if available
+      ...(horrorScenario ? {
+        scenario_category: horrorScenario.category,
+        scenario_subreddit_style: horrorScenario.subreddit_style,
+        scenario_fear_type: horrorScenario.fear_type,
+        scenario_setting_hint: horrorScenario.setting_hint,
+        scenario_index: horrorScenario.scenario_index,
+      } : {}),
     });
 
-    console.log(`[STORY] ✓ Generated: "${title}" (${wordCount} words)`);
+    // Store scenario metadata in job meta (for campaign detail page display)
+    if (horrorScenario) {
+      try {
+        await updateJobMeta(supabase, job.id, {
+          scenario_category: horrorScenario.category,
+          scenario_subreddit_style: horrorScenario.subreddit_style,
+          scenario_fear_type: horrorScenario.fear_type,
+          scenario_setting_hint: horrorScenario.setting_hint,
+        });
+        console.log(`[STORY] ✓ Scenario metadata stored in job meta`);
+      } catch (e) {
+        console.warn(`[STORY] Could not store scenario in job meta (non-fatal): ${e}`);
+      }
+    }
+
+    console.log(`[STORY] ✓ Generated: "${title}" (${wordCount} words)${horrorScenario ? ` [scenario: ${horrorScenario.category}/${horrorScenario.subreddit_style}]` : ''}`);
     return { success: true, data: { title, word_count: wordCount } };
 
   } catch (error) {
@@ -382,6 +559,9 @@ Each story MUST use a completely different and unique setting from all previous 
 function getStorySystemPrompt(vibePreset: string): string {
   if (vibePreset === 'one_too_many') {
     return `You are a master storyteller specializing in short-form horror and mystery content for TikTok/Reels narration. For counting horror stories, you can use ANY narrative voice that best serves the story — first-person ("I counted again..."), third-person documentary ("They counted again..."), or even a "Did you know..." factual hook style. Choose whichever voice makes THIS particular story most gripping. You write like a calm, factual narrator recounting something deeply unsettling — the horror comes from the math not adding up, not from gore or monsters.`;
+  }
+  if (vibePreset === 'reddit_trending_horror') {
+    return `You are a master storyteller who creates ORIGINAL, cinematic horror scripts for 60-90 second animated videos, inspired by the kinds of stories that trend on Reddit horror communities. Third-person dramatic storyteller voice — calm, deliberate, chilling. You expand on scenario seeds to create rich, atmospheric horror narratives. Every sentence must be visually filmable. No Reddit references whatsoever.`;
   }
   return `You are a master storyteller specializing in short-form horror and mystery content. You create gripping, atmospheric stories perfect for TikTok/Reels narration. Your stories are ALWAYS first-person narration that feels personal and immediate.`;
 }
@@ -778,6 +958,11 @@ export async function executeScenesStep(
     const musicTrackId = (job.meta?.music_track_id as string) || 'ambient_dark_01';
     const vibePreset = job.vibe_preset || (job.meta?.vibe_preset as string) || 'urban_legend';
     
+    // Provider-aware voice info for pipeline hash
+    const ttsProvider: TtsProvider = (env.TTS_PROVIDER || 'openai') as TtsProvider;
+    const voiceId = ttsProvider === 'openai' ? OPENAI_TTS_VOICE : ELEVENLABS_VOICE_ID;
+    const voiceModel = ttsProvider === 'openai' ? OPENAI_TTS_MODEL : 'eleven_turbo_v2_5';
+
     const pipelineHash = await computePipelineHash({
       brandId: job.brand_id,
       vibePreset: vibePreset,
@@ -785,8 +970,8 @@ export async function executeScenesStep(
       storyHash: storyHash,
       artStyle: artStyle,
       visualPreset: visualPreset,
-      voiceId: ELEVENLABS_VOICE_ID,
-      voiceModel: 'eleven_turbo_v2_5',
+      voiceId: voiceId,
+      voiceModel: voiceModel,
       musicTrackId: musicTrackId,
     });
 
@@ -802,8 +987,9 @@ export async function executeScenesStep(
         story_hash: storyHash.slice(0, 16),
         art_style: artStyle,
         visual_preset: visualPreset,
-        voice_id: ELEVENLABS_VOICE_ID,
-        voice_model: 'eleven_turbo_v2_5',
+        voice_id: voiceId,
+        voice_model: voiceModel,
+        tts_provider: ttsProvider,
         music_track_id: musicTrackId,
       },
     });
@@ -825,7 +1011,7 @@ export async function executeScenesStep(
 }
 
 // =====================================================
-// STEP 4: VOICE SYNTHESIS (ElevenLabs)
+// STEP 4: VOICE SYNTHESIS (Multi-provider: OpenAI TTS / ElevenLabs)
 // =====================================================
 
 export async function executeVoiceStep(
@@ -847,6 +1033,343 @@ export async function executeVoiceStep(
   if (!job.story_text) {
     return { success: false, error: 'No story_text available for voice synthesis' };
   }
+
+  // Determine TTS provider: env var > job meta > default 'openai'
+  const ttsProvider: TtsProvider = (env.TTS_PROVIDER || job.meta?.tts_provider || 'openai') as TtsProvider;
+  console.log(`[VOICE] Using TTS provider: ${ttsProvider}`);
+
+  if (ttsProvider === 'elevenlabs') {
+    return executeVoiceStepElevenLabs(supabase, job, workerId, env, logger, idempotencyKey);
+  } else {
+    return executeVoiceStepOpenAI(supabase, job, workerId, env, logger, idempotencyKey);
+  }
+}
+
+// =====================================================
+// VOICE PROVIDER: OpenAI gpt-4o-mini-tts
+// =====================================================
+
+async function executeVoiceStepOpenAI(
+  supabase: SupabaseClient,
+  job: Job,
+  workerId: string,
+  env: Record<string, string>,
+  logger: StepLogger,
+  idempotencyKey: string
+): Promise<StepResult> {
+  const openaiKey = env.OPENAI_API_KEY;
+  if (!openaiKey) {
+    return { success: false, error: 'OPENAI_API_KEY not configured' };
+  }
+
+  // === EXTERNAL IDEMPOTENCY: Hash includes provider+model+voice+text ===
+  const ttsModel = OPENAI_TTS_MODEL;
+  const ttsVoice = (job.meta?.tts_voice as string) || OPENAI_TTS_VOICE;
+  const ttsInstructions = (job.meta?.tts_instructions as string) || OPENAI_TTS_INSTRUCTIONS;
+  const canonicalVoiceInput = `openai|${ttsModel}|${ttsVoice}|${job.story_text}`;
+  const storyHash = await computeHash(canonicalVoiceInput);
+  const storyHashKey = `voice_hash:${storyHash}`;
+
+  // Quality guard: only reuse if quality_ok !== false
+  const existingHashAsset = await getAssetByKey(supabase, job.id, storyHashKey, true);
+  if (existingHashAsset?.public_url) {
+    console.log(`[VOICE] Story hash match (billing protection): ${storyHash.slice(0, 8)}...`);
+    await upsertAsset(supabase, job.id, idempotencyKey, 'voice', 
+      existingHashAsset.storage_path, existingHashAsset.public_url, {
+        story_hash: storyHash,
+        copied_from: existingHashAsset.idempotency_key,
+        timestamps: existingHashAsset.meta?.timestamps,
+        duration_ms: existingHashAsset.meta?.duration_ms,
+        tts_provider: 'openai',
+      });
+    await updateJobMeta(supabase, job.id, {
+      audio_url: existingHashAsset.public_url,
+      audio_duration_ms: existingHashAsset.meta?.duration_ms,
+      tts_provider: 'openai',
+    });
+    return { success: true, skipped: true, data: { 
+      audio_url: existingHashAsset.public_url, 
+      billing_protected: true,
+      tts_provider: 'openai',
+    } };
+  }
+
+  const wordCount = job.story_text.split(/\s+/).length;
+  const charCount = job.story_text.length;
+  console.log(`[VOICE] Synthesizing ${wordCount} words (${charCount} chars) with OpenAI ${ttsModel} voice=${ttsVoice}`);
+
+  try {
+    await requireLeaseGrace(supabase, job.id, workerId, 'OpenAI TTS');
+
+    // === COST CONTROL ===
+    const costHelper = new CostControlHelper(supabase, job.id, workerId);
+    try {
+      await assertCanSpend(costHelper, 'openai_tts', 'voice_synthesis', 1);
+    } catch (costError) {
+      if (isCostLimitError(costError)) {
+        console.error(`[VOICE] ❌ Cost limit hit: ${costError instanceof Error ? costError.message : costError}`);
+        return { 
+          success: false, 
+          error: `cost_limit_exceeded: openai_tts - ${costError instanceof Error ? costError.message : 'budget reached'}`,
+          data: { chars: charCount, cost_limit_hit: true, failure_class: 'misconfig' }
+        };
+      }
+      throw costError;
+    }
+
+    // Snapshot request params
+    await logger.snapshot('voice', 'payload', {
+      provider: 'openai',
+      model: ttsModel,
+      voice: ttsVoice,
+      instructions: ttsInstructions.slice(0, 100),
+      text_length: charCount,
+      word_count: wordCount,
+      text_preview: job.story_text.slice(0, 200),
+    }, 'OpenAI TTS request params');
+
+    // Call OpenAI TTS API
+    const response = await fetchWithError(
+      'https://api.openai.com/v1/audio/speech',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openaiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: ttsModel,
+          input: job.story_text,
+          voice: ttsVoice,
+          instructions: ttsInstructions,
+          response_format: 'mp3',
+        }),
+      },
+      'OpenAI TTS'
+    );
+
+    // OpenAI TTS returns raw audio bytes
+    const audioBuffer = await response.arrayBuffer();
+    const audioBytes = new Uint8Array(audioBuffer);
+
+    if (audioBytes.length < 1000) {
+      throw new Error(`OpenAI TTS returned suspiciously small audio: ${audioBytes.length} bytes`);
+    }
+
+    // Upload to storage
+    const storagePath = pathForAudio(job.brand_id, job.id);
+    const publicUrl = await uploadToStorage(
+      supabase,
+      STORAGE_BUCKET,
+      storagePath,
+      audioBytes,
+      'audio/mpeg'
+    );
+
+    // Estimate duration from file size (MP3 ~128kbps = ~16KB/s) as fallback
+    let estimatedDurationMs = Math.round((audioBytes.length / 16000) * 1000);
+
+    // === WHISPER ALIGNMENT: Get precise word-level timestamps via transcription ===
+    let timestamps: Array<{ word: string; start: number; end: number }> = [];
+    let timestampsApproximate = true;
+
+    try {
+      console.log(`[VOICE] Running Whisper alignment on ${audioBytes.length} byte audio...`);
+      
+      // Build multipart form data for Whisper API
+      const boundary = '----WhisperBoundary' + Date.now();
+      const formParts: Uint8Array[] = [];
+      const encoder = new TextEncoder();
+      
+      // File field
+      formParts.push(encoder.encode(
+        `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="voice.mp3"\r\nContent-Type: audio/mpeg\r\n\r\n`
+      ));
+      formParts.push(audioBytes);
+      formParts.push(encoder.encode('\r\n'));
+      
+      // Model field
+      formParts.push(encoder.encode(
+        `--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n`
+      ));
+      
+      // Response format field
+      formParts.push(encoder.encode(
+        `--${boundary}\r\nContent-Disposition: form-data; name="response_format"\r\n\r\nverbose_json\r\n`
+      ));
+      
+      // Timestamp granularities field
+      formParts.push(encoder.encode(
+        `--${boundary}\r\nContent-Disposition: form-data; name="timestamp_granularities[]"\r\n\r\nword\r\n`
+      ));
+      
+      // End boundary
+      formParts.push(encoder.encode(`--${boundary}--\r\n`));
+      
+      // Combine parts
+      const totalLength = formParts.reduce((sum, p) => sum + p.length, 0);
+      const formBody = new Uint8Array(totalLength);
+      let offset = 0;
+      for (const part of formParts) {
+        formBody.set(part, offset);
+        offset += part.length;
+      }
+      
+      const whisperResp = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openaiKey}`,
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        },
+        body: formBody,
+      });
+      
+      if (whisperResp.ok) {
+        const whisperData = await whisperResp.json();
+        
+        // Extract actual duration from Whisper response
+        if (whisperData.duration) {
+          estimatedDurationMs = Math.round(whisperData.duration * 1000);
+        }
+        
+        // Extract word-level timestamps from Whisper
+        if (whisperData.words && Array.isArray(whisperData.words) && whisperData.words.length > 0) {
+          const whisperWords = whisperData.words.map((w: { word: string; start: number; end: number }) => ({
+            word: w.word.trim(),
+            start: w.start,
+            end: w.end,
+          })).filter((w: { word: string }) => w.word.length > 0);
+          
+          // === FORCED ALIGNMENT: Map Whisper timestamps back onto original story words ===
+          // Whisper may re-transcribe differently ("didn't" → "did not", etc.)
+          // We keep original words but use Whisper's timing
+          const originalWords = job.story_text!.split(/\s+/).filter(w => w.length > 0);
+          timestamps = forceAlignTimestamps(originalWords, whisperWords);
+          
+          if (timestamps.length > 0) {
+            timestampsApproximate = false;
+            console.log(`[VOICE] ✓ Forced alignment: ${timestamps.length} words aligned from ${whisperWords.length} Whisper words, duration=${estimatedDurationMs}ms`);
+          } else {
+            console.warn(`[VOICE] Forced alignment returned 0 words, falling back to Whisper raw`);
+            timestamps = whisperWords;
+            timestampsApproximate = false;
+          }
+        } else {
+          console.warn(`[VOICE] Whisper returned no word timestamps, falling back to approximate`);
+        }
+      } else {
+        const errText = await whisperResp.text().catch(() => 'unknown');
+        console.warn(`[VOICE] Whisper alignment failed (${whisperResp.status}): ${errText.slice(0, 200)} — falling back to approximate`);
+      }
+    } catch (whisperErr) {
+      console.warn(`[VOICE] Whisper alignment error: ${whisperErr instanceof Error ? whisperErr.message : whisperErr} — falling back to approximate`);
+    }
+    
+    // Fallback: approximate timestamps if Whisper didn't work
+    if (timestamps.length === 0) {
+      const words = job.story_text!.split(/\s+/).filter(w => w.length > 0);
+      const avgWordDurationSec = (estimatedDurationMs / 1000) / words.length;
+      let currentTime = 0;
+      for (const word of words) {
+        timestamps.push({
+          word: word,
+          start: currentTime,
+          end: currentTime + avgWordDurationSec,
+        });
+        currentTime += avgWordDurationSec;
+      }
+      timestampsApproximate = true;
+    }
+
+    // Store asset
+    await upsertAsset(supabase, job.id, idempotencyKey, 'voice_audio', storagePath, publicUrl, {
+      duration_ms: estimatedDurationMs,
+      word_count: timestamps.length,
+      has_timestamps: true,
+      timestamps_approximate: timestampsApproximate,
+      story_hash: storyHash,
+      timestamps: timestamps,
+      tts_provider: 'openai',
+      tts_model: ttsModel,
+      tts_voice: ttsVoice,
+    });
+    
+    // Also store with hash key for billing protection
+    await upsertAsset(supabase, job.id, storyHashKey, 'voice_audio', storagePath, publicUrl, {
+      duration_ms: estimatedDurationMs,
+      word_count: timestamps.length,
+      has_timestamps: true,
+      timestamps_approximate: timestampsApproximate,
+      story_hash: storyHash,
+      timestamps: timestamps,
+      tts_provider: 'openai',
+      tts_model: ttsModel,
+      tts_voice: ttsVoice,
+    });
+
+    // Update job meta
+    await updateJobMeta(supabase, job.id, {
+      audio_url: publicUrl,
+      audio_timestamps: timestamps,
+      audio_duration_ms: estimatedDurationMs,
+      tts_provider: 'openai',
+      tts_model: ttsModel,
+      tts_voice: ttsVoice,
+    });
+
+    console.log(`[VOICE] ✓ OpenAI TTS: ${estimatedDurationMs}ms audio (${audioBytes.length} bytes), ${timestamps.length} word timestamps (${timestampsApproximate ? 'approx' : 'precise via Whisper'})`);
+    
+    // === COST CONTROL: Record usage + release slot ===
+    const costIdempotencyKey = `job:${job.id}:openai_tts:voice:${storyHash.slice(0, 16)}`;
+    // OpenAI TTS pricing: ~$0.015 per 1K chars for gpt-4o-mini-tts
+    const estimatedCostCents = Math.round(charCount * 0.0015);
+    await costHelper.recordUsage(
+      'openai_tts',
+      costIdempotencyKey,
+      { 
+        chars_processed: charCount, 
+        model: ttsModel,
+        voice: ttsVoice,
+        estimated_cost_cents: estimatedCostCents,
+        audio_bytes: audioBytes.length,
+      },
+      'voice',
+      'voice_synthesis'
+    );
+    await costHelper.releaseSlot('openai_tts', 'voice_synthesis');
+
+    // Snapshot result
+    await logger.snapshot('voice', 'response', {
+      provider: 'openai',
+      duration_ms: estimatedDurationMs,
+      word_count: timestamps.length,
+      has_timestamps: true,
+      timestamps_approximate: timestampsApproximate,
+      audio_bytes: audioBytes.length,
+      audio_url: publicUrl,
+    }, 'OpenAI TTS result');
+
+    return { success: true, data: { audio_url: publicUrl, duration_ms: estimatedDurationMs, tts_provider: 'openai' } };
+
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error(`[VOICE] ✗ OpenAI TTS Failed: ${errorMsg}`);
+    return { success: false, error: errorMsg };
+  }
+}
+
+// =====================================================
+// VOICE PROVIDER: ElevenLabs
+// =====================================================
+
+async function executeVoiceStepElevenLabs(
+  supabase: SupabaseClient,
+  job: Job,
+  workerId: string,
+  env: Record<string, string>,
+  logger: StepLogger,
+  idempotencyKey: string
+): Promise<StepResult> {
 
   const elevenLabsKey = env.ELEVENLABS_API_KEY;
   if (!elevenLabsKey) {
@@ -1340,6 +1863,7 @@ async function musicFallback(
     'nosleep': 'ambient_dark_01',
     'backrooms': 'eerie_piano_01',
     'glitch': 'tension_pulse_01',
+    'reddit_trending_horror': 'ambient_dark_01',
   };
 
   const trackId = trackMap[vibePreset] || 'ambient_dark_01';
@@ -1402,6 +1926,151 @@ type ImageModel = 'gpt-image-1' | 'dall-e-2' | 'dall-e-3';
 const DEFAULT_IMAGE_MODEL: ImageModel = 'gpt-image-1'; // Cheapest: ~$0.016/image at low quality
 
 /**
+ * Force-align original story words onto Whisper's word-level timestamps.
+ * 
+ * Problem: Whisper re-transcribes the audio, so its words may differ from the
+ * original story_text (contractions, punctuation, minor misheard words).
+ * We want the ORIGINAL words displayed as subtitles but with WHISPER's timing.
+ * 
+ * Approach: Greedy sequential matching with fuzzy fallback.
+ *  - For each original word, try to find a matching Whisper word nearby.
+ *  - "Match" = normalized forms are equal, or Levenshtein distance ≤ 2.
+ *  - If matched, use Whisper's {start, end} but the original word text.
+ *  - If not matched, interpolate timing from surrounding matched words.
+ */
+function forceAlignTimestamps(
+  originalWords: string[],
+  whisperWords: Array<{ word: string; start: number; end: number }>,
+): Array<{ word: string; start: number; end: number }> {
+  if (whisperWords.length === 0) return [];
+  
+  const normalize = (w: string) => w.toLowerCase().replace(/[^a-z0-9']/g, '');
+  
+  // Simple Levenshtein distance (good enough for short words)
+  const levenshtein = (a: string, b: string): number => {
+    if (a.length === 0) return b.length;
+    if (b.length === 0) return a.length;
+    const matrix: number[][] = [];
+    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+    for (let i = 1; i <= b.length; i++) {
+      for (let j = 1; j <= a.length; j++) {
+        const cost = b[i - 1] === a[j - 1] ? 0 : 1;
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j - 1] + cost,
+        );
+      }
+    }
+    return matrix[b.length][a.length];
+  };
+  
+  const whisperNorm = whisperWords.map(w => normalize(w.word));
+  const result: Array<{ word: string; start: number; end: number; matched: boolean }> = [];
+  let wIdx = 0; // Current position in whisper words
+  
+  for (let oIdx = 0; oIdx < originalWords.length; oIdx++) {
+    const origNorm = normalize(originalWords[oIdx]);
+    if (origNorm.length === 0) continue; // Skip empty after normalization
+    
+    // Search ahead up to 12 positions in Whisper words for a match
+    let bestMatch = -1;
+    let bestDist = 999;
+    const searchLimit = Math.min(12, whisperWords.length - wIdx);
+    
+    for (let look = 0; look < searchLimit; look++) {
+      const candidateIdx = wIdx + look;
+      if (candidateIdx >= whisperWords.length) break;
+      
+      const wNorm = whisperNorm[candidateIdx];
+      
+      // Exact match
+      if (wNorm === origNorm) {
+        bestMatch = candidateIdx;
+        bestDist = 0;
+        break;
+      }
+      
+      // Fuzzy match (Levenshtein ≤ 2 for words > 3 chars, ≤ 1 for short words)
+      const maxDist = origNorm.length > 3 ? 2 : 1;
+      const dist = levenshtein(origNorm, wNorm);
+      if (dist <= maxDist && dist < bestDist) {
+        bestMatch = candidateIdx;
+        bestDist = dist;
+      }
+      
+      // Also handle contractions: "didn't" might become "did" + "not" in Whisper
+      // Check if origNorm starts with wNorm (partial match)
+      if (origNorm.startsWith(wNorm) && wNorm.length >= 3) {
+        bestMatch = candidateIdx;
+        bestDist = 0;
+        break;
+      }
+    }
+    
+    if (bestMatch >= 0) {
+      result.push({
+        word: originalWords[oIdx],
+        start: whisperWords[bestMatch].start,
+        end: whisperWords[bestMatch].end,
+        matched: true,
+      });
+      wIdx = bestMatch + 1;
+    } else {
+      // No match — mark for interpolation
+      result.push({
+        word: originalWords[oIdx],
+        start: -1,
+        end: -1,
+        matched: false,
+      });
+      // Don't advance wIdx — the Whisper word might match the next original word
+    }
+  }
+  
+  // Interpolate timing for unmatched words from surrounding matched words
+  for (let i = 0; i < result.length; i++) {
+    if (result[i].matched) continue;
+    
+    // Find previous matched word
+    let prevEnd = 0;
+    for (let p = i - 1; p >= 0; p--) {
+      if (result[p].matched) {
+        prevEnd = result[p].end;
+        break;
+      }
+    }
+    
+    // Find next matched word
+    let nextStart = whisperWords[whisperWords.length - 1].end;
+    for (let n = i + 1; n < result.length; n++) {
+      if (result[n].matched) {
+        nextStart = result[n].start;
+        break;
+      }
+    }
+    
+    // Count unmatched words in this gap (for even distribution)
+    let gapCount = 1;
+    let gapPosition = 0;
+    for (let g = i - 1; g >= 0 && !result[g].matched; g--) gapPosition++;
+    for (let g = i; g < result.length && !result[g].matched; g++) gapCount = g - i + gapPosition + 1;
+    
+    const gapDuration = nextStart - prevEnd;
+    const wordDuration = gapDuration / gapCount;
+    result[i].start = prevEnd + gapPosition * wordDuration;
+    result[i].end = result[i].start + wordDuration;
+  }
+  
+  const matchedCount = result.filter(r => r.matched).length;
+  const matchRate = ((matchedCount / result.length) * 100).toFixed(1);
+  console.log(`[FORCE_ALIGN] ${matchedCount}/${result.length} words matched (${matchRate}%), ${result.length - matchedCount} interpolated`);
+  
+  return result.map(r => ({ word: r.word, start: r.start, end: r.end }));
+}
+
+/**
  * Voice-Aligned Scene Re-alignment (Improvement #1)
  * Matches scene text boundaries to actual voice word timestamps so each scene's
  * start/end time reflects when those words are actually spoken.
@@ -1421,6 +2090,26 @@ function alignScenesToVoice(
 
   // Normalize a word for matching: lowercase, strip punctuation
   const normalize = (w: string) => w.toLowerCase().replace(/[^a-z0-9']/g, '');
+
+  // Simple Levenshtein for fuzzy matching
+  const levenshtein = (a: string, b: string): number => {
+    if (a.length === 0) return b.length;
+    if (b.length === 0) return a.length;
+    const matrix: number[][] = [];
+    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+    for (let i = 1; i <= b.length; i++) {
+      for (let j = 1; j <= a.length; j++) {
+        const cost = b[i - 1] === a[j - 1] ? 0 : 1;
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j - 1] + cost,
+        );
+      }
+    }
+    return matrix[b.length][a.length];
+  };
 
   // Build normalized voice word list
   const voiceWords = audioTimestamps.map(t => ({
@@ -1448,18 +2137,40 @@ function alignScenesToVoice(
     let wordsMatched = 0;
 
     for (const sw of sceneWords) {
-      // Search ahead up to 5 positions to handle minor mismatches
+      // Search ahead up to 12 positions with fuzzy matching
       let found = false;
-      for (let look = 0; look < 5 && voiceIdx + look < voiceWords.length; look++) {
-        if (voiceWords[voiceIdx + look].normalized === sw) {
-          voiceIdx = voiceIdx + look + 1;
-          wordsMatched++;
-          found = true;
+      let bestMatch = -1;
+      let bestDist = 999;
+      const searchLimit = Math.min(12, voiceWords.length - voiceIdx);
+      
+      for (let look = 0; look < searchLimit; look++) {
+        const candidateIdx = voiceIdx + look;
+        if (candidateIdx >= voiceWords.length) break;
+        
+        // Exact match — take immediately
+        if (voiceWords[candidateIdx].normalized === sw) {
+          bestMatch = look;
+          bestDist = 0;
           break;
         }
+        
+        // Fuzzy match (Levenshtein ≤ 2 for words > 3 chars, ≤ 1 for short)
+        const maxDist = sw.length > 3 ? 2 : 1;
+        const dist = levenshtein(sw, voiceWords[candidateIdx].normalized);
+        if (dist <= maxDist && dist < bestDist) {
+          bestMatch = look;
+          bestDist = dist;
+        }
       }
+      
+      if (bestMatch >= 0) {
+        voiceIdx = voiceIdx + bestMatch + 1;
+        wordsMatched++;
+        found = true;
+      }
+      
       if (!found) {
-        // Skip this word — minor mismatch (punctuation split, etc.)
+        // Skip this word — minor mismatch
         voiceIdx++;
         wordsMatched++;
       }
@@ -3198,11 +3909,26 @@ export async function executeAssembleStep(
 ): Promise<StepResult> {
   const idempotencyKey = `${job.id}:video_assemble`;
 
-  // Check if already done
+  // Check if already done (asset table)
   const existingAsset = await getAssetByKey(supabase, job.id, idempotencyKey);
   if (existingAsset?.public_url) {
     console.log(`[ASSEMBLE] Already assembled: ${existingAsset.public_url}`);
     return { success: true, skipped: true, data: { video_url: existingAsset.public_url } };
+  }
+
+  // Check if the renderer already wrote video_url directly to the job record.
+  // This handles the case where a continuation self-invoke failed/timed out but
+  // the renderer completed in the background and wrote the URL to the jobs table.
+  // Without this check, the job can get stuck on "assemble" even though the video
+  // is fully rendered and available.
+  if (job.video_url) {
+    console.log(`[ASSEMBLE] ✓ Video already rendered (renderer wrote video_url directly): ${job.video_url}`);
+    // Store as asset so subsequent checks (upload step, future retries) find it
+    await upsertAsset(supabase, job.id, idempotencyKey, 'final_mp4', '', job.video_url, {
+      source: 'renderer_direct_write',
+      recovered: true,
+    });
+    return { success: true, data: { video_url: job.video_url } };
   }
 
   // Support both VIDEO_RENDERER_URL and FFMPEG_RENDERER_URL (run-job uses FFMPEG_RENDERER_URL)
@@ -3212,23 +3938,37 @@ export async function executeAssembleStep(
   console.log(`[ASSEMBLE] Env check: VIDEO_RENDERER_URL=${env.VIDEO_RENDERER_URL ? 'SET' : 'UNSET'}, FFMPEG_RENDERER_URL=${env.FFMPEG_RENDERER_URL ? 'SET' : 'UNSET'}, CREATOMATE_API_KEY=${creatomateKey ? 'SET' : 'UNSET'}`);
   console.log(`[ASSEMBLE] Will use: ${videoRendererUrl ? 'FFmpeg @ ' + videoRendererUrl : (creatomateKey ? 'Creatomate' : 'NONE!')}`);
 
-  // Check if there's a pending render job from a previous attempt (for retry scenarios)
-  // The video-renderer uses job_id as the render job ID for idempotency
-  if (videoRendererUrl) {
+  // Check if there's a pending render job from a previous continuation
+  // The renderer uses its own UUID (not our job.id), so we store it in meta
+  const pendingRenderJobId = job.meta?.pending_render_job_id as string | undefined;
+  console.log(`[ASSEMBLE] Render resume check: pending_render_job_id=${pendingRenderJobId || 'NOT_SET'}, video_url=${job.video_url || 'NOT_SET'}`);
+
+  // Log diagnostic snapshot for resume tracking
+  await logger.snapshot('assemble', 'payload', {
+    render_resume_check: true,
+    pending_render_job_id: pendingRenderJobId || null,
+    has_video_url: !!job.video_url,
+    has_renderer_url: !!videoRendererUrl,
+  }, pendingRenderJobId ? `Resuming render ${pendingRenderJobId}` : 'No pending render, starting fresh');
+
+  if (videoRendererUrl && pendingRenderJobId) {
     try {
-      const statusResponse = await fetch(`${videoRendererUrl}/status/${job.id}`);
+      const statusResponse = await fetch(`${videoRendererUrl}/status/${pendingRenderJobId}`);
       if (statusResponse.ok) {
         const statusData = await statusResponse.json();
-        console.log(`[ASSEMBLE] Found existing render job: status=${statusData.status}, progress=${statusData.progress || 0}%`);
+        console.log(`[ASSEMBLE] Found pending render ${pendingRenderJobId}: status=${statusData.status}, progress=${statusData.progress || 0}%`);
         
         if (statusData.status === 'complete' || statusData.status === 'succeeded') {
           const videoUrl = statusData.supabase_url || (statusData.url ? `${videoRendererUrl}${statusData.url}` : null);
           if (videoUrl) {
-            console.log(`[ASSEMBLE] ✓ Using existing completed render: ${videoUrl}`);
+            console.log(`[ASSEMBLE] ✓ Render completed from previous invocation: ${videoUrl}`);
+            
+            // Clear pending render from meta
+            await updateJobMeta(supabase, job.id, { pending_render_job_id: null });
             
             // Store asset
             await upsertAsset(supabase, job.id, idempotencyKey, 'final_mp4', '', videoUrl, {
-              source: 'existing_render_job',
+              source: 'resumed_render_job',
               image_count: 0,
               duration: 0,
               assembly_method: 'video-renderer',
@@ -3237,21 +3977,110 @@ export async function executeAssembleStep(
             return { success: true, data: { video_url: videoUrl } };
           }
         } else if (statusData.status === 'processing' || statusData.status === 'queued') {
-          // Render still in progress from previous attempt - poll for completion
+          // Render still in progress — poll with budget-aware timeout
+          console.log(`[ASSEMBLE] Resuming polling for render ${pendingRenderJobId}`);
+          
+          // Calculate poll budget (same as assembleWithRenderer)
+          let resumePollMs = 150_000; // default
+          if (functionStartTime) {
+            const elapsedMs = Date.now() - functionStartTime;
+            const remainingMs = WALL_CLOCK_BUDGET_MS - elapsedMs;
+            resumePollMs = Math.min(180_000, Math.max(5_000, Math.floor(remainingMs * 0.7)));
+            console.log(`[ASSEMBLE] Resume poll budget: ${Math.round(resumePollMs / 1000)}s (${Math.round(remainingMs / 1000)}s remaining)`);
+          }
+          
+          const pollStart = Date.now();
+          let renderCompleted = false;
+          
+          while (Date.now() - pollStart < resumePollMs) {
+            await new Promise(r => setTimeout(r, 5000));
+            try {
+              const pollResp = await fetch(`${videoRendererUrl}/status/${pendingRenderJobId}`);
+              if (!pollResp.ok) continue;
+              const pollData = await pollResp.json();
+              console.log(`[ASSEMBLE] Resume poll: ${pollData.status}, progress: ${pollData.progress || 0}%`);
+              
+              if (pollData.status === 'complete' || pollData.status === 'succeeded') {
+                const videoUrl = pollData.supabase_url || (pollData.url ? `${videoRendererUrl}${pollData.url}` : null);
+                if (videoUrl) {
+                  console.log(`[ASSEMBLE] ✓ Render completed: ${videoUrl}`);
+                  await updateJobMeta(supabase, job.id, { pending_render_job_id: null });
+                  await upsertAsset(supabase, job.id, idempotencyKey, 'final_mp4', '', videoUrl, {
+                    source: 'resumed_render_job',
+                    image_count: 0,
+                    duration: 0,
+                    assembly_method: 'video-renderer',
+                  });
+                  return { success: true, data: { video_url: videoUrl } };
+                }
+              }
+              if (pollData.status === 'failed') {
+                console.log(`[ASSEMBLE] Previous render failed: ${pollData.error}`);
+                renderCompleted = true; // Don't return continuation, let it start fresh
+                break;
+              }
+            } catch { /* continue polling */ }
+          }
+          
+          // If not completed and not failed, fire continuation again (keep same render ID)
+          if (!renderCompleted) {
+            console.log(`[ASSEMBLE] ⏰ Render ${pendingRenderJobId} still in progress — re-firing continuation`);
+            // pending_render_job_id is already stored in meta, no need to update
+            return {
+              success: true,
+              continuation_needed: true,
+              data: {
+                render_job_id: pendingRenderJobId,
+                reason: 'render_still_in_progress',
+                completed: 'rendering',
+                total: 'waiting'
+              }
+            };
+          }
+        }
+        // If failed or unknown status, fall through to start new render
+        console.log(`[ASSEMBLE] Previous render ${pendingRenderJobId} status=${statusData.status}, starting fresh`);
+      } else {
+        console.log(`[ASSEMBLE] Previous render ${pendingRenderJobId} not found (${statusResponse.status}), starting fresh`);
+      }
+    } catch (checkError) {
+      console.log(`[ASSEMBLE] Failed to check pending render ${pendingRenderJobId}: ${checkError}`);
+    }
+    // Clear stale pending render before starting fresh
+    await updateJobMeta(supabase, job.id, { pending_render_job_id: null });
+  }
+
+  // Also try the legacy check using job.id (in case renderer uses it as render ID)
+  if (videoRendererUrl && !pendingRenderJobId) {
+    try {
+      const statusResponse = await fetch(`${videoRendererUrl}/status/${job.id}`);
+      if (statusResponse.ok) {
+        const statusData = await statusResponse.json();
+        console.log(`[ASSEMBLE] Found existing render by job.id: status=${statusData.status}, progress=${statusData.progress || 0}%`);
+        
+        if (statusData.status === 'complete' || statusData.status === 'succeeded') {
+          const videoUrl = statusData.supabase_url || (statusData.url ? `${videoRendererUrl}${statusData.url}` : null);
+          if (videoUrl) {
+            console.log(`[ASSEMBLE] ✓ Using existing completed render: ${videoUrl}`);
+            await upsertAsset(supabase, job.id, idempotencyKey, 'final_mp4', '', videoUrl, {
+              source: 'existing_render_job',
+              image_count: 0,
+              duration: 0,
+              assembly_method: 'video-renderer',
+            });
+            return { success: true, data: { video_url: videoUrl } };
+          }
+        } else if (statusData.status === 'processing' || statusData.status === 'queued') {
           console.log(`[ASSEMBLE] Resuming polling for in-progress render job`);
           const videoUrl = await pollRendererForCompletion(videoRendererUrl, job.id);
-          
-          // Store asset
           await upsertAsset(supabase, job.id, idempotencyKey, 'final_mp4', '', videoUrl, {
             source: 'resumed_render_job',
             image_count: 0,
             duration: 0,
             assembly_method: 'video-renderer',
           });
-          
           return { success: true, data: { video_url: videoUrl } };
         }
-        // If failed or unknown status, fall through to start new render
       }
     } catch (checkError) {
       console.log(`[ASSEMBLE] No existing render job found, starting fresh`);
@@ -3380,8 +4209,31 @@ export async function executeAssembleStep(
         duration,
         job.meta,
         effectsConfig as Record<string, unknown> | null,
-        functionStartTime
+        functionStartTime,
+        supabase,
+        workerId,
       );
+      
+      // Handle continuation signal — render still in progress, need re-invocation
+      if (videoUrl.startsWith('__CONTINUATION__:')) {
+        const renderJobId = videoUrl.split(':')[1];
+        console.log(`[ASSEMBLE] Render in progress (${renderJobId}), storing in meta for resume`);
+        
+        // Store the renderer's job ID so the next invocation can resume polling
+        await updateJobMeta(supabase, job.id, { pending_render_job_id: renderJobId });
+        
+        await costHelper.releaseSlot(rendererService, 'assemble');
+        return {
+          success: true,
+          continuation_needed: true,
+          data: {
+            render_job_id: renderJobId,
+            reason: 'render_in_progress',
+            completed: 'rendering',
+            total: 'waiting'
+          }
+        };
+      }
     } else if (creatomateKey) {
       console.log(`[ASSEMBLE] Using Creatomate`);
       videoUrl = await assembleWithCreatomate(
@@ -3465,7 +4317,9 @@ async function assembleWithRenderer(
   duration: number,
   meta: Record<string, unknown>,
   effectsConfig: Record<string, unknown> | null = null,
-  functionStartTime?: number
+  functionStartTime?: number,
+  supabaseClient?: SupabaseClient,
+  workerId?: string,
 ): Promise<string> {
   // ======================================================================
   // PER-SCENE DURATIONS + MOOD LEVELS (Improvements #1, #2, #4)
@@ -3605,20 +4459,38 @@ async function assembleWithRenderer(
 
   // Poll for completion — use remaining wall-clock budget for smart timeout
   // With waitUntil() we have up to 400s total. Calculate how much is left.
-  // Minimum 120s, maximum 180s poll window.
+  // IMPORTANT: Do NOT impose a minimum floor (the old 120s min caused the function
+  // to get killed by Deno's 400s hard limit before the continuation signal fired).
   let maxWaitMs = 150 * 1000; // default 150s
   if (functionStartTime) {
     const elapsedMs = Date.now() - functionStartTime;
     const remainingMs = WALL_CLOCK_BUDGET_MS - elapsedMs;
-    // Use 80% of remaining time for polling, leave 20% for upload/schedule
-    maxWaitMs = Math.max(120_000, Math.min(180_000, Math.floor(remainingMs * 0.8)));
+    // Use 70% of remaining time for polling, leave 30% for continuation signal + cleanup
+    // No minimum floor — if budget is tight, poll briefly then fire continuation
+    maxWaitMs = Math.min(180_000, Math.max(5_000, Math.floor(remainingMs * 0.7)));
     console.log(`[ASSEMBLE] Wall-clock: ${Math.round(elapsedMs / 1000)}s elapsed, ${Math.round(remainingMs / 1000)}s remaining → poll timeout ${Math.round(maxWaitMs / 1000)}s`);
+
+    // If critically low on budget (<15s), skip polling entirely and return continuation
+    if (remainingMs < 15_000) {
+      console.log(`[ASSEMBLE] ⏰ Budget critically low (${Math.round(remainingMs / 1000)}s) — immediate continuation`);
+      return `__CONTINUATION__:${renderJobId}`;
+    }
   }
   const pollIntervalMs = 5000;
   const startTime = Date.now();
+  let pollCount = 0;
 
   while (Date.now() - startTime < maxWaitMs) {
     await new Promise(r => setTimeout(r, pollIntervalMs));
+    pollCount++;
+
+    // Heartbeat every 6th poll (~30s) to keep lease alive during long renders
+    if (pollCount % 6 === 0 && supabaseClient && jobId && workerId) {
+      try {
+        await heartbeatJob(supabaseClient, jobId, workerId, 90, 'assembling');
+        console.log(`[ASSEMBLE] ♥ Heartbeat sent (poll #${pollCount})`);
+      } catch { /* non-fatal */ }
+    }
 
     try {
       const statusResponse = await fetch(`${rendererUrl}/status/${renderJobId}`);
@@ -3651,7 +4523,11 @@ async function assembleWithRenderer(
     }
   }
 
-  throw new Error(`Video render timed out after ${maxWaitMs / 1000}s - job ${renderJobId} may still be rendering. Retry this job to check status.`);
+  // Instead of throwing, signal continuation so the pipeline self-invokes.
+  // On re-invocation, the assemble step will check renderer status via /status/${job_id}
+  // and find the completed render (the renderer keeps results for ~30 min).
+  console.log(`[ASSEMBLE] ⏰ Render still in progress after ${maxWaitMs / 1000}s — requesting continuation`);
+  return `__CONTINUATION__:${renderJobId}`;
 }
 
 /**
@@ -3907,35 +4783,85 @@ export async function executeScheduleStep(
     return { success: false, error: 'Could not reload job for scheduling' };
   }
 
-  if (!freshJob.video_url) {
-    return { success: false, error: 'No video_url set on job - upload step may have failed' };
+  // Get video URL: prefer job.video_url, fall back to upload asset, then assemble asset
+  let videoUrl = freshJob.video_url;
+  if (!videoUrl) {
+    console.log(`[SCHEDULE] No video_url on job, checking assets...`);
+    const uploadAsset = await getAssetByKey(supabase, job.id, `${job.id}:upload_storage`);
+    if (uploadAsset?.public_url) {
+      videoUrl = uploadAsset.public_url;
+      console.log(`[SCHEDULE] Found video URL from upload asset: ${videoUrl}`);
+    } else {
+      const assembleAsset = await getAssetByKey(supabase, job.id, `${job.id}:video_assemble`);
+      if (assembleAsset?.public_url) {
+        videoUrl = assembleAsset.public_url;
+        console.log(`[SCHEDULE] Found video URL from assemble asset: ${videoUrl}`);
+      }
+    }
+  }
+
+  if (!videoUrl) {
+    return { success: false, error: 'No video_url found on job or in assets - upload step may have failed' };
   }
 
   if (!freshJob.brand_id) {
     return { success: false, error: 'No brand_id on job' };
   }
 
-  // Determine platforms
-  const platforms = (freshJob.meta?.platforms as string[]) || ['tiktok'];
-  
+  // Platform name normalization map — convert any variant to canonical format
+  const PLATFORM_NORMALIZE: Record<string, string> = {
+    'youtube': 'youtube_shorts',
+    'youtube_shorts': 'youtube_shorts',
+    'shorts': 'youtube_shorts',
+    'yt': 'youtube_shorts',
+    'instagram': 'instagram_reels',
+    'instagram_reels': 'instagram_reels',
+    'reels': 'instagram_reels',
+    'ig': 'instagram_reels',
+    'facebook': 'facebook_reels',
+    'facebook_reels': 'facebook_reels',
+    'fb': 'facebook_reels',
+    'tiktok': 'tiktok',
+    'tt': 'tiktok',
+  };
+
+  // Determine platforms and normalize names
+  const rawPlatforms = (freshJob.meta?.platforms as string[]) || ['youtube_shorts', 'instagram_reels', 'facebook_reels'];
+  const platforms = rawPlatforms.map(p => {
+    const normalized = PLATFORM_NORMALIZE[p.toLowerCase().trim()];
+    if (!normalized) {
+      console.warn(`[SCHEDULE] Unknown platform "${p}", passing through as-is`);
+      return p;
+    }
+    if (normalized !== p) {
+      console.log(`[SCHEDULE] Normalized platform "${p}" → "${normalized}"`);
+    }
+    return normalized;
+  });
+  // Deduplicate (in case multiple variants map to the same canonical name)
+  const uniquePlatforms = [...new Set(platforms)];
+
   // Determine scheduled time
   const scheduledAt = freshJob.scheduled_post_at
     ? new Date(freshJob.scheduled_post_at)
     : new Date(Date.now() + 24 * 60 * 60 * 1000); // Default: 24 hours from now
 
-  console.log(`[SCHEDULE] Scheduling post for ${platforms.length} platforms at ${scheduledAt.toISOString()}`);
+  console.log(`[SCHEDULE] Scheduling post for ${uniquePlatforms.length} platforms at ${scheduledAt.toISOString()}`);
+  if (rawPlatforms.length !== uniquePlatforms.length) {
+    console.log(`[SCHEDULE] (normalized from ${rawPlatforms.length} raw → ${uniquePlatforms.length} unique)`);
+  }
 
   const results: Record<string, { post_id: string | null; was_inserted: boolean; error?: string }> = {};
 
   try {
-    for (const platform of platforms) {
+    for (const platform of uniquePlatforms) {
       // Call idempotent RPC
       const { data, error } = await supabase.rpc('schedule_post_idempotent', {
         p_job_id: freshJob.id,
         p_brand_id: freshJob.brand_id,
         p_platform: platform,
         p_scheduled_at: scheduledAt.toISOString(),
-        p_video_url: freshJob.video_url,
+        p_video_url: videoUrl,
         p_title: freshJob.title,
         p_description: null,
         p_tags: null,
@@ -3961,32 +4887,33 @@ export async function executeScheduleStep(
       }
     }
 
-    // Store asset - using story_json type for schedule data
+    // Check if ALL platforms failed BEFORE storing the idempotency asset
+    const failures = Object.entries(results).filter(([_, r]) => r.error);
+    if (failures.length === uniquePlatforms.length) {
+      // Don't store scheduled:true asset — allow retry
+      return { success: false, error: `All platforms failed: ${failures.map(([p, r]) => `${p}: ${r.error}`).join(', ')}` };
+    }
+
+    // Store asset only on success/partial success
     await upsertAsset(supabase, job.id, idempotencyKey, 'story_json', '', null, {
       asset_subtype: 'post_schedule',
       scheduled: true,
       scheduled_at: scheduledAt.toISOString(),
-      platforms: platforms,
+      platforms: uniquePlatforms,
       results: results,
     });
-
-    // Check if any platform failed
-    const failures = Object.entries(results).filter(([_, r]) => r.error);
-    if (failures.length === platforms.length) {
-      return { success: false, error: `All platforms failed: ${failures.map(([p, r]) => `${p}: ${r.error}`).join(', ')}` };
-    }
 
     // Snapshot schedule results
     await logger.snapshot('schedule', 'output', {
       scheduled_at: scheduledAt.toISOString(),
-      platforms: platforms,
-      successes: platforms.length - failures.length,
+      platforms: uniquePlatforms,
+      successes: uniquePlatforms.length - failures.length,
       failures: failures.length,
       post_ids: Object.entries(results).filter(([_, r]) => r.post_id).map(([p, r]) => ({ platform: p, post_id: r.post_id })),
     }, 'Posts scheduled');
 
-    console.log(`[SCHEDULE] ✓ Scheduled for ${platforms.length - failures.length}/${platforms.length} platforms`);
-    return { success: true, data: { scheduled_at: scheduledAt.toISOString(), platforms: platforms, results: results } };
+    console.log(`[SCHEDULE] ✓ Scheduled for ${uniquePlatforms.length - failures.length}/${uniquePlatforms.length} platforms`);
+    return { success: true, data: { scheduled_at: scheduledAt.toISOString(), platforms: uniquePlatforms, results: results } };
 
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);

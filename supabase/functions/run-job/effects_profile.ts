@@ -542,6 +542,56 @@ export const PRESET_EFFECTS_PROFILES: Record<string, Partial<EffectsProfile>> = 
       color: false,
     },
   },
+
+  // Reddit Trending Horror — clean but eerie animated look
+  reddit_trending_horror: {
+    preset_source: "reddit_trending_horror",
+    transitions: {
+      enabled: true,
+      intensity: 0.6,
+      type: "crossfade",
+      duration: 0.6,
+    },
+    kenburns: {
+      enabled: true,
+      intensity: 0.35,
+      zoom_amount: 1.08,
+      speed: 0.35,
+      direction: "alternating",
+    },
+    color_grade: {
+      enabled: true,
+      intensity: 0.55,
+      preset: "cool_muted",
+      contrast: 1.15,
+      saturation: 0.75,
+      brightness: 0.95,
+      temperature: -0.20,
+    },
+    vignette: {
+      enabled: true,
+      intensity: 0.40,
+      radius: 0.80,
+      softness: 0.50,
+    },
+    film_grain: {
+      enabled: true,
+      intensity: 0.15,
+      size: 0.8,
+      color: false,
+    },
+    light_flicker: {
+      enabled: true,
+      intensity: 0.15,
+      frequency: 0.08,
+      variation: 0.1,
+    },
+    edge_darken: {
+      enabled: true,
+      intensity: 0.20,
+      creep_speed: 0.15,
+    },
+  },
 };
 
 // =====================================================
@@ -574,6 +624,11 @@ export const ART_STYLE_EFFECTS_ADJUSTMENTS: Record<string, Partial<EffectsProfil
   "surreal": {
     color_grade: { enabled: true, intensity: 0.6, preset: "surreal", contrast: 1.1, saturation: 1.2, brightness: 1.0, temperature: 0.1 },
     glitch: { enabled: true, intensity: 0.2, frequency: 0.05, duration: 0.1, rgb_shift: 0.15, block_shift: false },
+  },
+  "uncanny-illustrated-horror": {
+    color_grade: { enabled: true, intensity: 0.55, preset: "cool_muted", contrast: 1.15, saturation: 0.75, brightness: 0.95, temperature: -0.2 },
+    vignette: { enabled: true, intensity: 0.40, radius: 0.80, softness: 0.50 },
+    film_grain: { enabled: true, intensity: 0.15, size: 0.8, color: false },
   },
 };
 

@@ -420,7 +420,7 @@ class CreatePageController {
                     icon: hardcoded?.icon || '🎯',
                     tagline: hardcoded?.tagline || dbTemplate.name,
                     description: hardcoded?.description || `${dbTemplate.name} preset`,
-                    weight: parseInt(dbTemplate.weight, 10) || 100,
+                    weight: (parseFloat(dbTemplate.weight) || 0) <= 1 ? Math.round(parseFloat(dbTemplate.weight) * 100) || 50 : Math.round(parseFloat(dbTemplate.weight)) || 50,
                     is_default: dbTemplate.is_default,
                     // Merge config_overrides with hardcoded defaults
                     defaults: {
@@ -852,8 +852,13 @@ class CreatePageController {
                             : preset._source === 'system' || isFallback
                                 ? `<span class="preset-card__source preset-card__source--system" title="System default">System</span>`
                                 : '';
-                        const weightBadge = preset.weight && preset._source === 'database'
-                            ? `<span class="preset-card__weight" title="Campaign selection weight">${Math.round(preset.weight)}%</span>`
+                        // Normalize weight to percentage of total
+                        const totalWeight = presets.filter(p => p._source === 'database').reduce((s, p) => s + (p.weight || 0), 0) || 100;
+                        const weightPct = preset.weight && preset._source === 'database'
+                            ? Math.round((preset.weight / totalWeight) * 100)
+                            : 0;
+                        const weightBadge = weightPct > 0
+                            ? `<span class="preset-card__weight" title="Campaign selection weight">${weightPct}%</span>`
                             : '';
                         
                         return `
@@ -3877,16 +3882,20 @@ class CreatePageController {
                             <label class="form-label">Target Platform(s)</label>
                             <div class="platform-checkboxes">
                                 <label class="platform-checkbox">
-                                    <input type="checkbox" name="postPlatform" value="instagram" ${this.formData.postPlatforms?.includes('instagram') ? 'checked' : ''}>
-                                    <span>📱 Instagram</span>
+                                    <input type="checkbox" name="postPlatform" value="youtube_shorts" ${!this.formData.postPlatforms || this.formData.postPlatforms?.includes('youtube_shorts') ? 'checked' : ''}>
+                                    <span>▶️ YouTube Shorts</span>
+                                </label>
+                                <label class="platform-checkbox">
+                                    <input type="checkbox" name="postPlatform" value="instagram_reels" ${!this.formData.postPlatforms || this.formData.postPlatforms?.includes('instagram_reels') ? 'checked' : ''}>
+                                    <span>📱 Instagram Reels</span>
+                                </label>
+                                <label class="platform-checkbox">
+                                    <input type="checkbox" name="postPlatform" value="facebook_reels" ${!this.formData.postPlatforms || this.formData.postPlatforms?.includes('facebook_reels') ? 'checked' : ''}>
+                                    <span>📘 Facebook Reels</span>
                                 </label>
                                 <label class="platform-checkbox">
                                     <input type="checkbox" name="postPlatform" value="tiktok" ${this.formData.postPlatforms?.includes('tiktok') ? 'checked' : ''}>
                                     <span>🎵 TikTok</span>
-                                </label>
-                                <label class="platform-checkbox">
-                                    <input type="checkbox" name="postPlatform" value="youtube" ${this.formData.postPlatforms?.includes('youtube') ? 'checked' : ''}>
-                                    <span>▶️ YouTube</span>
                                 </label>
                             </div>
                         </div>
@@ -5717,7 +5726,7 @@ class CreatePageController {
                     tags: this.formData.hashtags || [],
                     theme: this.formData.theme || 'default',
                     niche: brand.niche || 'general',
-                    platforms: ['youtube'],
+                    platforms: this.formData.postPlatforms?.length > 0 ? [...this.formData.postPlatforms] : ['youtube_shorts', 'instagram_reels', 'facebook_reels'],
                     status: 'draft',
                     aiMetadata: {
                         generatedAt: new Date().toISOString(),

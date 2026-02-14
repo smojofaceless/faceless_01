@@ -287,97 +287,131 @@
 
     /**
      * Show post detail modal with Metadata Control Center
-     * @param {Object} post - Post to display (unified calendar item)
+     * Supports consolidated items (multi-platform) with tabs
+     * @param {Object} post - Post to display (unified calendar item, may be consolidated)
+     * @param {string} [activePlatformId] - Which platform tab to show first
      */
-    function showPostModal(post) {
+    function showPostModal(post, activePlatformId) {
         if (!elements.postModal || !elements.postModalBody) return;
 
-        // Get platform info
-        const platform = typeof getPlatform === 'function' 
-            ? getPlatform(post.platformId) 
-            : { name: post.platformId };
+        // Reset modal title
+        const modalTitle = elements.postModal.querySelector('.modal__title');
+        if (modalTitle) modalTitle.textContent = 'Post Details';
 
-        const isJob = post.type === 'job';
-        const isJobComplete = isJob && (post.status === 'scheduled' || post.raw?.status === 'complete');
+        // Determine if this is a consolidated (multi-platform) item
+        const isConsolidated = post.isConsolidated && post.platforms && post.platforms.length > 1;
+        const activePost = isConsolidated
+            ? (post.platforms.find(p => p.platformId === activePlatformId) || post.platforms[0])
+            : post;
+
+        const isJob = activePost.type === 'job';
+        const isJobComplete = isJob && (activePost.status === 'scheduled' || activePost.raw?.status === 'complete');
         const statusLabel = isJob 
-            ? (post.status === 'pending' ? 'Pending Generation' 
+            ? (activePost.status === 'pending' ? 'Pending Generation' 
                : isJobComplete ? 'Complete' 
-               : post.status === 'failed' ? 'Failed' 
+               : activePost.status === 'failed' ? 'Failed' 
                : 'Generating...') 
-            : post.status;
+            : activePost.status;
 
-        // Metadata info
-        const meta = post.metadata || null;
-        const metaStatus = meta?.status || 'none';
-        const metaFields = meta?.finalMetadata || meta?.aiMetadata || null;
+        const meta = activePost.metadata || null;
+
+        // Build platform tabs HTML (only for consolidated items)
+        const tabsHtml = isConsolidated ? `
+            <div class="platform-tabs" id="platform-tabs">
+                ${post.platforms.map(p => {
+                    const isActive = p.platformId === activePost.platformId;
+                    const pColor = calendar ? calendar.getPlatformColor(p.platformId) : '#666';
+                    const pName = getPlatformDisplayName(p.platformId);
+                    const pStatus = p.status || 'unknown';
+                    return `
+                        <button class="platform-tab ${isActive ? 'platform-tab--active' : ''}"
+                                data-platform-id="${p.platformId}"
+                                style="--tab-color: ${pColor}">
+                            <span class="platform-tab__dot"></span>
+                            <span class="platform-tab__name">${pName}</span>
+                            <span class="platform-tab__status badge badge--${getStatusClass(pStatus)} badge--xs">${pStatus}</span>
+                        </button>
+                    `;
+                }).join('')}
+            </div>
+        ` : '';
+
+        // Platform badge for the active platform
+        const platform = typeof getPlatform === 'function' 
+            ? getPlatform(activePost.platformId) 
+            : { name: activePost.platformId };
 
         // Build modal content
         elements.postModalBody.innerHTML = `
             <div class="post-detail">
+                ${tabsHtml}
+
                 <div class="post-detail__header">
                     ${isJob ? `
                         <span class="badge badge--info" style="font-size: 11px;">
                             &#9881; Job
                         </span>
                     ` : ''}
-                    <span class="platform-badge platform-badge--${post.platformId}">
-                        ${platform?.name || post.platformId}
-                    </span>
-                    <span class="badge badge--${getStatusClass(post.status)}">
+                    ${!isConsolidated ? `
+                        <span class="platform-badge platform-badge--${activePost.platformId}">
+                            ${platform?.name || activePost.platformId}
+                        </span>
+                    ` : ''}
+                    <span class="badge badge--${getStatusClass(activePost.status)}">
                         ${statusLabel}
                     </span>
                 </div>
                 
                 <h4 class="post-detail__title">
-                    ${escapeHtml(post.content?.title || 'Untitled')}
+                    ${escapeHtml(activePost.content?.title || 'Untitled')}
                 </h4>
                 
-                ${post.content?.description ? `
+                ${activePost.content?.description ? `
                     <p class="post-detail__desc">
-                        ${escapeHtml(post.content.description)}
+                        ${escapeHtml(activePost.content.description)}
                     </p>
                 ` : ''}
                 
                 <div class="post-detail__meta">
                     <div class="meta-item">
                         <strong>Scheduled:</strong>
-                        <span>${formatDateTime(post.scheduledAt)}</span>
+                        <span>${formatDateTime(activePost.scheduledAt)}</span>
                     </div>
                     
-                    ${post.publishedAt ? `
+                    ${activePost.publishedAt ? `
                         <div class="meta-item">
                             <strong>Published:</strong>
-                            <span>${formatDateTime(post.publishedAt)}</span>
+                            <span>${formatDateTime(activePost.publishedAt)}</span>
                         </div>
                     ` : ''}
                     
-                    ${post.content?.duration ? `
+                    ${activePost.content?.duration ? `
                         <div class="meta-item">
                             <strong>Duration:</strong>
-                            <span>${formatDuration(post.content.duration)}</span>
+                            <span>${formatDuration(activePost.content.duration)}</span>
                         </div>
                     ` : ''}
 
-                    ${post.batchId ? `
+                    ${activePost.batchId ? `
                         <div class="meta-item">
                             <strong>Campaign:</strong>
-                            <span style="font-family: monospace; font-size: 11px;">${post.batchId.substring(0, 8)}...</span>
+                            <span style="font-family: monospace; font-size: 11px;">${activePost.batchId.substring(0, 8)}...</span>
                         </div>
                     ` : ''}
                     
-                    ${post.lastError ? `
+                    ${activePost.lastError ? `
                         <div class="meta-item meta-item--error">
                             <strong>Error:</strong>
-                            <span>${escapeHtml(post.lastError)}</span>
+                            <span>${escapeHtml(activePost.lastError)}</span>
                         </div>
                     ` : ''}
                 </div>
                 
-                ${post.content?.videoUrl ? `
+                ${activePost.content?.videoUrl ? `
                     <div class="post-detail__preview">
                         <video 
-                            src="${post.content.videoUrl}" 
-                            poster="${post.content.thumbnailUrl || ''}"
+                            src="${activePost.content.videoUrl}" 
+                            poster="${activePost.content.thumbnailUrl || ''}"
                             controls
                             preload="metadata"
                             style="max-width: 100%; border-radius: 8px;">
@@ -390,18 +424,66 @@
                     </div>
                 ` : ''}
 
-                ${!isJob ? buildMetadataSection(post, meta) : ''}
+                ${!isJob ? buildMetadataSection(activePost, meta) : `
+                    <div class="metadata-section" style="opacity: 0.6;">
+                        <div class="metadata-section__header">
+                            <h5 class="metadata-section__title">AI Metadata</h5>
+                            <span class="metadata-badge metadata-badge--none">N/A</span>
+                        </div>
+                        <div class="metadata-section__empty">
+                            <p>AI metadata will be generated once this job is imported as a post.</p>
+                            ${isJobComplete ? '<p style="margin-top: 8px; font-size: 12px; color: var(--text-muted);">This job is complete — click <strong>Edit Post</strong> to import it, then metadata will auto-generate.</p>' : ''}
+                        </div>
+                    </div>
+                `}
             </div>
         `;
 
         // Attach metadata event handlers
         if (!isJob) {
-            attachMetadataHandlers(post);
+            attachMetadataHandlers(activePost);
+        }
+
+        // Attach platform tab click handlers
+        if (isConsolidated) {
+            const tabContainer = document.getElementById('platform-tabs');
+            if (tabContainer) {
+                tabContainer.addEventListener('click', (e) => {
+                    const tab = e.target.closest('.platform-tab');
+                    if (!tab) return;
+                    const pid = tab.dataset.platformId;
+                    if (pid && pid !== activePost.platformId) {
+                        // Store the consolidated post reference, re-render modal with new active tab
+                        selectedPost = post;
+                        showPostModal(post, pid);
+                    }
+                });
+            }
         }
 
         // Show modal
         elements.postModal.classList.add('active');
         document.body.style.overflow = 'hidden';
+    }
+
+    /**
+     * Get human-readable display name for a platform
+     * @param {string} platformId
+     * @returns {string}
+     */
+    function getPlatformDisplayName(platformId) {
+        const names = {
+            youtube_shorts: 'YouTube Shorts',
+            tiktok: 'TikTok',
+            instagram_reels: 'Instagram Reels',
+            facebook_reels: 'Facebook Reels',
+            youtube: 'YouTube',
+            instagram: 'Instagram',
+            facebook: 'Facebook',
+            twitter: 'Twitter',
+            threads: 'Threads'
+        };
+        return names[platformId] || platformId;
     }
 
     // ==================== Metadata Control Center ====================
@@ -737,9 +819,11 @@
         // Re-fetch metadata
         if (typeof postQueueService !== 'undefined') {
             try {
-                const freshMeta = await postQueueService.getPostMetadata(post.id, post.platformId);
+                // If this is a consolidated item, refresh the active platform post
+                const targetPost = post.isConsolidated ? post.platforms.find(p => p.platformId === post.platformId) || post : post;
+                const freshMeta = await postQueueService.getPostMetadata(targetPost.id, targetPost.platformId);
                 if (freshMeta) {
-                    post.metadata = {
+                    targetPost.metadata = {
                         status: freshMeta.status,
                         aiMetadata: freshMeta.ai_metadata,
                         finalMetadata: freshMeta.final_metadata,
@@ -756,7 +840,7 @@
                 console.warn('Failed to refresh metadata:', e);
             }
         }
-        showPostModal(post);
+        showPostModal(post, post.platformId);
     }
 
     /**
@@ -774,19 +858,33 @@
             year: 'numeric'
         });
 
+        // Consolidate posts by sourceJobId for the day overview
+        const consolidated = calendar ? calendar.consolidateByJob(posts) : posts;
+
         elements.postModalBody.innerHTML = `
             <div class="day-detail">
                 <h4 class="day-detail__date">${dateStr}</h4>
-                <p class="day-detail__count">${posts.length} post${posts.length !== 1 ? 's' : ''}</p>
+                <p class="day-detail__count">${posts.length} post${posts.length !== 1 ? 's' : ''}${consolidated.length < posts.length ? ` (${consolidated.length} video${consolidated.length !== 1 ? 's' : ''})` : ''}</p>
                 
                 <div class="day-detail__posts">
-                    ${posts.map(post => {
-                        const platform = typeof getPlatform === 'function' 
-                            ? getPlatform(post.platformId) 
-                            : { name: post.platformId };
-                        
+                    ${consolidated.map(post => {
+                        // Platform chips for consolidated or single badge
+                        const platformHtml = post.isConsolidated
+                            ? `<div class="day-detail__platforms">
+                                ${post.platformIds.map(pid => {
+                                    const pColor = calendar ? calendar.getPlatformColor(pid) : '#666';
+                                    const pName = getPlatformDisplayName(pid);
+                                    const platformPost = post.platforms.find(p => p.platformId === pid);
+                                    const pStatus = platformPost?.status || '';
+                                    return `<span class="day-detail__platform-chip" style="--chip-color: ${pColor}" title="${pName}: ${pStatus}">${getPlatformShortLabel(pid)}</span>`;
+                                }).join('')}
+                               </div>`
+                            : `<span class="day-detail__post-platform">
+                                ${getPlatformDisplayName(post.platformId)}
+                               </span>`;
+
                         return `
-                            <div class="day-detail__post" data-post-id="${post.id}">
+                            <div class="day-detail__post ${post.isConsolidated ? 'day-detail__post--consolidated' : ''}" data-post-id="${post.id}">
                                 <div class="day-detail__post-time">
                                     ${formatTime(post.scheduledAt)}
                                 </div>
@@ -794,9 +892,7 @@
                                     <span class="day-detail__post-title">
                                         ${escapeHtml(post.content?.title || 'Untitled')}
                                     </span>
-                                    <span class="day-detail__post-platform">
-                                        ${platform?.name || post.platformId}
-                                    </span>
+                                    ${platformHtml}
                                 </div>
                                 <span class="badge badge--${getStatusClass(post.status)} badge--sm">
                                     ${post.status}
@@ -808,13 +904,14 @@
             </div>
         `;
 
-        // Add click handlers for individual posts
+        // Add click handlers for individual posts → open post modal with tabs
         elements.postModalBody.querySelectorAll('[data-post-id]').forEach(el => {
             el.addEventListener('click', () => {
                 const postId = el.dataset.postId;
-                const post = posts.find(p => p.id === postId);
-                if (post) {
-                    showPostModal(post);
+                const item = consolidated.find(p => p.id === postId);
+                if (item) {
+                    selectedPost = item;
+                    showPostModal(item);
                 }
             });
         });
@@ -828,6 +925,26 @@
         // Show modal
         elements.postModal.classList.add('active');
         document.body.style.overflow = 'hidden';
+    }
+
+    /**
+     * Get short label for platform chip
+     * @param {string} platformId
+     * @returns {string}
+     */
+    function getPlatformShortLabel(platformId) {
+        const labels = {
+            youtube_shorts: 'YT',
+            tiktok: 'TT',
+            instagram_reels: 'IG',
+            facebook_reels: 'FB',
+            youtube: 'YT',
+            instagram: 'IG',
+            facebook: 'FB',
+            twitter: 'X',
+            threads: 'TH'
+        };
+        return labels[platformId] || platformId?.substring(0, 2)?.toUpperCase() || '??';
     }
 
     /**

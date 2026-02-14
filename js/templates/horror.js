@@ -81,6 +81,23 @@ const HorrorTemplate = {
             }
         },
         {
+            id: 'reddit_trending_horror',
+            name: 'Reddit Trending Horror',
+            icon: '🔥',
+            tagline: 'Internet nightmares retold',
+            description: 'Pulls trending horror posts from Reddit (r/nosleep, r/creepypasta, etc.), extracts the core fear concept, and transforms them into original 60-90s animated horror scripts. No copying — cinematic retellings.',
+            defaults: {
+                vibe_preset: 'reddit_trending_horror',
+                era: 'modern',
+                tone: 0.65,
+                ending: 'unresolved',
+                art_style: 'uncanny-illustrated-horror',
+                visual_style: 'cinematic_dark',
+                color_palette: 'muted_forest',
+                motion_profile: 'subtle_kenburns'
+            }
+        },
+        {
             id: 'custom',
             name: 'Custom DNA',
             icon: '🧬',
@@ -230,6 +247,12 @@ const HorrorTemplate = {
                 label: '🌀 Surreal Nightmare',
                 description: 'Dreamlike horror, impossible geometry, unsettling.',
                 prompt: 'surreal nightmare art, impossible geometry, dreamlike horror, Escher-inspired, uncanny valley, liminal spaces'
+            },
+            {
+                value: 'uncanny-illustrated-horror',
+                label: '🔥 Uncanny Illustrated Horror',
+                description: '2D animated horror with thick outlines, expressive faces, clean shading — childlike art hiding deep fear.',
+                prompt: 'digital horror illustration, 2D animated style, thick outlines, expressive character faces, slightly exaggerated emotions, clean cell shading, cartoon style with dark themes, muted green and forest tones, deep shadows, soft skin tones, slightly desaturated, dim moonlit lighting, soft rim light, shadow-heavy background'
             }
         ],
 

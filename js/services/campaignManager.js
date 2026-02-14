@@ -76,6 +76,7 @@ class CampaignManager {
             startDate,
             postsPerDay = 1,
             presetWeights = null, // null = use brand_templates defaults
+            precomputedSchedule = null, // Reuse preview schedule to preserve preset selections
             config = {}
         } = options;
 
@@ -104,23 +105,39 @@ class CampaignManager {
         // Support both platform offset names
         const platformOffsets = config.platformOffsets ?? config.platformOffsetMinutes ?? this.defaults.platformOffsets;
 
-        // Generate schedule
-        const schedule = this._generateSchedule({
-            videoCount,
-            startDate: new Date(startDate),
-            postsPerDay,
-            windowA,
-            windowB,
-            jitterRange,
-            platforms,
-            platformOffsets,
-            presetWeights: weights,
-            generationLeadTimeHours: config.generationLeadTimeHours || this.defaults.generationLeadTimeHours,
-            duration: config.duration || this.defaults.duration,
-            asapMode: config.asapMode || false
-        });
-
-        console.log('[CampaignManager] Generated schedule:', schedule.length, 'jobs');
+        // Reuse preview schedule if available (preserves exact preset selections user saw)
+        // Normalize property names: preview uses scheduledAt/preset, schedule uses scheduled_post_at/vibe_preset
+        let schedule;
+        if (precomputedSchedule && precomputedSchedule.length === videoCount) {
+            schedule = precomputedSchedule.map((item, i) => ({
+                index: i,
+                scheduled_post_at: item.scheduled_post_at || item.scheduledAt,
+                generate_by: item.generate_by || new Date(new Date(item.scheduled_post_at || item.scheduledAt).getTime() - (config.generationLeadTimeHours || this.defaults.generationLeadTimeHours) * 3600000).toISOString(),
+                window_used: item.window_used || 'preview',
+                jitter_applied_minutes: item.jitter_applied_minutes ?? 0,
+                platform_offsets: item.platform_offsets || {},
+                vibe_preset: item.vibe_preset || item.preset,
+                preset_selection_method: 'weighted_random',
+                asap_mode: item.asap_mode || false
+            }));
+            console.log('[CampaignManager] Reusing preview schedule:', schedule.length, 'jobs (presets preserved)');
+        } else {
+            schedule = this._generateSchedule({
+                videoCount,
+                startDate: new Date(startDate),
+                postsPerDay,
+                windowA,
+                windowB,
+                jitterRange,
+                platforms,
+                platformOffsets,
+                presetWeights: weights,
+                generationLeadTimeHours: config.generationLeadTimeHours || this.defaults.generationLeadTimeHours,
+                duration: config.duration || this.defaults.duration,
+                asapMode: config.asapMode || false
+            });
+            console.log('[CampaignManager] Generated new schedule:', schedule.length, 'jobs');
+        }
 
         // Build campaign config (use resolved values)
         const campaignConfig = {

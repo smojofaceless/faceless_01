@@ -225,6 +225,89 @@ export const GENRE_PROFILES: Record<string, GenreProfile> = {
       },
     },
   },
+
+  // ===== REDDIT TRENDING HORROR - Internet Horror Retelling Engine =====
+  // Transforms trending Reddit horror posts into original animated horror.
+  // Optimized for modern suburban/domestic settings, psychological horror,
+  // and clean illustration style with muted forest tones.
+  reddit_trending_horror: {
+    name: "Reddit Trending Horror",
+    description: "Modern internet horror retold as chilling animated shorts — Reddit's scariest posts turned cinematic",
+    weights: {
+      // Boost modern eras (internet, smartphones, suburbs)
+      era: {
+        "2000s_early": 1.5,       // Forums, early internet
+        "1990s_late": 1.3,        // Dial-up era creepy
+        "1980s_late": 1.0,
+        "1970s_late": 0.7,        // Too analog for reddit tone
+        "1960s_late": 0.5,
+      },
+      // Boost domestic/suburban settings (reddit stories happen at home)
+      location: {
+        "suburban_sprawl": 1.6,   // Houses, neighborhoods
+        "small_towns": 1.4,       // Everyday horror
+        "forest_trail": 1.3,      // Camping/hiking stories
+        "lakeside_cabins": 1.2,
+        "motel_room": 1.2,
+        "college_campus": 1.2,
+        "rural_highway": 1.0,
+        "national_parks": 0.8,
+      },
+      // Boost personal/witness narration styles
+      narrative_artifact: {
+        "witness_interview": 1.5,  // "Let me tell you what happened"
+        "forum_post": 1.4,         // Internet storytelling tone
+        "oral_history": 1.3,
+        "documentary_narration": 1.2,
+        "police_memo": 0.8,
+        "research_footnote": 0.6,
+      },
+      // Boost psychological/domestic threats
+      threat_behavior: {
+        "watching": 1.5,
+        "appearing": 1.4,
+        "following": 1.3,
+        "waiting": 1.3,
+        "mimicking": 1.2,
+        "broadcasting": 0.8,
+      },
+      // Boost every-day-gone-wrong manifestations
+      threat_manifestation: {
+        "humanoid_faceless": 1.4,
+        "shadow_independent": 1.3,
+        "humanoid_tall": 1.2,
+        "distortion_visual": 1.2,
+        "humanoid_dated": 1.0,
+        "light_geometric": 0.7,
+      },
+      // Boost unresolved / ongoing / disturbing endings
+      ending_knowledge: {
+        "ongoing": 1.5,            // Still happening
+        "unresolved": 1.4,
+        "suppressed": 1.2,
+        "cyclical": 1.1,
+        "inherited": 1.0,
+        "partial": 0.7,
+      },
+      // Boost domestic/night imagery
+      ending_imagery: {
+        "watching_treeline": 1.3,
+        "empty_road": 1.2,
+        "fog_rolling": 1.1,
+        "children_dreaming": 1.0,
+        "sealed_files": 0.9,
+      },
+      // Boost dread and unease (internet horror is psychological)
+      emotion: {
+        "dread": 1.5,
+        "unease": 1.4,
+        "paranoia": 1.3,
+        "recognition": 1.2,
+        "isolation": 1.1,
+        "insignificance": 0.7,
+      },
+    },
+  },
 };
 
 // =====================================================

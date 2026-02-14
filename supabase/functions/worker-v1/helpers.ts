@@ -42,7 +42,8 @@ export interface StepResult {
 // Leave 60s buffer for cleanup, self-re-invocation, and overhead
 export const WALL_CLOCK_BUDGET_MS = 340_000; // 340 seconds
 // Minimum time needed to generate + upload one image (be conservative)
-export const IMAGE_RESERVE_MS = 30_000; // 30 seconds
+// Also serves as reserve for the assembly step to submit a render + return continuation
+export const IMAGE_RESERVE_MS = 90_000; // 90 seconds (was 30s — caused assembly timeout)
 
 export interface AssetRecord {
   id: string;
@@ -67,6 +68,14 @@ export const DEFAULT_LEASE_SECONDS = 900; // 15 minutes
 
 // ElevenLabs voice ID
 export const ELEVENLABS_VOICE_ID = "pNInz6obpgDQGcFmaJgB"; // Adam
+
+// OpenAI TTS config
+export const OPENAI_TTS_MODEL = "gpt-4o-mini-tts";
+export const OPENAI_TTS_VOICE = "ash"; // Deep/warm — good for horror narration
+export const OPENAI_TTS_INSTRUCTIONS = "Speak in a dark, atmospheric, storytelling tone. Pace yourself deliberately, with measured pauses for tension. This is horror narration.";
+
+// TTS Provider type
+export type TtsProvider = 'openai' | 'elevenlabs';
 
 // Storage bucket name
 export const STORAGE_BUCKET = 'story-videos';
