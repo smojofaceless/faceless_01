@@ -626,9 +626,10 @@ export const ART_STYLE_EFFECTS_ADJUSTMENTS: Record<string, Partial<EffectsProfil
     glitch: { enabled: true, intensity: 0.2, frequency: 0.05, duration: 0.1, rgb_shift: 0.15, block_shift: false },
   },
   "uncanny-illustrated-horror": {
-    color_grade: { enabled: true, intensity: 0.55, preset: "cool_muted", contrast: 1.15, saturation: 0.75, brightness: 0.95, temperature: -0.2 },
-    vignette: { enabled: true, intensity: 0.40, radius: 0.80, softness: 0.50 },
-    film_grain: { enabled: true, intensity: 0.15, size: 0.8, color: false },
+    // Steven Universe / Cartoon Network style — bright saturated colors, minimal post-processing
+    color_grade: { enabled: true, intensity: 0.35, preset: "warm_bright", contrast: 1.05, saturation: 1.25, brightness: 1.05, temperature: 0.1 },
+    vignette: { enabled: true, intensity: 0.15, radius: 0.90, softness: 0.70 },
+    film_grain: { enabled: false, intensity: 0.0, size: 0.0, color: false },
   },
 };
 

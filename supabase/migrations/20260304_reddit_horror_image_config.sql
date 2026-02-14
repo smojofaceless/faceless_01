@@ -5,12 +5,12 @@
 -- to generic system defaults (cinematic-dark). This made images
 -- visually identical to urban_legend.
 --
--- Fix: Add distinct "uncanny-illustrated-horror" visual identity:
---   - 2D digital illustration style (not photographic)
---   - Clean bold ink outlines, cartoon-horror aesthetic
---   - Modern suburban/domestic settings (not rural/retro)
---   - Muted cool tones (not VHS-degraded greens)
---   - Slightly exaggerated character expressions
+-- Fix: Add distinct Steven Universe / Cartoon Network visual identity:
+--   - Bright saturated cartoon animation style
+--   - Thick clean outlines, flat cel-shading, rounded characters
+--   - Modern suburban/domestic settings drawn in cheerful colors
+--   - Horror content hidden beneath colorful cartoon surface
+--   - Large expressive eyes, slightly exaggerated proportions
 --
 -- Also adjusts story_dna weights to further separate from urban_legend.
 -- =====================================================
@@ -51,19 +51,19 @@ AS $$
       "suffix": "Portrait orientation 9:16. Clean horror comic book illustration with bold ink outlines, bright flat colors, and every face clearly visible. NOT a painting."
     }'::jsonb
 
-    -- REDDIT TRENDING HORROR: modern internet horror — clean digital illustration,
-    -- thick outlines, cartoon-horror aesthetic with dark themes, domestic/suburban settings
+    -- REDDIT TRENDING HORROR: modern cartoon horror — Steven Universe / Cartoon Network
+    -- animation style with bright colors hiding dark horror themes
     WHEN 'reddit_trending_horror' THEN '{
       "art_style": "uncanny-illustrated-horror",
-      "style_prompt": "Digital horror illustration, 2D animated style with thick bold ink outlines, expressive character faces with slightly exaggerated emotions, clean cel-shading, cartoon style hiding deeply unsettling horror. NOT photography. NOT oil painting. Clean vector-like illustration with dark themes.",
-      "environment": "modern suburban homes at night, dimly lit hallways, apartment bedrooms, smartphone-lit faces, bathroom mirrors, convenience store at 2am, parking lots under sodium lights, dark staircases, kitchen at midnight, car interior on empty road",
-      "color_palette": "muted forest greens and teals, deep navy shadows, soft warm skin tones, slightly desaturated environment with pops of phone-screen blue and red emergency light, cool midnight palette",
-      "lighting": "dim ambient room light, phone screen glow on faces, moonlight through blinds, single lamp casting long shadows, LED indicator lights in darkness, bathroom fluorescent flicker",
-      "mood": "childlike animation style hiding genuine terror, the ordinary made horrifying, domestic dread, internet-age paranoia",
-      "camera_angles": ["wide shot of normal room with one wrong detail", "medium shot of character discovering something", "close-up of phone screen or device", "over-shoulder looking at disturbing evidence", "low angle from doorway into dark room", "extreme close-up of wide frightened eyes"],
+      "style_prompt": "Modern Western cartoon animation in the style of Steven Universe and Cartoon Network shows, thick clean black outlines on every character and object, flat cel-shaded coloring with bright saturated colors, rounded soft character designs with large expressive eyes, slightly exaggerated proportions, simple clean backgrounds with soft color gradients, professional TV animation quality. Cheerful cartoon art style that hides deeply unsettling horror beneath its colorful surface. NOT photography. NOT oil painting. NOT anime. NOT realistic.",
+      "environment": "colorful cartoon suburban homes, bright beach towns with pastel buildings, cheerful-looking bedrooms with one unsettling detail, cartoon kitchen at night with warm lighting, simplified cartoon convenience stores, cozy apartments with something slightly wrong, cartoon car interiors, school hallways drawn in bright colors, cartoon bathroom with clean tile patterns",
+      "color_palette": "bright saturated pastels — sky blues, warm pinks, sunny yellows, soft lavenders, vibrant greens, warm peachy skin tones, cotton candy color harmony, star-shaped highlights, bright cheerful palette with occasional dramatic shadow contrast for horror beats",
+      "lighting": "bright warm cartoon lighting, golden hour glow, cheerful blue skies that can suddenly shift to dramatic deep purple-blue, soft ambient cartoon fill light on all characters, warm lamplight in interior scenes, dramatic backlight silhouettes only for peak horror moments",
+      "mood": "bright cheerful cartoon surface hiding genuine terror underneath, the juxtaposition of cute rounded characters in horrifying situations, Steven Universe meets creepypasta, wholesome animation style delivering unwholesome content",
+      "camera_angles": ["wide establishing shot of colorful cartoon location with one wrong detail", "medium shot of rounded cartoon character discovering something disturbing", "close-up of large expressive cartoon eyes showing fear", "over-shoulder shot in bright cartoon room with unsettling background element", "low angle looking up at friendly-looking character who feels wrong", "extreme close-up of cartoon face shifting from cheerful to terrified"],
       "tension_escalation": true,
-      "negative_prompt": "No text, no words, no letters, no watermarks, no photorealistic style, no oil painting, no VHS effects, no film grain, no retro aesthetic, no 1970s-80s settings, no rural backroads, no found footage look",
-      "suffix": "Portrait orientation 9:16. Clean digital horror illustration, bold outlines, cartoon horror aesthetic. Modern setting."
+      "negative_prompt": "No text, no words, no letters, no watermarks, no photorealistic style, no oil painting, no VHS effects, no film grain, no anime style, no dark muddy colors, no desaturated palette, no retro aesthetic, no rural backroads, no found footage look, no realistic proportions",
+      "suffix": "Portrait orientation 9:16. Bright colorful cartoon animation style like Steven Universe. Thick outlines, flat cel-shading, saturated colors, rounded character designs. Modern setting."
     }'::jsonb
 
     -- BACKROOMS: liminal space horror
