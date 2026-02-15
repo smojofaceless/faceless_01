@@ -15,10 +15,11 @@ class TimeSlotService {
     async init() {
         if (this._initialized) return;
 
-        if (typeof window.supabaseClient !== 'undefined') {
-            this._supabase = window.supabaseClient;
-        } else if (typeof supabase !== 'undefined') {
-            this._supabase = supabase;
+        // Use the module-level supabaseClient variable or getSupabaseClient()
+        if (typeof getSupabaseClient === 'function') {
+            this._supabase = getSupabaseClient();
+        } else if (typeof supabaseClient !== 'undefined' && supabaseClient !== null) {
+            this._supabase = supabaseClient;
         }
 
         if (!this._supabase) {
