@@ -1060,6 +1060,59 @@ export async function getEffectsConfigForJob(
 }
 
 // =====================================================
+// SUBTITLE CONFIG (DB-driven, follows effects pattern)
+// Roadmap #14 — Subtitle System v1 (Styles Per Brand)
+// =====================================================
+
+export interface SubtitleConfig {
+  style: string;             // CAPTION_STYLES key: bold, horror, glitch, minimal, neon, vintage, blood, typewriter, shadow, comic
+  font_size: number;         // ASS font size (48-120)
+  position: string;          // 'bottom' | 'center' | 'top'
+  highlight_scary: boolean;  // Whether to red-highlight scary words
+  words_per_chunk: number;   // Words per subtitle chunk (2-5)
+  highlight_color: string;   // ASS BGR color for active word highlight
+  scary_color: string;       // ASS BGR color for scary words
+  emphasis_scale: number;    // Active word scale factor (100-130)
+}
+
+/**
+ * Resolve the final subtitle config for a job by calling the DB RPC
+ * which merges: system defaults → preset profile → brand overrides → job meta.
+ *
+ * Falls back to null if the RPC is unavailable
+ * (soft failure — renderer will use its hardcoded bold defaults).
+ */
+export async function getSubtitleConfigForJob(
+  supabase: SupabaseClient,
+  brandId: string,
+  vibePreset: string | null,
+  jobMeta: Record<string, unknown> = {}
+): Promise<SubtitleConfig | null> {
+  try {
+    const { data, error } = await supabase.rpc('get_subtitle_config_for_job', {
+      p_brand_id: brandId,
+      p_vibe_preset: vibePreset || 'urban_legend',
+      p_job_meta: jobMeta,
+    });
+
+    if (error) {
+      console.warn(`[SUBTITLES] RPC get_subtitle_config_for_job failed: ${error.message}`);
+      return null;
+    }
+
+    if (data && typeof data === 'object') {
+      console.log(`[SUBTITLES] ✓ Resolved config: style=${data.style}, fontSize=${data.font_size}, position=${data.position}, scary=${data.highlight_scary}`);
+      return data as SubtitleConfig;
+    }
+
+    console.warn('[SUBTITLES] RPC returned unexpected data shape, using fallback');
+    return null;
+  } catch (err) {
+    console.warn(`[SUBTITLES] getSubtitleConfigForJob exception: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+}
+// =====================================================
 // IMAGE PROMPT CONFIG (DB-driven, follows effects pattern)
 // =====================================================
 

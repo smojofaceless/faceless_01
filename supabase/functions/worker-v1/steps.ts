@@ -31,7 +31,9 @@ import {
   fetchWithError,
   getEffectsConfigForJob,
   getImagePromptConfigForJob,
+  getSubtitleConfigForJob,
   ImagePromptConfig,
+  SubtitleConfig,
   ELEVENLABS_VOICE_ID,
   OPENAI_TTS_MODEL,
   OPENAI_TTS_VOICE,
@@ -4369,6 +4371,20 @@ export async function executeAssembleStep(
         // Soft failure: renderer will fall back to legacy pipeline
       }
 
+      // v6.0: Resolve subtitle_config from DB (Roadmap #14 — Subtitle System v1)
+      let subtitleConfig: SubtitleConfig | null = null;
+      try {
+        subtitleConfig = await getSubtitleConfigForJob(
+          supabase,
+          job.brand_id,
+          job.vibe_preset,
+          job.meta
+        );
+      } catch (subErr) {
+        console.warn(`[ASSEMBLE] getSubtitleConfigForJob failed (soft): ${subErr instanceof Error ? subErr.message : subErr}`);
+        // Soft failure: renderer will use hardcoded bold defaults
+      }
+
       // Snapshot the assembly input before rendering
       await logger.snapshot('assemble', 'payload', {
         renderer: 'ffmpeg',
@@ -4382,6 +4398,8 @@ export async function executeAssembleStep(
         effects_config_resolved: !!effectsConfig,
         effects_enabled: effectsConfig?.enabled ?? 'legacy',
         effects_intensity: effectsConfig?.intensity ?? null,
+        subtitle_config_resolved: !!subtitleConfig,
+        subtitle_style: subtitleConfig?.style ?? 'bold',
       }, 'Video assembly input');
 
       videoUrl = await assembleWithRenderer(
@@ -4395,6 +4413,7 @@ export async function executeAssembleStep(
         functionStartTime,
         supabase,
         workerId,
+        subtitleConfig as Record<string, unknown> | null,
       );
       
       // Handle continuation signal — render still in progress, need re-invocation
@@ -4503,6 +4522,7 @@ async function assembleWithRenderer(
   functionStartTime?: number,
   supabaseClient?: SupabaseClient,
   workerId?: string,
+  subtitleConfig: Record<string, unknown> | null = null,
 ): Promise<string> {
   // ======================================================================
   // PER-SCENE DURATIONS + MOOD LEVELS (Improvements #1, #2, #4)
@@ -4609,6 +4629,7 @@ async function assembleWithRenderer(
   // Ken Burns & fades stay true because both pipelines use them via mergedEffects.
   const cmActive = effectsConfig?.enabled === true;
   console.log(`[ASSEMBLE] Effects pipeline: cmActive=${cmActive}, effectsConfig=${effectsConfig ? `enabled=${effectsConfig.enabled}` : 'null'}`);
+  console.log(`[ASSEMBLE] Subtitle config: ${subtitleConfig ? `style=${subtitleConfig.style}, position=${subtitleConfig.position}` : 'null (using renderer defaults)'}`);
 
   // Build the render payload once (used for initial + retry)
   const renderPayload = JSON.stringify({
@@ -4625,10 +4646,12 @@ async function assembleWithRenderer(
       filmGrain: !cmActive,
       vignette: !cmActive,
       horrorGrade: !cmActive,
-      captionStyle: 'bold',
+      captionStyle: (subtitleConfig as Record<string, unknown>)?.style as string || 'bold',
     },
     // v4.0: Controlled Motion effects config (overrides legacy effects when present)
     effects_config: effectsConfig || null,
+    // v6.0: Per-brand subtitle styling (Roadmap #14)
+    subtitle_config: subtitleConfig || null,
     music_url: musicUrl,
     music_volume: musicVolumePercent,
     // Background Music V1: ducking + fade config for renderer

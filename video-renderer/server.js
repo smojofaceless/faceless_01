@@ -1539,21 +1539,43 @@ async function createASSSubtitles(captions, outputPath, options = {}) {
     captionStyle = 'bold',
     highlightScary = true,
     wordsPerChunk = 3,       // 2-4 words per chunk feels best
+    subtitleConfig = null,   // v6.0: Full subtitle config from get_subtitle_config_for_job()
   } = options;
+
+  // v6.0: If subtitleConfig is provided, it takes precedence over individual options
+  const resolvedStyle = subtitleConfig?.style || captionStyle;
+  const resolvedHighlightScary = subtitleConfig?.highlight_scary ?? highlightScary;
+  const resolvedWordsPerChunk = subtitleConfig?.words_per_chunk ?? wordsPerChunk;
+  const resolvedEmphasisScale = subtitleConfig?.emphasis_scale ?? 110;
+  const resolvedPosition = subtitleConfig?.position || 'bottom';
   
-  const style = CAPTION_STYLES[captionStyle] || CAPTION_STYLES.bold;
+  const style = CAPTION_STYLES[resolvedStyle] || CAPTION_STYLES.bold;
   
-  // Get style colors
+  // Get style colors — subtitle_config can override font_size
+  const fontSize = subtitleConfig?.font_size || style.fontSize;
   const primaryColor = style.primaryColor || '&H00FFFFFF';   // White (default text)
   const outlineColor = style.outlineColor || '&H00000000';   // Black outline
   const outlineWidth = style.outline || 4;
   const isItalic = style.italic ? 1 : 0;
   const fontBold = style.fontWeight === 'bold' ? 1 : 0;
   
-  // Highlight color for active word: Yellow in ASS BGR format
-  const highlightColor = '&H0000FFFF';  // Yellow (BGR)
-  // Scary word color: Red
-  const scaryColor = '&H001D1DFF';      // Bright red (BGR)
+  // Highlight color for active word — configurable via subtitle_config
+  const highlightColor = subtitleConfig?.highlight_color || '&H0000FFFF';  // Yellow (BGR)
+  // Scary word color — configurable via subtitle_config
+  const scaryColor = subtitleConfig?.scary_color || '&H001D1DFF';      // Bright red (BGR)
+
+  // Position: convert position name to MarginV value
+  // bottom=400 (original), center=700, top=1100
+  const marginV = resolvedPosition === 'top' ? 1100
+    : resolvedPosition === 'center' ? 700
+    : 400; // bottom (default)
+  
+  // Alignment: 2=bottom-center, 5=center, 8=top-center
+  const alignment = resolvedPosition === 'top' ? 8
+    : resolvedPosition === 'center' ? 5
+    : 2; // bottom (default)
+
+  console.log(`  📝 Subtitle config: style=${resolvedStyle}, fontSize=${fontSize}, position=${resolvedPosition}(marginV=${marginV}), scary=${resolvedHighlightScary}, words/chunk=${resolvedWordsPerChunk}, emphasisScale=${resolvedEmphasisScale}`);
   
   // ASS header
   const header = `[Script Info]
@@ -1565,7 +1587,7 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${style.fontName},${style.fontSize},${primaryColor},&H000000FF,${outlineColor},&H80000000,${fontBold},${isItalic},0,0,100,100,0,0,1,${outlineWidth},2,2,30,30,400,1
+Style: Default,${style.fontName},${fontSize},${primaryColor},&H000000FF,${outlineColor},&H80000000,${fontBold},${isItalic},0,0,100,100,0,0,1,${outlineWidth},2,${alignment},30,30,${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1573,8 +1595,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   
   // === Build chunks ===
   const chunks = [];
-  for (let i = 0; i < captions.length; i += wordsPerChunk) {
-    const chunkWords = captions.slice(i, i + wordsPerChunk);
+  for (let i = 0; i < captions.length; i += resolvedWordsPerChunk) {
+    const chunkWords = captions.slice(i, i + resolvedWordsPerChunk);
     if (chunkWords.length === 0) continue;
     
     // Chunk timing: first word start → last word end
@@ -1614,12 +1636,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         
         if (j === wIdx) {
           // === ACTIVE WORD: highlighted + slight scale up ===
-          const isScary = highlightScary && SCARY_WORDS.has(cleanWord);
+          const isScary = resolvedHighlightScary && SCARY_WORDS.has(cleanWord);
           const activeColor = isScary ? scaryColor : highlightColor;
-          textParts.push(`{\\c${activeColor}\\fscx110\\fscy110}${escapedWord}{\\c${primaryColor}\\fscx100\\fscy100}`);
+          textParts.push(`{\\c${activeColor}\\fscx${resolvedEmphasisScale}\\fscy${resolvedEmphasisScale}}${escapedWord}{\\c${primaryColor}\\fscx100\\fscy100}`);
         } else {
           // Inactive word: default color
-          const isScary = highlightScary && SCARY_WORDS.has(cleanWord);
+          const isScary = resolvedHighlightScary && SCARY_WORDS.has(cleanWord);
           if (isScary) {
             textParts.push(`{\\c${scaryColor}}${escapedWord}{\\c${primaryColor}}`);
           } else {
@@ -1635,7 +1657,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   
   const assContent = header + events.join('\n');
   await fs.writeFile(outputPath, assContent, 'utf8');
-  console.log(`  ✓ Created ASS subtitle file: ${chunks.length} chunks, ${events.length} events (${captions.length} words, ${wordsPerChunk}/chunk)`);
+  console.log(`  ✓ Created ASS subtitle file: ${chunks.length} chunks, ${events.length} events (${captions.length} words, ${resolvedWordsPerChunk}/chunk, style=${resolvedStyle})`);
   
   return outputPath;
 }
@@ -1717,6 +1739,7 @@ app.post('/render', async (req, res) => {
       visual_dna = null,  // v3.0: Visual DNA for deterministic aesthetic binding
       effects_profile = null, // v3.1: Effects profile with intensity controls (0-1)
       effects_config = null,  // v4.0: Controlled Motion effects config from get_effects_config_for_job()
+      subtitle_config = null, // v6.0: Per-brand subtitle styling from get_subtitle_config_for_job()
     } = req.body;
     
     if (!images || images.length === 0) {
@@ -1796,6 +1819,13 @@ app.post('/render', async (req, res) => {
     if (music_url) {
       console.log(`[${jobId}] Background music at ${music_volume}% volume${music_config?.ducking?.enabled ? ', ducking ON' : ''}${music_config?.fade?.in_ms ? `, fade-in ${music_config.fade.in_ms}ms` : ''}${music_config?.fade?.out_ms ? `, fade-out ${music_config.fade.out_ms}ms` : ''}`);
     }
+
+    // v6.0: Log subtitle config if provided
+    let safeSubtitleConfig = null;
+    if (subtitle_config && typeof subtitle_config === 'object') {
+      safeSubtitleConfig = subtitle_config;
+      console.log(`[${jobId}] 📝 Subtitle Config: style=${subtitle_config.style || 'bold'}, fontSize=${subtitle_config.font_size || 'default'}, position=${subtitle_config.position || 'bottom'}, scary=${subtitle_config.highlight_scary ?? true}`);
+    }
     
     // Initialize job
     jobs.set(jobId, {
@@ -1815,8 +1845,8 @@ app.post('/render', async (req, res) => {
       status_url: `/status/${jobId}`,
     });
     
-    // Process asynchronously (now with visual_dna, effects_profile, effects_config, and music_config)
-    processRender(jobId, images, audio_url, durations, captions, effects, webhook_url, supabaseJobId, low_memory, music_url, music_volume, mood_levels, visual_dna, safeEffectsProfile, music_config, safeEffectsConfig);
+    // Process asynchronously (now with visual_dna, effects_profile, effects_config, music_config, and subtitle_config)
+    processRender(jobId, images, audio_url, durations, captions, effects, webhook_url, supabaseJobId, low_memory, music_url, music_volume, mood_levels, visual_dna, safeEffectsProfile, music_config, safeEffectsConfig, safeSubtitleConfig);
     
   } catch (error) {
     console.error('[RENDER] Error:', error);
@@ -1830,14 +1860,16 @@ app.post('/render', async (req, res) => {
  * v3.1: Now accepts effectsProfile for intensity-based effect controls
  * v3.2: Now accepts musicConfig for ducking + fade (Background Music V1)
  * v4.0: Now accepts effectsConfig for controlled motion (Roadmap #15)
+ * v6.0: Now accepts subtitleConfig for per-brand subtitle styling (Roadmap #14)
  * 
  * @param moodLevels - Array of mood intensities (1-10) for each scene, for intelligent Ken Burns selection
  * @param visualDNA - Visual DNA object for FFmpeg filter binding
  * @param effectsProfile - Effects profile with intensity controls (0-1 scale)
  * @param musicConfig - Music mixing config: { ducking: { enabled, duck_volume, attack_ms, release_ms }, fade: { in_ms, out_ms } }
  * @param effectsConfig - Controlled motion config from get_effects_config_for_job()
+ * @param subtitleConfig - Per-brand subtitle styling from get_subtitle_config_for_job()
  */
-async function processRender(jobId, imageUrls, audioUrl, durations, captions, effects, webhookUrl, supabaseJobId, lowMemory, musicUrl = null, musicVolume = 15, moodLevels = [], visualDNA = null, effectsProfile = null, musicConfig = null, effectsConfig = null) {
+async function processRender(jobId, imageUrls, audioUrl, durations, captions, effects, webhookUrl, supabaseJobId, lowMemory, musicUrl = null, musicVolume = 15, moodLevels = [], visualDNA = null, effectsProfile = null, musicConfig = null, effectsConfig = null, subtitleConfig = null) {
   activeRenders++;
   const jobDir = path.join(TEMP_DIR, jobId);
   await fs.mkdir(jobDir, { recursive: true });
@@ -2110,6 +2142,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
       await createASSSubtitles(captions, assPath, {
         captionStyle: mergedEffects.captionStyle || 'bold',
         highlightScary: mergedEffects.highlightScary !== false,
+        subtitleConfig: subtitleConfig,  // v6.0: Pass full subtitle config
       });
       
       const withCaptionsPath = path.join(jobDir, 'with_captions.mp4');

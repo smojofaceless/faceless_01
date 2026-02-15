@@ -781,6 +781,110 @@
         </div>
     </div>
 
+    <!-- Subtitle Config Modal (Roadmap #14) -->
+    <div class="modal" id="subtitle-modal">
+        <div class="modal__overlay" onclick="closeSubtitleModal()"></div>
+        <div class="modal__content modal__content--lg">
+            <div class="modal__header">
+                <h3 class="modal__title">📝 Subtitle Config — <span id="sub-brand-name"></span></h3>
+                <button class="modal__close" onclick="closeSubtitleModal()">&times;</button>
+            </div>
+            <div class="modal__body" id="subtitle-modal-body">
+
+                <!-- Caption Style -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <span class="fx-toggle__label" style="font-weight:600;">Caption Style</span>
+                    </div>
+                    <div class="fx-select-row">
+                        <label class="fx-slider-label">Style Preset</label>
+                        <select class="form-control form-control--sm" id="sub-style">
+                            <option value="bold">Bold (Impact, white)</option>
+                            <option value="horror">Horror (Times, dark red italic)</option>
+                            <option value="glitch">Glitch (Impact, cyan/magenta)</option>
+                            <option value="minimal">Minimal (Arial, light gray)</option>
+                            <option value="neon">Neon (Arial, pink/purple glow)</option>
+                            <option value="vintage">Vintage (Georgia, cream/sepia)</option>
+                            <option value="blood">Blood (Impact, deep red)</option>
+                            <option value="typewriter">Typewriter (Courier, gray)</option>
+                            <option value="shadow">Shadow (Arial, white, heavy outline)</option>
+                            <option value="comic">Comic (Comic Sans, yellow)</option>
+                        </select>
+                    </div>
+                    <div class="fx-slider-row">
+                        <label class="fx-slider-label">Font Size</label>
+                        <input type="range" class="fx-slider" id="sub-font-size" min="48" max="120" step="1" value="85">
+                        <span class="fx-slider-value" id="sub-font-size-val">85</span>
+                    </div>
+                </div>
+
+                <!-- Position -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <span class="fx-toggle__label" style="font-weight:600;">Position</span>
+                    </div>
+                    <div class="fx-select-row">
+                        <label class="fx-slider-label">Vertical Position</label>
+                        <select class="form-control form-control--sm" id="sub-position">
+                            <option value="bottom">Bottom</option>
+                            <option value="center">Center</option>
+                            <option value="top">Top</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Word Display -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <span class="fx-toggle__label" style="font-weight:600;">Word Display</span>
+                    </div>
+                    <div class="fx-slider-row">
+                        <label class="fx-slider-label">Words Per Chunk</label>
+                        <input type="range" class="fx-slider" id="sub-words-per-chunk" min="2" max="5" step="1" value="3">
+                        <span class="fx-slider-value" id="sub-words-per-chunk-val">3</span>
+                    </div>
+                    <div class="fx-slider-row">
+                        <label class="fx-slider-label">Active Word Scale</label>
+                        <input type="range" class="fx-slider" id="sub-emphasis-scale" min="100" max="130" step="5" value="110">
+                        <span class="fx-slider-value" id="sub-emphasis-scale-val">110%</span>
+                    </div>
+                </div>
+
+                <!-- Scary Word Highlighting -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <label class="fx-toggle">
+                            <input type="checkbox" id="sub-highlight-scary" checked>
+                            <span class="fx-toggle__label">Scary Word Highlighting</span>
+                        </label>
+                        <span class="fx-hint">Red emphasis on horror-related words (death, blood, shadow, etc.)</span>
+                    </div>
+                </div>
+
+                <!-- Preview (static) -->
+                <div class="fx-section">
+                    <div class="fx-section__header">
+                        <span class="fx-toggle__label" style="font-weight:600;">Preview</span>
+                    </div>
+                    <div id="sub-preview" class="subtitle-preview">
+                        <div class="subtitle-preview__screen">
+                            <span class="subtitle-preview__text" id="sub-preview-text">The <span class="sub-active">shadow</span> crept closer</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+            <div class="modal__footer">
+                <div class="fx-footer-info" id="sub-status"></div>
+                <div class="fx-footer-actions">
+                    <button class="btn btn--secondary btn--sm" id="sub-reset-btn">Reset to Default</button>
+                    <button class="btn btn--secondary" onclick="closeSubtitleModal()">Cancel</button>
+                    <button class="btn btn--primary" id="sub-save-btn">Save Subtitles</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Image Prompt Config Modal -->
     <div class="modal" id="imgprompt-modal">
         <div class="modal__overlay" onclick="closeImagePromptModal()"></div>
@@ -1324,6 +1428,13 @@
                 });
             });
 
+            container.querySelectorAll('.brand-card__action--subtitles').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openSubtitleModal(btn.dataset.id);
+                });
+            });
+
             container.querySelectorAll('.brand-card__action--imgprompt').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -1505,6 +1616,12 @@
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                                     <circle cx="12" cy="12" r="3"/>
                                     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                                </svg>
+                            </button>
+                            <button class="btn btn--icon btn--sm brand-card__action--subtitles" data-id="${brand.id}" title="Subtitle Config">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                    <rect x="2" y="4" width="20" height="16" rx="2" ry="2"/>
+                                    <path d="M7 15h4M13 15h4M7 11h10"/>
                                 </svg>
                             </button>
                             <button class="btn btn--icon btn--sm brand-card__action--edit" data-id="${brand.id}" title="Edit Brand">
@@ -2238,6 +2355,184 @@
                 console.error(e);
             } finally {
                 if (btn) { btn.disabled = false; btn.textContent = 'Save Effects'; }
+            }
+        }
+
+        // =========================================================
+        // SUBTITLE CONFIG MODAL (Roadmap #14)
+        // =========================================================
+
+        // Caption style metadata for preview
+        const CAPTION_STYLE_INFO = {
+            bold:       { font: 'Impact',          color: '#FFFFFF', bg: '#000000' },
+            horror:     { font: 'Times New Roman',  color: '#DC2626', bg: '#000000' },
+            glitch:     { font: 'Impact',           color: '#00FFFF', bg: '#FF00FF' },
+            minimal:    { font: 'Arial',            color: '#EBE5E7', bg: '#000000' },
+            neon:       { font: 'Arial',            color: '#F0ABFC', bg: '#EF46D3' },
+            vintage:    { font: 'Georgia',          color: '#FEF3C7', bg: '#78350F' },
+            blood:      { font: 'Impact',           color: '#7F1D1D', bg: '#450A0A' },
+            typewriter: { font: 'Courier New',      color: '#D1D5DB', bg: '#000000' },
+            shadow:     { font: 'Arial',            color: '#FFFFFF', bg: '#000000' },
+            comic:      { font: 'Comic Sans MS',    color: '#FBB724', bg: '#000000' },
+        };
+
+        let subtitleBrandId = null;
+        let subtitleOriginal = null;
+
+        async function openSubtitleModal(brandId) {
+            subtitleBrandId = brandId;
+            const brand = brandManager.get(brandId);
+            document.getElementById('sub-brand-name').textContent = brand?.name || brandId;
+            document.getElementById('subtitle-modal').classList.add('active');
+            document.getElementById('sub-status').textContent = 'Loading...';
+
+            try {
+                const cfg = await brandManager.getSubtitleConfig(brandId);
+                populateSubtitleForm(cfg);
+                subtitleOriginal = JSON.stringify(cfg);
+                document.getElementById('sub-status').textContent = cfg ? 'Loaded from DB' : 'No config set — using preset defaults';
+            } catch (e) {
+                document.getElementById('sub-status').textContent = 'Failed to load config';
+                console.error(e);
+            }
+            setupSubtitleListeners();
+        }
+
+        function closeSubtitleModal() {
+            document.getElementById('subtitle-modal').classList.remove('active');
+            subtitleBrandId = null;
+            subtitleOriginal = null;
+        }
+
+        function populateSubtitleForm(cfg) {
+            if (!cfg) {
+                // System defaults
+                document.getElementById('sub-style').value = 'bold';
+                document.getElementById('sub-font-size').value = 85;
+                document.getElementById('sub-font-size-val').textContent = '85';
+                document.getElementById('sub-position').value = 'bottom';
+                document.getElementById('sub-words-per-chunk').value = 3;
+                document.getElementById('sub-words-per-chunk-val').textContent = '3';
+                document.getElementById('sub-emphasis-scale').value = 110;
+                document.getElementById('sub-emphasis-scale-val').textContent = '110%';
+                document.getElementById('sub-highlight-scary').checked = true;
+                updateSubtitlePreview();
+                return;
+            }
+
+            document.getElementById('sub-style').value = cfg.style || 'bold';
+            setSlider('sub-font-size', cfg.font_size ?? 85, v => String(Math.round(v)));
+            document.getElementById('sub-position').value = cfg.position || 'bottom';
+            setSlider('sub-words-per-chunk', cfg.words_per_chunk ?? 3, v => String(Math.round(v)));
+            setSlider('sub-emphasis-scale', cfg.emphasis_scale ?? 110, v => Math.round(v) + '%');
+            document.getElementById('sub-highlight-scary').checked = cfg.highlight_scary !== false;
+            updateSubtitlePreview();
+        }
+
+        function updateSubtitlePreview() {
+            const style = document.getElementById('sub-style').value;
+            const fontSize = Number(document.getElementById('sub-font-size').value);
+            const highlightScary = document.getElementById('sub-highlight-scary').checked;
+            const info = CAPTION_STYLE_INFO[style] || CAPTION_STYLE_INFO.bold;
+
+            const previewText = document.getElementById('sub-preview-text');
+            if (previewText) {
+                // Scale font size relative to preview container
+                const scaledSize = Math.max(12, Math.round(fontSize / 5));
+                previewText.style.fontFamily = `"${info.font}", sans-serif`;
+                previewText.style.fontSize = scaledSize + 'px';
+                previewText.style.color = info.color;
+                previewText.style.textShadow = `2px 2px 4px ${info.bg}, -1px -1px 2px ${info.bg}`;
+                
+                // Update scary word coloring
+                const scarySpan = previewText.querySelector('.sub-active');
+                if (scarySpan) {
+                    scarySpan.style.color = highlightScary ? '#FF1D1D' : '#FFFF00';
+                }
+            }
+        }
+
+        function setupSubtitleListeners() {
+            // Slider live-update labels
+            const sliders = [
+                { id: 'sub-font-size', fmt: v => String(Math.round(v)) },
+                { id: 'sub-words-per-chunk', fmt: v => String(Math.round(v)) },
+                { id: 'sub-emphasis-scale', fmt: v => Math.round(v) + '%' },
+            ];
+            sliders.forEach(({ id, fmt }) => {
+                const el = document.getElementById(id);
+                const clone = el.cloneNode(true);
+                el.parentNode.replaceChild(clone, el);
+                clone.addEventListener('input', () => {
+                    document.getElementById(id + '-val').textContent = fmt(Number(clone.value));
+                    updateSubtitlePreview();
+                });
+            });
+
+            // Style dropdown → update preview
+            const styleEl = document.getElementById('sub-style');
+            const styleClone = styleEl.cloneNode(true);
+            styleEl.parentNode.replaceChild(styleClone, styleEl);
+            styleClone.addEventListener('change', updateSubtitlePreview);
+
+            // Scary toggle → update preview
+            const scaryEl = document.getElementById('sub-highlight-scary');
+            const scaryClone = scaryEl.cloneNode(true);
+            scaryEl.parentNode.replaceChild(scaryClone, scaryEl);
+            scaryClone.addEventListener('change', updateSubtitlePreview);
+
+            // Position dropdown (no preview update needed)
+            const posEl = document.getElementById('sub-position');
+            const posClone = posEl.cloneNode(true);
+            posEl.parentNode.replaceChild(posClone, posEl);
+
+            // Save button
+            const saveBtn = document.getElementById('sub-save-btn');
+            const saveClone = saveBtn.cloneNode(true);
+            saveBtn.parentNode.replaceChild(saveClone, saveBtn);
+            saveClone.addEventListener('click', saveSubtitleConfig);
+
+            // Reset button
+            const resetBtn = document.getElementById('sub-reset-btn');
+            const resetClone = resetBtn.cloneNode(true);
+            resetBtn.parentNode.replaceChild(resetClone, resetBtn);
+            resetClone.addEventListener('click', async () => {
+                if (!confirm('Remove all subtitle config for this brand? It will use preset defaults.')) return;
+                try {
+                    await brandManager.saveSubtitleConfig(subtitleBrandId, null);
+                    toast.success('Subtitle config removed — using preset defaults');
+                    closeSubtitleModal();
+                } catch (e) {
+                    toast.error('Failed to reset subtitle config');
+                }
+            });
+        }
+
+        function buildSubtitleConfigFromForm() {
+            return {
+                style: document.getElementById('sub-style').value,
+                font_size: Number(document.getElementById('sub-font-size').value),
+                position: document.getElementById('sub-position').value,
+                words_per_chunk: Number(document.getElementById('sub-words-per-chunk').value),
+                emphasis_scale: Number(document.getElementById('sub-emphasis-scale').value),
+                highlight_scary: document.getElementById('sub-highlight-scary').checked,
+            };
+        }
+
+        async function saveSubtitleConfig() {
+            const cfg = buildSubtitleConfigFromForm();
+            const btn = document.getElementById('sub-save-btn') || document.querySelector('#subtitle-modal .btn--primary');
+            
+            try {
+                if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+                await brandManager.saveSubtitleConfig(subtitleBrandId, cfg);
+                toast.success('Subtitle config saved');
+                closeSubtitleModal();
+            } catch (e) {
+                toast.error('Failed to save subtitle config: ' + e.message);
+                console.error(e);
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = 'Save Subtitles'; }
             }
         }
 

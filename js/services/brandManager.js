@@ -1159,6 +1159,86 @@ class BrandManager {
         }
         console.log('🎨 Image prompt config saved for brand:', brandId);
     }
+
+    // =================================================
+    // SUBTITLE CONFIG (brand-level config_overrides.subtitles)
+    // Roadmap #14 — Subtitle System v1 (Styles Per Brand)
+    // =================================================
+
+    /**
+     * Get subtitle config from brand_templates for a brand.
+     * Returns the subtitles object from the default template's config_overrides,
+     * or null if no subtitle config is set.
+     * @param {string} brandId
+     * @returns {Promise<Object|null>}
+     */
+    async getSubtitleConfig(brandId) {
+        if (!this.useSupabase) {
+            console.warn('Subtitle config requires Supabase');
+            return null;
+        }
+        const { data, error } = await supabaseClient
+            .from('brand_templates')
+            .select('id, template_type, config_overrides, is_default')
+            .eq('brand_id', brandId)
+            .eq('is_default', true)
+            .limit(1)
+            .single();
+
+        if (error) {
+            // PGRST116 = no rows found — brand has no default template
+            if (error.code === 'PGRST116') return null;
+            console.error('Failed to load subtitle config:', error);
+            throw error;
+        }
+        return data?.config_overrides?.subtitles || null;
+    }
+
+    /**
+     * Save subtitle config to brand_templates for a brand.
+     * Merges into config_overrides.subtitles on the default template.
+     * If subtitleConfig is null, removes the subtitles key entirely.
+     * @param {string} brandId
+     * @param {Object|null} subtitleConfig
+     * @returns {Promise<void>}
+     */
+    async saveSubtitleConfig(brandId, subtitleConfig) {
+        if (!this.useSupabase) throw new Error('Subtitle config requires Supabase');
+
+        // Find the default template for this brand
+        const { data: template, error: fetchErr } = await supabaseClient
+            .from('brand_templates')
+            .select('id, config_overrides')
+            .eq('brand_id', brandId)
+            .eq('is_default', true)
+            .limit(1)
+            .single();
+
+        if (fetchErr) {
+            console.error('Failed to find default template:', fetchErr);
+            throw fetchErr;
+        }
+
+        const overrides = template.config_overrides || {};
+
+        if (subtitleConfig === null) {
+            // Remove subtitles key entirely
+            delete overrides.subtitles;
+        } else {
+            overrides.subtitles = subtitleConfig;
+        }
+
+        const { error: updateErr } = await supabaseClient
+            .from('brand_templates')
+            .update({ config_overrides: overrides })
+            .eq('id', template.id);
+
+        if (updateErr) {
+            console.error('Failed to save subtitle config:', updateErr);
+            throw updateErr;
+        }
+        console.log('📝 Subtitle config saved for brand:', brandId);
+    }
 }
 
 // Create singleton instance
