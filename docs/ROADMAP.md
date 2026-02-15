@@ -1,6 +1,6 @@
 # Project Roadmap
 
-> **Document Version:** 3.3  
+> **Document Version:** 3.4  
 > **Last Updated:** February 15, 2026  
 > **Author:** System Architect  
 > **Status:** Active Development
@@ -11,6 +11,7 @@
 
 | Date | Version | Changes |
 |------|---------|--------|
+| Feb 15, 2026 | 3.4 | **Time Slot Scoring**: `time_slot_scores` table (7×24 grid per brand/platform/window), weighted engagement formula (`views + 5*likes + 10*comments + 10*shares`), timezone-aware bucketing via `AT TIME ZONE`, 4 RPCs (`recompute_time_slot_scores`, `recompute_all_time_slot_scores`, `get_time_slot_scores`, `get_best_time_slots`), pg_cron every 6h, `timeSlotService.js` frontend service, Calendar "Best Times" panel (toggle, platform/window selectors, top-5 chips). Analytics-only — no auto-scheduling. |
 | Feb 15, 2026 | 3.3 | **Metrics Collection v1**: Replaced unused `post_analytics` scaffold with proper append-only `post_metrics` time-series table. Decay-based collection schedule (30min→weekly over 90 days). `metrics-collector` Edge Function with platform adapters (YouTube real API, Instagram Graph API, Facebook Graph API, TikTok stub). `find_metrics_eligible_posts` RPC respects decay schedule + terminal posts. 7 RPCs (`record_post_metrics`, `get_post_metrics`, `get_latest_metrics`, `get_latest_metrics_batch`, `get_job_metrics`, `get_campaign_metrics`, `cleanup_old_post_metrics`). 3 views (`v_post_metrics_latest`, `v_post_metrics_summary`, `v_metrics_collection_status`). UI: metrics badges on calendar posted items, engagement stats + collection history in post detail modals (calendar + posts pages). `metricsService.js` frontend service. New doc: POST_ANALYTICS_SYSTEM.md. |
 | Feb 15, 2026 | 3.2 | **Post Registry (Anchor Table for Metrics)**: `post_lifecycle_events` append-only audit trail for state transitions, lifecycle timestamp columns on `posts` (`posting_started_at`, `failed_at`), `v_post_registry` clean view (no queue internals), `v_job_post_summary` per-job platform aggregation, 5 RPCs (`get_post_registry`, `get_posts_for_job`, `get_post_lifecycle`, `get_batch_post_summary`, `cleanup_old_lifecycle_events`), trigger-based auto-recording on status changes, backfill for existing posts, patched `claim_due_posts`/`mark_post_failed` with lifecycle timestamps, UI: platform links + lifecycle timeline in post detail modal, `postQueueService` registry methods. |
 | Feb 12, 2026 | 3.1 | **Story Generation v2 + Bug Fixes**: (1) Rich one_too_many prompt with randomized trope packs (18 containers, 11 evidence sources, 10 glitches, 8 witnesses, 8 group types, 5 group sizes); (2) Storytelling toolkit enhancements (spatial grounding, named characters, time-skip epilogue, multi-layer evidence stacking, environmental disturbance scattering, uncanny valley descriptions); (3) Cinematography-driven shot selection (removed hardcoded group scene limits); (4) Campaign detail UI fixes (uniqueness score nested path, art style fallback, platform array handling); (5) Snapshot data extraction fix (meta.payload vs meta.data in 8 renderers). |
@@ -42,6 +43,7 @@
 
 | Item | Date | Notes |
 |------|------|-------|
+| **Time Slot Scoring** | Feb 15, 2026 | `time_slot_scores` table (7×24 grid, UNIQUE per brand/platform/tz/window/dow/hour), weighted engagement scoring formula, timezone-aware bucketing, 4 RPCs, pg_cron every 6h, `timeSlotService.js`, Calendar Best Times panel (top-5 chips, platform/window selectors). Analytics-only. Migration: `20260316001_time_slot_scoring.sql`. |
 | **Metrics Collection v1** | Feb 15, 2026 | `post_metrics` append-only time-series (replaces unused `post_analytics`), `metrics-collector` Edge Function with YouTube/Instagram/Facebook/TikTok adapters, decay-based collection schedule, 7 RPCs, 3 views, `metricsService.js`, metrics badges on calendar + post detail modals. Migration: `20260315001_metrics_collection_v1.sql`. |
 | **Post Registry (Anchor Table)** | Feb 15, 2026 | `post_lifecycle_events` table (append-only audit trail), lifecycle timestamps on `posts`, `v_post_registry` + `v_job_post_summary` views, 5 RPCs, trigger-based auto-recording, UI lifecycle timeline in post detail modal. Migration: `20260309001_post_registry.sql`. |
 | **Story Generation v2** | Feb 12, 2026 | Rich one_too_many prompt engine: randomized trope packs (18 containers, 11 evidence sources, 10 glitches, 8 witnesses, 6 dialogue lines), flexible narrative voice (any POV), soft storytelling toolkit (spatial grounding, named characters, time-skip epilogues, multi-layer evidence, environmental disturbance scattering, uncanny valley descriptions). Cinematography-driven shot selection (replaced hardcoded group scene limits). |
@@ -874,11 +876,38 @@ scheduled → posting → posted
 
 ---
 
-### 19. Time Slot Scoring (`time_slot_scores`)
+### 19. ✅ Time Slot Scoring (`time_slot_scores`) — COMPLETE
 
-- [ ] Simple stats: best hour/day per platform per brand
-- [ ] Score calculation
-- [ ] Feed into scheduling recommendations
+> **Status:** ✅ COMPLETE (February 15, 2026)
+
+**Design Decision:** Weighted engagement formula (`views + 5*likes + 10*comments + 10*shares`) provides a simple, stable, monotonic score that degrades gracefully when some metrics are zero. Posts must be ≥ 6 hours old (maturity threshold) to be included. Timezone-aware bucketing via `AT TIME ZONE` handles DST correctly. UPSERT semantics keep row count stable across recomputes.
+
+**Delivered:**
+- [x] `time_slot_scores` table — 7×24 grid per brand/platform/tz/window
+- [x] UNIQUE constraint: `(brand_id, platform, tz, window_days, day_of_week, hour)`
+- [x] CHECK constraints: dow 0-6, hour 0-23, window_days IN (7,14,30)
+- [x] `recompute_time_slot_scores` RPC — per brand/platform/window, timezone resolution chain
+- [x] `recompute_all_time_slot_scores` RPC — loops active brands × platforms
+- [x] `get_time_slot_scores` RPC — full 7×24 grid sorted by dow, hour
+- [x] `get_best_time_slots` RPC — top N by score, `sample_size >= 3` threshold, human labels
+- [x] pg_cron job every 6h (`recompute-time-slot-scores`)
+- [x] `timeSlotService.js` — frontend service with 10-min cache
+- [x] Calendar "Best Times" panel — toggle button, platform/window selectors, top-5 chips
+- [x] Brand timezone support via `brands.settings.timezone` JSONB
+
+**Scoring Formula:**
+```
+performance_value = views + 5×likes + 10×comments + 10×shares
+score = AVG(performance_value) per (brand, platform, tz, dow, hour)
+```
+
+**Database Objects:**
+- Table: `time_slot_scores`
+- RPCs: `recompute_time_slot_scores`, `recompute_all_time_slot_scores`, `get_time_slot_scores`, `get_best_time_slots`
+- Cron: `recompute-time-slot-scores` (every 6h)
+- Migration: `20260316001_time_slot_scoring.sql`
+
+**Reference:** [TIME_SLOT_SCORING.md](TIME_SLOT_SCORING.md)
 
 ---
 
@@ -1000,8 +1029,8 @@ NEXT (Level 2)
 
 MID (Level 3)
 ├── 17. ✅ Post Registry (DONE)
-├── 18. Metrics Collection
-├── 19. Time Slot Scoring
+├── 18. ✅ Metrics Collection (DONE)
+├── 19. ✅ Time Slot Scoring (DONE)
 └── 20. Caption Learning
 
 LATER (Level 4)

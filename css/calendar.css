@@ -1740,3 +1740,124 @@
     color: var(--accent-error, #ef4444);
     opacity: 0.7;
 }
+
+/* =====================================================
+   Best Times Panel
+   Roadmap #19 — Time Slot Scoring
+   ===================================================== */
+
+.best-times-toggle {
+    font-size: var(--text-sm, 0.8125rem);
+    gap: 4px;
+    white-space: nowrap;
+}
+
+.best-times-toggle.active {
+    background: var(--accent-primary, #6366f1);
+    color: var(--text-inverse, #fff);
+    border-color: var(--accent-primary, #6366f1);
+}
+
+.best-times-panel {
+    background: var(--bg-secondary, #1a1a2e);
+    border: 1px solid var(--border-primary, #2a2a4a);
+    border-radius: var(--radius-md, 8px);
+    padding: var(--space-3, 12px) var(--space-4, 16px);
+    margin-bottom: var(--space-4, 16px);
+    animation: slideDown 0.15s ease-out;
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.best-times-panel__controls {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3, 12px);
+    margin-bottom: var(--space-3, 12px);
+}
+
+.best-times-panel__controls .select--sm {
+    padding: 4px 8px;
+    font-size: var(--text-sm, 0.8125rem);
+    min-width: 120px;
+}
+
+.best-times-panel__window-toggle {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-tertiary, #0f0f23);
+    border-radius: var(--radius-sm, 4px);
+    padding: 2px;
+}
+
+.best-times-panel__window-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary, #8888aa);
+    padding: 4px 10px;
+    font-size: var(--text-xs, 0.75rem);
+    border-radius: var(--radius-sm, 4px);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.best-times-panel__window-btn:hover {
+    color: var(--text-primary, #e0e0ff);
+}
+
+.best-times-panel__window-btn.active {
+    background: var(--accent-primary, #6366f1);
+    color: var(--text-inverse, #fff);
+}
+
+.best-times-panel__content {
+    min-height: 40px;
+}
+
+.best-times__empty {
+    color: var(--text-muted, #6666aa);
+    font-size: var(--text-sm, 0.8125rem);
+    padding: var(--space-2, 8px) 0;
+    text-align: center;
+}
+
+.best-times__results {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2, 8px);
+}
+
+.best-times__chip {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    background: var(--bg-tertiary, #0f0f23);
+    border: 1px solid var(--border-primary, #2a2a4a);
+    border-radius: var(--radius-md, 8px);
+    padding: var(--space-2, 8px) var(--space-3, 12px);
+    transition: border-color 0.15s ease;
+    cursor: default;
+}
+
+.best-times__chip:hover {
+    border-color: var(--accent-primary, #6366f1);
+}
+
+.best-times__chip:first-child {
+    border-color: var(--accent-success, #22c55e);
+    background: color-mix(in srgb, var(--accent-success, #22c55e) 8%, var(--bg-tertiary, #0f0f23));
+}
+
+.best-times__chip-time {
+    font-weight: 600;
+    font-size: var(--text-sm, 0.8125rem);
+    color: var(--text-primary, #e0e0ff);
+}
+
+.best-times__chip-stat {
+    font-size: var(--text-xs, 0.75rem);
+    color: var(--text-muted, #6666aa);
+}

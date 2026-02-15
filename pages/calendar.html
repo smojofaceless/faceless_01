@@ -161,6 +161,29 @@
                                 <option value="generating">Generating</option>
                             </select>
                         </div>
+                        <button class="btn btn--secondary best-times-toggle" id="best-times-toggle">
+                            &#128336; Best Times
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Best Times Panel (collapsible) -->
+                <div class="best-times-panel" id="best-times-panel" style="display:none;">
+                    <div class="best-times-panel__controls">
+                        <select class="select select--sm" id="best-times-platform">
+                            <option value="youtube">YouTube</option>
+                            <option value="instagram_reels">Instagram</option>
+                            <option value="facebook_reels">Facebook</option>
+                            <option value="tiktok">TikTok</option>
+                        </select>
+                        <div class="best-times-panel__window-toggle">
+                            <button class="best-times-panel__window-btn active" data-window="7">7d</button>
+                            <button class="best-times-panel__window-btn" data-window="14">14d</button>
+                            <button class="best-times-panel__window-btn" data-window="30">30d</button>
+                        </div>
+                    </div>
+                    <div id="best-times-content" class="best-times-panel__content">
+                        <div class="best-times__empty"><span>Select a platform to see best posting times</span></div>
                     </div>
                 </div>
 
@@ -224,6 +247,7 @@
     <script src="../js/services/postManager.js"></script>
     <script src="../js/services/postQueue.js"></script>
     <script src="../js/services/metricsService.js"></script>
+    <script src="../js/services/timeSlotService.js"></script>
     <script src="../js/services/scheduler.js"></script>
     <script src="../js/services/brandManager.js"></script>
     <script src="../js/services/index.js"></script>
