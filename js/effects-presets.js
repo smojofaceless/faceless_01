@@ -316,6 +316,23 @@ const PRESET_EFFECT_SUMMARY = {
     colorPreset: "cool_muted",
     mood: "Eerie, clean, cinematic unease",
   },
+
+  dark_origins: {
+    label: "Dark Origins",
+    description: "Noir documentary — desaturated, heavy vignette, dissolve transitions",
+    activeEffects: [
+      { name: "Ken Burns", key: "kenburns", intensity: 0.50, label: "Slow deliberate zoom" },
+      { name: "Vignette", key: "vignette", intensity: 0.75, label: "Heavy vignette" },
+      { name: "Film Grain", key: "film_grain", intensity: 0.40, label: "Documentary grain" },
+      { name: "Color Grade", key: "color_grade", intensity: 0.75, preset: "noir_documentary", label: "Noir desaturated tones" },
+      { name: "Light Flicker", key: "light_flicker", intensity: 0.20, label: "Subtle flicker" },
+      { name: "Edge Darken", key: "edge_darken", intensity: 0.45, label: "Dark edge creep" },
+      { name: "Negative Flash", key: "negative_flash", intensity: 0.20, label: "Brief negative flashes" },
+    ],
+    inactiveEffects: ["VHS", "Glitch", "Scanlines"],
+    colorPreset: "noir_documentary",
+    mood: "Cold, clinical, true-crime documentary dread",
+  },
 };
 
 /**

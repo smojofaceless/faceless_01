@@ -98,6 +98,23 @@ const HorrorTemplate = {
             }
         },
         {
+            id: 'dark_origins',
+            name: 'Dark Origins',
+            icon: '🔪',
+            tagline: 'The monster was human',
+            description: 'Documentary-style dark biographies and horror icon origin stories. Real serial killers, fictional monsters, and the true events that inspired them. 90-second deep dives with a Keith Morrison-style narrator.',
+            defaults: {
+                vibe_preset: 'dark_origins',
+                era: '1970s',
+                tone: 0.75,
+                ending: 'ominous',
+                art_style: 'dark-eerie-realistic-illustration',
+                visual_style: 'noir_documentary',
+                color_palette: 'deep_shadow_contrast',
+                motion_profile: 'slow_pan'
+            }
+        },
+        {
             id: 'custom',
             name: 'Custom DNA',
             icon: '🧬',

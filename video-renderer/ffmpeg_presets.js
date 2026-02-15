@@ -773,6 +773,17 @@ const DEFAULT_SHADOW_PROFILES = {
     allowed_lightings: ['low_key_shadow', 'fluorescent_flat', 'single_source_harsh'],
     texture_pool: ['film_grain', 'compression_noise', 'vignette_heavy'],
   },
+
+  // Dark Origins: documentary dark biographies / serial killer deep dives
+  // Noir aesthetic with heavy desaturation, evidence-style framing
+  dark_origins: {
+    locked_visual_style: null,
+    preferred_styles: ['noir_documentary', 'documentary_archival', 'cinematic_dark', 'found_footage'],
+    allowed_palettes: ['deep_shadow_contrast', 'cold_desaturated', 'amber_decay', 'muted_gray'],
+    allowed_motions: ['slow_pan', 'subtle_zoom', 'slow_drift', 'none'],
+    allowed_lightings: ['low_key_shadow', 'single_source_harsh', 'twilight_amber', 'fluorescent_flat'],
+    texture_pool: ['film_grain', 'dust_scratches', 'vignette_heavy', 'scanlines'],
+  },
 };
 
 /**

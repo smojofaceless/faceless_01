@@ -683,6 +683,8 @@ class CampaignManager {
         const labels = {
             urban_legend: 'Urban Legend',
             one_too_many: 'One Too Many',
+            reddit_trending_horror: 'Reddit Trending Horror',
+            dark_origins: 'Dark Origins',
             slow_creepy: 'Slow Creepy',
             atmospheric: 'Atmospheric',
             punchy_shock: 'Punchy Shock'
