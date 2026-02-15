@@ -1,7 +1,7 @@
 # Project Roadmap
 
-> **Document Version:** 3.4  
-> **Last Updated:** February 15, 2026  
+> **Document Version:** 3.5  
+> **Last Updated:** February 16, 2026  
 > **Author:** System Architect  
 > **Status:** Active Development
 
@@ -11,6 +11,7 @@
 
 | Date | Version | Changes |
 |------|---------|--------|
+| Feb 16, 2026 | 3.5 | **Caption/Tags Learning Loop**: `post_metadata_versions` append-only version history table, `post_metadata_variant_assignments` A/B test config table, `v_post_variant_performance` + `v_top_metadata_patterns` views, 5 RPCs (`record_post_metadata_version`, `get_post_metadata_versions`, `get_variant_performance`, `assign_ab_variant`, `get_generation_exemplars`), `generate-post-metadata` v3.0 with exemplar injection + A/B variant prompting + version recording, `metadataVersionService.js` frontend service, Calendar version history panel (collapsible, expandable entries, performance badges). Level 3 scope — no ML, no auto-optimization. |
 | Feb 15, 2026 | 3.4 | **Time Slot Scoring**: `time_slot_scores` table (7×24 grid per brand/platform/window), weighted engagement formula (`views + 5*likes + 10*comments + 10*shares`), timezone-aware bucketing via `AT TIME ZONE`, 4 RPCs (`recompute_time_slot_scores`, `recompute_all_time_slot_scores`, `get_time_slot_scores`, `get_best_time_slots`), pg_cron every 6h, `timeSlotService.js` frontend service, Calendar "Best Times" panel (toggle, platform/window selectors, top-5 chips). Analytics-only — no auto-scheduling. |
 | Feb 15, 2026 | 3.3 | **Metrics Collection v1**: Replaced unused `post_analytics` scaffold with proper append-only `post_metrics` time-series table. Decay-based collection schedule (30min→weekly over 90 days). `metrics-collector` Edge Function with platform adapters (YouTube real API, Instagram Graph API, Facebook Graph API, TikTok stub). `find_metrics_eligible_posts` RPC respects decay schedule + terminal posts. 7 RPCs (`record_post_metrics`, `get_post_metrics`, `get_latest_metrics`, `get_latest_metrics_batch`, `get_job_metrics`, `get_campaign_metrics`, `cleanup_old_post_metrics`). 3 views (`v_post_metrics_latest`, `v_post_metrics_summary`, `v_metrics_collection_status`). UI: metrics badges on calendar posted items, engagement stats + collection history in post detail modals (calendar + posts pages). `metricsService.js` frontend service. New doc: POST_ANALYTICS_SYSTEM.md. |
 | Feb 15, 2026 | 3.2 | **Post Registry (Anchor Table for Metrics)**: `post_lifecycle_events` append-only audit trail for state transitions, lifecycle timestamp columns on `posts` (`posting_started_at`, `failed_at`), `v_post_registry` clean view (no queue internals), `v_job_post_summary` per-job platform aggregation, 5 RPCs (`get_post_registry`, `get_posts_for_job`, `get_post_lifecycle`, `get_batch_post_summary`, `cleanup_old_lifecycle_events`), trigger-based auto-recording on status changes, backfill for existing posts, patched `claim_due_posts`/`mark_post_failed` with lifecycle timestamps, UI: platform links + lifecycle timeline in post detail modal, `postQueueService` registry methods. |
@@ -43,6 +44,7 @@
 
 | Item | Date | Notes |
 |------|------|-------|
+| **Caption/Tags Learning Loop** | Feb 16, 2026 | `post_metadata_versions` (append-only version history) + `post_metadata_variant_assignments` (A/B test config). Views: `v_post_variant_performance`, `v_top_metadata_patterns`. 5 RPCs. `generate-post-metadata` v3.0: exemplar injection, A/B variant prompting, automatic version recording. `metadataVersionService.js`. Calendar: collapsible version history panel, performance badges, expandable field snapshots. Migration: `20260317001_caption_tags_learning.sql`. |
 | **Time Slot Scoring** | Feb 15, 2026 | `time_slot_scores` table (7×24 grid, UNIQUE per brand/platform/tz/window/dow/hour), weighted engagement scoring formula, timezone-aware bucketing, 4 RPCs, pg_cron every 6h, `timeSlotService.js`, Calendar Best Times panel (top-5 chips, platform/window selectors). Analytics-only. Migration: `20260316001_time_slot_scoring.sql`. |
 | **Metrics Collection v1** | Feb 15, 2026 | `post_metrics` append-only time-series (replaces unused `post_analytics`), `metrics-collector` Edge Function with YouTube/Instagram/Facebook/TikTok adapters, decay-based collection schedule, 7 RPCs, 3 views, `metricsService.js`, metrics badges on calendar + post detail modals. Migration: `20260315001_metrics_collection_v1.sql`. |
 | **Post Registry (Anchor Table)** | Feb 15, 2026 | `post_lifecycle_events` table (append-only audit trail), lifecycle timestamps on `posts`, `v_post_registry` + `v_job_post_summary` views, 5 RPCs, trigger-based auto-recording, UI lifecycle timeline in post detail modal. Migration: `20260309001_post_registry.sql`. |
@@ -911,12 +913,14 @@ score = AVG(performance_value) per (brand, platform, tz, dow, hour)
 
 ---
 
-### 20. Caption/Tags Learning Loop
+### 20. Caption/Tags Learning Loop ✅
 
-- [ ] Store caption/title/tags versions
-- [ ] Correlate with performance metrics
-- [ ] Bias future choices toward high performers
-- [ ] A/B testing capability
+- [x] Store caption/title/tags versions — `post_metadata_versions` append-only table with version_number, version_type (ai/edit/regenerate), variant_key, fields JSONB
+- [x] Correlate with performance metrics — `v_post_variant_performance` view joins versions with `v_post_metrics_latest`, computes `performance_value` using weighted formula
+- [x] Bias future choices toward high performers — `get_generation_exemplars` RPC fetches top-N metadata patterns; injected into generation prompt as style guidance
+- [x] A/B testing capability — `post_metadata_variant_assignments` table, `assign_ab_variant` RPC, variant instructions injected into prompt, variant_key recorded per version
+
+**Reference:** [CAPTION_TAGS_LEARNING.md](CAPTION_TAGS_LEARNING.md)
 
 ---
 

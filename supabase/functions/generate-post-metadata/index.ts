@@ -1,14 +1,12 @@
 // =============================================================================
 // generate-post-metadata — AI-generates platform-specific metadata for a post
 // =============================================================================
-// v2.0 — Production version with:
-//   - Kill switch check
-//   - Cost control lifecycle (check_budget → acquire_slot → API → record → release)
-//   - Error classification (transient/dependency/misconfig/permanent)
-//   - Backoff-aware failure marking
-//   - Dynamic platform constraint validation
-//   - Idempotency protection
-//   - Lease-safe claim pattern
+// v3.0 — Caption/Tags Learning Loop (#20):
+//   - Exemplar retrieval: top-performing metadata injected as style guidance
+//   - A/B variant support: per-job variant instructions modulate prompts
+//   - Version recording: every generation/edit appended to post_metadata_versions
+//   - All prior features preserved (kill switch, cost control, error classification,
+//     backoff, validation, idempotency, lease-safe claim)
 //
 // Input:  { post_id: UUID, platform?: string, force?: boolean }
 // Output: { success, results: [{ post_id, platform, status, metadata }] }
@@ -17,7 +15,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2.39.3";
 
-const VERSION = "2.0";
+const VERSION = "3.0";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -411,6 +409,8 @@ function buildUserPrompt(
     vibePreset: string;
     brandName?: string;
     brandVoice?: string;
+    exemplars?: Array<{ fields: Record<string, unknown> }>;
+    variantInstructions?: string;
   }
 ): string {
   const storySummary =
@@ -419,6 +419,29 @@ function buildUserPrompt(
     .map(([key, desc]) => `  "${key}": ${desc}`)
     .join("\n");
   const exampleBlock = JSON.stringify(platformConfig.example, null, 2);
+
+  // Build exemplars section (if we have high-performing examples)
+  let exemplarsSection = "";
+  if (data.exemplars && data.exemplars.length > 0) {
+    const exemplarEntries = data.exemplars
+      .map((ex, i) => `Example ${i + 1}: ${JSON.stringify(ex.fields)}`)
+      .join("\n");
+    exemplarsSection = `
+
+TOP-PERFORMING EXAMPLES (for style reference only — do NOT copy verbatim):
+${exemplarEntries}
+
+Use these as inspiration for tone, structure, and tag/hashtag strategy. Adapt the patterns to THIS video's content.`;
+  }
+
+  // Build A/B variant section (if assigned)
+  let variantSection = "";
+  if (data.variantInstructions) {
+    variantSection = `
+
+A/B VARIANT INSTRUCTIONS:
+${data.variantInstructions}`;
+  }
 
   return `Generate ${platformConfig.platform} metadata for this horror short video.
 
@@ -439,7 +462,7 @@ EXAMPLE OUTPUT:
 ${exampleBlock}
 
 PLATFORM-SPECIFIC GUIDANCE:
-${platformConfig.guidance}
+${platformConfig.guidance}${exemplarsSection}${variantSection}
 
 Generate the metadata JSON now. Output ONLY the JSON object.`;
 }
@@ -760,6 +783,51 @@ async function generateForPost(
       }
     }
 
+    // 7a. Fetch top-performing exemplars for this brand/platform/vibe
+    let exemplars: Array<{ fields: Record<string, unknown> }> = [];
+    if (post.brand_id) {
+      try {
+        const { data: exData } = await supabase.rpc("get_generation_exemplars", {
+          p_brand_id: post.brand_id,
+          p_platform: platform,
+          p_vibe_preset: vibePreset,
+          p_limit: 3,
+        });
+        if (exData && exData.length > 0) {
+          exemplars = exData.map((e: { fields: Record<string, unknown> }) => ({ fields: e.fields }));
+          console.log(`[METADATA] 📚 Loaded ${exemplars.length} exemplar(s) for ${platform}/${vibePreset}`);
+        }
+      } catch (exErr) {
+        // Non-fatal — continue without exemplars
+        console.warn("[METADATA] Could not fetch exemplars:", exErr);
+      }
+    }
+
+    // 7b. Check A/B variant assignment for this job/platform
+    let variantKey: string | null = null;
+    let variantInstructions: string | undefined;
+    if (post.job_id) {
+      try {
+        const { data: variants } = await supabase
+          .from("post_metadata_variant_assignments")
+          .select("variant_key, style_instructions")
+          .eq("job_id", post.job_id)
+          .eq("platform", platform)
+          .eq("is_active", true)
+          .order("created_at", { ascending: true })
+          .limit(1);
+
+        if (variants && variants.length > 0) {
+          variantKey = variants[0].variant_key;
+          variantInstructions = variants[0].style_instructions;
+          console.log(`[METADATA] 🧪 A/B variant: ${variantKey} for ${postId}/${platform}`);
+        }
+      } catch (vErr) {
+        // Non-fatal — continue as control
+        console.warn("[METADATA] Could not fetch variant:", vErr);
+      }
+    }
+
     // 8. Platform config
     const platformConfig = PLATFORM_CONFIGS[platform];
     if (!platformConfig) {
@@ -774,6 +842,8 @@ async function generateForPost(
       vibePreset,
       brandName,
       brandVoice,
+      exemplars: exemplars.length > 0 ? exemplars : undefined,
+      variantInstructions,
     });
 
     // 10. Call OpenAI (the expensive part — budget/slot checked above)
@@ -819,7 +889,28 @@ async function generateForPost(
       throw new Error(`Upsert failed: ${upsertErr.message}`);
     }
 
-    // 13. Record cost (after success — idempotent via key)
+    // 13. Record version in post_metadata_versions (append-only history)
+    const versionType = force ? "regenerate" : "ai";
+    const versionIdempotencyKey = `${postId}:meta-version:${platform}:${versionType}:${Date.now()}`;
+    try {
+      await supabase.rpc("record_post_metadata_version", {
+        p_post_id: postId,
+        p_platform: platform,
+        p_version_type: versionType,
+        p_variant_key: variantKey,
+        p_fields: validation.cleaned,
+        p_generation_model: "gpt-4o",
+        p_schema_version: 1,
+        p_idempotency_key: versionIdempotencyKey,
+        p_created_by: generatedBy,
+      });
+      console.log(`[METADATA] 📝 Version recorded (${versionType}${variantKey ? `, variant=${variantKey}` : ""})`);
+    } catch (versionErr) {
+      // Non-fatal — metadata was already stored successfully
+      console.warn("[METADATA] Could not record version:", versionErr);
+    }
+
+    // 14. Record cost (after success — idempotent via key)
     await recordCost(
       supabase,
       postId,

@@ -89,6 +89,11 @@
             await timeSlotService.init();
         }
 
+        // Initialize metadata version service
+        if (typeof MetadataVersionService !== 'undefined' && typeof metadataVersionService !== 'undefined') {
+            await metadataVersionService.init();
+        }
+
         // Create calendar instance
         calendar = new Calendar({
             container: elements.calendarContainer,
@@ -790,6 +795,17 @@
                     ` : ''}
                 </div>
 
+                <!-- Version History (loaded async) -->
+                <div id="metadata-version-history" class="metadata-version-history" style="display: none;">
+                    <div class="metadata-version-history__header" id="version-history-toggle">
+                        <span class="metadata-version-history__title">Version History</span>
+                        <span class="metadata-version-history__chevron">&#9660;</span>
+                    </div>
+                    <div class="metadata-version-history__body" id="version-history-body" style="display: none;">
+                        <div class="metadata-version-history__loading">Loading versions...</div>
+                    </div>
+                </div>
+
                 <div class="metadata-section__feedback" id="metadata-feedback" style="display: none;"></div>
             </div>
         `;
@@ -879,6 +895,13 @@
                         post.metadata.finalMetadata = fields;
                         post.metadata.status = 'edited';
                     }
+
+                    // Record edit version (non-blocking)
+                    if (typeof metadataVersionService !== 'undefined') {
+                        metadataVersionService.recordEditVersion(post.id, post.platformId, fields)
+                            .then(() => loadVersionHistory(post))
+                            .catch(err => console.warn('Version recording failed:', err));
+                    }
                 } catch (err) {
                     showMetadataFeedback(`Save failed: ${err.message}`, 'error');
                     saveBtn.disabled = false;
@@ -946,6 +969,79 @@
                     regenerateBtn.textContent = 'Regenerate';
                 }
             });
+        }
+
+        // Load version history (async, non-blocking)
+        loadVersionHistory(post);
+
+        // Version history toggle
+        const vhToggle = document.getElementById('version-history-toggle');
+        if (vhToggle) {
+            vhToggle.addEventListener('click', () => {
+                const body = document.getElementById('version-history-body');
+                const chevron = vhToggle.querySelector('.metadata-version-history__chevron');
+                if (body) {
+                    const isHidden = body.style.display === 'none';
+                    body.style.display = isHidden ? 'block' : 'none';
+                    if (chevron) chevron.textContent = isHidden ? '\u25B2' : '\u25BC';
+                }
+            });
+        }
+    }
+
+    /**
+     * Load and render version history for a post
+     * @param {Object} post
+     */
+    async function loadVersionHistory(post) {
+        if (typeof metadataVersionService === 'undefined') return;
+
+        const container = document.getElementById('metadata-version-history');
+        const body = document.getElementById('version-history-body');
+        if (!container || !body) return;
+
+        try {
+            const versions = await metadataVersionService.getVersions(post.id, post.platformId);
+            if (!versions || versions.length === 0) {
+                container.style.display = 'none';
+                return;
+            }
+
+            container.style.display = 'block';
+            body.innerHTML = versions.map(v => {
+                const typeInfo = metadataVersionService.formatVersionType(v.version_type);
+                const perfInfo = metadataVersionService.formatPerformance(v.performance_value);
+                const date = v.created_at ? new Date(v.created_at).toLocaleDateString('en-US', {
+                    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                }) : '';
+
+                return `
+                    <div class="version-entry" data-version-id="${v.id}">
+                        <div class="version-entry__header">
+                            <span class="version-badge ${typeInfo.cssClass}">v${v.version_number} · ${typeInfo.label}</span>
+                            ${v.variant_key ? `<span class="version-variant-badge">🧪 ${escapeHtml(v.variant_key)}</span>` : ''}
+                            <span class="version-perf ${perfInfo.cssClass}">${perfInfo.text}</span>
+                            <span class="version-date">${date}</span>
+                        </div>
+                        <div class="version-entry__detail" style="display: none;">
+                            <pre class="version-fields-json">${escapeHtml(JSON.stringify(v.fields, null, 2))}</pre>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Click-to-expand each version entry
+            body.querySelectorAll('.version-entry').forEach(entry => {
+                entry.querySelector('.version-entry__header')?.addEventListener('click', () => {
+                    const detail = entry.querySelector('.version-entry__detail');
+                    if (detail) {
+                        detail.style.display = detail.style.display === 'none' ? 'block' : 'none';
+                    }
+                });
+            });
+        } catch (err) {
+            console.warn('Failed to load version history:', err);
+            container.style.display = 'none';
         }
     }
 
