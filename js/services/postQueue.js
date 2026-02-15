@@ -759,6 +759,90 @@ class PostQueueService {
         return stats;
     }
 
+    // ==================== Post Registry ====================
+
+    /**
+     * Get all platform posts for a specific job
+     * @param {string} jobId - Job UUID
+     * @returns {Promise<Object[]>} Platform posts with lifecycle state
+     */
+    async getPostsForJob(jobId) {
+        if (!this.useSupabase) return [];
+        try {
+            const { data, error } = await supabaseClient.rpc('get_posts_for_job', {
+                p_job_id: jobId
+            });
+            if (error) { console.error('[PostQueue] getPostsForJob error:', error.message); return []; }
+            return data || [];
+        } catch (e) {
+            console.error('[PostQueue] getPostsForJob exception:', e);
+            return [];
+        }
+    }
+
+    /**
+     * Get lifecycle event history for a single post
+     * @param {string} postId - Post UUID
+     * @returns {Promise<Object[]>} Lifecycle events in chronological order
+     */
+    async getPostLifecycle(postId) {
+        if (!this.useSupabase) return [];
+        try {
+            const { data, error } = await supabaseClient.rpc('get_post_lifecycle', {
+                p_post_id: postId
+            });
+            if (error) { console.error('[PostQueue] getPostLifecycle error:', error.message); return []; }
+            return data || [];
+        } catch (e) {
+            console.error('[PostQueue] getPostLifecycle exception:', e);
+            return [];
+        }
+    }
+
+    /**
+     * Query the post registry with filters
+     * @param {Object} filters - Optional filters
+     * @returns {Promise<Object[]>} Registry entries
+     */
+    async getPostRegistry(filters = {}) {
+        if (!this.useSupabase) return [];
+        try {
+            const { data, error } = await supabaseClient.rpc('get_post_registry', {
+                p_brand_id: filters.brandId || null,
+                p_batch_id: filters.batchId || null,
+                p_job_id: filters.jobId || null,
+                p_platform: filters.platform || null,
+                p_status: filters.status || null,
+                p_limit: filters.limit || 50,
+                p_offset: filters.offset || 0
+            });
+            if (error) { console.error('[PostQueue] getPostRegistry error:', error.message); return []; }
+            return data || [];
+        } catch (e) {
+            console.error('[PostQueue] getPostRegistry exception:', e);
+            return [];
+        }
+    }
+
+    /**
+     * Get campaign-level post summary
+     * @param {string} batchId - Campaign batch UUID
+     * @returns {Promise<Object[]>} Per-job post summaries
+     */
+    async getBatchPostSummary(batchId) {
+        if (!this.useSupabase) return [];
+        try {
+            const { data, error } = await supabaseClient.rpc('get_batch_post_summary', {
+                p_batch_id: batchId
+            });
+            if (error) { console.error('[PostQueue] getBatchPostSummary error:', error.message); return []; }
+            return data || [];
+        } catch (e) {
+            console.error('[PostQueue] getBatchPostSummary exception:', e);
+            return [];
+        }
+    }
+
     // ==================== Local Storage ====================
 
     loadFromLocalStorage() {

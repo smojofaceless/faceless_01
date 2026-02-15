@@ -1,7 +1,7 @@
 # Project Roadmap
 
-> **Document Version:** 3.1  
-> **Last Updated:** February 12, 2026  
+> **Document Version:** 3.2  
+> **Last Updated:** February 15, 2026  
 > **Author:** System Architect  
 > **Status:** Active Development
 
@@ -11,6 +11,7 @@
 
 | Date | Version | Changes |
 |------|---------|--------|
+| Feb 15, 2026 | 3.2 | **Post Registry (Anchor Table for Metrics)**: `post_lifecycle_events` append-only audit trail for state transitions, lifecycle timestamp columns on `posts` (`posting_started_at`, `failed_at`), `v_post_registry` clean view (no queue internals), `v_job_post_summary` per-job platform aggregation, 5 RPCs (`get_post_registry`, `get_posts_for_job`, `get_post_lifecycle`, `get_batch_post_summary`, `cleanup_old_lifecycle_events`), trigger-based auto-recording on status changes, backfill for existing posts, patched `claim_due_posts`/`mark_post_failed` with lifecycle timestamps, UI: platform links + lifecycle timeline in post detail modal, `postQueueService` registry methods. |
 | Feb 12, 2026 | 3.1 | **Story Generation v2 + Bug Fixes**: (1) Rich one_too_many prompt with randomized trope packs (18 containers, 11 evidence sources, 10 glitches, 8 witnesses, 8 group types, 5 group sizes); (2) Storytelling toolkit enhancements (spatial grounding, named characters, time-skip epilogue, multi-layer evidence stacking, environmental disturbance scattering, uncanny valley descriptions); (3) Cinematography-driven shot selection (removed hardcoded group scene limits); (4) Campaign detail UI fixes (uniqueness score nested path, art style fallback, platform array handling); (5) Snapshot data extraction fix (meta.payload vs meta.data in 8 renderers). |
 | Feb 11, 2026 | 3.0 | **Scene & Image Pipeline v2**: Voice-aligned scene transitions, multi-image for long scenes (>10s), climax awareness in visual cues, per-shot mood levels for Ken Burns, micro-scene merge (<3s), story anchor group count fix, per-scene durations in assembler (no more uniform distribution). New doc: IMAGE_STORY_PIPELINE.md. Enhanced campaign detail UI with copy-paste, image sequence visualization. Weight display fix on create page. |
 | Feb 10, 2026 | 2.9 | **Background Music V1.2**: loudness_lufs/peak_db metadata, music fingerprint (config_hash) in job_assets.meta, alimiter (anti-clip), music status badge in job detail UI, Brand Music Management UI (view/upload/toggle/delete tracks per brand on brands page) |
@@ -40,6 +41,7 @@
 
 | Item | Date | Notes |
 |------|------|-------|
+| **Post Registry (Anchor Table)** | Feb 15, 2026 | `post_lifecycle_events` table (append-only audit trail), lifecycle timestamps on `posts`, `v_post_registry` + `v_job_post_summary` views, 5 RPCs, trigger-based auto-recording, UI lifecycle timeline in post detail modal. Migration: `20260309001_post_registry.sql`. |
 | **Story Generation v2** | Feb 12, 2026 | Rich one_too_many prompt engine: randomized trope packs (18 containers, 11 evidence sources, 10 glitches, 8 witnesses, 6 dialogue lines), flexible narrative voice (any POV), soft storytelling toolkit (spatial grounding, named characters, time-skip epilogues, multi-layer evidence, environmental disturbance scattering, uncanny valley descriptions). Cinematography-driven shot selection (replaced hardcoded group scene limits). |
 | **Campaign Detail UI Fixes** | Feb 12, 2026 | Fixed uniqueness score nested path (`meta.meta.uniqueness_score` + 0-1→percentage), art style fallback to `'auto (from preset)'`, platform handling for `meta.platforms` array. Fixed snapshot data extraction in 8 renderers (`meta.payload` vs `meta.data`). |
 | **Scene & Image Pipeline v2** | Feb 11, 2026 | 6 improvements: (1) Voice-aligned scene transitions via `alignScenesToVoice()` — syncs image changes to actual spoken word timing from ElevenLabs timestamps; (2) Multi-image for long scenes (>10s) — up to 3 images per scene with varied camera angles; (3) Climax awareness — `isClimax: true` in visual cues for last 1-2 scenes, mood boost; (4) Per-shot mood levels via `computeMoodLevel()` — 1-10 scale controlling Ken Burns intensity; (5) Micro-scene merge (<3s scenes merged into neighbors); (6) Group count fix in story anchor prompt. CRITICAL FIX: assembler now reads image_sequence manifest for per-scene durations instead of uniform distribution. |
@@ -784,11 +786,46 @@ scheduled → posting → posted
 
 ## 📊 LEVEL 3 — METRICS & LEARNING (Mid Priority)
 
-### 17. Post Registry (Anchor Table for Metrics)
+### 17. ✅ Post Registry (Anchor Table for Metrics) — COMPLETE
 
-- [ ] Map `job_id` → `posts` → platform `post_id`/`url`
-- [ ] Status tracking per platform
-- [ ] Post lifecycle states
+> **Status:** ✅ COMPLETE (February 15, 2026)
+
+**Design Decision:** The existing `posts` table already serves as the per-platform anchor (one row per job+platform). Rather than creating a redundant registry table, we extended `posts` with lifecycle timestamps and added an append-only `post_lifecycle_events` table for audit/analytics.
+
+**Delivered:**
+- [x] `posting_started_at`, `failed_at` columns on `posts` — lifecycle timestamps
+- [x] `post_lifecycle_events` table — append-only audit trail for every state transition
+- [x] Trigger `trg_post_lifecycle` — auto-records events on INSERT and UPDATE (status changes)
+- [x] `v_post_registry` view — clean registry: job→post→platform mapping with lifecycle state, timing metrics, retry eligibility. No queue internals.
+- [x] `v_job_post_summary` view — per-job platform aggregation (total/posted/failed/scheduled counts, aggregate status, platform details JSONB)
+- [x] `get_post_registry` RPC — query with filters (brand, batch, job, platform, status) + pagination
+- [x] `get_posts_for_job` RPC — all platform posts for a specific job
+- [x] `get_post_lifecycle` RPC — lifecycle event history for a single post
+- [x] `get_batch_post_summary` RPC — campaign-level post summary
+- [x] `cleanup_old_lifecycle_events` RPC — maintenance (default 90 days)
+- [x] Patched `claim_due_posts` — sets `posting_started_at` on claim
+- [x] Patched `mark_post_failed` — sets `failed_at` for permanent failures
+- [x] Backfill — existing posts get lifecycle events (scheduled, posted, failed)
+- [x] UI: Platform links + lifecycle timeline in post detail modal
+- [x] `postQueueService` — 4 new methods: `getPostsForJob()`, `getPostLifecycle()`, `getPostRegistry()`, `getBatchPostSummary()`
+
+**Integration:**
+- **post-worker**: No code changes needed — the trigger on `posts` auto-captures every status transition when `claim_due_posts`, `mark_post_posted`, and `mark_post_failed` RPCs are called
+- **worker-v1**: `schedule_post_idempotent` INSERT triggers initial lifecycle event
+- **UI**: Post detail modal shows posted_at, platform_url, platform_post_id, and lifecycle timeline
+
+**Future-proofing:**
+- `post_lifecycle_events` is the JOIN point for `post_analytics` (Roadmap #18) — time-to-post, failure patterns, retry timing
+- `v_post_registry.posting_duration_seconds` and `queue_wait_seconds` ready for time slot scoring (#19)
+- `v_job_post_summary.platform_details` JSONB ready for caption learning (#20)
+- Lifecycle events have `meta` JSONB for arbitrary future data attachment
+
+**Database Objects:**
+- Table: `post_lifecycle_events`
+- Views: `v_post_registry`, `v_job_post_summary`
+- RPCs: `get_post_registry`, `get_posts_for_job`, `get_post_lifecycle`, `get_batch_post_summary`, `cleanup_old_lifecycle_events`
+- Trigger: `trg_post_lifecycle` → `fn_record_post_lifecycle_event()`
+- Migration: `20260309001_post_registry.sql`
 
 ---
 
@@ -926,7 +963,7 @@ NEXT (Level 2)
 └── 16. Safety Filters
 
 MID (Level 3)
-├── 17. Post Registry
+├── 17. ✅ Post Registry (DONE)
 ├── 18. Metrics Collection
 ├── 19. Time Slot Scoring
 └── 20. Caption Learning
