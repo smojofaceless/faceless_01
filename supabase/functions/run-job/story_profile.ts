@@ -832,9 +832,9 @@ export const PRESET_STORY_PROFILES: Record<string, PartialStoryProfile> = {
   // 60-90 second animated horror scripts.
   //
   // STRUCTURAL RULES:
-  // - Third-person dramatic storyteller voice
-  // - Hook within first 5 seconds of narration
-  // - Single central disturbing concept
+  // - First-person confessional narrator voice
+  // - Mundane grounding before horror kicks in
+  // - Internal monologue + brief dialogue
   // - Clear tension curve (hook → escalation → climax → ending)
   // - Sharp unresolved ending (no explanation)
   // - 130-180 words (strict for 60-90s TTS timing)
@@ -844,6 +844,7 @@ export const PRESET_STORY_PROFILES: Record<string, PartialStoryProfile> = {
   // FAILURE MODES:
   // - Word count outside 130-180 = fail
   // - Reddit references present = fail
+  // - Third-person narration = fail (must be first-person)
   // - Ending provides explanation = fail
   // - Abstract non-visual sentences = fail
   // =====================================================
@@ -851,11 +852,11 @@ export const PRESET_STORY_PROFILES: Record<string, PartialStoryProfile> = {
     profile_name: "reddit_trending_horror",
 
     voiceFormat: {
-      format: "dramatic_storyteller",
+      format: "confessional_witness",
       structuralMarkers: [],
       enforceMarkers: false,
-      povConstraint: "third",
-      styleNotes: "Calm but uneasy third-person dramatic narrator. Like someone found the scariest Reddit post and turned it into a cinematic nightmare. No usernames, no Reddit references, no 'OP said'.",
+      povConstraint: "first",
+      styleNotes: "First-person confessional narrator — someone recounting what happened to them with reluctance and self-awareness. NOT a dramatic horror narrator. They sound like a real person: they rationalize, they doubt, they notice mundane things. Include internal thoughts ('I told myself it was nothing'), at least one brief dialogue exchange, and ground the opening in something ordinary before the horror arrives. No usernames, no Reddit references, no 'OP said'. Mix sentence lengths: short punchy fragments AND longer interior thoughts.",
     },
 
     motif: {
@@ -875,7 +876,7 @@ export const PRESET_STORY_PROFILES: Record<string, PartialStoryProfile> = {
       beatCount: 4,
       beatLabels: ["HOOK", "ESCALATION", "CLIMAX", "ENDING"],
       requireGroundingDetail: true,
-      groundingTypes: ["sound", "object", "texture", "visual"],
+      groundingTypes: ["sound", "object", "texture", "visual", "mundane_detail", "internal_thought", "dialogue"],
       minWordsPerBeat: 25,
       maxWordsPerBeat: 55,
       minGroundingPerBeat: 1,

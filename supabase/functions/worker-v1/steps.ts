@@ -162,18 +162,19 @@ SCENARIO SEED (${scenario.subreddit_style} style):
 ${scenario.premise}
 """
 
-GENRE STYLE: ${scenario.subreddit_style === 'nosleep' ? 'r/nosleep — first-person account, starts normal, escalates into genuine terror' :
-  scenario.subreddit_style === 'letsnotmeet' ? 'r/letsnotmeet — true-crime-feeling encounter with a deeply unsettling person or situation' :
-  scenario.subreddit_style === 'creepypasta' ? 'r/creepypasta — internet legend feel, folklore-adjacent, viral horror mythology' :
-  scenario.subreddit_style === 'paranormal' ? 'r/paranormal — unexplained phenomena reported with earnest sincerity' :
-  'r/shortscarystories — tight, punchy, twist-heavy micro horror'}
+GENRE STYLE: ${scenario.subreddit_style === 'nosleep' ? 'r/nosleep — first-person confessional, starts mundane, escalates into genuine terror' :
+  scenario.subreddit_style === 'letsnotmeet' ? 'r/letsnotmeet — first-person encounter retelling, deeply unsettling person or situation' :
+  scenario.subreddit_style === 'creepypasta' ? 'r/creepypasta — internet legend feel, told as personal experience' :
+  scenario.subreddit_style === 'paranormal' ? 'r/paranormal — first-person unexplained experience, reported with earnest sincerity' :
+  'r/shortscarystories — tight, punchy first-person micro horror with a twist'}
 
 CORE FEAR: ${scenario.fear_type}
 
 REQUIREMENTS:
 - Word count: ${wordRange.min}-${wordRange.max} words (STRICT — controls video timing!)
 - Use the scenario as INSPIRATION only — add your own details, characters, twist
-- Third-person dramatic storyteller voice — calm, deliberate, chilling
+- FIRST-PERSON narration — the narrator is recounting what happened to them
+- Voice: confessional, reluctant, grounded — like someone telling a friend "okay this is going to sound insane but..."
 - Single main horror concept — don't dilute with multiple scares
 - End on an UNRESOLVED note. No explanations. No comfort. No escape.
 
@@ -184,16 +185,19 @@ SETTING RULES (CRITICAL — this is what makes this preset DIFFERENT):
 - Characters should be regular modern people (rideshare drivers, remote workers, college students, parents, night shift workers) NOT investigators, researchers, or folklore experts
 
 STRUCTURE (MANDATORY):
-[HOOK] — First 1-2 sentences. Immediate unease within 5 seconds of narration.
-[ESCALATION] — Build tension around one central disturbing concept.
-[CLIMAX] — Peak moment of horror or realization.
-[ENDING] — Sharp, unsettling. Leaves the viewer disturbed.
+[HOOK] — First 1-2 sentences. Ground the narrator in something MUNDANE and specific before introducing unease. (e.g. "I was checking my bank app when..." or "The fridge was humming. I almost didn't notice the...")
+[ESCALATION] — Build tension. The narrator should THINK on the page — rationalize, doubt, try to explain it away. Include at least one brief line of dialogue or internal thought.
+[CLIMAX] — Peak moment of horror or realization. A gut-drop moment.
+[ENDING] — Sharp, unsettling. The narrator is left with something they can't undo or unsee. No resolution.
 
 STYLE RULES:
 - No gore or explicit violence — psychological horror only
-- Every sentence must be visually filmable as a 2D illustrated scene (describe scenes, not abstractions)
-- Include at least ONE specific sensory detail per beat (phone vibrating, LED blinking, notification chime, door clicking)
-- Punchy sentences for narration pacing — no long-winded paragraphs${avoidanceSection}
+- Every sentence must be visually filmable as a 2D illustrated scene
+- Include internal monologue moments: "I told myself it was nothing" / "My stomach dropped" / "I almost laughed, then didn't"
+- Include at least ONE brief dialogue exchange (even a single line: "You good?" the cashier asked)
+- Mix sentence lengths: some short punchy fragments, some longer flowing thoughts
+- Include at least ONE mundane sensory detail that has nothing to do with the horror (a dog barking, coffee getting cold, a laugh track from a neighbor's TV)
+- Include at least ONE horror-specific sensory detail per beat (phone vibrating, LED blinking, a notification chime)${avoidanceSection}
 
 Respond in JSON format:
 {
@@ -567,7 +571,17 @@ function getStorySystemPrompt(vibePreset: string): string {
     return `You are a master storyteller specializing in short-form horror and mystery content for TikTok/Reels narration. For counting horror stories, you can use ANY narrative voice that best serves the story — first-person ("I counted again..."), third-person documentary ("They counted again..."), or even a "Did you know..." factual hook style. Choose whichever voice makes THIS particular story most gripping. You write like a calm, factual narrator recounting something deeply unsettling — the horror comes from the math not adding up, not from gore or monsters.`;
   }
   if (vibePreset === 'reddit_trending_horror') {
-    return `You are a master storyteller who creates ORIGINAL horror scripts for 60-second animated shorts. Your stories capture the feeling of modern internet horror — the kind of posts that get millions of views on Reddit. CRUCIAL TONE DIFFERENCES from traditional horror: your stories are set in MODERN, EVERYDAY environments (apartments, offices, cars, phones, smart homes) NOT rural backroads or foggy forests. The horror comes from technology, domestic spaces, and personal encounters — NOT from folklore, legends, or authority cover-ups. Third-person dramatic storyteller voice — calm, deliberate, deeply unsettling. Every sentence must be visually filmable as a 2D illustrated scene. No Reddit references, no usernames, no "OP".`;
+    return `You are a master storyteller who writes ORIGINAL horror scripts in the style of viral Reddit posts. You write in FIRST-PERSON — the narrator is someone recounting what happened to them, like a real person confessing a real experience. Your voice is CONFESSIONAL, not dramatic. You sound like someone sitting across from a friend saying "okay so this is going to sound crazy but..." — reluctant, self-aware, grounded in mundane reality before the horror creeps in.
+
+CRUCIAL TONE RULES:
+- First-person. Always. ("I noticed..." "My stomach dropped..." "I told myself it was nothing.")
+- The narrator has thoughts, doubts, rationalizations — they THINK on the page
+- Include at least one moment of mundane normalcy BEFORE the horror (buying gum, checking a bank app, a fridge humming)
+- Include at least one brief dialogue exchange — real people talking like real people
+- Sentences vary: some punchy fragments, some longer interior thoughts
+- Horror comes from MODERN, EVERYDAY environments (apartments, phones, gig work, smart homes) NOT rural folklore
+- No Reddit references, no usernames, no "OP"
+- Every sentence must be visually filmable as a 2D illustrated scene`;
   }
   return `You are a master storyteller specializing in short-form horror and mystery content. You create gripping, atmospheric stories perfect for TikTok/Reels narration. Your stories are ALWAYS first-person narration that feels personal and immediate.`;
 }

@@ -302,6 +302,13 @@ ATMOSPHERE/SETTING DIRECTION: ${scenario.setting_hint}
 SENSORY DETAILS TO WEAVE IN (pick 2-3):
 ${scenario.sensory_anchors.map(a => `- ${a}`).join('\n')}
 
+VOICE & FEEL (CRITICAL):
+- First-person. The narrator is recounting what happened to THEM.
+- Open with something mundane before the horror creeps in (checking a phone, waiting for coffee, a routine task)
+- Include at least one brief line of dialogue or internal thought
+- The narrator rationalizes and doubts before accepting something is wrong
+- Sound like a real person confessing — NOT a horror-movie narrator
+
 IMPORTANT:
 - Do NOT mention Reddit, subreddits, or "OP"
 - Do NOT copy the premise literally — use it as thematic direction
