@@ -8,9 +8,12 @@ const corsHeaders = {
 };
 
 interface CreateJobRequest {
+  // Brand association
+  brand_id?: string;
   // Content settings
   theme?: string;
   // v4.0: Only two active story engines. Deprecated presets map to urban_legend on backend.
+  preset?: string; // Alias for vibe_preset
   vibe_preset?: "urban_legend" | "one_too_many" | "reddit_trending_horror";
   length_preset?: "short" | "medium" | "long" | "30" | "45" | "60" | "90" | "120";
   visual_preset?: "forest" | "hallway" | "attic" | "foggy" | "rain";
@@ -198,18 +201,24 @@ serve(async (req) => {
     console.log(`Options meta:`, JSON.stringify(optionsMeta));
 
     // Create job
-    const { data: job, error } = await supabase
-      .from("jobs")
-      .insert({
+    const resolvedVibePreset = body.vibe_preset || body.preset || "slow_creepy";
+    const jobInsert: Record<string, unknown> = {
         status: isPreview ? "generating" : "queued",
         progress: isPreview ? 5 : 0,
         length_preset: lengthPreset,
-        vibe_preset: body.vibe_preset || "slow_creepy",
+        vibe_preset: resolvedVibePreset,
         visual_preset: body.visual_preset || "forest",
         voice_id: "pNInz6obpgDQGcFmaJgB", // Adam voice
         prompt_version: "v1",
         meta: optionsMeta,
-      })
+    };
+    // Add brand_id if provided
+    if (body.brand_id) {
+      jobInsert.brand_id = body.brand_id;
+    }
+    const { data: job, error } = await supabase
+      .from("jobs")
+      .insert(jobInsert)
       .select()
       .single();
 
