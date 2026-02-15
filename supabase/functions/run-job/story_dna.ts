@@ -317,6 +317,98 @@ export const GENRE_PROFILES: Record<string, GenreProfile> = {
       },
     },
   },
+
+  // ===== DARK ORIGINS - Documentary Dark Biography Engine =====
+  // Third-person documentary narrator for horror icon origin stories
+  // and dark biographies of fictional historical figures.
+  // KEY DIFFERENTIATOR from urban_legend & reddit:
+  //   - Historical eras (1950s-1990s) NOT modern
+  //   - Small towns, institutions, workshops NOT suburban sprawl
+  //   - Documentary/investigation narration NOT personal encounter
+  //   - Character study NOT situation-based
+  //   - Fascination/dread emotions NOT paranoia/violation
+  //   - Suppressed/sealed ending NOT ongoing
+  dark_origins: {
+    name: "Dark Origins",
+    description: "Documentary-style dark biographies and horror icon origin stories — 'based on true events' energy",
+    weights: {
+      // HISTORICAL eras only — 1950s through 1990s
+      era: {
+        "1960s_late": 1.6,        // #1: Peak for dark biographies
+        "1970s_late": 1.5,        // Golden era of true crime
+        "1980s_early": 1.4,       // Late serial killer era
+        "1980s_late": 1.3,        // Slasher era
+        "1990s_late": 1.0,        // Neutral — acceptable but not ideal
+        "2000s_early": 0.4,       // Suppress — too modern
+      },
+      // SMALL TOWNS, institutions, workshops — NOT modern suburban
+      location: {
+        "small_towns": 1.7,       // #1: Where dark origins happen
+        "rural_highway": 1.4,     // Remote, isolated
+        "forest_trail": 1.3,      // Camp grounds, remote woods
+        "lakeside_cabins": 1.3,   // Camp horror
+        "national_parks": 1.0,    // Neutral
+        "suburban_sprawl": 0.7,   // Suppress — too reddit-like
+        "college_campus": 0.6,    // Suppress — too modern
+        "motel_room": 0.9,       // Slightly suppress
+      },
+      // DOCUMENTARY/INVESTIGATION narration — sealed files, evidence
+      narrative_artifact: {
+        "documentary_narration": 1.7, // #1: This is THE voice
+        "newspaper_recap": 1.5,    // Headlines, clippings
+        "police_memo": 1.4,       // Case files, evidence logs
+        "witness_interview": 1.3,  // "A neighbor recalled..."
+        "research_footnote": 1.2,  // Academic study of the case
+        "oral_history": 0.8,      // Suppress — too folklore
+        "forum_post": 0.3,        // Suppress hard — wrong era entirely
+      },
+      // STALKING, watching, waiting behaviors — methodical predators
+      threat_behavior: {
+        "watching": 1.6,          // #1: They observed, studied
+        "waiting": 1.5,           // Patient, methodical
+        "appearing": 1.3,         // Showing up where least expected
+        "following": 1.2,         // Tracking, pattern
+        "mimicking": 0.8,         // Suppress — too supernatural
+        "broadcasting": 0.7,      // Suppress — too technology-based
+      },
+      // HUMANOID, period-appropriate manifestations
+      threat_manifestation: {
+        "humanoid_dated": 1.6,    // #1: Period clothing, specific era
+        "humanoid_faceless": 1.3, // Masked figures
+        "humanoid_tall": 1.2,     // Imposing presence
+        "shadow_independent": 1.0, // Neutral
+        "vehicle_black": 1.1,     // Dark sedan, unmarked van
+        "distortion_visual": 0.6, // Suppress — too supernatural
+        "light_geometric": 0.4,   // Suppress — wrong genre
+      },
+      // SUPPRESSED/SEALED endings — "the case was never closed"
+      ending_knowledge: {
+        "suppressed": 1.6,        // #1: Authorities sealed the files
+        "unresolved": 1.5,        // Never found, never explained
+        "inherited": 1.3,         // The pattern continues
+        "cyclical": 1.2,          // It happens again every N years
+        "ongoing": 0.8,           // Suppress — too reddit "it's still happening"
+        "partial": 1.0,           // They know some but not all
+      },
+      // SEALED FILES, empty locations — documentary evidence imagery
+      ending_imagery: {
+        "sealed_files": 1.6,      // #1: Documents stamped CLASSIFIED
+        "empty_road": 1.3,        // Where they disappeared
+        "watching_treeline": 1.2,  // Rural dread
+        "fog_rolling": 1.1,       // Atmospheric
+        "children_dreaming": 0.8,  // Suppress — too domestic
+      },
+      // FASCINATION/DREAD — the audience can't look away
+      emotion: {
+        "dread": 1.6,             // #1: Deep, historical dread
+        "recognition": 1.4,       // "I know this type of person"
+        "unease": 1.3,            // Something was always wrong
+        "isolation": 1.2,         // These places are remote, forgotten
+        "paranoia": 0.7,          // Suppress — too reddit/modern
+        "insignificance": 0.5,    // Suppress — too cosmic
+      },
+    },
+  },
 };
 
 // =====================================================

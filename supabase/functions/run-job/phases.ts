@@ -28,7 +28,7 @@ import {
   type ThemeGuidance,
 } from "./stories.ts";
 import { searchPexelsForKeywords, searchVideosForScenes } from "./pexels.ts";
-import { pickHorrorScenario, buildScenarioPromptInjection, getScenarioIndex, type HorrorScenario } from "./scenarios.ts";
+import { pickHorrorScenario, buildScenarioPromptInjection, getScenarioIndex, type HorrorScenario, pickDarkOriginsScenario, buildDarkOriginsPromptInjection, getDarkOriginsScenarioIndex, type DarkOriginsScenario } from "./scenarios.ts";
 import { generateImage, getLastReplicateInputs, uploadRemoteImageToStorage } from "./images.ts";
 import { 
   assembleVideoWithCreatomate, 
@@ -149,6 +149,7 @@ export async function runPreviewMode(
   let similarityInfo: { similarityScore: number; mostSimilarTitle: string | null; isLikelyUnique: boolean } | null = null;
   let themeGuidance: ThemeGuidance | undefined;
   let pickedScenario: HorrorScenario | null = null;
+  let pickedDarkOriginsScenario: DarkOriginsScenario | null = null;
   
   if (useDNA) {
     // === DNA-BASED GENERATION (v5.0 - with Visual DNA sync) ===
@@ -171,6 +172,14 @@ export async function runPreviewMode(
       pickedScenario = pickHorrorScenario(recentSettings);
       storyOptions.scenario_prompt = buildScenarioPromptInjection(pickedScenario);
       console.log(`[PREVIEW] Reddit-inspired scenario: "${pickedScenario.category}" (${pickedScenario.subreddit_style})`);
+    }
+    
+    // ── Dark Origins scenario injection (dark_origins preset) ──
+    if (job.vibe_preset === 'dark_origins') {
+      const recentSettings: string[] = jobMeta.recent_scenario_settings || [];
+      pickedDarkOriginsScenario = pickDarkOriginsScenario(recentSettings);
+      storyOptions.scenario_prompt = buildDarkOriginsPromptInjection(pickedDarkOriginsScenario);
+      console.log(`[PREVIEW] Dark Origins scenario: "${pickedDarkOriginsScenario.category}" (${pickedDarkOriginsScenario.doc_style})`);
     }
     
     const dnaResult = await generateStoryWithDNA(
@@ -292,6 +301,14 @@ export async function runPreviewMode(
         scenario_fear_type: pickedScenario.core_fear,
         scenario_setting_hint: pickedScenario.setting_hint,
         scenario_index: getScenarioIndex(pickedScenario),
+      } : {}),
+      // Dark Origins scenario metadata (dark_origins preset)
+      ...(pickedDarkOriginsScenario ? {
+        scenario_category: pickedDarkOriginsScenario.category,
+        scenario_doc_style: pickedDarkOriginsScenario.doc_style,
+        scenario_fear_type: pickedDarkOriginsScenario.core_fear,
+        scenario_setting_hint: pickedDarkOriginsScenario.setting_hint,
+        scenario_index: getDarkOriginsScenarioIndex(pickedDarkOriginsScenario),
       } : {}),
     },
   });
@@ -664,6 +681,14 @@ export async function runAudioPhase(
         audioScenario = pickHorrorScenario(recentSettings);
         storyOptions.scenario_prompt = buildScenarioPromptInjection(audioScenario);
         console.log(`[AUDIO] Reddit-inspired scenario: "${audioScenario.category}" (${audioScenario.subreddit_style})`);
+      }
+      
+      // ── Dark Origins scenario injection (dark_origins preset) ──
+      if (job.vibe_preset === 'dark_origins') {
+        const recentSettings: string[] = jobMeta.recent_scenario_settings || [];
+        const darkScenario = pickDarkOriginsScenario(recentSettings);
+        storyOptions.scenario_prompt = buildDarkOriginsPromptInjection(darkScenario);
+        console.log(`[AUDIO] Dark Origins scenario: "${darkScenario.category}" (${darkScenario.doc_style})`);
       }
       
       const dnaResult = await generateStoryWithDNA(

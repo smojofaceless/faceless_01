@@ -137,11 +137,67 @@ function pickHorrorScenario(recentSettings?: string[]): HorrorScenario & { scena
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
+// =====================================================
+// DARK ORIGINS SCENARIO SYSTEM
+// Documentary-style dark biographies and horror icon
+// origin stories told as third-person investigations.
+// =====================================================
+
+interface DarkOriginsScenario {
+  category: string;
+  doc_style: string;
+  premise: string;
+  setting_hint: string;
+  fear_type: string;
+}
+
+const DARK_ORIGINS_SCENARIOS: DarkOriginsScenario[] = [
+  // --- Horror icon archetypes (original characters) ---
+  { category: 'masked_stalker', doc_style: 'true_crime_doc', premise: 'A six-year-old boy stopped speaking after his sister\'s death. He spent 15 years in a state institution, never blinking — until the night he walked out. What he did next made him the most studied case in criminal psychology. He moved through suburban streets wearing a white expressionless mask, standing in yards, watching.', setting_hint: 'suburban street, 1978', fear_type: 'the shape that watches' },
+  { category: 'drowned_revenant', doc_style: 'cold_case', premise: 'Camp Crystal Pine closed in 1958 after a drowning the counselors could have prevented. The boy\'s mother disappeared a year later. But every summer since, someone returns to the lake. The body count now stands at 47. The lake has never been drained.', setting_hint: 'summer camp, 1957', fear_type: 'the dead that return' },
+  { category: 'dream_researcher', doc_style: 'investigation_files', premise: 'Dr. Frederick Krueger ran a sleep research lab in a small Ohio town. Parents trusted him with their children. When the truth came out, the town handled it themselves. But Krueger had been documenting something about the boundary between waking and dreaming that he claimed to have crossed.', setting_hint: 'boiler room, 1984', fear_type: 'a killer you cannot escape in sleep' },
+  { category: 'possessed_doll', doc_style: 'dark_history', premise: 'Charles Leclair was a toymaker who believed objects could hold consciousness. His final creation — a red-haired doll — was found at three separate crime scenes. The doll was destroyed each time. Each time, an identical one appeared somewhere else. Leclair himself had been dead for six months.', setting_hint: 'toy factory, 1988', fear_type: 'something alive inside a toy' },
+  { category: 'sewer_entity', doc_style: 'dark_history', premise: 'Every 27 years, the children of Derryfield, Maine go missing at six times the national average. Witnesses across three generations describe the same figure: a performer in white face paint near storm drains, offering something each child wants most. No adult has ever seen it directly.', setting_hint: 'small town storm drain, 1958', fear_type: 'the thing wearing a friendly face' },
+  { category: 'phone_killer', doc_style: 'true_crime_doc', premise: 'In 1996, someone began calling teenagers in Woodsboro, California. The voice asked one question: "What\'s your favorite scary movie?" Those who answered wrong were found dead within the hour. The killer wore a costume anyone could buy. That was the point.', setting_hint: 'suburban house, 1996', fear_type: 'the voice that knows your secrets' },
+  { category: 'puzzle_craftsman', doc_style: 'investigation_files', premise: 'Philip LeMarchand built puzzle boxes in the 18th century. Of the 270 boxes he created, only six have been recovered. Everyone who solved one reported the same thing before they disappeared: the walls began to rearrange. His journals describe "the configuration" — an arrangement that opens something never meant to be opened.', setting_hint: 'warehouse of puzzle boxes, 1987', fear_type: 'suffering designed as art' },
+  { category: 'backwoods_family', doc_style: 'true_crime_doc', premise: 'The Sawyer family ran a slaughterhouse in rural Texas. When the plant closed, the family didn\'t stop working. Between 1969 and 1974, thirty-one travelers disappeared along Route 304. The largest family member wore the faces of others. Literally.', setting_hint: 'Texas farmhouse, 1973', fear_type: 'a family with its own rules about meat' },
+
+  // --- Real-feeling dark biographies ---
+  { category: 'cursed_musician', doc_style: 'biography_channel', premise: 'Lucian Deville recorded one album in 1962. It sold four copies. He disappeared for three years. When he returned, his voice had changed — deeper, impossible. His second album went platinum. Session musicians refused to play with him. The recording engineer noted Deville cast no shadow in the studio lights. He died on stage in 1971.', setting_hint: 'recording studio, 1962', fear_type: 'what someone traded for fame' },
+  { category: 'vanishing_preacher', doc_style: 'cold_case', premise: 'Reverend Elias Harmon arrived in Crow Hollow with no past and a voice that could fill a cathedral. His congregation grew from 12 to 400 in three years. Then members started disappearing — always the ones who lived alone, always after a private counseling session. When police came, all 400 were gone.', setting_hint: 'white church, 1954', fear_type: 'a shepherd who devours his flock' },
+  { category: 'taxidermist', doc_style: 'true_crime_doc', premise: 'Edgar Holloway was the best taxidermist in Dane County — so lifelike that customers said the animals\' eyes followed them. After his death, authorities found his private collection. The "animals" in that room were not animals. His preservation technique cannot be replicated. The bodies looked alive. Some had been dead for twenty years.', setting_hint: 'farmhouse workshop, 1957', fear_type: 'preserving what should decay' },
+  { category: 'childrens_host', doc_style: 'investigation_files', premise: 'Mr. Whiskers\' Playhouse ran on local TV from 1968 to 1975. When the show was cancelled, the station claimed budget cuts. But the host had been embedding messages in every episode. Decoded in 2004, they contained the home address of every child who had written a fan letter.', setting_hint: 'TV studio, 1972', fear_type: 'the person children trusted most' },
+  { category: 'night_nurse', doc_style: 'cold_case', premise: 'Nurse Margaret Hollister worked nights at St. Catherine\'s for eleven years. Patients requested her by name. Her ward had the highest recovery rate — and the highest unexpected deaths. Every patient she "took a special interest in" had a 50/50 chance. She wasn\'t saving them. She was choosing.', setting_hint: 'hospital ward, 1983', fear_type: 'the caretaker who decides who lives' },
+  { category: 'photographer', doc_style: 'dark_history', premise: 'Emmett Voss was a Victorian portrait photographer. His subjects praised his work — impossibly lifelike. But they changed after sitting for him. Quieter, duller, as if something had been removed. His journals: "I do not capture the likeness. I capture the life." His darkroom contained 2,000 portraits. Each one still blinks.', setting_hint: 'portrait studio, 1891', fear_type: 'a camera that takes something from you' },
+  { category: 'radio_dj', doc_style: 'investigation_files', premise: 'WKRD 104.7 broadcast midnight to 4 AM from 1975 to 1977. The DJ never appeared at the station. The equipment ran itself. Twenty-three regular listeners were committed to psychiatric facilities. All could recite the same phrase in a language linguists cannot identify.', setting_hint: 'radio station, 1977', fear_type: 'a broadcast that changes the listener' },
+  { category: 'ice_cream_man', doc_style: 'true_crime_doc', premise: 'The ice cream truck on Maple Drive played the same melody every afternoon from 1974 to 1978. Every child knew "Mr. Freeze." He gave free popsicles on birthdays. After his arrest, authorities discovered the truck wasn\'t registered. The company didn\'t exist. No one could explain where the ice cream came from. Or what was in it.', setting_hint: 'suburban street, 1978', fear_type: 'the everyday figure no one questions' },
+];
+
 /**
- * Build the prompt for generating a Reddit-inspired horror story from a curated scenario seed.
+ * Pick a random dark origins scenario, avoiding recently used settings.
  */
-function buildRedditInspiredPrompt(
-  scenario: HorrorScenario,
+function pickDarkOriginsScenario(recentSettings?: string[]): DarkOriginsScenario & { scenario_index: number } {
+  let pool = DARK_ORIGINS_SCENARIOS.map((s, i) => ({ ...s, scenario_index: i }));
+  
+  if (recentSettings && recentSettings.length > 0) {
+    const recentLower = recentSettings.map(s => s.toLowerCase());
+    const unused = pool.filter(s => 
+      !recentLower.some(r => 
+        r.includes(s.setting_hint.toLowerCase()) || 
+        r.includes(s.category.toLowerCase())
+      )
+    );
+    if (unused.length >= 3) pool = unused;
+  }
+  
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/**
+ * Build the prompt for generating a dark origins documentary-style horror story.
+ */
+function buildDarkOriginsPrompt(
+  scenario: DarkOriginsScenario,
   wordRange: { min: number; max: number },
   recentStories?: Array<{ title: string; hook: string | null; setting?: string }>
 ): string {
@@ -152,52 +208,54 @@ function buildRedditInspiredPrompt(
       if (s.setting) parts.push(`(setting: ${s.setting})`);
       return parts.join(' ');
     }).join('\n- ');
-    avoidanceSection = `\n\nDO NOT REPEAT — these stories were already created recently:\n- ${avoidList}\n\nYour story must feel completely fresh and explore a DIFFERENT angle than any of the above.`;
+    avoidanceSection = `\n\nDO NOT REPEAT — these stories were already created recently:\n- ${avoidList}\n\nYour story must feel completely fresh and explore a DIFFERENT character/era than any of the above.`;
   }
 
-  return `Write an original short horror story inspired by this scenario seed. The scenario is a STARTING POINT — you should expand, twist, and make it your own.
+  return `Write an original dark biography / horror origin story inspired by this scenario seed. The scenario is a STARTING POINT — expand, twist, and make it your own.
 
-SCENARIO SEED (${scenario.subreddit_style} style):
+SCENARIO SEED (${scenario.doc_style} style):
 """
 ${scenario.premise}
 """
 
-GENRE STYLE: ${scenario.subreddit_style === 'nosleep' ? 'r/nosleep — first-person confessional, starts mundane, escalates into genuine terror' :
-  scenario.subreddit_style === 'letsnotmeet' ? 'r/letsnotmeet — first-person encounter retelling, deeply unsettling person or situation' :
-  scenario.subreddit_style === 'creepypasta' ? 'r/creepypasta — internet legend feel, told as personal experience' :
-  scenario.subreddit_style === 'paranormal' ? 'r/paranormal — first-person unexplained experience, reported with earnest sincerity' :
-  'r/shortscarystories — tight, punchy first-person micro horror with a twist'}
+DOCUMENTARY STYLE: ${scenario.doc_style === 'true_crime_doc' ? 'True Crime Documentary — Dateline, 48 Hours style. Calm narrator presenting disturbing evidence.' :
+  scenario.doc_style === 'biography_channel' ? 'Biography Channel — dark profile of a fascinating figure. Rise, secret, fall.' :
+  scenario.doc_style === 'cold_case' ? 'Cold Case Files — reopened investigation, suppressed evidence, answers that raise more questions.' :
+  scenario.doc_style === 'investigation_files' ? 'Investigation Files — sealed documents, classified reports, a pattern hidden in plain sight.' :
+  'Dark History — historical horror buried and forgotten, brought to light.'}
 
 CORE FEAR: ${scenario.fear_type}
 
 REQUIREMENTS:
 - Word count: ${wordRange.min}-${wordRange.max} words (STRICT — controls video timing!)
-- Use the scenario as INSPIRATION only — add your own details, characters, twist
-- FIRST-PERSON narration — the narrator is recounting what happened to them
-- Voice: confessional, reluctant, grounded — like someone telling a friend "okay this is going to sound insane but..."
-- Single main horror concept — don't dilute with multiple scares
-- End on an UNRESOLVED note. No explanations. No comfort. No escape.
+- Use the scenario as INSPIRATION only — add your own details, dates, locations, specifics
+- THIRD-PERSON documentary narrator — calm, factual, investigative
+- "This was a real person. This really happened." energy throughout
+- Single main character study — who they were, what they did, what they became
+- End on an UNRESOLVED note — case never closed, body never found, recordings never explained
 
 SETTING RULES (CRITICAL — this is what makes this preset DIFFERENT):
-- Set the story in MODERN, EVERYDAY environments: apartments, offices, bedrooms, cars, convenience stores, parking garages, hospital waiting rooms, school hallways, rideshare cars
-- Horror should involve TECHNOLOGY or DOMESTIC life: phones, cameras, smart speakers, baby monitors, GPS, notifications, browser history, Ring doorbells, smart locks
-- Do NOT use: foggy forests, rural backroads, abandoned buildings in the woods, small-town folklore, "the old legend says", roadside diners, campfire settings
-- Characters should be regular modern people (rideshare drivers, remote workers, college students, parents, night shift workers) NOT investigators, researchers, or folklore experts
+- Set stories in HISTORICAL periods: 1950s, 1960s, 1970s, 1980s, early 1990s
+- Use SMALL TOWNS, rural areas, institutions (hospitals, churches, factories, studios)
+- Ground in specific DATES, PLACES, and NUMBERS — "March 14, 1967", "Dane County, Wisconsin", "thirty-one travelers"
+- Characters should be SPECIFIC PEOPLE with occupations: toymakers, nurses, preachers, photographers, musicians
+- Do NOT use modern technology, social media, smartphones, apps
+- Do NOT use generic "someone" — name the character, give them a profession, a town, a year
 
 STRUCTURE (MANDATORY):
-[HOOK] — First 1-2 sentences. Ground the narrator in something MUNDANE and specific before introducing unease. (e.g. "I was checking my bank app when..." or "The fridge was humming. I almost didn't notice the...")
-[ESCALATION] — Build tension. The narrator should THINK on the page — rationalize, doubt, try to explain it away. Include at least one brief line of dialogue or internal thought.
-[CLIMAX] — Peak moment of horror or realization. A gut-drop moment.
-[ENDING] — Sharp, unsettling. The narrator is left with something they can't undo or unsee. No resolution.
+[HOOK] — First 1-2 sentences. A documentary teaser that grabs attention: "This man was..." / "In 1974, a small town discovered..." / "What he left behind changed everything."
+[ORIGIN] — Who was this person? Establish them as normal, trusted, even admired. Plant the seed of wrongness.
+[DESCENT] — The turning point. What they did, what was discovered, the moment the mask slipped. Include specific evidence: dates, numbers, documents, testimony.
+[AFTERMATH] — What happened after. The investigation, the disappearance, the sealed files. The question that was never answered.
 
 STYLE RULES:
-- No gore or explicit violence — psychological horror only
-- Every sentence must be visually filmable as a 2D illustrated scene
-- Include internal monologue moments: "I told myself it was nothing" / "My stomach dropped" / "I almost laughed, then didn't"
-- Include at least ONE brief dialogue exchange (even a single line: "You good?" the cashier asked)
-- Mix sentence lengths: some short punchy fragments, some longer flowing thoughts
-- Include at least ONE mundane sensory detail that has nothing to do with the horror (a dog barking, coffee getting cold, a laugh track from a neighbor's TV)
-- Include at least ONE horror-specific sensory detail per beat (phone vibrating, LED blinking, a notification chime)${avoidanceSection}
+- No gore — psychological horror and implication only
+- Every sentence must be visually filmable as a dark, realistic illustrated scene
+- Include specific factual-sounding details: dates, population numbers, case file numbers, distances
+- Use documentary phrasing: "Authorities later discovered...", "The official report stated...", "What they found in the basement..."
+- The narrator knows more than they're telling — let implication do the work
+- Include at least ONE piece of "evidence" described in detail (a photograph, a journal entry, a recording, a police report)
+- Mix long investigative sentences with short chilling statements: "The report was sealed. The town moved on. The basement was never opened again."${avoidanceSection}
 
 Respond in JSON format:
 {
@@ -310,7 +368,9 @@ export async function executeStoryStep(
 
     // Build story prompt based on vibe preset
     // For reddit_trending_horror, pick a curated horror scenario and build a Reddit-inspired prompt
+    // For dark_origins, pick a documentary dark biography scenario
     let horrorScenario: (HorrorScenario & { scenario_index: number }) | null = null;
+    let darkOriginsScenario: (DarkOriginsScenario & { scenario_index: number }) | null = null;
     let storyPrompt: string;
 
     if (vibePreset === 'reddit_trending_horror') {
@@ -318,6 +378,11 @@ export async function executeStoryStep(
       horrorScenario = pickHorrorScenario(recentSettings);
       console.log(`[STORY] Reddit-inspired scenario: "${horrorScenario.category}" (${horrorScenario.subreddit_style} style, fear: ${horrorScenario.fear_type})`);
       storyPrompt = buildRedditInspiredPrompt(horrorScenario, wordRange, recentStories);
+    } else if (vibePreset === 'dark_origins') {
+      const recentSettings = recentStories?.map(s => s.setting).filter(Boolean) as string[] || [];
+      darkOriginsScenario = pickDarkOriginsScenario(recentSettings);
+      console.log(`[STORY] Dark Origins scenario: "${darkOriginsScenario.category}" (${darkOriginsScenario.doc_style} style, fear: ${darkOriginsScenario.fear_type})`);
+      storyPrompt = buildDarkOriginsPrompt(darkOriginsScenario, wordRange, recentStories);
     } else {
       storyPrompt = buildStoryPrompt(vibePreset, wordRange, recentStories);
     }
@@ -582,6 +647,20 @@ CRUCIAL TONE RULES:
 - Horror comes from MODERN, EVERYDAY environments (apartments, phones, gig work, smart homes) NOT rural folklore
 - No Reddit references, no usernames, no "OP"
 - Every sentence must be visually filmable as a 2D illustrated scene`;
+  }
+  if (vibePreset === 'dark_origins') {
+    return `You are a documentary narrator specializing in dark biographies and unsolved mysteries. You write in THIRD-PERSON — calm, factual, investigative, like the narrator of a Dateline or Investigation Discovery special. Your tone says "this was a real person" even when the story is fiction.
+
+CRUCIAL TONE RULES:
+- Third-person documentary voice. Always. ("He arrived in town..." "Authorities later discovered..." "The case was never closed.")
+- Sound like a true crime documentary narrator — measured, authoritative, letting the facts do the horror
+- Include specific dates, locations, and numbers to make fiction feel like fact
+- The narrator knows more than they're telling — implication over exposition
+- No first-person. No "I." No confessional voice.
+- Characters are HISTORICAL figures with names, professions, and specific time periods (1950s-1990s)
+- Every sentence must be visually filmable as a dark, realistic scene
+- End with an unresolved thread: "The case remains open." / "The recordings were never explained." / "No body was ever found."
+- This is NOT internet horror. This is documentary horror — the horror of real things that happened in real places to real people.`;
   }
   return `You are a master storyteller specializing in short-form horror and mystery content. You create gripping, atmospheric stories perfect for TikTok/Reels narration. Your stories are ALWAYS first-person narration that feels personal and immediate.`;
 }

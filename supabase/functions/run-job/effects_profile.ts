@@ -423,6 +423,60 @@ export const PRESET_EFFECTS_PROFILES: Record<string, Partial<EffectsProfile>> = 
     },
   },
   
+  // Dark Origins / documentary dark biography
+  dark_origins: {
+    preset_source: "dark_origins",
+    transitions: {
+      enabled: true,
+      intensity: 0.6,
+      type: "dissolve",
+      duration: 0.7,
+    },
+    kenburns: {
+      enabled: true,
+      intensity: 0.5,
+      zoom_amount: 1.08,
+      speed: 0.3,
+      direction: "in",
+    },
+    color_grade: {
+      enabled: true,
+      intensity: 0.75,
+      preset: "noir_documentary",
+      contrast: 1.3,
+      saturation: 0.55,
+      brightness: 0.9,
+      temperature: -0.2,
+    },
+    vignette: {
+      enabled: true,
+      intensity: 0.75,
+      radius: 0.65,
+      softness: 0.4,
+    },
+    film_grain: {
+      enabled: true,
+      intensity: 0.4,
+      size: 1.1,
+      color: false,
+    },
+    light_flicker: {
+      enabled: true,
+      intensity: 0.2,
+      frequency: 0.1,
+      variation: 0.15,
+    },
+    edge_darken: {
+      enabled: true,
+      intensity: 0.45,
+      creep_speed: 0.25,
+    },
+    negative_flash: {
+      enabled: true,
+      intensity: 0.2,
+    },
+  },
+  
   // Psychological horror
   psychological: {
     preset_source: "psychological",

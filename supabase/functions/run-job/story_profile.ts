@@ -925,6 +925,106 @@ export const PRESET_STORY_PROFILES: Record<string, PartialStoryProfile> = {
   },
   
   // =====================================================
+  // DARK_ORIGINS - Documentary Dark Biography Engine
+  // =====================================================
+  // Third-person documentary narrator telling dark origin
+  // stories of fictional horror icons and sinister historical
+  // figures. "Based on true events" energy throughout.
+  //
+  // STRUCTURAL RULES:
+  // - Third-person documentary narrator voice
+  // - Calm, factual, investigative tone
+  // - Specific dates, locations, numbers
+  // - Character-study structure (ORIGIN → DESCENT → REVELATION → AFTERMATH)
+  // - Unresolved/open ending — case never closed
+  // - 130-180 words (strict for 60-90s TTS timing)
+  // - No first-person narration
+  // - Every sentence must be visually filmable
+  //
+  // FAILURE MODES:
+  // - Word count outside 130-180 = fail
+  // - First-person narration = fail (must be third-person)
+  // - Modern technology present = fail (1950s-1990s settings)
+  // - Generic "someone" instead of named character = fail
+  // - Ending provides full resolution = fail
+  // =====================================================
+  dark_origins: {
+    profile_name: "dark_origins",
+
+    voiceFormat: {
+      format: "documentary_narrator",
+      structuralMarkers: [],
+      enforceMarkers: false,
+      povConstraint: "third",
+      styleNotes: "Third-person documentary narrator — calm, authoritative, investigative. Like the narrator of Dateline or a true crime podcast. They present facts and let the horror speak for itself. Include specific dates, locations, and case numbers. Use documentary phrasing: 'Authorities later discovered...', 'The official report stated...', 'What they found changed everything.' The narrator knows more than they're telling — implication over exposition. No first-person. No confessional voice. Historical settings only (1950s-1990s).",
+    },
+
+    motif: {
+      minMentions: 2,
+      shouldEscalate: true,
+      distribution: "spread",
+    },
+
+    uniqueElement: {
+      minAppearances: 1,
+      requireEscalation: false,
+      finalMentionPosition: "any",
+      enforce: false,
+    },
+
+    beatStructure: {
+      beatCount: 4,
+      beatLabels: ["HOOK", "ORIGIN", "DESCENT", "AFTERMATH"],
+      requireGroundingDetail: true,
+      groundingTypes: ["sound", "object", "texture", "visual", "date_marker", "location_marker", "evidence_detail"],
+      minWordsPerBeat: 25,
+      maxWordsPerBeat: 55,
+      minGroundingPerBeat: 1,
+      repairOnMissingGrounding: true,
+    },
+
+    embodiment: {
+      eraLevel: "objects",
+      requirePeriodObjects: true,
+      requireLocationSensory: true,
+    },
+
+    authority: {
+      style: "suppressed",
+      minDetailSentences: 1,
+    },
+
+    ending: {
+      antiClosure: 0.9,
+      enforceFinalImage: true,
+      allowedEndingTypes: ["unresolved", "suppressed", "cyclical"],
+      endingStyle: "unresolved",
+    },
+
+    wordCount: {
+      target: 155,
+      variance: 25,
+      priority: "structure",
+      strictEnforcement: true,
+    },
+
+    visualReadiness: {
+      failOnMissingGrounding: false,
+      warnOnMissingGrounding: true,
+      failOnMissingEnvironment: false,
+      warnOnMissingEnvironment: true,
+      failOnAbstract: true,
+      minScoreForReady: 30,
+    },
+
+    genreFlags: {
+      preset_category: "documentary-horror",
+      core_anomaly: "character_study",
+      source_transform: "archetype_to_original",
+    },
+  },
+  
+  // =====================================================
   // DEPRECATED PRESETS - ARCHIVED
   // =====================================================
   // The following presets are deprecated and archived.
