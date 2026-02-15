@@ -373,11 +373,63 @@
 /* Footer */
 .brand-card__footer {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--space-3) var(--space-5);
+    flex-direction: column;
+    gap: 0;
     background: var(--surface-secondary);
     border-top: 1px solid var(--border-subtle);
+}
+
+/* Config buttons row — labeled icon+text buttons */
+.brand-card__config-row {
+    display: flex;
+    gap: 1px;
+    background: var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.brand-config-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 8px 2px 6px;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: var(--surface-secondary);
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.brand-config-btn:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.brand-config-btn:active {
+    background: rgba(255, 255, 255, 0.10);
+}
+
+.brand-config-btn svg {
+    opacity: 0.7;
+    transition: opacity 0.15s ease;
+}
+
+.brand-config-btn:hover svg {
+    opacity: 1;
+}
+
+/* Meta row — activate/active + edit/delete */
+.brand-card__meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-2) var(--space-4);
 }
 
 .brand-card__actions {

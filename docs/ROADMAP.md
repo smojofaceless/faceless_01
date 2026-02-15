@@ -738,12 +738,21 @@ scheduled → posting → posted
 
 ---
 
-### 14. Subtitle System v1 (Styles Per Brand)
+### 14. ✅ Subtitle System v1 (Styles Per Brand) — COMPLETE
 
-- [ ] Font selection per brand
-- [ ] Position configuration
-- [ ] Red emphasis rules (controlled, not overused)
-- [ ] Store subtitle config in `brand_templates`
+> **Status:** ✅ COMPLETE (March 8, 2026)
+
+- [x] Font / style selection per brand — 10 caption styles (bold, horror, glitch, minimal, neon, vintage, blood, typewriter, shadow, comic)
+- [x] Position configuration — bottom / center / top, mapped to ASS MarginV + Alignment
+- [x] Red emphasis rules (controlled, not overused) — `highlightScary` toggle, configurable `highlightColor` / `scaryColor`, `emphasisScale` slider (100-130%)
+- [x] Store subtitle config in `brand_templates` — `config_overrides.subtitles` JSONB key
+- [x] 4-layer merge hierarchy — system defaults → preset profile → brand overrides → job meta (reuses effects pattern)
+- [x] 3 Supabase RPCs — `get_subtitle_system_defaults()`, `get_subtitle_preset_profile(preset)`, `get_subtitle_config_for_job(brand_id, preset, meta)`
+- [x] Renderer accepts full `subtitleConfig` — `createASSSubtitles()` parametrized (style, fontSize, position, wordsPerChunk, emphasis)
+- [x] Worker resolves config — `getSubtitleConfigForJob()` in helpers.ts, soft-fail returns null
+- [x] Brand Subtitle Config UI — modal on brands page with live ASS-style preview, all params editable
+
+**Reference:** [EFFECTS_SYSTEM.md](EFFECTS_SYSTEM.md) (same merge pattern), brands.html subtitle modal
 
 ---
 
