@@ -413,19 +413,23 @@ class PostQueueService {
         const importedJobIds = new Set(posts.filter(p => p.job_id || p.source_job_id).map(p => p.job_id || p.source_job_id));
         const filteredJobs = jobs.filter(j => !importedJobIds.has(j.id));
 
-        // Fetch video URLs for complete jobs from job_assets
+        // Fetch video URLs for complete jobs from job_assets (batched to avoid URL length limits)
         const completeJobIds = filteredJobs.filter(j => j.status === 'complete').map(j => j.id);
         let videoUrlMap = {};
         if (completeJobIds.length > 0 && typeof supabaseClient !== 'undefined') {
             try {
-                const { data: assets } = await supabaseClient
-                    .from('job_assets')
-                    .select('job_id, url')
-                    .in('job_id', completeJobIds)
-                    .eq('type', 'final_mp4');
-                if (assets) {
-                    for (const a of assets) {
-                        videoUrlMap[a.job_id] = a.url;
+                const BATCH_SIZE = 20;
+                for (let i = 0; i < completeJobIds.length; i += BATCH_SIZE) {
+                    const batch = completeJobIds.slice(i, i + BATCH_SIZE);
+                    const { data: assets } = await supabaseClient
+                        .from('job_assets')
+                        .select('job_id, url')
+                        .in('job_id', batch)
+                        .eq('type', 'final_mp4');
+                    if (assets) {
+                        for (const a of assets) {
+                            videoUrlMap[a.job_id] = a.url;
+                        }
                     }
                 }
             } catch (e) {
