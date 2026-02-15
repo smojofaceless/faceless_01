@@ -569,10 +569,11 @@
                 return;
             }
 
-            // Fetch latest + history in parallel
+            // Fetch latest + history in parallel (30-day cap on history)
+            const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
             const [latest, history] = await Promise.all([
                 metricsService.getLatestMetrics(postId),
-                metricsService.getPostMetrics(postId, { limit: 10 }),
+                metricsService.getPostMetrics(postId, { since, limit: 10 }),
             ]);
 
             container.innerHTML = metricsService.buildDetailHTML(latest, history);

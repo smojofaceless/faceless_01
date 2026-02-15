@@ -369,10 +369,17 @@ class InstagramMetricsAdapter implements MetricsAdapter {
       }
 
       if (mediaResponse.status === 401 || mediaResponse.status === 403) {
+        // Mark token invalid so we don't keep hammering the API
+        await supabase
+          .from('platform_tokens')
+          .update({ is_valid: false, last_error: `Metrics: Instagram token error ${mediaResponse.status}` })
+          .eq('brand_id', brandId)
+          .eq('platform', 'instagram');
+
         return {
           success: false,
           error_class: 'misconfig',
-          error_message: `Instagram token error: ${mediaResponse.status}`,
+          error_message: `Instagram token error: ${mediaResponse.status}. Token marked invalid.`,
         };
       }
 
@@ -501,10 +508,17 @@ class FacebookMetricsAdapter implements MetricsAdapter {
       }
 
       if (response.status === 401 || response.status === 403) {
+        // Mark token invalid so we don't keep hammering the API
+        await supabase
+          .from('platform_tokens')
+          .update({ is_valid: false, last_error: `Metrics: Facebook token error ${response.status}` })
+          .eq('brand_id', brandId)
+          .eq('platform', 'facebook');
+
         return {
           success: false,
           error_class: 'misconfig',
-          error_message: `Facebook token error: ${response.status}`,
+          error_message: `Facebook token error: ${response.status}. Token marked invalid.`,
         };
       }
 
@@ -702,10 +716,21 @@ Deno.serve(async (req: Request) => {
     let successCount = 0;
     let errorCount = 0;
     let terminalCount = 0;
+    let skippedCooldown = 0;
     const errors: Array<{ post_id: string; platform: string; error: string }> = [];
+
+    // Per-platform 429 cooldown: skip remaining posts on a platform after rate limit hit
+    const platformCooldown = new Set<string>();
 
     for (const post of posts) {
       try {
+        // Skip if this platform hit a rate limit earlier in this batch
+        if (platformCooldown.has(post.platform)) {
+          console.log(`[Metrics Collector] Skipping ${post.platform} | ${post.platform_post_id} (platform cooldown)`);
+          skippedCooldown++;
+          continue;
+        }
+
         console.log(`\n[Metrics Collector] Processing: ${post.platform} | ${post.platform_post_id} | age=${post.post_age_hours}h`);
 
         // Get adapter
@@ -747,17 +772,17 @@ Deno.serve(async (req: Request) => {
           const errMsg = result.error_message || 'Unknown error';
           console.error(`[Metrics Collector] ✗ ${post.platform} | ${result.error_class}: ${errMsg}`);
 
+          // On rate limit (dependency), cool down the entire platform for this batch
+          if (result.error_class === 'dependency') {
+            platformCooldown.add(post.platform);
+            console.log(`[Metrics Collector] Platform ${post.platform} added to cooldown (429/rate-limit)`);
+          }
+
           if (result.error_class === 'permanent') {
             // Mark post as metrics-terminal
             console.log(`[Metrics Collector] Marking post ${post.post_id} as metrics-terminal`);
-            await supabase
-              .from('posts')
-              .update({
-                meta: supabase.rpc ? undefined : undefined, // Can't merge JSONB in supabase-js easily
-              })
-              .eq('id', post.post_id);
 
-            // Use raw SQL to merge the meta flag
+            // Record the terminal error snapshot
             await supabase.rpc('record_post_metrics', {
               p_post_id: post.post_id,
               p_platform: post.platform,
@@ -824,6 +849,8 @@ Deno.serve(async (req: Request) => {
       success: successCount,
       errors: errorCount,
       terminal: terminalCount,
+      skipped_cooldown: skippedCooldown,
+      cooled_platforms: platformCooldown.size > 0 ? Array.from(platformCooldown) : undefined,
       duration_ms: durationMs,
       error_details: errors.length > 0 ? errors.slice(0, 10) : undefined,
     };
@@ -834,6 +861,8 @@ Deno.serve(async (req: Request) => {
     console.log(`  Success: ${successCount}`);
     console.log(`  Errors: ${errorCount}`);
     console.log(`  Terminal: ${terminalCount}`);
+    console.log(`  Skipped (cooldown): ${skippedCooldown}`);
+    console.log(`  Cooled platforms: ${platformCooldown.size > 0 ? Array.from(platformCooldown).join(', ') : 'none'}`);
     console.log(`  Duration: ${durationMs}ms`);
     console.log(`========================================\n`);
 
