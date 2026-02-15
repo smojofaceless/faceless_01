@@ -194,7 +194,9 @@ serve(async (req) => {
       optionsMeta.custom_style = body.custom_style;
     }
 
-    const lengthPreset = mapDuration(body.length_preset || 'medium');
+    // Dark origins performs best at 90s+ (documentary pacing, higher retention = more push)
+    const defaultLength = (body.vibe_preset === 'dark_origins' || body.preset === 'dark_origins') ? 'extended' : 'medium';
+    const lengthPreset = mapDuration(body.length_preset || defaultLength);
     const isPreview = body.preview_only === true;
 
     console.log(`Creating job: length=${lengthPreset}, preview=${isPreview}`);

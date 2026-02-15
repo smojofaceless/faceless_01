@@ -276,7 +276,30 @@ STYLE RULES:
 - Use documentary phrasing: "Authorities later discovered...", "The official report stated...", "What they found in the basement..."
 - The narrator knows more than they're telling — let implication do the work
 - Include at least ONE piece of "evidence" described in detail (a photograph, a journal entry, a recording, a police report)
-- Mix long investigative sentences with short chilling statements: "The report was sealed. The town moved on. The basement was never opened again."${avoidanceSection}
+- Mix long investigative sentences with short chilling statements: "The report was sealed. The town moved on. The basement was never opened again."
+
+DUAL-TIMELINE TECHNIQUE (MANDATORY):
+- Cut between THEN and NOW at least once in the story. Examples:
+  • "Today, the house at 213 Oxford Apartments still stands. The unit has been vacant since 1991."
+  • "The church in Crow Hollow is still there. No one has held a service in seventy years."
+  • "As of 2024, the case remains open. The crawl space has been sealed with concrete."
+- This grounds the story in reality and makes viewers feel the horror is CURRENT, not distant history.
+- Place the present-day detail either in the AFTERMATH or weave it between the DESCENT and AFTERMATH.
+
+"BASED ON REAL EVENTS" ENERGY (MANDATORY):
+- Begin the story with one of these documentary framing devices (naturally integrated, not a disclaimer):
+  • "The following events are documented in [county] court records."
+  • "This case was reopened in [year] after new evidence surfaced."
+  • "What happened in [town] between [year] and [year] was verified by [number] witnesses."
+- This single line makes every viewer lean in. It turns fiction into "fact."
+
+COMMENT-BAIT ENDING (MANDATORY):
+- The very last sentence must be a QUESTION or PROVOCATIVE STATEMENT designed to drive comments. Examples:
+  • "Do you think the neighbors really didn't know?"
+  • "The question investigators still ask: who was the second set of footprints for?"
+  • "Was he acting alone? The journal entries suggest otherwise."
+  • "Some say the recordings are still playing. Would you listen?"
+- This is the single most important engagement driver — comments boost algorithmic reach.${avoidanceSection}
 
 Respond in JSON format:
 {
@@ -338,7 +361,9 @@ export async function executeStoryStep(
   
   const vibePreset = job.vibe_preset || (job.meta?.vibe_preset as string) || 'urban_legend';
   const duration = (job.meta?.duration as { min?: number; max?: number } | number) || 60;
-  const targetDuration = typeof duration === 'object' ? (duration.min || 60) : duration;
+  // Dark origins performs better at 90s+ (documentary pacing, algorithm retention)
+  const defaultDuration = vibePreset === 'dark_origins' ? 90 : 60;
+  const targetDuration = typeof duration === 'object' ? (duration.min || defaultDuration) : (duration || defaultDuration);
 
   // Calculate target word count (roughly 2.5 words per second for narration)
   const targetWords = Math.round(targetDuration * 2.5);
@@ -683,6 +708,9 @@ CRUCIAL TONE RULES:
 - Every sentence must be visually filmable as a dark, realistic scene
 - End with an unresolved thread: "The case remains open." / "The recordings were never explained." / "No body was ever found."
 - OPTIONAL: End with a series hook implying Part 2: "But that was only the first house." / "What they found next was worse."
+- DUAL-TIMELINE: Cut between THEN and NOW at least once — "Today, the building still stands..." — to make it feel current.
+- "BASED ON REAL EVENTS" ENERGY: Open with a documentary framing line like "The following events are documented in county records" — one line that makes fiction feel like fact.
+- COMMENT-BAIT: The LAST sentence should be a question or provocative statement that drives viewer comments: "Do you think the neighbors really didn't know?" / "Was he acting alone?"
 - This is NOT internet horror. This is documentary horror — the horror of real things that happened in real places to real people.`;
   }
   return `You are a master storyteller specializing in short-form horror and mystery content. You create gripping, atmospheric stories perfect for TikTok/Reels narration. Your stories are ALWAYS first-person narration that feels personal and immediate.`;
@@ -3776,6 +3804,11 @@ function buildImagePrompt(
       ? Math.min(10, Math.floor((sceneIndex / totalScenes) * 10) + 3)
       : 5;
 
+    // Thumbnail optimization: first scene image should work as a standalone thumbnail
+    const thumbnailBoost = sceneIndex === 0
+      ? '\nTHUMBNAIL PRIORITY: This is the FIRST scene and may be used as a video thumbnail. Compose for maximum impact at small sizes: strong central subject, clear silhouette, dramatic contrast, no fine details that disappear at thumbnail resolution. A single striking face half-lit, an ominous object, or a dramatic doorway shot work best.'
+      : '';
+
     // Camera: prefer visual cue camera, then config progression, then fallback
     const angles = config.camera_angles || [];
     const configCamera = angles.length > 0
@@ -3815,6 +3848,7 @@ function buildImagePrompt(
 
     const sceneDescription = [
       reinforcement,
+      thumbnailBoost,
       cueDescription,
       cleanNarration ? `Scene context: ${cleanNarration}` : '',
     ].filter(Boolean).join('\n');

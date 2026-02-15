@@ -636,6 +636,21 @@ VOICE & FEEL (CRITICAL):
 - End with an unresolved thread or chilling postscript: "The case was never closed" / "The recordings were never explained"
 - OPTIONAL SERIES HOOK: If the case is rich, end with "But that was only the first [location/victim]..." to imply a Part 2
 
+DUAL-TIMELINE (MANDATORY):
+- Cut between THEN and NOW at least once: "Today, the house still stands..." / "As of 2024, the case remains open."
+- This makes the horror feel CURRENT, not distant. Viewers feel it could still be happening.
+
+"BASED ON REAL EVENTS" ENERGY (MANDATORY):
+- Open with a documentary framing line: "The following events are documented in [county] court records" / "This case was reopened in [year]"
+- One line that transforms the entire story from fiction to "fact."
+
+COMMENT-BAIT ENDING (MANDATORY):
+- The LAST sentence must be a QUESTION or PROVOCATIVE STATEMENT to drive comments:
+  • "Do you think the neighbors really didn't know?"
+  • "Was he acting alone? The journal entries suggest otherwise."
+  • "Some say the recordings are still playing. Would you listen?"
+- Comments are the #1 algorithmic engagement signal — this is non-negotiable.
+
 IMPORTANT:
 - Do NOT name real copyrighted characters — these are ORIGINAL characters inspired by archetypes
 - Do NOT copy the premise literally — use it as thematic direction
