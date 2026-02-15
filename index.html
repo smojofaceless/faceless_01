@@ -232,13 +232,17 @@
                         </div>
                     </section>
 
-                    <!-- Brand Overview -->
+                    <!-- Performance Overview -->
                     <section class="card dashboard-card">
                         <div class="card__header">
-                            <h2 class="card__title">Brand Overview</h2>
-                            <a href="pages/brands.html" class="card__action">Manage →</a>
+                            <h2 class="card__title">Performance</h2>
+                            <a href="pages/calendar.html" class="card__action">Details →</a>
                         </div>
-                        <div class="card__body" id="brand-overview"></div>
+                        <div class="card__body" id="performance-overview">
+                            <div class="empty-state">
+                                <p>Loading performance data...</p>
+                            </div>
+                        </div>
                     </section>
 
                     <!-- Quick Actions -->
@@ -282,6 +286,17 @@
                         </div>
                     </section>
 
+                    <!-- Brand Overview -->
+                    <section class="card dashboard-card dashboard-card--wide">
+                        <div class="card__header">
+                            <h2 class="card__title">Brand Overview</h2>
+                            <a href="pages/brands.html" class="card__action">Manage →</a>
+                        </div>
+                        <div class="card__body" id="brand-overview">
+                            <div class="empty-state"><p>Loading brands...</p></div>
+                        </div>
+                    </section>
+
                     <!-- Recent Activity -->
                     <section class="card dashboard-card dashboard-card--wide">
                         <div class="card__header">
@@ -289,7 +304,7 @@
                         </div>
                         <div class="card__body" id="recent-activity">
                             <div class="empty-state">
-                                <p>No recent activity</p>
+                                <p>Loading activity...</p>
                             </div>
                         </div>
                     </section>
@@ -299,196 +314,15 @@
     </div>
 
     <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="js/config.js"></script>
     <script src="js/supabase.js"></script>
     <script src="js/core/utils.js"></script>
     <script src="js/models/Brand.js"></script>
-    <script src="js/models/Platform.js"></script>
-    <script src="js/models/Post.js"></script>
-    <script src="js/models/Schedule.js"></script>
-    <script src="js/models/index.js"></script>
-    <script src="js/services/platformAPI.js"></script>
-    <script src="js/services/postManager.js"></script>
-    <script src="js/services/scheduler.js"></script>
-    <script src="js/services/brandManager.js"></script>
-    <script src="js/services/index.js"></script>
     <script src="js/components/toast.js"></script>
     <script src="js/components/sidebar.js"></script>
     <script src="js/components/brand-switcher.js"></script>
-    <script>
-        // Dashboard initialization
-        document.addEventListener('DOMContentLoaded', async () => {
-            // Initialize sidebar
-            const sidebar = new Sidebar();
-            
-            // Initialize brand switcher
-            const brandSwitcher = new BrandSwitcher({
-                onSelect: (brand) => {
-                    loadDashboardData();
-                }
-            });
-            brandSwitcher.init();
-
-            // Wait for ContentEngine to initialize
-            window.addEventListener('contentengine:ready', () => {
-                loadDashboardData();
-            });
-
-            // If already initialized
-            if (typeof contentEngine !== 'undefined' && contentEngine.initialized) {
-                loadDashboardData();
-            }
-        });
-
-        async function loadDashboardData() {
-            const stats = contentEngine.getStats();
-            
-            // Update stats
-            document.getElementById('stat-posts-today').textContent = stats.postsToday;
-            document.getElementById('stat-scheduled').textContent = stats.scheduledPosts;
-            document.getElementById('stat-week').textContent = stats.postsThisWeek;
-            document.getElementById('stat-failed').textContent = stats.failedPosts;
-            document.getElementById('queue-count').textContent = `${stats.queuedPosts} posts`;
-            document.getElementById('queue-badge').textContent = stats.queuedPosts || '';
-
-            loadUpcomingPosts();
-            loadPlatformStatus();
-            loadBrandOverview();
-            loadRecentActivity();
-            updateNextPostStatus();
-        }
-
-        function loadUpcomingPosts() {
-            const container = document.getElementById('upcoming-posts');
-            const posts = contentEngine.getUpcomingPosts(5);
-
-            if (posts.length === 0) {
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <p>No scheduled posts</p>
-                        <p class="text-muted">Schedule content to see it here</p>
-                    </div>
-                `;
-                return;
-            }
-
-            container.innerHTML = posts.map(post => `
-                <div class="post-item">
-                    <div class="post-item__time">${formatRelativeTime(post.scheduledAt)}</div>
-                    <div class="post-item__content">
-                        <div class="post-item__title">${post.content.title || 'Untitled'}</div>
-                        <div class="post-item__meta">
-                            <span class="platform-badge platform-badge--${post.platformId}">${post.platformId}</span>
-                        </div>
-                    </div>
-                    <span class="badge badge--${getStatusClass(post.status)}">${post.status}</span>
-                </div>
-            `).join('');
-        }
-
-        function loadPlatformStatus() {
-            const container = document.getElementById('platform-status').querySelector('.platform-list');
-            const platforms = getAllPlatforms();
-            const accounts = accountManager.getAll();
-
-            container.innerHTML = platforms.slice(0, 6).map(platform => {
-                const account = accounts.find(a => a.platformId === platform.id);
-                const isConnected = account?.isActive();
-
-                return `
-                    <div class="platform-item">
-                        <div class="platform-item__icon" style="background: ${platform.color}15; color: ${platform.color}">
-                            ${platform.name.charAt(0)}
-                        </div>
-                        <div class="platform-item__info">
-                            <span class="platform-item__name">${platform.name}</span>
-                        </div>
-                        <span class="platform-item__status ${isConnected ? 'platform-item__status--connected' : ''}">
-                            ${isConnected ? '●' : '○'}
-                        </span>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        function loadBrandOverview() {
-            const container = document.getElementById('brand-overview');
-            const brands = brandManager.getAll();
-
-            if (brands.length === 0) {
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <p>No brands configured</p>
-                        <a href="pages/brands.html" class="btn btn--sm btn--primary">Add Brand</a>
-                    </div>
-                `;
-                return;
-            }
-
-            container.innerHTML = brands.map(brand => {
-                const stats = brandManager.getStats(brand.id);
-                return `
-                    <div class="brand-item">
-                        <div class="brand-item__indicator" style="background: ${brand.theme.primaryColor}"></div>
-                        <div class="brand-item__info">
-                            <span class="brand-item__name">${brand.name}</span>
-                            <span class="brand-item__niche">${brand.niche}</span>
-                        </div>
-                        <div class="brand-item__stats">
-                            <span>${stats.totalPosts} posts</span>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        function loadRecentActivity() {
-            const container = document.getElementById('recent-activity');
-            const activity = contentEngine.getRecentActivity(8);
-
-            if (activity.length === 0) {
-                container.innerHTML = `<div class="empty-state"><p>No recent activity</p></div>`;
-                return;
-            }
-
-            container.innerHTML = `<div class="activity-list">${activity.map(item => `
-                <div class="activity-item">
-                    <div class="activity-item__icon activity-item__icon--${item.status}">
-                        ${getStatusIcon(item.status)}
-                    </div>
-                    <div class="activity-item__content">
-                        <div class="activity-item__title">${item.title}</div>
-                        <div class="activity-item__meta">
-                            <span class="text-muted">${formatRelativeTime(item.timestamp)}</span>
-                        </div>
-                    </div>
-                    <span class="badge badge--${getStatusClass(item.status)}">${item.status}</span>
-                </div>
-            `).join('')}</div>`;
-        }
-
-        function updateNextPostStatus() {
-            const container = document.getElementById('next-post-status');
-            const scheduled = postManager.getScheduled();
-
-            container.querySelector('.status-bar__value').textContent = 
-                scheduled.length > 0 ? formatRelativeTime(scheduled[0].scheduledAt) : 'None scheduled';
-        }
-
-        function getStatusClass(status) {
-            return { published: 'success', complete: 'success', scheduled: 'warning', 
-                     queued: 'info', processing: 'warning', failed: 'error', draft: 'default' }[status] || 'default';
-        }
-
-        function getStatusIcon(status) {
-            const icons = {
-                published: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>`,
-                complete: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>`,
-                scheduled: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`,
-                failed: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>`
-            };
-            return icons[status] || `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>`;
-        }
-    </script>
+    <script src="js/services/brandManager.js"></script>
+    <script src="js/pages/dashboard.js"></script>
 </body>
 </html>
