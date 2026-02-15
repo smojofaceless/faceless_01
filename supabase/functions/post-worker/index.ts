@@ -917,6 +917,10 @@ class FacebookReelsAdapter implements PlatformAdapter {
  * Get adapter for platform
  */
 function getAdapter(platform: string): PlatformAdapter {
+  if (!platform) {
+    console.error('[POST-WORKER] No platform specified — cannot dispatch');
+    return new StubAdapter('unknown');
+  }
   const p = platform.toLowerCase();
   switch (p) {
     case 'tiktok':

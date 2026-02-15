@@ -5088,7 +5088,8 @@ export async function executeScheduleStep(
 
   try {
     for (const platform of uniquePlatforms) {
-      // Call idempotent RPC
+      // Call idempotent RPC — pass story_text as description so Instagram/Facebook
+      // adapters have caption content (not just the title fallback)
       const { data, error } = await supabase.rpc('schedule_post_idempotent', {
         p_job_id: freshJob.id,
         p_brand_id: freshJob.brand_id,
@@ -5096,7 +5097,7 @@ export async function executeScheduleStep(
         p_scheduled_at: scheduledAt.toISOString(),
         p_video_url: videoUrl,
         p_title: freshJob.title,
-        p_description: null,
+        p_description: freshJob.story_text || null,
         p_tags: null,
         p_meta: { source: 'worker-v1', vibe_preset: freshJob.vibe_preset }
       });

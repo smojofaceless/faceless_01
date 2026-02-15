@@ -128,6 +128,38 @@ const PRESET_CATALOG = {
             bestFor: 'Reddit-sourced horror retellings, internet creepypasta adaptations, viral horror shorts',
             exampleHook: '"The post had 4,000 upvotes. The comments were all begging OP to move out immediately."'
         }
+    },
+    dark_origins: {
+        id: 'dark_origins',
+        name: 'Dark Origins',
+        icon: '🕯️',
+        tagline: 'Documentary dark biographies',
+        description: 'True crime documentary style — dark biographies, horror icon origin stories, and serial killer deep dives told as third-person investigations. Photorealistic dark illustration with heavy chiaroscuro, period-accurate settings (1950s–1990s), and evidence-frame camera angles.',
+        defaults: {
+            vibe_preset: 'dark_origins',
+            era: '1970s',
+            tone: 0.75,
+            ending: 'unresolved',
+            visual_style: 'cinematic_dark',
+            color_palette: 'deep_shadow_contrast',
+            motion_profile: 'slow_pan'
+        },
+        visual: {
+            gradient: 'linear-gradient(145deg, #1a1008 0%, #0d0a06 30%, #1c1410 60%, #080604 100%)',
+            overlay: 'radial-gradient(ellipse at 50% 60%, rgba(217, 119, 6, 0.18), transparent 60%)',
+            accentColor: '#d97706',
+            accentBg: 'rgba(217, 119, 6, 0.15)',
+            artStyle: 'Dark Realistic',
+            colorPalette: 'Deep Shadow Contrast',
+            motionProfile: 'Slow Pan'
+        },
+        details: {
+            era: '1950s–1990s',
+            ending: 'Unresolved',
+            effects: ['Heavy chiaroscuro', 'Film grain', 'Vignette', 'Amber accent lighting'],
+            bestFor: 'True crime deep dives, horror icon origins, dark biographies, serial killer documentaries',
+            exampleHook: '"Edgar Holloway was the best taxidermist in Dane County. His private collection was not animals."'
+        }
     }
 };
 
