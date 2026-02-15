@@ -410,6 +410,7 @@ function buildUserPrompt(
     brandName?: string;
     brandVoice?: string;
     exemplars?: Array<{ fields: Record<string, unknown> }>;
+    negativeExemplars?: Array<{ fields: Record<string, unknown> }>;
     variantInstructions?: string;
   }
 ): string {
@@ -432,6 +433,20 @@ TOP-PERFORMING EXAMPLES (for style reference only — do NOT copy verbatim):
 ${exemplarEntries}
 
 Use these as inspiration for tone, structure, and tag/hashtag strategy. Adapt the patterns to THIS video's content.`;
+  }
+
+  // Build negative exemplars section (patterns to avoid)
+  let negativeSection = "";
+  if (data.negativeExemplars && data.negativeExemplars.length > 0) {
+    const negEntries = data.negativeExemplars
+      .map((ex, i) => `Low-performer ${i + 1}: ${JSON.stringify(ex.fields)}`)
+      .join("\n");
+    negativeSection = `
+
+LOW-PERFORMING EXAMPLES (avoid these patterns):
+${negEntries}
+
+These underperformed. Avoid similar title structures, tag choices, and phrasing.`;
   }
 
   // Build A/B variant section (if assigned)
@@ -462,7 +477,7 @@ EXAMPLE OUTPUT:
 ${exampleBlock}
 
 PLATFORM-SPECIFIC GUIDANCE:
-${platformConfig.guidance}${exemplarsSection}${variantSection}
+${platformConfig.guidance}${exemplarsSection}${negativeSection}${variantSection}
 
 Generate the metadata JSON now. Output ONLY the JSON object.`;
 }
@@ -785,13 +800,16 @@ async function generateForPost(
 
     // 7a. Fetch top-performing exemplars for this brand/platform/vibe
     let exemplars: Array<{ fields: Record<string, unknown> }> = [];
+    let negativeExemplars: Array<{ fields: Record<string, unknown> }> = [];
     if (post.brand_id) {
       try {
         const { data: exData } = await supabase.rpc("get_generation_exemplars", {
           p_brand_id: post.brand_id,
           p_platform: platform,
           p_vibe_preset: vibePreset,
+          p_preset_name: null,
           p_limit: 3,
+          p_window_days: 30,
         });
         if (exData && exData.length > 0) {
           exemplars = exData.map((e: { fields: Record<string, unknown> }) => ({ fields: e.fields }));
@@ -800,6 +818,24 @@ async function generateForPost(
       } catch (exErr) {
         // Non-fatal — continue without exemplars
         console.warn("[METADATA] Could not fetch exemplars:", exErr);
+      }
+
+      // 7a-ii. Fetch negative exemplars (bottom performers to avoid)
+      try {
+        const { data: negData } = await supabase.rpc("get_negative_exemplars", {
+          p_brand_id: post.brand_id,
+          p_platform: platform,
+          p_vibe_preset: vibePreset,
+          p_limit: 2,
+          p_window_days: 30,
+        });
+        if (negData && negData.length > 0) {
+          negativeExemplars = negData.map((e: { fields: Record<string, unknown> }) => ({ fields: e.fields }));
+          console.log(`[METADATA] ⚠️ Loaded ${negativeExemplars.length} negative exemplar(s)`);
+        }
+      } catch (negErr) {
+        // Non-fatal
+        console.warn("[METADATA] Could not fetch negative exemplars:", negErr);
       }
     }
 
@@ -843,6 +879,7 @@ async function generateForPost(
       brandName,
       brandVoice,
       exemplars: exemplars.length > 0 ? exemplars : undefined,
+      negativeExemplars: negativeExemplars.length > 0 ? negativeExemplars : undefined,
       variantInstructions,
     });
 
