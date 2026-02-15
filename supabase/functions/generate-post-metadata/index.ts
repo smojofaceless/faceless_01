@@ -411,6 +411,12 @@ function buildUserPrompt(
     brandVoice?: string;
     exemplars?: Array<{ fields: Record<string, unknown> }>;
     negativeExemplars?: Array<{ fields: Record<string, unknown> }>;
+    winningPatterns?: {
+      top_hooks?: Array<{ hook: string; perf: number }>;
+      top_hashtags?: Array<{ tag: string; count: number; avg_perf: number }>;
+      top_ctas?: Array<{ cta: string; count: number }>;
+      length_stats?: { avg_title_len?: number; avg_desc_len?: number; avg_tag_count?: number };
+    };
     variantInstructions?: string;
   }
 ): string {
@@ -449,6 +455,57 @@ ${negEntries}
 These underperformed. Avoid similar title structures, tag choices, and phrasing.`;
   }
 
+  // Build winning patterns section (cached insights)
+  let patternsSection = "";
+  if (data.winningPatterns) {
+    const wp = data.winningPatterns;
+    const parts: string[] = [];
+
+    if (wp.top_hooks && wp.top_hooks.length > 0) {
+      const hookList = wp.top_hooks
+        .slice(0, 5)
+        .map((h) => `  • "${h.hook}" (perf: ${h.perf})`)
+        .join("\n");
+      parts.push(`Top-performing hook styles:\n${hookList}`);
+    }
+
+    if (wp.top_hashtags && wp.top_hashtags.length > 0) {
+      const tagList = wp.top_hashtags
+        .slice(0, 10)
+        .map((t) => `#${t.tag} (used ${t.count}×, avg perf: ${t.avg_perf})`)
+        .join(", ");
+      parts.push(`High-engagement tags: ${tagList}`);
+    }
+
+    if (wp.top_ctas && wp.top_ctas.length > 0) {
+      const ctaList = wp.top_ctas
+        .slice(0, 5)
+        .map((c) => `"${c.cta}" (${c.count}×)`)
+        .join(", ");
+      parts.push(`Effective CTAs: ${ctaList}`);
+    }
+
+    if (wp.length_stats) {
+      const ls = wp.length_stats;
+      const statParts: string[] = [];
+      if (ls.avg_title_len) statParts.push(`title ~${ls.avg_title_len} chars`);
+      if (ls.avg_desc_len) statParts.push(`description ~${ls.avg_desc_len} chars`);
+      if (ls.avg_tag_count) statParts.push(`~${ls.avg_tag_count} tags`);
+      if (statParts.length > 0) {
+        parts.push(`Optimal lengths: ${statParts.join(", ")}`);
+      }
+    }
+
+    if (parts.length > 0) {
+      patternsSection = `
+
+WINNING PATTERNS (derived from top performers for this brand/platform):
+${parts.join("\n")}
+
+Use these insights to guide your choices — adapt, don't copy.`;
+    }
+  }
+
   // Build A/B variant section (if assigned)
   let variantSection = "";
   if (data.variantInstructions) {
@@ -477,7 +534,7 @@ EXAMPLE OUTPUT:
 ${exampleBlock}
 
 PLATFORM-SPECIFIC GUIDANCE:
-${platformConfig.guidance}${exemplarsSection}${negativeSection}${variantSection}
+${platformConfig.guidance}${exemplarsSection}${negativeSection}${patternsSection}${variantSection}
 
 Generate the metadata JSON now. Output ONLY the JSON object.`;
 }
@@ -839,6 +896,38 @@ async function generateForPost(
       }
     }
 
+    // 7a-iii. Fetch cached winning patterns
+    interface WinningPatterns {
+      top_hooks?: Array<{ hook: string; perf: number }>;
+      top_hashtags?: Array<{ tag: string; count: number; avg_perf: number }>;
+      top_ctas?: Array<{ cta: string; count: number }>;
+      length_stats?: { avg_title_len?: number; avg_desc_len?: number; avg_tag_count?: number };
+    }
+    let winningPatterns: WinningPatterns | undefined;
+    if (post.brand_id) {
+      try {
+        const { data: wpData } = await supabase.rpc("get_winning_patterns", {
+          p_brand_id: post.brand_id,
+          p_platform: platform,
+          p_vibe_preset: vibePreset,
+          p_window_days: 30,
+        });
+        if (wpData && wpData.length > 0) {
+          const wp = wpData[0];
+          winningPatterns = {
+            top_hooks: wp.top_hooks || [],
+            top_hashtags: wp.top_hashtags || [],
+            top_ctas: wp.top_ctas || [],
+            length_stats: wp.length_stats || {},
+          };
+          console.log(`[METADATA] 🏆 Loaded winning patterns (${wp.sample_count} samples)`);
+        }
+      } catch (wpErr) {
+        // Non-fatal
+        console.warn("[METADATA] Could not fetch winning patterns:", wpErr);
+      }
+    }
+
     // 7b. Check A/B variant assignment for this job/platform
     let variantKey: string | null = null;
     let variantInstructions: string | undefined;
@@ -880,6 +969,7 @@ async function generateForPost(
       brandVoice,
       exemplars: exemplars.length > 0 ? exemplars : undefined,
       negativeExemplars: negativeExemplars.length > 0 ? negativeExemplars : undefined,
+      winningPatterns,
       variantInstructions,
     });
 
