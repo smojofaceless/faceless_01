@@ -1062,7 +1062,7 @@ class CampaignDetailPage {
         
         // Show loading state
         if (this.logsContent) {
-            this.logsContent.innerHTML = '<div class="log-entry log-entry--info"><span class="log-entry__message">Loading logs...</span></div>';
+            this.logsContent.innerHTML = '<div class="term-log--empty">loading logs...</div>';
         }
         
         try {
@@ -1102,7 +1102,7 @@ class CampaignDetailPage {
                 console.error('Fallback query also failed:', fallbackError);
                 this.currentLogs = [];
                 if (this.logsContent) {
-                    this.logsContent.innerHTML = '<div class="log-entry log-entry--error"><span class="log-entry__message">Failed to load logs. Check console for details.</span></div>';
+                    this.logsContent.innerHTML = '<div class="term-log--empty">error: failed to load logs — check console</div>';
                 }
             }
         }
@@ -1158,9 +1158,9 @@ class CampaignDetailPage {
             const durationText = duration ? this.formatDuration(duration) : '';
             
             const statusIcons = {
-                pending: '⏸',
-                running: '⚡',
-                completed: '✓',
+                pending: '○',
+                running: '◉',
+                completed: '●',
                 failed: '✕'
             };
             
@@ -1170,17 +1170,17 @@ class CampaignDetailPage {
             
             return `
                 <div class="step-timeline__step step-timeline__step--${status} ${this.selectedStepName === step ? 'step-timeline__step--selected' : ''}" 
-                     title="Click for ${step} details${durationText ? ` (${durationText})` : ''}"
+                     title="${step}${durationText ? ` (${durationText})` : ''}"
                      data-step="${step}" onclick="window.campaignDetailPage.openStepDetail('${step}')">
                     <div class="step-timeline__icon">${statusIcons[status]}</div>
                     <div class="step-timeline__name">${step}</div>
                     ${durationText ? `<div class="step-timeline__duration">${durationText}</div>` : ''}
                 </div>
-                ${nextStep ? `<div class="step-timeline__connector ${connectorActive ? 'step-timeline__connector--active' : ''}">→</div>` : ''}
+                ${nextStep ? `<div class="step-timeline__connector ${connectorActive ? 'step-timeline__connector--active' : ''}">›</div>` : ''}
             `;
         }).join('');
         
-        this.stepTimeline.innerHTML = timelineHtml || '<div class="step-timeline__empty">Select a job to view pipeline status</div>';
+        this.stepTimeline.innerHTML = timelineHtml || '<div class="step-timeline__empty">select a job to view pipeline status</div>';
     }
 
     // ==========================================
@@ -2231,7 +2231,7 @@ class CampaignDetailPage {
     }
 
     /**
-     * Render log entries
+     * Render log entries — Terminal style
      */
     renderLogs() {
         if (!this.logsContent) return;
@@ -2242,7 +2242,7 @@ class CampaignDetailPage {
         }
         
         if (!this.currentLogs?.length) {
-            this.logsContent.innerHTML = '<div class="log-entry log-entry--info"><span class="log-entry__message">No logs available for this job.</span></div>';
+            this.logsContent.innerHTML = '<div class="term-log--empty">no logs available for this job</div>';
             return;
         }
         
@@ -2258,12 +2258,12 @@ class CampaignDetailPage {
         });
         
         if (!filteredLogs.length) {
-            this.logsContent.innerHTML = '<div class="log-entry log-entry--info"><span class="log-entry__message">No logs match current filters.</span></div>';
+            this.logsContent.innerHTML = '<div class="term-log--empty">no logs match current filters</div>';
             return;
         }
         
-        // Render logs
-        const logsHtml = filteredLogs.map(log => this.renderLogEntry(log)).join('');
+        // Render terminal-style log entries
+        const logsHtml = filteredLogs.map((log, idx) => this.renderLogEntry(log, idx + 1)).join('');
         this.logsContent.innerHTML = logsHtml;
         
         // Auto-scroll to bottom
@@ -2271,49 +2271,81 @@ class CampaignDetailPage {
     }
 
     /**
-     * Render a single log entry
+     * Render a single terminal-style log entry
      */
-    renderLogEntry(log) {
-        const timestamp = new Date(log.created_at).toLocaleTimeString();
-        const eventType = log.event_type || log.log_type; // Database uses event_type
-        const typeLabel = this.getLogTypeLabel(eventType);
-        const typeClass = this.getLogTypeClass(eventType);
+    renderLogEntry(log, lineNum = 0) {
+        const dt = new Date(log.created_at);
+        const timestamp = dt.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const eventType = log.event_type || log.log_type;
+        const levelLabel = this.getLogTypeLabel(eventType);
+        const levelClass = this.getLogTypeClass(eventType);
+        const stepName = log.step_name || 'sys';
         
-        // Format message - make it more readable
+        // Build rich message
         let message = log.message || '';
-        
-        // Simplify common messages
         if (eventType === 'started') {
-            message = `Starting ${log.step_name || 'step'}...`;
+            message = `→ starting ${log.step_name || 'step'}`;
         } else if (eventType === 'completed') {
-            const duration = log.meta?.duration_ms ? ` in ${this.formatDuration(log.meta.duration_ms)}` : '';
-            message = `✓ Completed${duration}`;
-        }
-        
-        let details = '';
-        // Show meta data for non-trivial logs (use 'meta' from db, fallback to 'details')
-        const metaData = log.meta || log.details;
-        if (metaData && eventType !== 'started' && eventType !== 'completed') {
-            try {
-                const detailsObj = typeof metaData === 'string' ? JSON.parse(metaData) : metaData;
-                // Only show non-empty details
-                if (Object.keys(detailsObj).length > 0) {
-                    details = `<div class="log-entry__meta">${JSON.stringify(detailsObj, null, 2)}</div>`;
-                }
-            } catch {
-                details = `<div class="log-entry__meta">${metaData}</div>`;
+            const dur = log.meta?.duration_ms ? this.formatDuration(log.meta.duration_ms) : null;
+            message = dur ? `✓ completed (${dur})` : '✓ completed';
+        } else if (eventType === 'failed') {
+            const errMsg = log.meta?.error || log.meta?.last_error || message;
+            message = `✕ ${errMsg}`;
+        } else if (eventType === 'progress') {
+            const pct = log.meta?.progress_pct;
+            const done = log.meta?.scenes_done || log.meta?.current;
+            const total = log.meta?.total_scenes || log.meta?.total;
+            if (pct != null) {
+                message = `${message} [${Math.round(pct)}%]`;
+            } else if (done != null && total != null) {
+                message = `${message} [${done}/${total}]`;
             }
         }
         
-        return `
-            <div class="log-entry">
-                <span class="log-entry__time">${timestamp}</span>
-                <span class="log-entry__type log-entry__type--${typeClass}">${typeLabel}</span>
-                <span class="log-entry__step">[${log.step_name || 'system'}]</span>
-                <span class="log-entry__message">${message}</span>
-                ${details}
-            </div>
-        `;
+        // Row class based on type
+        const rowClass = eventType === 'failed' ? ' term-log--failed' : (eventType === 'completed' ? ' term-log--completed' : '');
+        
+        // Build meta/details block
+        let metaHtml = '';
+        const metaData = log.meta || log.details;
+        if (metaData && eventType !== 'started' && eventType !== 'completed') {
+            try {
+                const obj = typeof metaData === 'string' ? JSON.parse(metaData) : metaData;
+                if (Object.keys(obj).length > 0) {
+                    metaHtml = `<div class="term-log__meta">${this.syntaxHighlightJSON(JSON.stringify(obj, null, 2))}</div>`;
+                }
+            } catch {
+                metaHtml = `<div class="term-log__meta">${this.escapeHtml(String(metaData))}</div>`;
+            }
+        }
+        
+        return `<div class="term-log${rowClass}"><span class="term-log__line">${lineNum}</span><span class="term-log__time">${timestamp}</span><span class="term-log__level term-log__level--${levelClass}">${levelLabel}</span><span class="term-log__step">[${stepName}]</span><span class="term-log__msg">${this.escapeHtml(message)}</span></div>${metaHtml}`;
+    }
+
+    /**
+     * Syntax highlight JSON for terminal meta blocks
+     */
+    syntaxHighlightJSON(json) {
+        return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, (match) => {
+            let cls = 'json-number';
+            if (/^"/.test(match)) {
+                cls = /:$/.test(match) ? 'json-key' : 'json-string';
+            } else if (/true|false/.test(match)) {
+                cls = 'json-bool';
+            } else if (/null/.test(match)) {
+                cls = 'json-null';
+            }
+            return `<span class="${cls}">${match}</span>`;
+        });
+    }
+
+    /**
+     * Escape HTML entities
+     */
+    escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
     }
 
     /**
@@ -2333,19 +2365,19 @@ class CampaignDetailPage {
     }
 
     /**
-     * Get human-readable label for log type
+     * Get terminal-style label for log type
      */
     getLogTypeLabel(eventType) {
         const labels = {
-            'started': 'STARTED',
-            'completed': 'DONE',
-            'progress': 'PROGRESS',
-            'snapshot': 'SNAPSHOT',
+            'started': 'START',
+            'completed': 'DONE ',
+            'progress': 'PROG ',
+            'snapshot': 'SNAP ',
             'failed': 'ERROR',
-            'warning': 'WARN',
-            'info': 'INFO'
+            'warning': 'WARN ',
+            'info': 'INFO '
         };
-        return labels[eventType] || 'LOG';
+        return labels[eventType] || 'LOG  ';
     }
 
     /**
