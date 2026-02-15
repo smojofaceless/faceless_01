@@ -423,12 +423,12 @@ class PostQueueService {
                     const batch = completeJobIds.slice(i, i + BATCH_SIZE);
                     const { data: assets } = await supabaseClient
                         .from('job_assets')
-                        .select('job_id, url')
+                        .select('job_id, public_url, storage_path')
                         .in('job_id', batch)
                         .eq('type', 'final_mp4');
                     if (assets) {
                         for (const a of assets) {
-                            videoUrlMap[a.job_id] = a.url;
+                            videoUrlMap[a.job_id] = a.public_url || a.storage_path;
                         }
                     }
                 }
