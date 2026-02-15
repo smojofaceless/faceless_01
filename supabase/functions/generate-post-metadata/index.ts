@@ -41,38 +41,43 @@ const PLATFORM_CONFIGS: Record<string, PlatformPromptConfig> = {
   youtube_shorts: {
     platform: "YouTube Shorts",
     systemSuffix:
-      "Optimize for YouTube search discovery and click-through rate.",
+      "Optimize for YouTube Shorts discovery. The TITLE is the #1 signal for Shorts — keywords and hashtags in the title directly affect who sees the Short and what topics it's tested under.",
     outputSchema: {
       title:
-        "string — max 100 chars. Hook in first 3 words. Include 1-2 keywords.",
+        "string — max 100 chars. Hook phrase (40-60 chars) + 1-3 hashtags at the end. The hook MUST come first, hashtags LAST. Always include #shorts.",
       description:
-        "string — max 500 chars for Shorts. Tease the story without spoiling. End with a CTA (Subscribe, Like).",
-      tags: "string[] — 8-15 tags, mix broad ('horror','scary') + niche ('counting horror'). No # prefix. Max 500 chars total.",
+        "string — max 500 chars. First 2 lines: expanded keywords and story context (these are indexed). Then a line break, then 3-6 secondary hashtags. End with a CTA (Subscribe, Like).",
+      tags: "string[] — 8-12 tags for synonyms, alternate phrasing, and brand consistency. No # prefix. These support discovery but are NOT the primary driver.",
       category_id: "integer — 24 (Entertainment) or 1 (Film & Animation)",
       made_for_kids: "boolean — always false for horror content",
     },
     example: {
-      title: "They Counted 6 People. There Were 7. 😨",
+      title: "They Counted Six. There Were Seven. #shorts #horror",
       description:
-        "Six strangers shelter in a convenience store during a storm. But every headcount comes back as seven. Who is the extra person?\n\n🔔 Subscribe for more horror stories.",
+        "Six strangers hide in a convenience store during a storm. They keep counting. The number never changes.\n\n#creepystory #scarystories #horrorstory #mystery #paranormal\n\n🔔 Subscribe for daily horror shorts.",
       tags: [
-        "horror",
-        "scary",
-        "shorts",
+        "horror story",
+        "scary short",
+        "creepy narration",
+        "nosleep style",
         "counting horror",
-        "creepy story",
         "horror shorts",
-        "one too many",
+        "scary stories",
         "mystery",
       ],
       category_id: 24,
       made_for_kids: false,
     },
     guidance: `
-- Title MUST hook in first 3 words — use numbers, questions, or shock
-- Title length: 40-80 chars ideal (max 100)
-- Description: tease mystery, NO full spoilers, end with subscribe CTA
-- Tags: first 3-4 should be high-volume ("horror", "scary", "shorts"), rest niche
+- TITLE is the #1 discovery signal for Shorts — treat it as the most important field
+- Title structure: [Hook phrase] #shorts #[genre] — hook FIRST, hashtags LAST
+- Hook should be 40-60 chars of natural, intriguing language — numbers, questions, or shock
+- Include #shorts (helps categorization) + 1-2 niche hashtags (e.g. #horror, #creepystory)
+- Total title max 100 chars including hashtags
+- DO NOT keyword-stuff the title — natural language + intrigue wins
+- Description first 2 lines: expanded context with keywords (these are indexed but weaker than title)
+- Description should include 3-6 secondary hashtags after a line break
+- Tags field: fill with synonyms and variations for quiet background support — don't obsess over these
 - NEVER include slurs, explicit gore descriptions, or self-harm references
 `,
   },
