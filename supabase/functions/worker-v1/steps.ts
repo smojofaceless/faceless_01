@@ -2339,7 +2339,7 @@ function alignScenesToVoice(
       aligned.push({
         ...scene,
         startTime: parseFloat(startTime.toFixed(3)),
-        endTime: parseFloat(Math.max(endTime, startTime + 0.5).toFixed(3)), // Min 0.5s
+        endTime: parseFloat(Math.max(endTime, startTime + 1.5).toFixed(3)), // Min 1.5s — short scenes get boosted early (hard floor 2s at assemble)
       });
     } else {
       // Fallback to original timing
@@ -2603,7 +2603,7 @@ export async function executeImagesStep(
     // (natural speech gaps between scenes) are included in the image display time.
     // This ensures cumulative image start times match voice-aligned scene starts.
     const nextSceneStart = i < scenes.length - 1 ? scenes[i + 1].startTime : audioDuration;
-    let sceneDuration = Math.max(nextSceneStart - scene.startTime, 0.5); // min 0.5s
+    let sceneDuration = Math.max(nextSceneStart - scene.startTime, 1.0); // Soft floor 1.0s — hard floor (2s) is enforced at assemble time after normalization
 
     // BUG FIX: Account for TTS leading silence before the first spoken word.
     // Scene 0's startTime is the first word timestamp (e.g. 0.3s), so without
@@ -4532,6 +4532,48 @@ async function assembleWithRenderer(
       console.log(`[ASSEMBLE] Normalized durations: sum ${durSum.toFixed(2)}s → ${duration}s (drift=${driftSeconds.toFixed(2)}s, scale=${scale.toFixed(4)})`);
     } else {
       console.log(`[ASSEMBLE] Duration drift ${driftSeconds.toFixed(2)}s within tolerance — no normalization needed`);
+    }
+
+    // FLOOR ENFORCEMENT: Ensure no scene is shorter than 2s after normalization.
+    // Normalization can shrink an already-short scene (e.g. 0.5s × 0.6 scale = 0.3s).
+    // Scenes under 2s are imperceptible — steal time proportionally from longer scenes.
+    const MIN_SCENE_DURATION = 2.0;
+    let needsRebalance = durations.some(d => d < MIN_SCENE_DURATION);
+    if (needsRebalance) {
+      // Pass 1: Identify short scenes and total deficit
+      let totalDeficit = 0;
+      for (let i = 0; i < durations.length; i++) {
+        if (durations[i] < MIN_SCENE_DURATION) {
+          const deficit = MIN_SCENE_DURATION - durations[i];
+          console.log(`[ASSEMBLE] Scene ${i} duration ${durations[i].toFixed(3)}s below ${MIN_SCENE_DURATION}s floor — boosting by ${deficit.toFixed(3)}s`);
+          totalDeficit += deficit;
+          durations[i] = MIN_SCENE_DURATION;
+        }
+      }
+      // Pass 2: Steal proportionally from ALL scenes above the minimum.
+      // Each donor gives time relative to its share of the "donatable" pool.
+      // This avoids wrecking any single scene.
+      if (totalDeficit > 0) {
+        const donors = durations
+          .map((d, i) => ({ i, surplus: d - MIN_SCENE_DURATION }))
+          .filter(x => x.surplus > 0);
+        const donorPool = donors.reduce((s, x) => s + x.surplus, 0);
+
+        if (donorPool >= totalDeficit) {
+          // Enough surplus — steal proportionally
+          for (const donor of donors) {
+            const share = (donor.surplus / donorPool) * totalDeficit;
+            durations[donor.i] = parseFloat((durations[donor.i] - share).toFixed(3));
+          }
+        } else {
+          // Not enough surplus — flatten to equal distribution
+          const total = durations.reduce((s, d) => s + d, 0);
+          const avg = total / durations.length;
+          durations = durations.map(() => parseFloat(avg.toFixed(3)));
+          console.log(`[ASSEMBLE] Rebalance fallback: all scenes set to ${avg.toFixed(2)}s`);
+        }
+      }
+      console.log(`[ASSEMBLE] After floor enforcement: (${durations.map(d => d.toFixed(1)).join(',')})s`);
     }
     
     console.log(`[ASSEMBLE] Using image_sequence: ${durations.length} images with per-scene durations (${durations.map(d => d.toFixed(1)).join(',')}s) and mood_levels (${moodLevels.join(',')})`);

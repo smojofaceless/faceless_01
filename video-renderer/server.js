@@ -377,9 +377,37 @@ async function createVideoFromImages(jobId, images, durations, outputPath, optio
   const totalDuration = durations.reduce((sum, d) => sum + (d || 5), 0);
   console.log(`[${jobId}] Total video duration will be: ${totalDuration.toFixed(2)}s from ${images.length} scenes`);
   
+  // Safety net: enforce minimum 2s per scene at the renderer level.
+  // Instead of just clamping (which inflates total), redistribute proportionally.
+  const MIN_SCENE_SEC = 2.0;
+  const sceneDurations = durations.map(d => d || 5); // resolve falsy → 5s default
+  const hasShortScenes = sceneDurations.some(d => d < MIN_SCENE_SEC);
+  if (hasShortScenes) {
+    let totalDeficit = 0;
+    for (let i = 0; i < sceneDurations.length; i++) {
+      if (sceneDurations[i] < MIN_SCENE_SEC) {
+        console.warn(`[${jobId}] Scene ${i + 1} duration ${sceneDurations[i]}s below ${MIN_SCENE_SEC}s floor`);
+        totalDeficit += MIN_SCENE_SEC - sceneDurations[i];
+        sceneDurations[i] = MIN_SCENE_SEC;
+      }
+    }
+    // Steal proportionally from longer scenes to keep total constant
+    const donors = sceneDurations
+      .map((d, i) => ({ i, surplus: d - MIN_SCENE_SEC }))
+      .filter(x => x.surplus > 0);
+    const donorPool = donors.reduce((s, x) => s + x.surplus, 0);
+    if (donorPool >= totalDeficit) {
+      for (const donor of donors) {
+        const share = (donor.surplus / donorPool) * totalDeficit;
+        sceneDurations[donor.i] = parseFloat((sceneDurations[donor.i] - share).toFixed(3));
+      }
+    }
+    console.log(`[${jobId}] Rebalanced durations: ${sceneDurations.map(d => d.toFixed(1)).join(',')}s`);
+  }
+
   for (let i = 0; i < images.length; i++) {
     const imagePath = images[i];
-    const duration = durations[i] || 5;
+    const duration = sceneDurations[i];
     const tempVideo = path.join(TEMP_DIR, `${jobId}_scene_${i}.mp4`);
     tempVideos.push(tempVideo);
     
