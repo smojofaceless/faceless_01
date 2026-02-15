@@ -368,6 +368,7 @@
     <script src="../js/services/youtube.js"></script>
     <script src="../js/services/meta.js"></script>
     <script src="../js/services/postQueue.js"></script>
+    <script src="../js/services/metricsService.js"></script>
     <script src="../js/services/postManager.js"></script>
     <script src="../js/services/scheduler.js"></script>
     <script src="../js/services/brandManager.js"></script>
@@ -2238,12 +2239,18 @@
                             ` : ''}
                         </div>
                         <div id="detail-lifecycle" style="margin-top:var(--space-4);"></div>
+                        <div id="detail-metrics" style="margin-top:var(--space-2);"></div>
                     </div>
                 </div>
             `;
 
             // Load lifecycle timeline
             loadPostLifecycle(postId);
+
+            // Load metrics for posted items
+            if (currentPost.status === 'posted') {
+                loadPostDetailMetrics(postId);
+            }
 
             // Update action button based on status
             const actionBtn = document.getElementById('detail-action');
@@ -2305,6 +2312,25 @@
                 `;
             } catch (e) {
                 console.error('[Posts] loadPostLifecycle error:', e);
+            }
+        }
+
+        /**
+         * Load and display metrics for a post in the detail modal
+         */
+        async function loadPostDetailMetrics(postId) {
+            const container = document.getElementById('detail-metrics');
+            if (!container || typeof metricsService === 'undefined') return;
+
+            try {
+                const [latest, history] = await Promise.all([
+                    metricsService.getLatestMetrics(postId),
+                    metricsService.getPostMetrics(postId, { limit: 10 }),
+                ]);
+                container.innerHTML = metricsService.buildDetailHTML(latest, history);
+            } catch (e) {
+                console.warn('[Posts] loadPostDetailMetrics error:', e);
+                container.innerHTML = '';
             }
         }
 

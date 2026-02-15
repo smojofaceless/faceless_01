@@ -295,6 +295,10 @@ class Calendar {
                                         `<span class="calendar__post-dot" style="--platform-color: ${this.getPlatformColor(pid)}" title="${pid}"></span>`
                                       ).join('')
                                     : `<span class="calendar__post-dot"></span>`;
+                                // Metrics badge for posted items
+                                const metricsBadge = (post.status === 'posted' && post.metrics)
+                                    ? (typeof metricsService !== 'undefined' ? metricsService.buildBadgeHTML(post.metrics) : '')
+                                    : '';
                                 return `
                                 <div class="calendar__post calendar__post--${post.status} ${post.isConsolidated ? 'calendar__post--consolidated' : ''}" 
                                      data-post-id="${post.id}"
@@ -302,6 +306,7 @@ class Calendar {
                                      title="${this.escapeHtml(post.content?.title || 'Untitled')} - ${this.formatTime(post.scheduledAt)}${post.isConsolidated ? ' (' + post.platformIds.length + ' platforms)' : ''}">
                                     <span class="calendar__platform-dots">${platformDots}</span>
                                     ${metaIndicator}
+                                    ${metricsBadge}
                                     <span class="calendar__post-title">${this.escapeHtml(post.content?.title || 'Untitled')}</span>
                                 </div>
                             `}).join('')}
@@ -384,6 +389,10 @@ class Calendar {
                                     <span class="calendar__platform-dot"></span>
                                     ${this.escapeHtml(post.platformId)}
                                    </div>`;
+                            // Metrics badge for posted items (week view)
+                            const weekMetricsBadge = (post.status === 'posted' && post.metrics)
+                                ? (typeof metricsService !== 'undefined' ? metricsService.buildBadgeHTML(post.metrics) : '')
+                                : '';
                             return `
                             <div class="calendar__post-card calendar__post-card--${post.status} ${post.isConsolidated ? 'calendar__post-card--consolidated' : ''}" 
                                  data-post-id="${post.id}"
@@ -391,6 +400,7 @@ class Calendar {
                                 <div class="calendar__post-card-header">
                                     <span class="calendar__post-time">${this.formatTime(post.scheduledAt)}</span>
                                     ${metaBadge}
+                                    ${weekMetricsBadge}
                                     <span class="calendar__post-status">${post.status}</span>
                                 </div>
                                 ${platformRow}

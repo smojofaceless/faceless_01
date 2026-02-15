@@ -1,6 +1,6 @@
 # Project Roadmap
 
-> **Document Version:** 3.2  
+> **Document Version:** 3.3  
 > **Last Updated:** February 15, 2026  
 > **Author:** System Architect  
 > **Status:** Active Development
@@ -11,6 +11,7 @@
 
 | Date | Version | Changes |
 |------|---------|--------|
+| Feb 15, 2026 | 3.3 | **Metrics Collection v1**: Replaced unused `post_analytics` scaffold with proper append-only `post_metrics` time-series table. Decay-based collection schedule (30min→weekly over 90 days). `metrics-collector` Edge Function with platform adapters (YouTube real API, Instagram Graph API, Facebook Graph API, TikTok stub). `find_metrics_eligible_posts` RPC respects decay schedule + terminal posts. 7 RPCs (`record_post_metrics`, `get_post_metrics`, `get_latest_metrics`, `get_latest_metrics_batch`, `get_job_metrics`, `get_campaign_metrics`, `cleanup_old_post_metrics`). 3 views (`v_post_metrics_latest`, `v_post_metrics_summary`, `v_metrics_collection_status`). UI: metrics badges on calendar posted items, engagement stats + collection history in post detail modals (calendar + posts pages). `metricsService.js` frontend service. New doc: POST_ANALYTICS_SYSTEM.md. |
 | Feb 15, 2026 | 3.2 | **Post Registry (Anchor Table for Metrics)**: `post_lifecycle_events` append-only audit trail for state transitions, lifecycle timestamp columns on `posts` (`posting_started_at`, `failed_at`), `v_post_registry` clean view (no queue internals), `v_job_post_summary` per-job platform aggregation, 5 RPCs (`get_post_registry`, `get_posts_for_job`, `get_post_lifecycle`, `get_batch_post_summary`, `cleanup_old_lifecycle_events`), trigger-based auto-recording on status changes, backfill for existing posts, patched `claim_due_posts`/`mark_post_failed` with lifecycle timestamps, UI: platform links + lifecycle timeline in post detail modal, `postQueueService` registry methods. |
 | Feb 12, 2026 | 3.1 | **Story Generation v2 + Bug Fixes**: (1) Rich one_too_many prompt with randomized trope packs (18 containers, 11 evidence sources, 10 glitches, 8 witnesses, 8 group types, 5 group sizes); (2) Storytelling toolkit enhancements (spatial grounding, named characters, time-skip epilogue, multi-layer evidence stacking, environmental disturbance scattering, uncanny valley descriptions); (3) Cinematography-driven shot selection (removed hardcoded group scene limits); (4) Campaign detail UI fixes (uniqueness score nested path, art style fallback, platform array handling); (5) Snapshot data extraction fix (meta.payload vs meta.data in 8 renderers). |
 | Feb 11, 2026 | 3.0 | **Scene & Image Pipeline v2**: Voice-aligned scene transitions, multi-image for long scenes (>10s), climax awareness in visual cues, per-shot mood levels for Ken Burns, micro-scene merge (<3s), story anchor group count fix, per-scene durations in assembler (no more uniform distribution). New doc: IMAGE_STORY_PIPELINE.md. Enhanced campaign detail UI with copy-paste, image sequence visualization. Weight display fix on create page. |
@@ -41,6 +42,7 @@
 
 | Item | Date | Notes |
 |------|------|-------|
+| **Metrics Collection v1** | Feb 15, 2026 | `post_metrics` append-only time-series (replaces unused `post_analytics`), `metrics-collector` Edge Function with YouTube/Instagram/Facebook/TikTok adapters, decay-based collection schedule, 7 RPCs, 3 views, `metricsService.js`, metrics badges on calendar + post detail modals. Migration: `20260315001_metrics_collection_v1.sql`. |
 | **Post Registry (Anchor Table)** | Feb 15, 2026 | `post_lifecycle_events` table (append-only audit trail), lifecycle timestamps on `posts`, `v_post_registry` + `v_job_post_summary` views, 5 RPCs, trigger-based auto-recording, UI lifecycle timeline in post detail modal. Migration: `20260309001_post_registry.sql`. |
 | **Story Generation v2** | Feb 12, 2026 | Rich one_too_many prompt engine: randomized trope packs (18 containers, 11 evidence sources, 10 glitches, 8 witnesses, 6 dialogue lines), flexible narrative voice (any POV), soft storytelling toolkit (spatial grounding, named characters, time-skip epilogues, multi-layer evidence, environmental disturbance scattering, uncanny valley descriptions). Cinematography-driven shot selection (replaced hardcoded group scene limits). |
 | **Campaign Detail UI Fixes** | Feb 12, 2026 | Fixed uniqueness score nested path (`meta.meta.uniqueness_score` + 0-1→percentage), art style fallback to `'auto (from preset)'`, platform handling for `meta.platforms` array. Fixed snapshot data extraction in 8 renderers (`meta.payload` vs `meta.data`). |
@@ -829,12 +831,46 @@ scheduled → posting → posted
 
 ---
 
-### 18. Metrics Collection v1 (`post_analytics`)
+### 18. ✅ Metrics Collection v1 (`post_metrics`) — COMPLETE
 
-- [ ] Pull views/likes/comments/shares from platforms
-- [ ] Store time series data
-- [ ] Historical tracking
-- [ ] Platform API integrations
+> **Status:** ✅ COMPLETE (February 15, 2026)
+
+**Design Decision:** Replaced the unused `post_analytics` scaffold table (which used `UNIQUE(post_id, platform, snapshot_type)` — overwrite semantics) with a proper append-only `post_metrics` time-series table. Each collection event creates a new row, enabling true historical tracking.
+
+**Delivered:**
+- [x] `post_metrics` table — append-only time-series with views, likes, comments, shares, saves, watch metrics
+- [x] Decay-based collection schedule — 30min (fresh) → 2h → 6h → 12h → 24h → 7d (90d cap)
+- [x] `metrics-collector` Edge Function — cron every 30 min, kill switch, batch processing
+- [x] Platform adapters: YouTube (real API via Data API v3), Instagram (Graph API), Facebook (Graph API), TikTok (stub)
+- [x] Token refresh handling — reuses `platform_tokens` OAuth pattern from post-worker
+- [x] Error classification: transient/dependency/misconfig/permanent (permanent → `metrics_terminal` flag)
+- [x] `find_metrics_eligible_posts` RPC — decay schedule, skips terminal/retired posts
+- [x] `record_post_metrics` RPC — inserts with computed `post_age_hours`
+- [x] `get_post_metrics` RPC — time-series with date range filtering
+- [x] `get_latest_metrics` / `get_latest_metrics_batch` RPCs — for UI display
+- [x] `get_job_metrics` RPC — aggregate across platforms for a job
+- [x] `get_campaign_metrics` RPC — campaign-level aggregates with platform breakdown
+- [x] `cleanup_old_post_metrics` RPC — retention cleanup (default 365 days, not scheduled)
+- [x] `v_post_metrics_latest` — DISTINCT ON most recent per post
+- [x] `v_post_metrics_summary` — latest values + collection stats
+- [x] `v_metrics_collection_status` — eligible/active/terminal/retired states
+- [x] `metricsService.js` — frontend service with caching, formatting, badge/detail HTML builders
+- [x] Calendar: metrics badges on posted items (views count), metrics detail in post modal
+- [x] Posts page: metrics section in post detail modal (stats + history table)
+
+**Integration:**
+- post-worker: No changes needed — `post_metrics` is independent of posting pipeline
+- metrics-collector: Reads `platform_tokens` for API access (same as post-worker)
+- Calendar: `enrichCalendarMetrics()` batch-fetches metrics after render, attaches to items
+- Post modal: `loadPostMetrics()` / `loadPostDetailMetrics()` lazy-loads on modal open
+
+**Database Objects:**
+- Table: `post_metrics` (replaces `post_analytics`)
+- Views: `v_post_metrics_latest`, `v_post_metrics_summary`, `v_metrics_collection_status`
+- RPCs: `find_metrics_eligible_posts`, `record_post_metrics`, `get_post_metrics`, `get_latest_metrics`, `get_latest_metrics_batch`, `get_job_metrics`, `get_campaign_metrics`, `cleanup_old_post_metrics`
+- Migration: `20260315001_metrics_collection_v1.sql`
+
+**Reference:** [POST_ANALYTICS_SYSTEM.md](POST_ANALYTICS_SYSTEM.md)
 
 ---
 

@@ -79,6 +79,11 @@
     async function initCalendar() {
         console.log('📅 Creating Calendar instance');
 
+        // Initialize metrics service
+        if (typeof MetricsService !== 'undefined' && typeof metricsService !== 'undefined') {
+            await metricsService.init();
+        }
+
         // Create calendar instance
         calendar = new Calendar({
             container: elements.calendarContainer,
@@ -92,6 +97,9 @@
         // Initialize calendar (async — loads data from Supabase)
         await calendar.init();
 
+        // Enrich posted items with metrics badges
+        await enrichCalendarMetrics();
+
         // Set up page controls
         setupToolbar();
         setupFilters();
@@ -101,6 +109,46 @@
         updateCalendarTitle();
 
         console.log('✅ Calendar initialized');
+    }
+
+    /**
+     * Enrich rendered calendar items with metrics data
+     * Fetches latest metrics for posted items and re-renders with badges
+     */
+    async function enrichCalendarMetrics() {
+        if (typeof metricsService === 'undefined' || !calendar || !calendar._cachedItems) return;
+
+        try {
+            // Find posted items with IDs
+            const postedItems = calendar._cachedItems.filter(
+                item => item.status === 'posted' && item.id
+            );
+
+            if (postedItems.length === 0) return;
+
+            const postIds = postedItems.map(item => item.id);
+            const metricsMap = await metricsService.getLatestMetricsBatch(postIds);
+
+            if (metricsMap.size === 0) return;
+
+            // Attach metrics to cached items
+            let enriched = 0;
+            for (const item of calendar._cachedItems) {
+                const m = metricsMap.get(item.id);
+                if (m) {
+                    item.metrics = m;
+                    enriched++;
+                }
+            }
+
+            if (enriched > 0) {
+                console.log(`📊 Calendar: Enriched ${enriched} posts with metrics`);
+                // Re-render to show badges
+                await calendar.render();
+            }
+        } catch (e) {
+            console.warn('Calendar metrics enrichment failed (non-fatal):', e);
+        }
     }
 
     /**
@@ -436,12 +484,20 @@
                         </div>
                     </div>
                 `}
+
+                <!-- Metrics section (loaded async) -->
+                <div id="post-metrics-section"></div>
             </div>
         `;
 
         // Attach metadata event handlers
         if (!isJob) {
             attachMetadataHandlers(activePost);
+        }
+
+        // Load metrics for posted items
+        if (!isJob && activePost.status === 'posted') {
+            loadPostMetrics(activePost);
         }
 
         // Attach platform tab click handlers
@@ -484,6 +540,46 @@
             threads: 'Threads'
         };
         return names[platformId] || platformId;
+    }
+
+    // ==================== Metrics Section ====================
+
+    /**
+     * Load and display metrics for a post in the modal
+     * @param {Object} post - Calendar item (must be posted)
+     */
+    async function loadPostMetrics(post) {
+        const container = document.getElementById('post-metrics-section');
+        if (!container || typeof metricsService === 'undefined') return;
+
+        // Show loading
+        container.innerHTML = `
+            <div class="metrics-detail">
+                <div class="metrics-detail__header">
+                    <h5>Engagement Metrics</h5>
+                    <span class="badge badge--muted badge--xs">loading...</span>
+                </div>
+            </div>
+        `;
+
+        try {
+            const postId = post.id || post.raw?.id;
+            if (!postId) {
+                container.innerHTML = '';
+                return;
+            }
+
+            // Fetch latest + history in parallel
+            const [latest, history] = await Promise.all([
+                metricsService.getLatestMetrics(postId),
+                metricsService.getPostMetrics(postId, { limit: 10 }),
+            ]);
+
+            container.innerHTML = metricsService.buildDetailHTML(latest, history);
+        } catch (e) {
+            console.warn('Failed to load post metrics:', e);
+            container.innerHTML = metricsService.buildDetailHTML(null, []);
+        }
     }
 
     // ==================== Metadata Control Center ====================
