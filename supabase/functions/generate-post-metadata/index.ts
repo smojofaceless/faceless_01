@@ -117,40 +117,41 @@ const PLATFORM_CONFIGS: Record<string, PlatformPromptConfig> = {
 
   instagram_reels: {
     platform: "Instagram Reels",
-    systemSuffix: "Optimize for Instagram's Explore page and Reels tab.",
+    systemSuffix:
+      "Optimize for Instagram Reels discovery: Explore page, Reels tab, and hashtag feeds. Instagram ranks by watch time, replays, and saves — caption hook and hashtag relevance are the primary text signals. Generate content people would SAVE or REPLAY.",
     outputSchema: {
       caption:
-        "string — max 300 chars. Story-style with line breaks for readability. Hashtags go at the very end after a line break.",
+        "string — max 300 chars. Short hook in the first 1-2 lines (before 'more' cutoff). Use line breaks for rhythm. Build a curiosity gap. End with an open-ended question or ambiguous implication. Emojis OK sparingly. Hashtags are NOT included here — they go in the hashtags array.",
       hashtags:
-        "string[] — 10-15 hashtags. Curated mix of community + discovery tags. No # prefix in array.",
+        "string[] — 5-10 hashtags. Mix of broad (#horror), medium (#creepystories), and niche (#countinghorror). No # prefix in array. No keyword stuffing — quality over quantity.",
       alt_text:
-        "string — max 125 chars. Accessibility description of the video content/thumbnail.",
+        "string — max 125 chars. Describe the visual scene for accessibility: mood, setting, key visual elements. Instagram indexes this for topic understanding.",
     },
     example: {
       caption:
-        "Six strangers. One store. Seven headcounts.\n\nThey counted again. And again.\nThe number never changed.\n\nWho is the seventh?",
+        "Six strangers took shelter from the storm.\nBut every time they counted, there were seven.\n\nWho didn't belong?",
       hashtags: [
         "horror",
-        "creepy",
-        "countinghorror",
+        "creepystory",
         "scarystory",
         "paranormal",
+        "countinghorror",
         "horrorreels",
-        "creepystory",
         "spooky",
-        "mysterystory",
-        "darktok",
-        "horrorstory",
-        "scaryshorts",
       ],
       alt_text:
         "Dark convenience store interior with shadowy figures during a storm",
     },
     guidance: `
-- Caption: narrative/poetic style, use line breaks for rhythm, build suspense
-- Hashtags: SEPARATE from caption body, 10-15 is optimal
-- Alt text: describe the visual scene for accessibility, be specific about mood/setting
+- Caption: first 1-2 lines are CRITICAL — they show before the "more" cutoff
+- Use a short hook, then an unsettling follow-up, then an open-ended question or ambiguous ending
+- Saves and replays are the #1 ranking signals — write save-worthy phrasing ("You'll notice it on the second watch…")
+- Hashtags: 5-10, mix of broad + medium + niche. Put at the bottom, NOT inline with caption
+- Repeating the same hashtag block every post HURTS reach — vary them
+- Alt text: describe the visual scene specifically (mood, setting, figures) — Instagram indexes this
+- Emojis allowed (more than FB, less than TikTok)
 - NEVER include slurs, explicit gore, or self-harm references
+- DO NOT write SEO-style paragraphs or use 20+ hashtags — this is punished
 `,
   },
 
@@ -474,7 +475,7 @@ const FALLBACK_CONSTRAINTS: Record<string, PlatformConstraints> = {
   },
   instagram_reels: {
     caption: { type: "string", max_length: 2200, required: true },
-    hashtags: { type: "array", max_items: 30 },
+    hashtags: { type: "array", max_items: 10 },
     alt_text: { type: "string", max_length: 125 },
   },
   facebook_reels: {
