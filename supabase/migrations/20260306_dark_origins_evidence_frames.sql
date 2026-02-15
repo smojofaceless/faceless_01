@@ -1,35 +1,13 @@
 -- =====================================================
--- Migration: Add dark_origins preset
+-- Migration: Add evidence-frame camera angles to dark_origins
 -- 
--- Adds the "dark_origins" vibe preset for documentary-style
--- dark biographies and horror icon origin stories.
---
--- Visual identity: Dark, eerie, realistic illustration style
---   - Photorealistic dark horror art, not cartoon
---   - Desaturated colors, heavy shadows, film grain look
---   - Historical settings (1950s-1990s small towns, institutions)
---   - Documentary evidence style (crime scene photos, mugshots, archive footage)
---   - Strong vignetting, low-key lighting
---
--- Also updates the jobs vibe_preset CHECK constraint.
+-- Adds forensic evidence-style camera angles:
+-- - Mugshot-style front-facing portraits
+-- - Newspaper clipping with halftone dots
+-- - Crime scene overhead with evidence markers
+-- - Case file document close-ups
 -- =====================================================
 
--- 1. Update CHECK constraint to include dark_origins
-ALTER TABLE jobs DROP CONSTRAINT IF EXISTS jobs_vibe_preset_check;
-
-ALTER TABLE jobs ADD CONSTRAINT jobs_vibe_preset_check 
-    CHECK (vibe_preset IN (
-        'slow_creepy',
-        'punchy_shock',
-        'atmospheric',
-        'urban_legend',
-        'analog_horror',
-        'one_too_many',
-        'reddit_trending_horror',
-        'dark_origins'
-    ));
-
--- 2. Update the image prompt preset profile function to include dark_origins
 CREATE OR REPLACE FUNCTION get_image_prompt_preset_profile(p_preset TEXT)
 RETURNS jsonb
 LANGUAGE sql STABLE
@@ -81,6 +59,7 @@ AS $$
 
     -- DARK ORIGINS: documentary dark biography — dark eerie realistic illustration
     -- Photorealistic horror art with historical period settings
+    -- Now includes evidence-frame camera angles for true crime documentary feel
     WHEN 'dark_origins' THEN '{
       "art_style": "dark-realistic",
       "style_prompt": "Dark eerie realistic digital illustration, photorealistic horror art with painterly edges, heavy chiaroscuro lighting, hyper-detailed faces and environments, cinematic composition like a true crime documentary still frame, muted desaturated color palette with selective warm accents, film grain texture overlay, detailed period-accurate clothing and architecture. NOT cartoon. NOT anime. NOT bright colors. Think: concept art for a dark Netflix documentary, each frame could be a crime scene evidence photo rendered as fine art.",
@@ -157,4 +136,4 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION get_image_prompt_preset_profile IS
-  'Returns the default image prompt config for a given vibe preset. Second merge layer after system defaults. Includes dark_origins preset.';
+  'Returns the default image prompt config for a given vibe preset. Second merge layer after system defaults. Includes dark_origins preset with evidence-frame camera angles.';

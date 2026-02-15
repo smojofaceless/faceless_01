@@ -74,6 +74,21 @@ export const OPENAI_TTS_MODEL = "gpt-4o-mini-tts";
 export const OPENAI_TTS_VOICE = "ash"; // Deep/warm — good for horror narration
 export const OPENAI_TTS_INSTRUCTIONS = "Speak in a dark, atmospheric, storytelling tone. Pace yourself deliberately, with measured pauses for tension. This is horror narration.";
 
+// Preset-specific voice configurations for OpenAI TTS
+// Different presets benefit from different voice timbres and delivery styles
+export function getPresetVoiceConfig(vibePreset: string): { voice: string; instructions: string } {
+  if (vibePreset === 'dark_origins') {
+    return {
+      voice: 'onyx', // Deep, authoritative — perfect for documentary narration
+      instructions: 'Speak as a calm, authoritative true crime documentary narrator. Deliver facts with measured gravitas, like the host of Dateline or Investigation Discovery. Pace yourself slowly and deliberately with firm pauses between key revelations. Let shocking facts land with silence after them. This is not fiction narration — this is documentary presentation of disturbing historical events. Channel the energy of Keith Morrison or Peter Thomas.',
+    };
+  }
+  return {
+    voice: OPENAI_TTS_VOICE,
+    instructions: OPENAI_TTS_INSTRUCTIONS,
+  };
+}
+
 // TTS Provider type
 export type TtsProvider = 'openai' | 'elevenlabs';
 

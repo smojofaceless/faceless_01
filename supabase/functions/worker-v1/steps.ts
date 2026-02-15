@@ -36,6 +36,7 @@ import {
   OPENAI_TTS_MODEL,
   OPENAI_TTS_VOICE,
   OPENAI_TTS_INSTRUCTIONS,
+  getPresetVoiceConfig,
   TtsProvider,
   STORAGE_BUCKET,
   updateStepStatus,
@@ -171,6 +172,20 @@ const DARK_ORIGINS_SCENARIOS: DarkOriginsScenario[] = [
   { category: 'photographer', doc_style: 'dark_history', premise: 'Emmett Voss was a Victorian portrait photographer. His subjects praised his work — impossibly lifelike. But they changed after sitting for him. Quieter, duller, as if something had been removed. His journals: "I do not capture the likeness. I capture the life." His darkroom contained 2,000 portraits. Each one still blinks.', setting_hint: 'portrait studio, 1891', fear_type: 'a camera that takes something from you' },
   { category: 'radio_dj', doc_style: 'investigation_files', premise: 'WKRD 104.7 broadcast midnight to 4 AM from 1975 to 1977. The DJ never appeared at the station. The equipment ran itself. Twenty-three regular listeners were committed to psychiatric facilities. All could recite the same phrase in a language linguists cannot identify.', setting_hint: 'radio station, 1977', fear_type: 'a broadcast that changes the listener' },
   { category: 'ice_cream_man', doc_style: 'true_crime_doc', premise: 'The ice cream truck on Maple Drive played the same melody every afternoon from 1974 to 1978. Every child knew "Mr. Freeze." He gave free popsicles on birthdays. After his arrest, authorities discovered the truck wasn\'t registered. The company didn\'t exist. No one could explain where the ice cream came from. Or what was in it.', setting_hint: 'suburban street, 1978', fear_type: 'the everyday figure no one questions' },
+
+  // --- Real serial killers (true crime documentary) ---
+  { category: 'dahmer', doc_style: 'true_crime_doc', premise: 'Jeffrey Dahmer worked at a chocolate factory in Milwaukee. His neighbors complained about the smell. Police visited his apartment twice — once they found a bleeding, naked fourteen-year-old boy outside and returned him to Dahmer after he convinced them it was a lovers\' quarrel. Between 1978 and 1991, seventeen young men entered apartment 213. Their remains were found in acid vats, in the freezer, and arranged on a makeshift altar. Dahmer kept polaroids to remember how they looked before.', setting_hint: 'Milwaukee apartment, 1991', fear_type: 'the monster next door who got away with it' },
+  { category: 'bundy', doc_style: 'biography_channel', premise: 'Ted Bundy was handsome, charming, and studied law. Women trusted him. He used a fake arm cast to ask for help carrying things to his car. Between 1974 and 1978, he murdered at least thirty women across seven states. He escaped custody twice. He represented himself at trial and cross-examined the witnesses who survived him. The judge who sentenced him to death called him a bright young man and said he\'d have liked to have him practice law in his courtroom.', setting_hint: 'Pacific Northwest, 1974', fear_type: 'charm as a weapon' },
+  { category: 'gein', doc_style: 'cold_case', premise: 'Ed Gein lived alone on a 160-acre farm in Plainfield, Wisconsin after his mother died. He was quiet, helpful, the kind of neighbor who babysat children. When the sheriff entered his farmhouse in November 1957, he found furniture upholstered in human skin, bowls made from skulls, lampshades made from faces, and a suit — a complete female body suit — that Gein wore to become his mother.', setting_hint: 'Plainfield Wisconsin, 1957', fear_type: 'what someone builds from the dead' },
+  { category: 'btk', doc_style: 'investigation_files', premise: 'Dennis Rader called himself BTK — Bind, Torture, Kill. He murdered ten people in Wichita, Kansas between 1974 and 1991, then stopped. For thirty years, the case went cold. Rader was a compliance officer, a church council president, a Cub Scout leader. He was caught in 2005 because he asked police if they could trace a floppy disk. They said no. They lied. The metadata on the disk read "Christ Lutheran Church."', setting_hint: 'Wichita Kansas, 1974-2005', fear_type: 'the pillar of the community' },
+  { category: 'zodiac', doc_style: 'cold_case', premise: 'The Zodiac Killer attacked couples in the San Francisco Bay Area between 1968 and 1969. He shot them, stabbed them, then wrote letters to newspapers about it. He included ciphers. He called police during the attacks. He wore a homemade executioner\'s hood with a crosshair symbol. He claimed thirty-seven victims. Police confirmed five deaths. He was never identified. His first cipher wasn\'t fully solved until 2020.', setting_hint: 'San Francisco, 1968', fear_type: 'the killer who wanted to be famous' },
+  { category: 'ramirez', doc_style: 'true_crime_doc', premise: 'Richard Ramirez — the Night Stalker — entered homes through unlocked windows in Los Angeles during the summer of 1985. He had no victim type. He killed men, women, and children in thirteen different neighborhoods over fourteen weeks. He left pentagrams drawn in lipstick. He forced survivors to swear to Satan. When his face hit the front page, an entire neighborhood chased him down the street until civilians tackled him.', setting_hint: 'Los Angeles, 1985', fear_type: 'someone in your house while you sleep' },
+  { category: 'kemper', doc_style: 'biography_channel', premise: 'Edmund Kemper stood six feet nine inches tall and had an IQ of 145. He murdered his grandparents at fifteen "to see what it felt like." Released at twenty-one, he killed six college hitchhikers, then his mother and her friend. He drank beers with off-duty cops — they considered him a friend. He called police to confess. They didn\'t believe him. He had to call three times.', setting_hint: 'Santa Cruz California, 1973', fear_type: 'intelligence weaponized' },
+  { category: 'gacy', doc_style: 'true_crime_doc', premise: 'John Wayne Gacy was a building contractor, a Democratic Party volunteer, and a children\'s party clown named "Pogo." He was photographed with the First Lady. Between 1972 and 1978, he murdered at least thirty-three young men and buried twenty-six of them in the crawl space beneath his house. His neighbors complained about the smell for years. Gacy told them it was a broken sewer pipe.', setting_hint: 'Des Plaines Illinois, 1978', fear_type: 'the clown who buried them under the house' },
+  { category: 'wuornos', doc_style: 'cold_case', premise: 'Aileen Wuornos was a highway prostitute in Florida who shot and killed seven men between 1989 and 1990. She claimed every killing was self-defense. The jury didn\'t believe her. Her childhood had been documented by social services in fourteen separate reports spanning ten years. Nobody had intervened.', setting_hint: 'Florida highways, 1989', fear_type: 'what the system creates by looking away' },
+  { category: 'hh_holmes', doc_style: 'dark_history', premise: 'H.H. Holmes built a three-story hotel in Chicago during the 1893 World\'s Fair. He designed it himself. The blueprints made no sense: hallways to nowhere, rooms with no windows, chutes to the basement. He hired and fired crews constantly so no one saw the full layout. The building contained gas lines to sealed rooms, a soundproofed vault, and a kiln large enough for a body. He confessed to twenty-seven murders. The real number may exceed two hundred.', setting_hint: 'Chicago, 1893', fear_type: 'a building designed to kill' },
+  { category: 'fish', doc_style: 'investigation_files', premise: 'Albert Fish was sixty-five and looked like a kindly grandfather. He wrote an anonymous letter to the mother of ten-year-old Grace Budd — a child he\'d murdered six years earlier — describing what he\'d done in detail. The letter was traced because the envelope bore a flophouse logo. Fish had inserted twenty-nine needles into his own pelvis over the years. They appeared on the prison X-ray like a constellation.', setting_hint: 'New York City, 1934', fear_type: 'evil wearing the face of a grandfather' },
+  { category: 'berkowitz', doc_style: 'true_crime_doc', premise: 'David Berkowitz — Son of Sam — shot thirteen people and killed six in New York City between 1976 and 1977 using a .44 caliber revolver. He attacked couples in parked cars. He wrote letters to police and newspapers claiming his neighbor\'s dog commanded him to kill. The entire city lived in terror. Women cut their hair because he seemed to prefer brunettes. He was caught because of a parking ticket. When arrested, he was smiling.', setting_hint: 'New York City, 1977', fear_type: 'a city held hostage by one man' },
 ];
 
 /**
@@ -243,10 +258,16 @@ SETTING RULES (CRITICAL — this is what makes this preset DIFFERENT):
 - Do NOT use generic "someone" — name the character, give them a profession, a town, a year
 
 STRUCTURE (MANDATORY):
-[HOOK] — First 1-2 sentences. A documentary teaser that grabs attention: "This man was..." / "In 1974, a small town discovered..." / "What he left behind changed everything."
+[HOOK] — First 1-2 sentences. SCROLL-STOPPING opener that makes someone stop scrolling. USE ONE OF THESE PATTERNS:
+  • "Did you know [specific shocking fact]?" — e.g. "Did you know he kept polaroids of all seventeen victims?"
+  • "This man killed [X] people and nobody noticed for [Y] years." — specific numbers are MANDATORY
+  • "In [year], [shocking event with a number]." — e.g. "In 1957, a sheriff opened a farmhouse door and found furniture made of human skin."
+  • "What [name] kept in his [location] would change [field] forever." — e.g. "What Gacy kept under his house would change forensic science forever."
+  The hook MUST contain a SPECIFIC NUMBER or a SHOCKING CONCRETE FACT. No vague "something terrible happened." No slow buildups. Hit hard in the FIRST sentence.
 [ORIGIN] — Who was this person? Establish them as normal, trusted, even admired. Plant the seed of wrongness.
 [DESCENT] — The turning point. What they did, what was discovered, the moment the mask slipped. Include specific evidence: dates, numbers, documents, testimony.
 [AFTERMATH] — What happened after. The investigation, the disappearance, the sealed files. The question that was never answered.
+  OPTIONAL: If the case is rich enough, end with a SERIES HOOK — "But the basement was only the beginning." / "That was the first house. There were two more." This implies a Part 2 and encourages viewers to follow.
 
 STYLE RULES:
 - No gore — psychological horror and implication only
@@ -654,12 +675,14 @@ CRUCIAL TONE RULES:
 CRUCIAL TONE RULES:
 - Third-person documentary voice. Always. ("He arrived in town..." "Authorities later discovered..." "The case was never closed.")
 - Sound like a true crime documentary narrator — measured, authoritative, letting the facts do the horror
+- SCROLL-STOPPING FIRST SENTENCE — the very first sentence must make someone stop scrolling. Use shocking numbers, specific facts, or "Did you know..." hooks. Examples: "This man killed 33 people and buried 26 of them in his crawl space." / "Did you know he kept polaroids of every victim?" / "In 1957, a sheriff opened a door and found furniture made of human skin."
 - Include specific dates, locations, and numbers to make fiction feel like fact
 - The narrator knows more than they're telling — implication over exposition
 - No first-person. No "I." No confessional voice.
 - Characters are HISTORICAL figures with names, professions, and specific time periods (1950s-1990s)
 - Every sentence must be visually filmable as a dark, realistic scene
 - End with an unresolved thread: "The case remains open." / "The recordings were never explained." / "No body was ever found."
+- OPTIONAL: End with a series hook implying Part 2: "But that was only the first house." / "What they found next was worse."
 - This is NOT internet horror. This is documentary horror — the horror of real things that happened in real places to real people.`;
   }
   return `You are a master storyteller specializing in short-form horror and mystery content. You create gripping, atmospheric stories perfect for TikTok/Reels narration. Your stories are ALWAYS first-person narration that feels personal and immediate.`;
@@ -1059,7 +1082,8 @@ export async function executeScenesStep(
     
     // Provider-aware voice info for pipeline hash
     const ttsProvider: TtsProvider = (env.TTS_PROVIDER || 'openai') as TtsProvider;
-    const voiceId = ttsProvider === 'openai' ? OPENAI_TTS_VOICE : ELEVENLABS_VOICE_ID;
+    const pipelineVoiceConfig = getPresetVoiceConfig(vibePreset);
+    const voiceId = ttsProvider === 'openai' ? pipelineVoiceConfig.voice : ELEVENLABS_VOICE_ID;
     const voiceModel = ttsProvider === 'openai' ? OPENAI_TTS_MODEL : 'eleven_turbo_v2_5';
 
     const pipelineHash = await computePipelineHash({
@@ -1163,8 +1187,11 @@ async function executeVoiceStepOpenAI(
 
   // === EXTERNAL IDEMPOTENCY: Hash includes provider+model+voice+text ===
   const ttsModel = OPENAI_TTS_MODEL;
-  const ttsVoice = (job.meta?.tts_voice as string) || OPENAI_TTS_VOICE;
-  const ttsInstructions = (job.meta?.tts_instructions as string) || OPENAI_TTS_INSTRUCTIONS;
+  // Use preset-specific voice if available, then job override, then default
+  const vibePreset = job.vibe_preset || (job.meta?.vibe_preset as string) || 'urban_legend';
+  const presetVoice = getPresetVoiceConfig(vibePreset);
+  const ttsVoice = (job.meta?.tts_voice as string) || presetVoice.voice;
+  const ttsInstructions = (job.meta?.tts_instructions as string) || presetVoice.instructions;
   const canonicalVoiceInput = `openai|${ttsModel}|${ttsVoice}|${job.story_text}`;
   const storyHash = await computeHash(canonicalVoiceInput);
   const storyHashKey = `voice_hash:${storyHash}`;

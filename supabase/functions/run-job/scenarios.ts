@@ -466,6 +466,116 @@ export const DARK_ORIGINS_SCENARIOS: DarkOriginsScenario[] = [
     sensory_anchors: ["jingle playing slightly too slow", "a freezer that's colder than it should be", "a child's drawing of a smiling truck driver"],
     doc_flavor: "True crime doc — a license that was never issued, lab results that were sealed, parents who still hear the melody in their sleep",
   },
+
+  // ── Real Serial Killers (True Crime Documentary) ──
+  {
+    category: "dahmer",
+    doc_style: "true_crime_doc",
+    core_fear: "the monster next door who got away with it",
+    setting_hint: "Milwaukee apartment building, 1991, industrial neighborhood",
+    premise: "Jeffrey Dahmer worked at a chocolate factory in Milwaukee. His neighbors complained about the smell. Police visited apartment 213 twice — once they found a bleeding, naked fourteen-year-old boy outside and returned him to Dahmer after he convinced them it was a lovers' quarrel. Between 1978 and 1991, seventeen young men entered that apartment. Their remains were found in acid vats, in the freezer, and arranged on a makeshift altar. Dahmer kept polaroids to remember how they looked before.",
+    sensory_anchors: ["blue barrel of acid in a closet", "polaroid photos stacked in a drawer", "the smell that neighbors couldn't identify"],
+    doc_flavor: "True crime doc — police body camera footage, evidence photos described by forensic specialists, two officers who handed a victim back to the killer",
+  },
+  {
+    category: "bundy",
+    doc_style: "biography_channel",
+    core_fear: "charm used as a lethal weapon",
+    setting_hint: "Pacific Northwest college campus, 1974, sunny afternoon",
+    premise: "Ted Bundy was handsome, charming, and studied law at the University of Puget Sound. Women trusted him instinctively. He used a fake arm cast to ask young women for help carrying books to his car — a tan Volkswagen Beetle. Between 1974 and 1978, he murdered at least thirty women across seven states. He escaped police custody twice. He represented himself at trial and cross-examined the witnesses who had survived him. The judge who sentenced him to death called him a bright young man.",
+    sensory_anchors: ["a plaster cast on a perfectly functional arm", "tan Volkswagen Beetle in a parking lot", "a courtroom where the defendant cross-examines his own victim"],
+    doc_flavor: "Biography channel — law school transcripts, survivor testimony, a judge who praised the man he was sentencing to death",
+  },
+  {
+    category: "gein",
+    doc_style: "cold_case",
+    core_fear: "what someone builds from the dead",
+    setting_hint: "Plainfield Wisconsin farmhouse, 1957, isolated crossroads",
+    premise: "Ed Gein lived alone on a 160-acre farm in Plainfield, Wisconsin after his domineering mother died. He was quiet, helpful — the kind of neighbor who babysat local children. When the sheriff entered Gein's farmhouse on November 16, 1957, looking for a missing hardware store owner, he found her body hanging from the rafters. The rest of the house contained furniture upholstered in human skin, bowls fashioned from skulls, lampshades, and a suit — a complete female body suit — that Gein wore to become his mother.",
+    sensory_anchors: ["lampshade made from a human face", "a locked room in a farmhouse", "a mother's bedroom preserved exactly as she left it"],
+    doc_flavor: "Cold case — sheriff's first-hand account, crime scene inventory that reads like a nightmare, a quiet town that never recovered",
+  },
+  {
+    category: "btk",
+    doc_style: "investigation_files",
+    core_fear: "the pillar of the community hiding in plain sight for thirty years",
+    setting_hint: "Wichita Kansas suburbs, 2005, church parking lot",
+    premise: "Dennis Rader called himself BTK — Bind, Torture, Kill. He murdered ten people in Wichita, Kansas between 1974 and 1991, then stopped completely. For thirty years, the case went cold. Rader was a compliance officer for Park City, a church council president, and a Cub Scout leader. He was caught in 2005 because his ego demanded attention. He asked police if they could trace a floppy disk. They said no. They lied. The metadata led straight to his church computer.",
+    sensory_anchors: ["a floppy disk labeled 'Christ Lutheran Church'", "compliance officer badge on a khaki uniform", "coded letters mailed to police for thirty years"],
+    doc_flavor: "Investigation files — BTK's own coded letters, the floppy disk metadata screenshot, church attendance records next to murder timelines",
+  },
+  {
+    category: "zodiac",
+    doc_style: "cold_case",
+    core_fear: "the killer who wanted fame more than anything",
+    setting_hint: "San Francisco Bay Area, 1968, lovers' lane at night",
+    premise: "The Zodiac Killer attacked couples parked at lovers' lanes in the San Francisco Bay Area between December 1968 and October 1969. He shot them, stabbed them, and then wrote letters to three newspapers about it. He included cryptographic ciphers. He called police during the attacks to report himself. He wore a homemade executioner's hood with a crosshair symbol sewn onto the chest. He claimed thirty-seven victims — police confirmed five deaths. He was never identified. His first cipher wasn't fully solved until 2020.",
+    sensory_anchors: ["a crosshair symbol drawn in ink", "cipher letters with misspellings", "a homemade executioner's hood with a bib"],
+    doc_flavor: "Cold case — original cipher reproductions, sketch artist composites that could be anyone, fifty years of suspects and none confirmed",
+  },
+  {
+    category: "ramirez",
+    doc_style: "true_crime_doc",
+    core_fear: "someone entering your home while you sleep",
+    setting_hint: "Los Angeles suburban bedroom, 1985, open window at 2 AM",
+    premise: "Richard Ramirez — the Night Stalker — entered homes through unlocked doors and open windows across Los Angeles during the sweltering summer of 1985. He had no victim type. He killed men, women, and children in thirteen different neighborhoods over fourteen weeks. He left pentagrams drawn in lipstick on walls. He forced survivors to 'swear to Satan.' When his face appeared on the front page, an entire neighborhood recognized him and chased him through the streets until civilians tackled him.",
+    sensory_anchors: ["a pentagram drawn in lipstick on a bedroom mirror", "an unlocked window in the dead of night", "sneakers with a unique sole pattern at the crime scene"],
+    doc_flavor: "True crime doc — crime scene photos from thirteen different homes, a shoe print that linked every case, a neighborhood that caught the killer police couldn't",
+  },
+  {
+    category: "kemper",
+    doc_style: "biography_channel",
+    core_fear: "terrifying intelligence behind a friendly face",
+    setting_hint: "Santa Cruz California, 1973, pickup truck on a coastal highway",
+    premise: "Edmund Kemper stood six feet nine inches tall, weighed over 300 pounds, and had an IQ of 145. At fifteen, he shot his grandparents 'to see what it would feel like.' Released from a psychiatric facility at twenty-one, he befriended off-duty police officers at a bar called the Jury Room. They liked him. Over the next year, he picked up six female college hitchhikers and murdered them all. Then he killed his mother and her friend. He called police to confess. They didn't believe him. He had to call back three times.",
+    sensory_anchors: ["a pickup truck pulling over for a hitchhiker", "beers at a bar table with off-duty cops", "a phone ringing at the police station — ignored twice"],
+    doc_flavor: "Biography channel — psychiatric evaluation transcripts, prison interviews where Kemper analyzes his own crimes with clinical detachment, police who drank with a serial killer",
+  },
+  {
+    category: "gacy",
+    doc_style: "true_crime_doc",
+    core_fear: "the clown who buried them under his house",
+    setting_hint: "Des Plaines Illinois suburban home, 1978, crawl space",
+    premise: "John Wayne Gacy was a building contractor, a Democratic Party precinct captain, and a children's birthday party clown named 'Pogo.' He was photographed shaking hands with the First Lady. Between 1972 and 1978, he lured at least thirty-three young men to his home with promises of construction jobs. He buried twenty-six bodies in the crawl space beneath his house. His neighbors had complained about the smell for years. Gacy told them it was a broken sewer pipe.",
+    sensory_anchors: ["clown makeup on a bathroom counter", "the crawl space under a suburban ranch house", "a smell that neighbors blamed on bad plumbing"],
+    doc_flavor: "True crime doc — a photo with the First Lady juxtaposed with what was under his house, neighbors' complaints dismissed, excavation footage",
+  },
+  {
+    category: "wuornos",
+    doc_style: "cold_case",
+    core_fear: "what the system creates when it looks away",
+    setting_hint: "Florida highway rest stop, 1989, rain-soaked night",
+    premise: "Aileen Wuornos worked as a highway prostitute along Florida's Interstate 75. Between late 1989 and late 1990, she shot seven men with a .22 caliber pistol and left their bodies near their abandoned cars on back roads. She claimed every killing was self-defense against men who assaulted her. The jury didn't believe her. Her childhood had been documented by social services in fourteen separate reports spanning ten years. Nobody had intervened.",
+    sensory_anchors: ["headlights on an empty rest stop", "a .22 pistol in a roadside ditch", "fourteen social services reports gathering dust"],
+    doc_flavor: "Cold case — a childhood file that reads like a horror story, trial testimony from both sides, the question of whether a monster is born or manufactured",
+  },
+  {
+    category: "hh_holmes",
+    doc_style: "dark_history",
+    core_fear: "a building designed as a machine for killing",
+    setting_hint: "Chicago World's Fair, 1893, three-story hotel",
+    premise: "H.H. Holmes — born Herman Webster Mudgett — built a three-story hotel in Chicago's Englewood neighborhood to coincide with the 1893 World's Fair. He designed it himself. The blueprints made no sense: hallways that led nowhere, staircases to dead ends, rooms with no windows. He fired and rehired construction crews constantly so no single worker saw the full layout. The building contained gas lines that fed into sealed guest rooms, a soundproofed vault, and a kiln large enough for a human body. Holmes confessed to twenty-seven murders. Investigators believe the real number exceeded two hundred.",
+    sensory_anchors: ["hotel blueprints that make no architectural sense", "a kiln in a hotel basement", "gas valves connected to sealed guest rooms"],
+    doc_flavor: "Dark history — architectural floor plans that reveal the trap, World's Fair tourism brochures next to missing persons reports, a confession that keeps revising the number upward",
+  },
+  {
+    category: "fish",
+    doc_style: "investigation_files",
+    core_fear: "evil disguised as a harmless old man",
+    setting_hint: "New York City tenement, 1934, handwritten letter",
+    premise: "Albert Fish looked like a kindly, frail grandfather. He was sixty-five years old when he was finally caught. He had been arrested six times and released every time — he just didn't look dangerous. In 1934, he wrote an anonymous letter to the mother of ten-year-old Grace Budd, a child he had murdered six years earlier, describing what he had done in detail. The letter was traced because the stationery had a tiny hexagonal logo from a New York flophouse. Fish had inserted twenty-nine needles into his own pelvis over the years. They showed up on the prison X-ray like a constellation.",
+    sensory_anchors: ["a handwritten letter in careful penmanship", "an X-ray showing twenty-nine needles in a pelvis", "a flophouse envelope with a hexagonal watermark"],
+    doc_flavor: "Investigation files — the original letter too disturbing to read in full, X-ray images, six arrest records that all ended in release",
+  },
+  {
+    category: "berkowitz",
+    doc_style: "true_crime_doc",
+    core_fear: "a city held hostage by one man with a gun",
+    setting_hint: "New York City, 1977, parked car at midnight",
+    premise: "David Berkowitz — the Son of Sam — shot thirteen people and killed six in New York City during the summer of 1976 and into 1977. He used a .44 caliber revolver. He attacked couples sitting in parked cars, always at night. He wrote letters to police and to newspaper columnists, signing them 'Son of Sam,' claiming his neighbor's dog — a black Labrador named Harvey — was a demon commanding him to kill. The entire city lived in terror. Women cut and dyed their hair. He was caught because of a parking ticket issued near his final shooting. When police arrested him, he was smiling. 'Well, you got me,' he said.",
+    sensory_anchors: ["a .44 revolver in a paper bag", "a handwritten letter to a newspaper columnist", "a parking ticket stuck under a windshield wiper"],
+    doc_flavor: "True crime doc — the columnist's article about receiving the letter, the parking ticket that broke the case, a city's panic captured in newspaper headlines",
+  },
 ];
 
 /**
@@ -515,10 +625,16 @@ ${scenario.sensory_anchors.map(a => `- ${a}`).join('\n')}
 VOICE & FEEL (CRITICAL):
 - Third-person documentary narrator — calm, factual, investigative
 - "This was a real person. This really happened." energy at all times
-- Open with a hook that sounds like a documentary teaser: "This man was..." / "In 1974, a small town..." / "What he left behind..."
+- SCROLL-STOPPING HOOK (first 1-2 sentences) — use ONE of these patterns:
+  • "Did you know [specific shocking fact with a number]?"
+  • "This man killed [X] people and nobody noticed for [Y] years."
+  • "In [year], [shocking discovery with specific detail]."
+  • "What [name] kept in his [location] would change [field] forever."
+  The hook MUST contain a SPECIFIC NUMBER or SHOCKING FACT — no vague openings
 - Include specific dates, locations, and numbers — they make fiction feel like fact
 - The narrator knows more than they're telling — implication over exposition
 - End with an unresolved thread or chilling postscript: "The case was never closed" / "The recordings were never explained"
+- OPTIONAL SERIES HOOK: If the case is rich, end with "But that was only the first [location/victim]..." to imply a Part 2
 
 IMPORTANT:
 - Do NOT name real copyrighted characters — these are ORIGINAL characters inspired by archetypes
