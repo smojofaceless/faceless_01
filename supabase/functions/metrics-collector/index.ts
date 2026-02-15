@@ -342,9 +342,9 @@ class InstagramMetricsAdapter implements MetricsAdapter {
     const accessToken = tokenData.access_token;
 
     try {
-      // Fetch basic metrics
+      // Fetch basic metrics (include media_product_type to detect Reels)
       const mediaResponse = await fetch(
-        `${this.API_BASE}/${platformPostId}?fields=like_count,comments_count,timestamp,media_type&access_token=${accessToken}`
+        `${this.API_BASE}/${platformPostId}?fields=like_count,comments_count,timestamp,media_type,media_product_type&access_token=${accessToken}`
       );
 
       if (mediaResponse.status === 404 || mediaResponse.status === 400) {
@@ -393,14 +393,24 @@ class InstagramMetricsAdapter implements MetricsAdapter {
 
       const mediaData = await mediaResponse.json();
 
-      // Try to fetch insights (reach, impressions, saved, shares)
+      // Fetch insights (views, likes, comments, saved, shares, reach)
+      // v21.0+ uses unified metric names for all media types including Reels
       let insightsData: Record<string, unknown> | null = null;
       try {
         const insightsResponse = await fetch(
-          `${this.API_BASE}/${platformPostId}/insights?metric=reach,impressions,saved,shares&access_token=${accessToken}`
+          `${this.API_BASE}/${platformPostId}/insights?metric=views,likes,comments,saved,shares,reach&access_token=${accessToken}`
         );
         if (insightsResponse.ok) {
           insightsData = await insightsResponse.json();
+        } else {
+          // Fallback for older media: try legacy metric names
+          console.log(`[Instagram Metrics] v21 metrics failed (${insightsResponse.status}), trying legacy`);
+          const fallbackResponse = await fetch(
+            `${this.API_BASE}/${platformPostId}/insights?metric=reach,impressions,saved,shares&access_token=${accessToken}`
+          );
+          if (fallbackResponse.ok) {
+            insightsData = await fallbackResponse.json();
+          }
         }
       } catch {
         // Insights are optional — don't fail the whole collection
@@ -411,6 +421,8 @@ class InstagramMetricsAdapter implements MetricsAdapter {
       let saves = 0;
       let shares = 0;
       let views = 0;
+      let insightLikes = -1; // -1 = not from insights (use media endpoint value)
+      let insightComments = -1;
       if (insightsData && (insightsData as { data?: Array<{ name: string; values: Array<{ value: number }> }> }).data) {
         const insights = (insightsData as { data: Array<{ name: string; values: Array<{ value: number }> }> }).data;
         for (const insight of insights) {
@@ -418,18 +430,25 @@ class InstagramMetricsAdapter implements MetricsAdapter {
           switch (insight.name) {
             case 'saved': saves = value; break;
             case 'shares': shares = value; break;
-            case 'impressions': views = value; break;
+            case 'views': views = value; break;
+            case 'impressions': views = value; break; // legacy fallback
+            case 'likes': insightLikes = value; break;
+            case 'comments': insightComments = value; break;
             case 'reach': break; // stored in raw but not primary
           }
         }
       }
 
+      // Use insights likes/comments if available (more accurate), otherwise fall back to media endpoint
+      const finalLikes = insightLikes >= 0 ? insightLikes : ((mediaData as { like_count?: number }).like_count || 0);
+      const finalComments = insightComments >= 0 ? insightComments : ((mediaData as { comments_count?: number }).comments_count || 0);
+
       return {
         success: true,
         metrics: {
           views: views,
-          likes: (mediaData as { like_count?: number }).like_count || 0,
-          comments: (mediaData as { comments_count?: number }).comments_count || 0,
+          likes: finalLikes,
+          comments: finalComments,
           shares: shares,
           saves: saves,
         },
