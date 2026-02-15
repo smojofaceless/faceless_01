@@ -156,33 +156,32 @@ const PLATFORM_CONFIGS: Record<string, PlatformPromptConfig> = {
 
   facebook_reels: {
     platform: "Facebook Reels",
-    systemSuffix: "Optimize for Facebook Reels discovery and engagement.",
+    systemSuffix:
+      "Optimize for Facebook Reels engagement. Facebook Reels have NO separate title field — the caption IS the entire text. Watch time, replays, and caption hook are the primary signals. Hashtags are secondary.",
     outputSchema: {
-      title:
-        "string — max 80 chars. Hook-driven, curiosity-gap style. Works as video title on Facebook.",
-      description:
-        "string — max 300 chars. Story-style teaser with suspense. End with engagement CTA (Share, Follow).",
+      caption:
+        "string — max 300 chars. 1-2 short punchy hook lines at the top (before 'See more' cutoff). Optional engagement question. Emojis OK sparingly. Do NOT stuff keywords — natural curiosity gap wins.",
       hashtags:
-        "string[] — 5-8 hashtags. Mix of broad horror + niche. No # prefix in array.",
+        "string[] — 3-6 hashtags max. Broad + niche mix. No # prefix. These get appended to the caption by the system.",
     },
     example: {
-      title: "They Counted 6 People. There Were 7.",
-      description:
-        "Six strangers shelter in a store during a storm. Every headcount comes back as seven.\n\nWho is the extra person?\n\n👉 Follow for more horror stories.",
+      caption:
+        "Six strangers hid from the storm.\nBut every time they counted, there was an extra person.\n\nWho was the seventh?",
       hashtags: [
         "horror",
-        "scary",
+        "creepystory",
         "scarystory",
-        "creepy",
-        "horrorreels",
-        "paranormal",
+        "horrorstories",
       ],
     },
     guidance: `
-- Title: short punchy hook, 40-80 chars, curiosity gap or numbers
-- Description: tease the mystery, NO spoilers, end with Follow/Share CTA
-- Hashtags: 5-8, mix broad ("horror","scary") + niche ("countinghorror")
-- Facebook Reels audience skews slightly older — tone can be slightly more narrative
+- Facebook Reels have NO title field — the caption is everything
+- First 1-2 lines must hook BEFORE the "See more" cutoff — this is the #1 engagement signal
+- Keep it short: 2-4 lines max. Story hook or curiosity gap, then optional question
+- DO NOT keyword-stuff or write SEO-style — Facebook is engagement-first, not search-first
+- Hashtags: 3-6 MAX. Overuse hurts reach. Put broad ones first (horror) then niche
+- Facebook audience skews slightly older — tone can be more narrative/direct
+- Emojis are OK but use sparingly (1-2 max)
 - NEVER include slurs, explicit gore, or self-harm references
 `,
   },
@@ -477,6 +476,10 @@ const FALLBACK_CONSTRAINTS: Record<string, PlatformConstraints> = {
     caption: { type: "string", max_length: 2200, required: true },
     hashtags: { type: "array", max_items: 30 },
     alt_text: { type: "string", max_length: 125 },
+  },
+  facebook_reels: {
+    caption: { type: "string", max_length: 300, required: true },
+    hashtags: { type: "array", max_items: 6 },
   },
 };
 
