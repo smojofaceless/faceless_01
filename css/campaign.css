@@ -1588,34 +1588,75 @@
 }
 
 /* ==========================================================================
-   Progress Card
+   Compact Stats + Progress Row
    ========================================================================== */
 
-.campaign-progress-card {
-    margin-bottom: 0;
+.stats-progress-row {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--space-4);
+    align-items: center;
+    padding: var(--space-3) var(--space-4);
+    background: #0d1117;
+    border: 1px solid #21262d;
+    border-radius: var(--radius-lg);
 }
 
-.campaign-progress-card .card-header {
-    padding-bottom: var(--space-2);
+.stats-inline {
+    display: flex;
+    gap: var(--space-5);
 }
 
-.progress-percentage {
-    font-size: var(--text-lg);
+.stat-inline {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    min-width: 48px;
+}
+
+.stat-inline__value {
+    font-size: var(--text-xl);
     font-weight: var(--font-bold);
-    color: var(--brand-primary);
+    font-family: var(--font-mono);
+    line-height: 1.15;
+    color: #c9d1d9;
 }
 
-.progress-bar-wrapper {
-    padding: var(--space-2) 0 var(--space-3);
+.stat-inline--primary .stat-inline__value { color: #58a6ff; }
+.stat-inline--warning .stat-inline__value { color: #d29922; }
+.stat-inline--success .stat-inline__value { color: #3fb950; }
+.stat-inline--error .stat-inline__value   { color: #f85149; }
+
+.stat-inline__label {
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: #484f58;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.progress-inline {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.progress-inline__pct {
+    font-size: var(--text-sm);
+    font-weight: var(--font-bold);
+    font-family: var(--font-mono);
+    color: #3fb950;
+    text-align: right;
 }
 
 .progress-bar {
-    height: 10px;
-    background: var(--color-bg-dark);
+    height: 6px;
+    background: #161b22;
     border-radius: var(--radius-full);
     overflow: hidden;
     display: flex;
-    border: 1px solid var(--color-border-subtle);
+    border: 1px solid #21262d;
 }
 
 .progress-bar__fill {
@@ -1624,49 +1665,56 @@
 }
 
 .progress-bar__fill--completed {
-    background: linear-gradient(90deg, var(--color-success), #34d399);
-    box-shadow: 0 0 12px rgba(34, 197, 94, 0.3);
+    background: linear-gradient(90deg, #3fb950, #34d399);
 }
 
 .progress-bar__fill--processing {
-    background: linear-gradient(90deg, var(--color-warning), #fbbf24);
-    box-shadow: 0 0 12px rgba(245, 158, 11, 0.3);
+    background: linear-gradient(90deg, #d29922, #fbbf24);
 }
 
 /* Progress Legend */
 .progress-legend {
     display: flex;
-    gap: var(--space-4);
-    justify-content: center;
+    gap: var(--space-3);
+    justify-content: flex-end;
 }
 
 .legend-item {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    font-size: var(--text-xs);
-    color: var(--color-text-secondary);
+    gap: 4px;
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: #484f58;
 }
 
 .legend-dot {
-    width: 10px;
-    height: 10px;
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
 }
 
 .legend-item--completed .legend-dot {
-    background: var(--color-success);
-    box-shadow: 0 0 6px rgba(34, 197, 94, 0.4);
+    background: #3fb950;
 }
 
 .legend-item--processing .legend-dot {
-    background: var(--color-warning);
-    box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
+    background: #d29922;
 }
 
 .legend-item--pending .legend-dot {
-    background: var(--color-bg-surface);
-    border: 1px solid var(--color-border-default);
+    background: #30363d;
+    border: 1px solid #484f58;
+}
+
+@media (max-width: 768px) {
+    .stats-progress-row {
+        grid-template-columns: 1fr;
+        gap: var(--space-3);
+    }
+    .stats-inline {
+        justify-content: space-around;
+    }
 }
 
 /* ==========================================================================
@@ -1975,19 +2023,59 @@
 }
 
 /* ==========================================================================
+   2-Column Logs Split Layout
+   ========================================================================== */
+
+.logs-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border-top: 1px solid #21262d;
+    min-height: 400px;
+}
+
+.logs-split__left {
+    border-right: 1px solid #21262d;
+    overflow: hidden;
+}
+
+.logs-split__right {
+    overflow: hidden;
+}
+
+@media (max-width: 960px) {
+    .logs-split {
+        grid-template-columns: 1fr;
+    }
+    .logs-split__left {
+        border-right: none;
+        border-bottom: 1px solid #21262d;
+    }
+}
+
+/* Step detail empty placeholder */
+.step-detail__empty {
+    padding: 40px 16px;
+    text-align: center;
+    color: #484f58;
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+
+.step-detail__empty::before {
+    content: '› ';
+    color: #30363d;
+}
+
+/* ==========================================================================
    Step Detail Panel
    ========================================================================== */
 
 .step-detail-panel {
-    margin: 0;
-    border-top: 1px solid #21262d;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
     background: #0d1117;
     overflow: hidden;
-    animation: slideDown 0.2s ease;
-}
-@keyframes slideDown {
-    from { opacity: 0; max-height: 0; }
-    to { opacity: 1; max-height: 2000px; }
 }
 .step-detail-panel__header {
     display: flex;
@@ -1996,6 +2084,7 @@
     padding: 10px 16px;
     background: #161b22;
     border-bottom: 1px solid #21262d;
+    flex-shrink: 0;
 }
 .step-detail-panel__title {
     margin: 0;
@@ -2006,8 +2095,11 @@
 }
 .step-detail-panel__content {
     padding: 16px;
-    max-height: 500px;
+    flex: 1;
     overflow-y: auto;
+    max-height: 520px;
+    scrollbar-width: thin;
+    scrollbar-color: #21262d transparent;
 }
 
 /* Step detail sections */
@@ -2136,7 +2228,9 @@
 .logs-viewer {
     background: #010409;
     overflow: hidden;
-    border-top: 1px solid #21262d;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
 }
 
 /* Terminal title bar */

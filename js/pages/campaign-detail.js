@@ -1022,6 +1022,14 @@ class CampaignDetailPage {
             option.textContent = `${statusIcon} ${title}${title.length >= 40 ? '...' : ''} (${job.status})`;
             this.logJobSelect.appendChild(option);
         });
+        
+        // Auto-select the currently running/active job (if any)
+        const activeStatuses = ['generating', 'assembling', 'rendering', 'processing'];
+        const activeJob = sortedJobs.find(j => activeStatuses.includes(j.status));
+        if (activeJob && !this.selectedJobId) {
+            this.logJobSelect.value = activeJob.id;
+            this.loadJobLogs(activeJob.id);
+        }
     }
 
     /**
@@ -1199,10 +1207,9 @@ class CampaignDetailPage {
         const currentJob = this.jobs?.find(j => j.id === this.selectedJobId);
         this.renderStepTimeline(this.currentLogs, currentJob?.status);
         
-        // Show panel with loading state
-        if (this.stepDetailPanel) this.stepDetailPanel.style.display = 'block';
+        // Show loading state in the always-visible panel
         if (this.stepDetailTitle) this.stepDetailTitle.textContent = `${this.getStepIcon(stepName)} ${this.capitalize(stepName)} Details`;
-        if (this.stepDetailContent) this.stepDetailContent.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">Loading step data...</div>';
+        if (this.stepDetailContent) this.stepDetailContent.innerHTML = '<div style="text-align:center;padding:20px;color:#484f58">Loading step data...</div>';
         
         try {
             // Gather all data for this step from logs + job + assets
@@ -1210,16 +1217,17 @@ class CampaignDetailPage {
             this.renderStepDetail(stepName, stepData);
         } catch (err) {
             console.error(`Failed to load ${stepName} details:`, err);
-            if (this.stepDetailContent) this.stepDetailContent.innerHTML = `<div style="color:var(--color-error)">Failed to load step details: ${err.message}</div>`;
+            if (this.stepDetailContent) this.stepDetailContent.innerHTML = `<div style="color:#f85149">Failed to load step details: ${err.message}</div>`;
         }
     }
 
     /**
-     * Close the step detail panel
+     * Close the step detail panel (reset to empty)
      */
     closeStepDetail() {
         this.selectedStepName = null;
-        if (this.stepDetailPanel) this.stepDetailPanel.style.display = 'none';
+        if (this.stepDetailTitle) this.stepDetailTitle.textContent = 'Step Details';
+        if (this.stepDetailContent) this.stepDetailContent.innerHTML = '<div class="step-detail__empty">click a pipeline step above</div>';
         // Re-render timeline to remove selection
         const currentJob = this.jobs?.find(j => j.id === this.selectedJobId);
         this.renderStepTimeline(this.currentLogs, currentJob?.status);
@@ -1316,6 +1324,34 @@ class CampaignDetailPage {
                 .eq('idempotency_key', `${jobId}:scenes_subtitles`)
                 .maybeSingle();
             data.scenesData = scenesAsset?.meta?.scenes || [];
+        }
+        
+        // Load uniqueness-specific data: uniqueness_check asset, story_generate meta, story_dna record
+        if (stepName === 'uniqueness') {
+            try {
+                const { data: uqAsset } = await supabase
+                    .from('job_assets')
+                    .select('meta')
+                    .eq('job_id', jobId)
+                    .eq('idempotency_key', `${jobId}:uniqueness_check`)
+                    .maybeSingle();
+                data.uniquenessAsset = uqAsset?.meta || {};
+                
+                const { data: storyAsset } = await supabase
+                    .from('job_assets')
+                    .select('meta')
+                    .eq('job_id', jobId)
+                    .eq('idempotency_key', `${jobId}:story_generate`)
+                    .maybeSingle();
+                data.storyMeta = storyAsset?.meta || {};
+                
+                const { data: dnaRecord } = await supabase
+                    .from('story_dna')
+                    .select('*')
+                    .eq('job_id', jobId)
+                    .maybeSingle();
+                data.storyDna = dnaRecord || {};
+            } catch { /* non-critical */ }
         }
         
         // Load story anchor for story and images steps
@@ -1515,28 +1551,97 @@ class CampaignDetailPage {
     renderUniquenessDetail(data) {
         const job = data.job || {};
         const meta = data.stepMeta || {};
-        // stepMeta is {meta: {uniqueness_score: 0.95, ...}, status: "complete"}
-        // Score is 0-1 scale from worker, convert to percentage for display
         const innerMeta = meta.meta || {};
-        const rawScore = innerMeta.uniqueness_score ?? meta.uniqueness_score ?? job.uniqueness_score;
+        const uqAsset = data.uniquenessAsset || {};
+        const storyMeta = data.storyMeta || {};
+        const dna = data.storyDna || {};
+        
+        // Score: 0-1 scale → percentage
+        const rawScore = uqAsset.uniqueness_score ?? innerMeta.uniqueness_score ?? meta.uniqueness_score ?? job.uniqueness_score;
         const score = rawScore !== undefined && rawScore !== null
             ? Math.round(rawScore <= 1 ? rawScore * 100 : rawScore)
             : '-';
+        const scoreColor = score !== '-' && score >= 70 ? '#3fb950' : score !== '-' && score >= 40 ? '#d29922' : '#f85149';
+        const scoreLabel = score !== '-' && score >= 90 ? 'Highly Unique' : score !== '-' && score >= 70 ? 'Unique' : score !== '-' && score >= 40 ? 'Moderate' : 'Low Uniqueness';
         
+        // Collision data
+        const collisionCount = uqAsset.collision_count ?? innerMeta.collision_count ?? 0;
+        const hasCollision = uqAsset.has_collision ?? innerMeta.has_collision ?? collisionCount > 0;
+        const storyHash = uqAsset.story_hash || innerMeta.story_hash || meta.story_hash || '';
+        
+        // Concept data from story_generate asset and story_dna
+        const conceptHash = dna.concept_hash || storyMeta.concept_hash || '';
+        const fullHash = dna.full_hash || storyHash;
+        const setting = storyMeta.setting || dna.meta?.setting || '';
+        const concept = storyMeta.concept || dna.meta?.concept || '';
+        const genre = dna.genre || job.vibe_preset || job.meta?.vibe_preset || '';
+        const title = dna.meta?.title || job.title || '';
+        
+        // === Score Display ===
         let html = `<div class="step-detail__section">
             <div class="step-detail__label">🔍 Uniqueness Score</div>
-            <div style="font-size:32px;font-weight:700;color:${score !== '-' && score >= 70 ? '#10B981' : score !== '-' && score >= 40 ? '#F59E0B' : '#EF4444'}">${score}%</div>
+            <div style="display:flex;align-items:baseline;gap:12px">
+                <span style="font-size:32px;font-weight:700;color:${scoreColor};font-family:var(--font-mono)">${score}%</span>
+                <span style="font-size:12px;color:${scoreColor};font-family:var(--font-mono)">${scoreLabel}</span>
+            </div>
         </div>`;
         
-        // Show collision info from step result data
-        const collisionCount = innerMeta.collision_count ?? innerMeta.has_collision ?? meta.collision_count ?? meta.similar_count;
-        if (collisionCount !== undefined) {
+        // === Score Breakdown ===
+        html += `<div class="step-detail__section">
+            <div class="step-detail__label">📊 How Score Was Generated</div>
+            <div class="step-detail__kv-grid">
+                <span class="step-detail__kv-key">Method</span>
+                <span class="step-detail__kv-val">Concept hash collision check</span>
+                <span class="step-detail__kv-key">Concept Collision</span>
+                <span class="step-detail__kv-val">${hasCollision 
+                    ? `<span class="step-detail__badge step-detail__badge--warning">⚠ ${collisionCount} similar found</span>` 
+                    : '<span class="step-detail__badge step-detail__badge--success">✓ No collisions</span>'}</span>
+                <span class="step-detail__kv-key">Score Logic</span>
+                <span class="step-detail__kv-val" style="font-size:11px;color:#8b949e">${hasCollision 
+                    ? 'Collision detected → score set to 50%' 
+                    : 'No collision → score set to 95%'}</span>
+            </div>
+        </div>`;
+        
+        // === Story DNA / Concept Info ===
+        if (setting || concept || genre) {
             html += `<div class="step-detail__section">
+                <div class="step-detail__label">🧬 Story DNA</div>
                 <div class="step-detail__kv-grid">
-                    <span class="step-detail__kv-key">Similar Stories Found</span>
-                    <span class="step-detail__kv-val">${collisionCount || 0}</span>
-                    <span class="step-detail__kv-key">Story Hash</span>
-                    <span class="step-detail__kv-val" style="font-family:monospace;font-size:11px">${(innerMeta.story_hash || meta.story_hash || '-').substring(0, 16)}...</span>
+                    ${title ? `<span class="step-detail__kv-key">Title</span>
+                    <span class="step-detail__kv-val">${this.escapeHtml(title)}</span>` : ''}
+                    ${setting ? `<span class="step-detail__kv-key">Setting</span>
+                    <span class="step-detail__kv-val">${this.escapeHtml(setting)}</span>` : ''}
+                    ${concept ? `<span class="step-detail__kv-key">Concept</span>
+                    <span class="step-detail__kv-val">${this.escapeHtml(concept)}</span>` : ''}
+                    ${genre ? `<span class="step-detail__kv-key">Genre / Preset</span>
+                    <span class="step-detail__kv-val"><span class="step-detail__badge step-detail__badge--info">${this.escapeHtml(genre)}</span></span>` : ''}
+                </div>
+            </div>`;
+        }
+        
+        // === Hash Details ===
+        html += `<div class="step-detail__section">
+            <div class="step-detail__label">🔐 Hash Fingerprints</div>
+            <div class="step-detail__kv-grid">
+                <span class="step-detail__kv-key">Concept Hash</span>
+                <span class="step-detail__kv-val" style="font-family:var(--font-mono);font-size:11px;color:#58a6ff">${conceptHash ? conceptHash.substring(0, 24) + '...' : '-'}</span>
+                <span class="step-detail__kv-key">Full Text Hash</span>
+                <span class="step-detail__kv-val" style="font-family:var(--font-mono);font-size:11px;color:#58a6ff">${fullHash ? fullHash.substring(0, 24) + '...' : '-'}</span>
+                <span class="step-detail__kv-key">Hash Match</span>
+                <span class="step-detail__kv-val" style="font-size:11px">${conceptHash && fullHash 
+                    ? (conceptHash === fullHash ? '<span style="color:#d29922">same (no concept meta)</span>' : '<span style="color:#3fb950">distinct concept & text hashes</span>') 
+                    : '-'}</span>
+            </div>
+        </div>`;
+        
+        // === Collision Details ===
+        if (collisionCount > 0) {
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">⚠️ Collision Details</div>
+                <div style="font-size:12px;color:#d29922;line-height:1.6;padding:8px 12px;background:rgba(210,153,34,0.06);border:1px solid rgba(210,153,34,0.2);border-radius:6px">
+                    ${collisionCount} other stor${collisionCount === 1 ? 'y' : 'ies'} in the same brand share the same concept hash (setting + concept).
+                    This means the story theme/premise is similar to existing content.
                 </div>
             </div>`;
         }
