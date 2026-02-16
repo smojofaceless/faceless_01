@@ -2301,7 +2301,11 @@ function forceAlignTimestamps(
     for (let g = i; g < result.length && !result[g].matched; g++) gapCount = g - i + gapPosition + 1;
     
     const gapDuration = nextStart - prevEnd;
-    const wordDuration = gapDuration / gapCount;
+    // Minimum 0.08s per word to prevent zero-duration clustering when
+    // matched Whisper words are contiguous (end == next start)
+    const MIN_WORD_DURATION = 0.08;
+    const rawWordDuration = gapDuration / gapCount;
+    const wordDuration = Math.max(rawWordDuration, MIN_WORD_DURATION);
     result[i].start = prevEnd + gapPosition * wordDuration;
     result[i].end = result[i].start + wordDuration;
   }
@@ -4085,7 +4089,9 @@ export async function executeSubtitlesStep(
 
   // First try audio timestamps (most accurate)
   if (job.meta?.audio_timestamps) {
-    subtitleCues = job.meta.audio_timestamps as typeof subtitleCues;
+    // audio_timestamps uses { word, start, end } — map .word → .text for SRT format
+    const rawTimestamps = job.meta.audio_timestamps as Array<{ word: string; start: number; end: number }>;
+    subtitleCues = rawTimestamps.map(t => ({ start: t.start, end: t.end, text: t.word }));
   } else {
     // Fall back to scene data
     const sceneAsset = await getAssetByKey(supabase, job.id, `${job.id}:scenes_subtitles`);
