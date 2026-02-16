@@ -893,6 +893,45 @@
             const isConnected = brand ? tiktokService.isBrandConnected(brand.id) : false;
             const connectionInfo = brand ? tiktokService.getConnectionInfo() : null;
 
+            let statusHtml = '';
+            if (!brand) {
+                statusHtml = `
+                    <div class="platform-card__status">
+                        <span class="status-indicator status-indicator--warning"></span>
+                        <span class="text-muted">Select a brand first</span>
+                    </div>`;
+            } else if (isConnected) {
+                statusHtml = `
+                    <div class="platform-card__status">
+                        <span class="status-indicator status-indicator--success"></span>
+                        <span>Connected</span>
+                        ${connectionInfo?.displayName ? `<span class="text-muted">· @${connectionInfo.displayName}</span>` : ''}
+                    </div>`;
+            } else {
+                statusHtml = `
+                    <div class="platform-card__status">
+                        <span class="status-indicator"></span>
+                        <span class="text-muted">Not connected</span>
+                    </div>`;
+            }
+
+            let footerHtml = '';
+            if (isConnected) {
+                footerHtml = `
+                    <button class="btn btn--sm btn--secondary" onclick="testTikTokConnection()">Test</button>
+                    <button class="btn btn--sm btn--error" onclick="disconnectTikTok()">Disconnect</button>`;
+            } else {
+                footerHtml = `
+                    <button class="btn btn--sm btn--primary" onclick="connectTikTok()" ${!brand ? 'disabled title="Select a brand first"' : ''}>
+                        Connect with TikTok
+                    </button>`;
+            }
+
+            const setupHtml = !TIKTOK_CONFIG.clientKey ? `
+                <div class="platform-card__setup">
+                    <button class="btn btn--sm btn--secondary" onclick="openTikTokSetup()">⚙️ Setup API Keys</button>
+                </div>` : '';
+
             return `
                 <div class="platform-card platform-card--tiktok ${isConnected ? 'platform-card--connected' : ''}">
                     <div class="platform-card__header" style="background: #000000">
@@ -902,23 +941,7 @@
                     </div>
                     <div class="platform-card__body">
                         <h3 class="platform-card__name">TikTok</h3>
-                        ${!brand ? \`
-                            <div class="platform-card__status">
-                                <span class="status-indicator status-indicator--warning"></span>
-                                <span class="text-muted">Select a brand first</span>
-                            </div>
-                        \` : \`
-                            <div class="platform-card__status">
-                                \${isConnected ? \`
-                                    <span class="status-indicator status-indicator--success"></span>
-                                    <span>Connected</span>
-                                    \${connectionInfo?.displayName ? \`<span class="text-muted">· @\${connectionInfo.displayName}</span>\` : ''}
-                                \` : \`
-                                    <span class="status-indicator"></span>
-                                    <span class="text-muted">Not connected</span>
-                                \`}
-                            </div>
-                        \`}
+                        ${statusHtml}
                         <div class="platform-card__info">
                             <div class="info-row">
                                 <span>Max video:</span>
@@ -931,26 +954,9 @@
                         </div>
                     </div>
                     <div class="platform-card__footer">
-                        \${isConnected ? \`
-                            <button class="btn btn--sm btn--secondary" onclick="testTikTokConnection()">
-                                Test
-                            </button>
-                            <button class="btn btn--sm btn--error" onclick="disconnectTikTok()">
-                                Disconnect
-                            </button>
-                        \` : \`
-                            <button class="btn btn--sm btn--primary" onclick="connectTikTok()" \${!brand ? 'disabled title="Select a brand first"' : ''}>
-                                Connect with TikTok
-                            </button>
-                        \`}
+                        ${footerHtml}
                     </div>
-                    \${!TIKTOK_CONFIG.clientKey ? \`
-                        <div class="platform-card__setup">
-                            <button class="btn btn--sm btn--secondary" onclick="openTikTokSetup()">
-                                ⚙️ Setup API Keys
-                            </button>
-                        </div>
-                    \` : ''}
+                    ${setupHtml}
                 </div>
             `;
         }
