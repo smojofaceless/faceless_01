@@ -466,7 +466,7 @@ class InstagramMetricsAdapter implements MetricsAdapter {
 
 // ─────────────────────────────────────────────────────
 // Facebook Reels Metrics Adapter
-// Uses Facebook Graph API — direct video-node fields (no read_insights needed)
+// Uses Facebook Graph API — video_insights for plays + direct fields for engagement
 // ─────────────────────────────────────────────────────
 class FacebookMetricsAdapter implements MetricsAdapter {
   name = 'facebook_reels';
@@ -506,14 +506,47 @@ class FacebookMetricsAdapter implements MetricsAdapter {
     const accessToken = tokenData.metadata?.page_access_token || tokenData.access_token;
 
     try {
-      // Fetch video fields directly — video_insights requires read_insights
-      // permission which needs separate app review. Direct fields work with
-      // standard page token permissions.
-      const response = await fetch(
-        `${this.API_BASE}/${platformPostId}?fields=id,views,likes.summary(true),comments.summary(true)&access_token=${accessToken}`
-      );
+      // --- 1. Fetch Reel play counts via video_insights (requires read_insights) ---
+      const insightsUrl = `${this.API_BASE}/${platformPostId}/video_insights?metric=fb_reels_total_plays,fb_reels_replay_count,blue_reels_play_count&access_token=${accessToken}`;
+      const insightsRes = await fetch(insightsUrl);
 
-      if (response.status === 404) {
+      let totalPlays = 0;
+      let initialPlays = 0;
+      let replays = 0;
+      let insightsRaw: unknown = null;
+      let usedInsights = false;
+
+      if (insightsRes.ok) {
+        const insightsData = await insightsRes.json() as {
+          data?: Array<{ name: string; values: Array<{ value: number }> }>;
+        };
+        insightsRaw = insightsData;
+
+        for (const insight of insightsData.data || []) {
+          const val = insight.values?.[0]?.value ?? 0;
+          switch (insight.name) {
+            case 'fb_reels_total_plays':
+              totalPlays = val;
+              usedInsights = true;
+              break;
+            case 'blue_reels_play_count':
+              initialPlays = val;
+              break;
+            case 'fb_reels_replay_count':
+              replays = val;
+              break;
+          }
+        }
+        console.log(`[Facebook Metrics] Insights: total_plays=${totalPlays}, initial=${initialPlays}, replays=${replays}`);
+      } else {
+        console.log(`[Facebook Metrics] video_insights returned ${insightsRes.status}, falling back to direct fields`);
+      }
+
+      // --- 2. Fetch engagement via direct video-node fields ---
+      const fieldsUrl = `${this.API_BASE}/${platformPostId}?fields=id,views,likes.summary(true),comments.summary(true)&access_token=${accessToken}`;
+      const fieldsRes = await fetch(fieldsUrl);
+
+      if (fieldsRes.status === 404) {
         return {
           success: false,
           error_class: 'permanent',
@@ -521,7 +554,7 @@ class FacebookMetricsAdapter implements MetricsAdapter {
         };
       }
 
-      if (response.status === 429) {
+      if (fieldsRes.status === 429) {
         return {
           success: false,
           error_class: 'dependency',
@@ -529,39 +562,40 @@ class FacebookMetricsAdapter implements MetricsAdapter {
         };
       }
 
-      if (response.status === 401 || response.status === 403) {
-        // Mark token invalid so we don't keep hammering the API
+      if (fieldsRes.status === 401 || fieldsRes.status === 403) {
         await supabase
           .from('platform_tokens')
-          .update({ is_valid: false, last_error: `Metrics: Facebook token error ${response.status}` })
+          .update({ is_valid: false, last_error: `Metrics: Facebook token error ${fieldsRes.status}` })
           .eq('brand_id', brandId)
           .eq('platform', 'facebook');
 
         return {
           success: false,
           error_class: 'misconfig',
-          error_message: `Facebook token error: ${response.status}. Token marked invalid.`,
+          error_message: `Facebook token error: ${fieldsRes.status}. Token marked invalid.`,
         };
       }
 
-      if (!response.ok) {
+      if (!fieldsRes.ok) {
         return {
           success: false,
           error_class: 'transient',
-          error_message: `Facebook API error: ${response.status}`,
+          error_message: `Facebook API error: ${fieldsRes.status}`,
         };
       }
 
-      const data = await response.json() as {
+      const fieldsData = await fieldsRes.json() as {
         id: string;
         views?: number;
         likes?: { summary?: { total_count?: number } };
         comments?: { summary?: { total_count?: number } };
       };
 
-      const views = data.views ?? 0;
-      const likes = data.likes?.summary?.total_count ?? 0;
-      const comments = data.comments?.summary?.total_count ?? 0;
+      // Use fb_reels_total_plays if available (matches FB UI), otherwise fall
+      // back to the direct `views` field (3-second views).
+      const views = usedInsights ? totalPlays : (fieldsData.views ?? 0);
+      const likes = fieldsData.likes?.summary?.total_count ?? 0;
+      const comments = fieldsData.comments?.summary?.total_count ?? 0;
 
       return {
         success: true,
@@ -569,10 +603,10 @@ class FacebookMetricsAdapter implements MetricsAdapter {
           views,
           likes,
           comments,
-          shares: 0, // Not available on Video node without read_insights
+          shares: 0, // Not available on Video node
           saves: 0,  // Facebook doesn't expose saves for reels
         },
-        raw: data,
+        raw: { insights: insightsRaw, fields: fieldsData },
       };
     } catch (e) {
       return {

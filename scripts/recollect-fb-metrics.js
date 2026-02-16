@@ -1,10 +1,10 @@
-// Recollect Facebook Reels metrics using direct video-node fields
-// (bypasses video_insights which requires read_insights permission)
+// Recollect Facebook Reels metrics using video_insights + direct fields
+// Uses fb_reels_total_plays (matches FB UI play count) + likes/comments from fields
 const SUPABASE_URL = 'https://ustmetegzisztqqcjigt.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzdG1ldGVnemlzenRxcWNqaWd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1NDc0NzksImV4cCI6MjA4NTEyMzQ3OX0.5lEiAP6PS4yY3WwAL5v4XWFHWJS5hzBWPXQxuxWe5d4';
 const FB_API = 'https://graph.facebook.com/v21.0';
 
-const headers = {
+const sbHeaders = {
   apikey: SUPABASE_KEY,
   Authorization: `Bearer ${SUPABASE_KEY}`,
   'Content-Type': 'application/json',
@@ -12,55 +12,72 @@ const headers = {
 };
 
 async function main() {
-  // 1. Get FB page token
+  // 1. Get FB page token from DB
   const tokenRes = await fetch(
     `${SUPABASE_URL}/rest/v1/platform_tokens?select=*&platform=eq.facebook&limit=1`,
-    { headers }
+    { headers: sbHeaders }
   );
   const [token] = await tokenRes.json();
   if (!token) { console.log('No Facebook token found'); return; }
 
   const pageToken = token.metadata?.page_access_token || token.access_token;
-  console.log(`Using page token for: ${token.platform_channel_name}`);
+  console.log(`Using page token for: ${token.platform_channel_name}\n`);
 
   // 2. Get all posted FB reels
   const postsRes = await fetch(
     `${SUPABASE_URL}/rest/v1/posts?select=id,title,platform_post_id,brand_id&platform=eq.facebook_reels&status=eq.posted`,
-    { headers }
+    { headers: sbHeaders }
   );
   const posts = await postsRes.json();
   console.log(`Found ${posts.length} posted Facebook Reels\n`);
 
-  let totalViews = 0;
+  let totalPlays = 0;
   let successCount = 0;
 
   for (const post of posts) {
     const videoId = post.platform_post_id;
-    console.log(`Fetching: ${post.title} (${videoId})`);
+    process.stdout.write(`${post.title} (${videoId})... `);
 
     try {
-      const res = await fetch(
+      // Fetch video_insights for play count
+      const insightsRes = await fetch(
+        `${FB_API}/${videoId}/video_insights?metric=fb_reels_total_plays,fb_reels_replay_count,blue_reels_play_count&access_token=${pageToken}`
+      );
+
+      let plays = 0;
+      let insightsRaw = null;
+      if (insightsRes.ok) {
+        const insightsData = await insightsRes.json();
+        insightsRaw = insightsData;
+        for (const ins of insightsData.data || []) {
+          if (ins.name === 'fb_reels_total_plays') {
+            plays = ins.values?.[0]?.value ?? 0;
+          }
+        }
+      }
+
+      // Fetch direct fields for likes/comments
+      const fieldsRes = await fetch(
         `${FB_API}/${videoId}?fields=id,views,likes.summary(true),comments.summary(true)&access_token=${pageToken}`
       );
 
-      if (!res.ok) {
-        const err = await res.json();
-        console.log(`  ERROR ${res.status}: ${err.error?.message || 'Unknown'}`);
+      if (!fieldsRes.ok) {
+        console.log(`ERROR ${fieldsRes.status}`);
         continue;
       }
 
-      const data = await res.json();
-      const views = data.views ?? 0;
-      const likes = data.likes?.summary?.total_count ?? 0;
-      const comments = data.comments?.summary?.total_count ?? 0;
+      const fieldsData = await fieldsRes.json();
+      const views = plays > 0 ? plays : (fieldsData.views ?? 0);
+      const likes = fieldsData.likes?.summary?.total_count ?? 0;
+      const comments = fieldsData.comments?.summary?.total_count ?? 0;
 
-      console.log(`  views=${views}, likes=${likes}, comments=${comments}`);
-      totalViews += views;
+      console.log(`plays=${plays}, views=${fieldsData.views ?? 0}, likes=${likes}, comments=${comments}`);
+      totalPlays += views;
 
-      // 3. Record via RPC (full signature)
+      // Record via RPC
       const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/record_post_metrics`, {
         method: 'POST',
-        headers,
+        headers: sbHeaders,
         body: JSON.stringify({
           p_post_id: post.id,
           p_platform: 'facebook_reels',
@@ -69,9 +86,9 @@ async function main() {
           p_comments: comments,
           p_shares: 0,
           p_saves: 0,
-          p_raw_payload: data,
+          p_raw_payload: { insights: insightsRaw, fields: fieldsData },
           p_source: 'backfill',
-          p_collector_id: 'fb-backfill-script',
+          p_collector_id: 'fb-backfill-insights',
           p_error: null,
           p_avg_view_duration: 0,
           p_avg_view_pct: 0,
@@ -83,32 +100,19 @@ async function main() {
 
       if (rpcRes.ok) {
         successCount++;
-        console.log(`  ✓ recorded`);
       } else {
-        const rpcErr = await rpcRes.text();
-        console.log(`  ✗ RPC error: ${rpcErr}`);
+        const err = await rpcRes.text();
+        console.log(`  RPC error: ${err}`);
       }
 
-      // Small delay to avoid rate limits
       await new Promise(r => setTimeout(r, 500));
     } catch (e) {
-      console.log(`  Network error: ${e.message}`);
+      console.log(`Network error: ${e.message}`);
     }
   }
 
   console.log(`\nDone: ${successCount}/${posts.length} posts updated`);
-  console.log(`Total views across all FB Reels: ${totalViews}`);
-
-  // 4. Clear the stale error on the token
-  const clearRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/platform_tokens?id=eq.${token.id}`,
-    {
-      method: 'PATCH',
-      headers: { ...headers, Prefer: 'return=minimal' },
-      body: JSON.stringify({ is_valid: true, last_error: null }),
-    }
-  );
-  console.log(`Token error cleared: ${clearRes.ok ? 'yes' : 'no'}`);
+  console.log(`Total plays across all FB Reels: ${totalPlays}`);
 }
 
 main().catch(console.error);
