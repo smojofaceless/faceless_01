@@ -140,6 +140,93 @@ function pickHorrorScenario(recentSettings?: string[]): HorrorScenario & { scena
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
+/**
+ * Build the prompt for generating a Reddit-inspired horror story.
+ */
+function buildRedditInspiredPrompt(
+  scenario: HorrorScenario,
+  wordRange: { min: number; max: number },
+  recentStories?: Array<{ title: string; hook: string | null; setting?: string }>
+): string {
+  let avoidanceSection = '';
+  if (recentStories && recentStories.length > 0) {
+    const avoidList = recentStories.map(s => {
+      const parts = [`"${s.title}"`];
+      if (s.setting) parts.push(`(setting: ${s.setting})`);
+      return parts.join(' ');
+    }).join('\n- ');
+    avoidanceSection = `\n\nDO NOT REPEAT — these stories were already created recently:\n- ${avoidList}\n\nYour story must feel completely fresh and explore a DIFFERENT scenario than any of the above.`;
+  }
+
+  return `Write an original horror story inspired by this scenario seed. The scenario is a STARTING POINT — expand, twist, and make it your own.
+
+SCENARIO SEED (${scenario.subreddit_style} style):
+"""
+${scenario.premise}
+"""
+
+SUBREDDIT STYLE: ${scenario.subreddit_style === 'nosleep' ? 'r/nosleep — First-person, escalating dread. The narrator is living through this RIGHT NOW. "This is happening to me." Confessional, urgent, real.' :
+  scenario.subreddit_style === 'letsnotmeet' ? 'r/letsnotmeet — True encounter retold. "This actually happened." Grounded, realistic, no supernatural elements needed — the horror is human.' :
+  scenario.subreddit_style === 'creepypasta' ? 'r/creepypasta — Internet legend / folk horror. Mysterious, atmospheric, mythic. The kind of story people screenshot and share.' :
+  scenario.subreddit_style === 'paranormal' ? 'r/paranormal — Unexplained phenomena reported matter-of-factly. The narrator doesn\'t understand what happened. Neither will the audience.' :
+  scenario.subreddit_style === 'shortscarystories' ? 'r/shortscarystories — Tight, punchy, twist-heavy. Every sentence matters. Build to a gut-punch ending.' :
+  'Reddit horror — viral, shareable, scroll-stopping.'}
+
+CORE FEAR: ${scenario.fear_type}
+SETTING: ${scenario.setting_hint}
+
+REQUIREMENTS:
+- Word count: ${wordRange.min}-${wordRange.max} words (STRICT — controls video timing!)
+- Use the scenario as INSPIRATION only — add your own details, names, locations, specifics
+- FIRST-PERSON narrator — conversational, authentic, like a real Reddit post
+- The narrator is telling you something that happened to THEM
+- Include enough specific mundane detail to feel real (job, routine, apartment number, time of day)
+
+STRUCTURE (MANDATORY):
+[HOOK] — First 1-2 sentences. SCROLL-STOPPING opener. USE ONE OF THESE PATTERNS:
+  • "I need to tell someone what happened before [ticking clock]."
+  • "I found something in my [ordinary place] that I can't explain."
+  • "My [person/device] has been [doing something wrong] for [specific time period]."
+  • "I think someone has been [violation] and I have proof."
+  The hook MUST create immediate tension. Specific detail > vague dread. Hit hard in the FIRST sentence.
+[SETUP] — Establish normalcy. Specific, grounded, relatable. Job, routine, the small details that make it feel like a real person's life.
+[ESCALATION] — Things get wrong. Not all at once — drip feed the wrongness. Each new detail is worse than the last. At least 3 escalation beats.
+[CONFRONTATION] — The moment the narrator faces the horror directly. Maximum tension.
+[AFTERMATH] — What happened after. Did they escape? Are they still living with it? The unresolved dread.
+
+STYLE RULES:
+- Write like a real person posting on Reddit at 2 AM, not a professional writer
+- Short paragraphs. Some one-sentence paragraphs for impact.
+- Use line breaks for pacing — let the reader breathe between scares
+- No purple prose. Plain language hits harder: "I looked under the bed. It looked back."
+- Include at least ONE moment where the narrator questions their own sanity
+- The horror should be IMPLIED more than shown — what we imagine is worse than what we see
+- No gore — psychological horror and wrongness only
+- Every sentence must be visually filmable as a dark, realistic illustrated scene
+
+ENGAGEMENT HOOKS (MANDATORY):
+- End with a line that makes viewers want to comment. Examples:
+  • "Has anyone else experienced something like this?"
+  • "I'm posting this from my car. I'm not going back inside."
+  • "If you see [specific detail], do NOT [action]. Trust me."
+  • "That was three weeks ago. Last night, it started again."
+- This drives comments and shares, which boost algorithmic reach.
+
+AUTHENTICITY RULES:
+- Use modern, relatable settings: apartments, offices, rideshares, smart devices, night shifts
+- Name specific apps, brands, everyday objects — grounds the story in reality
+- The narrator should react the way a REAL person would (denial, rationalization, then panic)
+- Include at least one moment where they consider a rational explanation before rejecting it${avoidanceSection}
+
+Respond in JSON format:
+{
+  "title": "Short catchy title (3-6 words)",
+  "story": "The full story text...",
+  "setting": "One or two words describing the primary setting/location",
+  "concept": "One sentence summarizing the core concept/premise"
+}`;
+}
+
 // =====================================================
 // DARK ORIGINS SCENARIO SYSTEM
 // Documentary-style dark biographies and horror icon
