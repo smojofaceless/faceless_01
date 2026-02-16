@@ -505,26 +505,33 @@ const AIIntelligence = (() => {
         if (!container) return;
         container.innerHTML = '<div class="ai-loading">Loading story DNA…</div>';
 
-        // Get story DNA with vibe preset usage
+        // Get story DNA with genre (vibe preset) usage
+        // Columns: genre (not vibe_preset), threat_id (not threat_type),
+        //          escalation_id (not escalation_type), era_label, brand_id
         const { data: dna, error } = await supabase
             .from('story_dna')
-            .select('vibe_preset, threat_type, escalation_type, era_label, brand_id')
+            .select('genre, threat_id, escalation_id, era_label, brand_id')
             .eq('brand_id', currentBrandId)
             .order('created_at', { ascending: false })
             .limit(200);
 
-        if (error || !dna?.length) {
+        if (error) {
+            console.error('[AI Intelligence] Story DNA query error:', error);
+            container.innerHTML = '<div class="ai-empty">Error loading story DNA data.</div>';
+            return;
+        }
+        if (!dna?.length) {
             container.innerHTML = '<div class="ai-empty">No story DNA data yet. Stories need to be generated first.</div>';
             return;
         }
 
-        // Count vibes
+        // Count vibes (genre column stores the vibe preset value)
         const vibeCounts = {};
         const threatCounts = {};
         for (const d of dna) {
-            const vibe = d.vibe_preset || 'default';
+            const vibe = d.genre || 'default';
             vibeCounts[vibe] = (vibeCounts[vibe] || 0) + 1;
-            const threat = d.threat_type || 'unknown';
+            const threat = d.threat_id || 'unknown';
             threatCounts[threat] = (threatCounts[threat] || 0) + 1;
         }
 
