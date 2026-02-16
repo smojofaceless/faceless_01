@@ -237,6 +237,7 @@
     <script src="../js/services/platformAPI.js"></script>
     <script src="../js/services/youtube.js"></script>
     <script src="../js/services/meta.js"></script>
+    <script src="../js/services/tiktok.js"></script>
     <script src="../js/services/postManager.js"></script>
     <script src="../js/services/scheduler.js"></script>
     <script src="../js/services/brandManager.js"></script>
@@ -260,6 +261,13 @@
             appId: localStorage.getItem('meta_app_id') || '',
             appSecret: localStorage.getItem('meta_app_secret') || '',
             // Use current page URL for redirect (handles GitHub Pages subdirectories)
+            redirectUri: window.location.href.split('?')[0].split('#')[0]
+        };
+
+        // TikTok OAuth config
+        const TIKTOK_CONFIG = {
+            clientKey: localStorage.getItem('tiktok_client_key') || '',
+            clientSecret: localStorage.getItem('tiktok_client_secret') || '',
             redirectUri: window.location.href.split('?')[0].split('#')[0]
         };
 
@@ -303,18 +311,21 @@
                 window.history.replaceState({}, document.title, window.location.pathname);
             }
             
-            // Check for Meta OAuth callback
+            // Check for TikTok or Meta OAuth callback
             if (code && state && !state.startsWith('youtube_auth:')) {
                 try {
                     const stateData = JSON.parse(state);
-                    if (stateData.brandId) {
+                    if (stateData.brandId && stateData.platform === 'tiktok') {
+                        console.log('TikTok OAuth callback received for brand:', stateData.brandId);
+                        completeTikTokAuth(code, stateData.brandId);
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                    } else if (stateData.brandId) {
                         console.log('Meta OAuth callback received for brand:', stateData.brandId);
                         completeMetaAuth(code, stateData.brandId);
-                        // Clean URL
                         window.history.replaceState({}, document.title, window.location.pathname);
                     }
                 } catch (e) {
-                    // Not a Meta callback
+                    // Not a Meta/TikTok callback
                 }
             }
         }
@@ -351,6 +362,35 @@
             } catch (error) {
                 console.error('YouTube auth error:', error);
                 Toast.error(`YouTube connection failed: ${error.message}`);
+            }
+        }
+
+        async function completeTikTokAuth(code, brandId) {
+            try {
+                Toast.info('Completing TikTok connection...');
+
+                if (!TIKTOK_CONFIG.clientKey || !TIKTOK_CONFIG.clientSecret) {
+                    throw new Error('TikTok API credentials not configured');
+                }
+
+                tiktokService.init(TIKTOK_CONFIG.clientKey, TIKTOK_CONFIG.clientSecret);
+                await tiktokService.setBrand(brandId);
+
+                const result = await tiktokService.handleCallback(code, TIKTOK_CONFIG.redirectUri);
+
+                // Update brand's connectedPlatforms
+                const brand = brandManager.get(brandId);
+                if (brand && !brand.hasPlatform('tiktok')) {
+                    brand.connectPlatform('tiktok');
+                    await brandManager.update(brandId, { connectedPlatforms: brand.connectedPlatforms });
+                }
+
+                Toast.success(`TikTok connected: ${result.displayName}`);
+                loadPlatforms();
+
+            } catch (error) {
+                console.error('TikTok auth error:', error);
+                Toast.error(`TikTok connection failed: ${error.message}`);
             }
         }
 
@@ -488,6 +528,7 @@
             updateBrandHeader();
             updateYouTubeBrandContext();
             updateMetaBrandContext();
+            updateTikTokBrandContext();
             loadPlatforms();
             setupModal();
             
@@ -499,6 +540,11 @@
             // Initialize Meta service if credentials exist
             if (META_CONFIG.appId) {
                 metaService.init(META_CONFIG.appId, META_CONFIG.appSecret);
+            }
+
+            // Initialize TikTok service if credentials exist
+            if (TIKTOK_CONFIG.clientKey) {
+                tiktokService.init(TIKTOK_CONFIG.clientKey, TIKTOK_CONFIG.clientSecret);
             }
 
             // Auto-sync Meta tokens to Supabase on page load
@@ -518,6 +564,14 @@
             const brand = brandManager.getActiveBrand();
             if (brand) {
                 metaService.setBrand(brand.id);
+            }
+        }
+
+        // Update TikTok service with current brand context
+        function updateTikTokBrandContext() {
+            const brand = brandManager.getActiveBrand();
+            if (brand) {
+                tiktokService.setBrand(brand.id);
             }
         }
 
@@ -543,6 +597,7 @@
             // Update brand contexts before loading
             updateYouTubeBrandContext();
             updateMetaBrandContext();
+            updateTikTokBrandContext();
             
             const container = document.getElementById('platforms-grid');
             const platforms = getAllPlatforms();
@@ -563,6 +618,11 @@
                 // Special handling for Facebook
                 if (platform.id === 'facebook') {
                     return renderFacebookCard(platform, brand);
+                }
+                
+                // Special handling for TikTok
+                if (platform.id === 'tiktok') {
+                    return renderTikTokCard(platform, brand);
                 }
                 
                 const account = brand ? 
@@ -827,6 +887,155 @@
                     ` : ''}
                 </div>
             `;
+        }
+
+        function renderTikTokCard(platform, brand) {
+            const isConnected = brand ? tiktokService.isBrandConnected(brand.id) : false;
+            const connectionInfo = brand ? tiktokService.getConnectionInfo() : null;
+
+            return `
+                <div class="platform-card platform-card--tiktok ${isConnected ? 'platform-card--connected' : ''}">
+                    <div class="platform-card__header" style="background: #000000">
+                        <svg viewBox="0 0 24 24" fill="currentColor" width="32" height="32">
+                            <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 0 0-.79-.05A6.34 6.34 0 0 0 3.15 15.2a6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.34-6.34V8.93a8.26 8.26 0 0 0 4.82 1.56V7.04a4.84 4.84 0 0 1-1.06-.35z"/>
+                        </svg>
+                    </div>
+                    <div class="platform-card__body">
+                        <h3 class="platform-card__name">TikTok</h3>
+                        ${!brand ? \`
+                            <div class="platform-card__status">
+                                <span class="status-indicator status-indicator--warning"></span>
+                                <span class="text-muted">Select a brand first</span>
+                            </div>
+                        \` : \`
+                            <div class="platform-card__status">
+                                \${isConnected ? \`
+                                    <span class="status-indicator status-indicator--success"></span>
+                                    <span>Connected</span>
+                                    \${connectionInfo?.displayName ? \`<span class="text-muted">· @\${connectionInfo.displayName}</span>\` : ''}
+                                \` : \`
+                                    <span class="status-indicator"></span>
+                                    <span class="text-muted">Not connected</span>
+                                \`}
+                            </div>
+                        \`}
+                        <div class="platform-card__info">
+                            <div class="info-row">
+                                <span>Max video:</span>
+                                <span>10min</span>
+                            </div>
+                            <div class="info-row">
+                                <span>Auth:</span>
+                                <span>OAuth 2.0</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="platform-card__footer">
+                        \${isConnected ? \`
+                            <button class="btn btn--sm btn--secondary" onclick="testTikTokConnection()">
+                                Test
+                            </button>
+                            <button class="btn btn--sm btn--error" onclick="disconnectTikTok()">
+                                Disconnect
+                            </button>
+                        \` : \`
+                            <button class="btn btn--sm btn--primary" onclick="connectTikTok()" \${!brand ? 'disabled title="Select a brand first"' : ''}>
+                                Connect with TikTok
+                            </button>
+                        \`}
+                    </div>
+                    \${!TIKTOK_CONFIG.clientKey ? \`
+                        <div class="platform-card__setup">
+                            <button class="btn btn--sm btn--secondary" onclick="openTikTokSetup()">
+                                ⚙️ Setup API Keys
+                            </button>
+                        </div>
+                    \` : ''}
+                </div>
+            `;
+        }
+
+        function connectTikTok() {
+            const brand = brandManager.getActiveBrand();
+            if (!brand) {
+                Toast.error('Please select a brand first');
+                return;
+            }
+
+            if (!TIKTOK_CONFIG.clientKey) {
+                openTikTokSetup();
+                return;
+            }
+
+            // Set brand context before generating auth URL
+            tiktokService.init(TIKTOK_CONFIG.clientKey, TIKTOK_CONFIG.clientSecret);
+            tiktokService.setBrand(brand.id);
+
+            // Override getAuthUrl to include platform marker in state
+            const csrfState = JSON.stringify({
+                brandId: brand.id,
+                platform: 'tiktok',
+                nonce: Math.random().toString(36).substring(7)
+            });
+
+            const params = new URLSearchParams({
+                client_key: TIKTOK_CONFIG.clientKey,
+                response_type: 'code',
+                scope: 'user.info.basic,video.upload,video.publish',
+                redirect_uri: TIKTOK_CONFIG.redirectUri,
+                state: csrfState
+            });
+
+            window.location.href = `https://www.tiktok.com/v2/auth/authorize/?${params.toString()}`;
+        }
+
+        async function disconnectTikTok() {
+            const brand = brandManager.getActiveBrand();
+            if (!brand) {
+                Toast.error('Please select a brand first');
+                return;
+            }
+
+            if (confirm(`Disconnect TikTok from "${brand.name}"? You'll need to reconnect to upload videos.`)) {
+                await tiktokService.disconnect();
+
+                brand.disconnectPlatform('tiktok');
+                await brandManager.update(brand.id, { connectedPlatforms: brand.connectedPlatforms });
+
+                loadPlatforms();
+                Toast.success('TikTok disconnected');
+            }
+        }
+
+        async function testTikTokConnection() {
+            Toast.info('Testing TikTok connection...');
+            try {
+                const connectionInfo = tiktokService.getConnectionInfo();
+                if (connectionInfo?.openId) {
+                    Toast.success(`TikTok connected: ${connectionInfo.displayName || connectionInfo.openId}`);
+                } else {
+                    Toast.warning('TikTok connection status unknown');
+                }
+            } catch (error) {
+                Toast.error(`Test failed: ${error.message}`);
+            }
+        }
+
+        function openTikTokSetup() {
+            const clientKey = prompt('Enter your TikTok Client Key (App Key):', TIKTOK_CONFIG.clientKey);
+            if (clientKey === null) return;
+
+            const clientSecret = prompt('Enter your TikTok Client Secret (App Secret):', TIKTOK_CONFIG.clientSecret);
+            if (clientSecret === null) return;
+
+            localStorage.setItem('tiktok_client_key', clientKey);
+            localStorage.setItem('tiktok_client_secret', clientSecret);
+
+            TIKTOK_CONFIG.clientKey = clientKey;
+            TIKTOK_CONFIG.clientSecret = clientSecret;
+
+            Toast.success('TikTok API credentials saved!');
+            loadPlatforms();
         }
 
         function connectMeta() {
