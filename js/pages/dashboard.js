@@ -18,11 +18,25 @@
         return n.toLocaleString();
     }
 
+    // Normalize variant platform IDs to a canonical key for grouping
+    function normalizePlatform(p) {
+        const m = {
+            youtube_shorts: 'youtube', youtube: 'youtube',
+            instagram_reels: 'instagram', instagram: 'instagram',
+            facebook_reels: 'facebook', facebook: 'facebook',
+            tiktok: 'tiktok', tiktok_videos: 'tiktok',
+            x: 'x', twitter: 'x'
+        };
+        return m[p] || p;
+    }
+
     function platformLabel(p) {
         const m = {
-            youtube_shorts: 'YouTube', instagram_reels: 'Instagram',
-            facebook_reels: 'Facebook', tiktok: 'TikTok',
-            youtube: 'YouTube', instagram: 'Instagram', facebook: 'Facebook'
+            youtube_shorts: 'YouTube', youtube: 'YouTube',
+            instagram_reels: 'Instagram', instagram: 'Instagram',
+            facebook_reels: 'Facebook', facebook: 'Facebook',
+            tiktok: 'TikTok', tiktok_videos: 'TikTok',
+            x: 'X', twitter: 'X'
         };
         return m[p] || p;
     }
@@ -32,7 +46,8 @@
             youtube_shorts: '#FF4444', youtube: '#FF4444',
             instagram_reels: '#E1306C', instagram: '#E1306C',
             facebook_reels: '#1877F2', facebook: '#1877F2',
-            tiktok: '#00f2ea', tiktok_videos: '#00f2ea'
+            tiktok: '#00f2ea', tiktok_videos: '#00f2ea',
+            x: '#000000', twitter: '#000000'
         };
         return m[p] || '#8b5cf6';
     }
@@ -42,7 +57,8 @@
             youtube_shorts: 'youtube', youtube: 'youtube',
             instagram_reels: 'instagram', instagram: 'instagram',
             facebook_reels: 'facebook', facebook: 'facebook',
-            tiktok: 'tiktok'
+            tiktok: 'tiktok', tiktok_videos: 'tiktok',
+            x: 'x', twitter: 'x'
         };
         return m[p] || '';
     }
@@ -299,7 +315,8 @@
                 { id: 'youtube', name: 'YouTube Shorts', color: '#FF4444' },
                 { id: 'instagram', name: 'Instagram Reels', color: '#E1306C' },
                 { id: 'facebook', name: 'Facebook Reels', color: '#1877F2' },
-                { id: 'tiktok', name: 'TikTok', color: '#00f2ea' }
+                { id: 'tiktok', name: 'TikTok', color: '#00f2ea' },
+                { id: 'x', name: 'X', color: '#000000' }
             ];
 
             const tokenMap = {};
@@ -309,8 +326,7 @@
                 const tok = tokenMap[p.id];
                 const connected = tok?.is_valid === true;
                 const channelName = tok?.platform_channel_name || '';
-                const lastError = tok && !tok.is_valid && tok.last_error ? tok.last_error : '';
-                const statusLabel = connected ? 'Connected' : (tok ? 'Disconnected' : 'Not set up');
+                const statusLabel = connected ? 'Connected' : (tok ? 'Needs reconnection' : 'Not set up');
 
                 return `
                     <div class="platform-item">
@@ -320,7 +336,6 @@
                         <div class="platform-item__info">
                             <span class="platform-item__name">${p.name}</span>
                             ${channelName ? `<span class="platform-item__channel">${channelName}</span>` : ''}
-                            ${lastError ? `<span class="platform-item__error">${lastError.slice(0, 50)}</span>` : ''}
                         </div>
                         <div class="platform-item__status-wrap">
                             <span class="platform-item__status ${connected ? 'platform-item__status--connected' : 'platform-item__status--disconnected'}">
@@ -467,13 +482,14 @@
 
             const engagement = totals.likes + totals.comments + totals.shares + totals.saves;
 
-            // Per-platform breakdown
+            // Per-platform breakdown (merge variants like youtube/youtube_shorts)
             const byPlatform = {};
             metrics.forEach(m => {
-                if (!byPlatform[m.platform]) byPlatform[m.platform] = { views: 0, likes: 0, posts: 0 };
-                byPlatform[m.platform].views += m.views || 0;
-                byPlatform[m.platform].likes += m.likes || 0;
-                byPlatform[m.platform].posts++;
+                const key = normalizePlatform(m.platform);
+                if (!byPlatform[key]) byPlatform[key] = { views: 0, likes: 0, posts: 0 };
+                byPlatform[key].views += m.views || 0;
+                byPlatform[key].likes += m.likes || 0;
+                byPlatform[key].posts++;
             });
 
             // Top 3 posts by views

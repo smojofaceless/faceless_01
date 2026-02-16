@@ -283,6 +283,7 @@
 .platform-badge--youtube { background: rgba(255, 0, 0, 0.12); color: #FF4444; }
 .platform-badge--facebook { background: rgba(24, 119, 242, 0.12); color: #1877F2; }
 .platform-badge--twitter { background: rgba(29, 161, 242, 0.12); color: #1DA1F2; }
+.platform-badge--x { background: rgba(255, 255, 255, 0.08); color: var(--text-primary); }
 .platform-badge--threads { background: rgba(255, 255, 255, 0.06); color: var(--text-primary); }
 
 /* Platform List */
