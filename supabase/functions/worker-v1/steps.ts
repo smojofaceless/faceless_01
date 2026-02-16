@@ -4625,26 +4625,38 @@ async function assembleWithRenderer(
     durations = imageSequence.map(e => e.duration);
     moodLevels = imageSequence.map(e => e.moodLevel);
     
-    // Ensure durations sum to total duration (normalize if voice alignment shifted things)
+    // Ensure durations sum to total duration.
+    // IMPORTANT: Only adjust the LAST scene to absorb drift, NOT scale all scenes.
+    // Scaling all scenes proportionally shifts every scene boundary away from its
+    // voice-aligned position, causing cumulative image-narration desync ("image drift").
     const durSum = durations.reduce((s, d) => s + d, 0);
-    const driftSeconds = Math.abs(durSum - duration);
-    if (driftSeconds > 0.5) {
-      // Only normalize if drift is significant (>0.5s). Small drifts (<0.5s) are
-      // absorbed naturally and normalizing them can introduce worse per-scene rounding errors.
-      const scale = duration / durSum;
-      durations = durations.map(d => parseFloat((d * scale).toFixed(3)));
-      // Re-adjust last scene to absorb any rounding remainder
-      const adjustedSum = durations.reduce((s, d) => s + d, 0);
-      durations[durations.length - 1] += parseFloat((duration - adjustedSum).toFixed(3));
-      console.log(`[ASSEMBLE] Normalized durations: sum ${durSum.toFixed(2)}s → ${duration}s (drift=${driftSeconds.toFixed(2)}s, scale=${scale.toFixed(4)})`);
+    const driftSeconds = durSum - duration; // positive = sum too long, negative = too short
+    const absDrift = Math.abs(driftSeconds);
+    if (absDrift > 0.05) {
+      // Absorb drift by adjusting the last scene only — preserves all other scene boundaries
+      const lastIdx = durations.length - 1;
+      const adjusted = parseFloat((durations[lastIdx] - driftSeconds).toFixed(3));
+      if (adjusted >= 1.0) {
+        durations[lastIdx] = adjusted;
+        console.log(`[ASSEMBLE] Absorbed ${driftSeconds.toFixed(2)}s drift into last scene: ${durations[lastIdx]}s`);
+      } else {
+        // Last scene would be too short — split adjustment across last 3 scenes
+        const sharers = Math.min(3, durations.length);
+        const perScene = driftSeconds / sharers;
+        for (let si = durations.length - sharers; si < durations.length; si++) {
+          durations[si] = parseFloat((durations[si] - perScene).toFixed(3));
+        }
+        console.log(`[ASSEMBLE] Spread ${driftSeconds.toFixed(2)}s drift across last ${sharers} scenes`);
+      }
     } else {
-      console.log(`[ASSEMBLE] Duration drift ${driftSeconds.toFixed(2)}s within tolerance — no normalization needed`);
+      console.log(`[ASSEMBLE] Duration drift ${absDrift.toFixed(2)}s within tolerance — no adjustment needed`);
     }
 
-    // FLOOR ENFORCEMENT: Ensure no scene is shorter than 2s after normalization.
-    // Normalization can shrink an already-short scene (e.g. 0.5s × 0.6 scale = 0.3s).
-    // Scenes under 2s are imperceptible — steal time proportionally from longer scenes.
-    const MIN_SCENE_DURATION = 2.0;
+    // FLOOR ENFORCEMENT: Ensure no scene is shorter than 1s.
+    // Voice alignment deliberately creates short scenes for brief phrases.
+    // A 2s floor was inflating these, pushing all subsequent images late ("image drift").
+    // 1s is the minimum perceptible duration — anything shorter gets boosted.
+    const MIN_SCENE_DURATION = 1.0;
     let needsRebalance = durations.some(d => d < MIN_SCENE_DURATION);
     if (needsRebalance) {
       // Pass 1: Identify short scenes and total deficit

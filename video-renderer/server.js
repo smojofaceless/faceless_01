@@ -335,7 +335,7 @@ function getKenBurnsFilter(index, duration, width = 1080, height = 1920, moodLev
  * This provides visible movement while keeping memory usage under control
  */
 function getSimpleKenBurnsFilter(index, duration, width = 1080, height = 1920) {
-  const frames = Math.floor(duration * 15); // 15fps in low memory mode
+  const frames = Math.ceil(duration * 15); // ceil prevents cumulative frame shortfall → image drift
   // CRITICAL: Use minimal pre-scale (1.1x) to keep memory low
   // The zoompan itself will handle the rest of the motion
   const scaledW = Math.floor(width * 1.1);
@@ -377,33 +377,12 @@ async function createVideoFromImages(jobId, images, durations, outputPath, optio
   const totalDuration = durations.reduce((sum, d) => sum + (d || 5), 0);
   console.log(`[${jobId}] Total video duration will be: ${totalDuration.toFixed(2)}s from ${images.length} scenes`);
   
-  // Safety net: enforce minimum 2s per scene at the renderer level.
-  // Instead of just clamping (which inflates total), redistribute proportionally.
-  const MIN_SCENE_SEC = 2.0;
-  const sceneDurations = durations.map(d => d || 5); // resolve falsy → 5s default
-  const hasShortScenes = sceneDurations.some(d => d < MIN_SCENE_SEC);
-  if (hasShortScenes) {
-    let totalDeficit = 0;
-    for (let i = 0; i < sceneDurations.length; i++) {
-      if (sceneDurations[i] < MIN_SCENE_SEC) {
-        console.warn(`[${jobId}] Scene ${i + 1} duration ${sceneDurations[i]}s below ${MIN_SCENE_SEC}s floor`);
-        totalDeficit += MIN_SCENE_SEC - sceneDurations[i];
-        sceneDurations[i] = MIN_SCENE_SEC;
-      }
-    }
-    // Steal proportionally from longer scenes to keep total constant
-    const donors = sceneDurations
-      .map((d, i) => ({ i, surplus: d - MIN_SCENE_SEC }))
-      .filter(x => x.surplus > 0);
-    const donorPool = donors.reduce((s, x) => s + x.surplus, 0);
-    if (donorPool >= totalDeficit) {
-      for (const donor of donors) {
-        const share = (donor.surplus / donorPool) * totalDeficit;
-        sceneDurations[donor.i] = parseFloat((sceneDurations[donor.i] - share).toFixed(3));
-      }
-    }
-    console.log(`[${jobId}] Rebalanced durations: ${sceneDurations.map(d => d.toFixed(1)).join(',')}s`);
-  }
+  // Resolve falsy durations to 5s default.
+  // NOTE: Floor enforcement is handled by the worker pipeline (steps.ts) before
+  // durations reach the renderer. Applying it AGAIN here caused double distortion
+  // and cumulative image-narration drift. The renderer trusts the incoming durations.
+  const sceneDurations = durations.map(d => d || 5);
+  console.log(`[${jobId}] Scene durations (from worker): ${sceneDurations.map(d => d.toFixed(2)).join(',')}s`);
 
   for (let i = 0; i < images.length; i++) {
     const imagePath = images[i];

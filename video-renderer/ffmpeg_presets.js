@@ -1392,7 +1392,7 @@ function buildKenBurnsFromConfig(kb, master, index, duration, width, height, see
   if (!kb || !kb.enabled) return null;
 
   const fps = lowMem ? 15 : 30;
-  const frames = Math.floor(duration * fps);
+  const frames = Math.ceil(duration * fps);  // ceil prevents cumulative frame shortfall → image drift
   const scaleFactor = lowMem ? 1.1 : 2;
   const scaledW = Math.floor(width * scaleFactor);
   const scaledH = Math.floor(height * scaleFactor);
