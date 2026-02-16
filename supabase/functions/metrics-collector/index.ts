@@ -466,7 +466,7 @@ class InstagramMetricsAdapter implements MetricsAdapter {
 
 // ─────────────────────────────────────────────────────
 // Facebook Reels Metrics Adapter
-// Uses Facebook Graph API
+// Uses Facebook Graph API — direct video-node fields (no read_insights needed)
 // ─────────────────────────────────────────────────────
 class FacebookMetricsAdapter implements MetricsAdapter {
   name = 'facebook_reels';
@@ -502,12 +502,15 @@ class FacebookMetricsAdapter implements MetricsAdapter {
       };
     }
 
-    const accessToken = tokenData.access_token;
+    // Use page_access_token for page-owned content (Reels are page videos)
+    const accessToken = tokenData.metadata?.page_access_token || tokenData.access_token;
 
     try {
-      // Fetch video insights
+      // Fetch video fields directly — video_insights requires read_insights
+      // permission which needs separate app review. Direct fields work with
+      // standard page token permissions.
       const response = await fetch(
-        `${this.API_BASE}/${platformPostId}/video_insights?metric=total_video_impressions,total_video_views,total_video_reactions_by_type_total,total_video_stories_by_action_type&access_token=${accessToken}`
+        `${this.API_BASE}/${platformPostId}?fields=id,views,likes.summary(true),comments.summary(true)&access_token=${accessToken}`
       );
 
       if (response.status === 404) {
@@ -549,34 +552,16 @@ class FacebookMetricsAdapter implements MetricsAdapter {
         };
       }
 
-      const data = await response.json();
-      const insights = (data as { data?: Array<{ name: string; values: Array<{ value: number | Record<string, number> }> }> }).data || [];
+      const data = await response.json() as {
+        id: string;
+        views?: number;
+        likes?: { summary?: { total_count?: number } };
+        comments?: { summary?: { total_count?: number } };
+      };
 
-      let views = 0;
-      let likes = 0;
-      let comments = 0;
-      let shares = 0;
-
-      for (const insight of insights) {
-        const value = insight.values?.[0]?.value;
-        switch (insight.name) {
-          case 'total_video_views':
-            views = typeof value === 'number' ? value : 0;
-            break;
-          case 'total_video_reactions_by_type_total':
-            if (typeof value === 'object' && value !== null) {
-              likes = Object.values(value).reduce((sum: number, v: unknown) => sum + (typeof v === 'number' ? v : 0), 0);
-            }
-            break;
-          case 'total_video_stories_by_action_type':
-            if (typeof value === 'object' && value !== null) {
-              const actions = value as Record<string, number>;
-              comments = actions.comment || 0;
-              shares = actions.share || 0;
-            }
-            break;
-        }
-      }
+      const views = data.views ?? 0;
+      const likes = data.likes?.summary?.total_count ?? 0;
+      const comments = data.comments?.summary?.total_count ?? 0;
 
       return {
         success: true,
@@ -584,8 +569,8 @@ class FacebookMetricsAdapter implements MetricsAdapter {
           views,
           likes,
           comments,
-          shares,
-          saves: 0, // Facebook doesn't expose saves for reels
+          shares: 0, // Not available on Video node without read_insights
+          saves: 0,  // Facebook doesn't expose saves for reels
         },
         raw: data,
       };
