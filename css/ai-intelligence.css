@@ -74,6 +74,56 @@
 }
 
 /* ── Card overrides ───────────────────────────────────────────────────── */
+.ai-card {
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+}
+
+.ai-card__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-4) var(--space-5);
+    border-bottom: 1px solid var(--color-border-default);
+}
+
+.ai-card__title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text-primary);
+    margin: 0;
+}
+
+.ai-card__title svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    color: var(--color-accent-primary);
+}
+
+.ai-card__badge {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    background: rgba(99, 102, 241, 0.12);
+    color: var(--color-accent-primary);
+    white-space: nowrap;
+}
+
+.ai-card__body {
+    padding: var(--space-4) var(--space-5);
+}
+
+.ai-card--full {
+    grid-column: 1 / -1;
+}
+
 .ai-card .card__header {
     display: flex;
     justify-content: space-between;
