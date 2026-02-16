@@ -733,11 +733,16 @@ class FacebookReelsAdapter implements PlatformAdapter {
         return { success: false, error_class: 'misconfig', error_message: 'Facebook token is invalid. Please reconnect in Settings.' };
       }
 
-      // Build description
-      const postDescription = description || title || '';
+      // Build description with hashtags (like Instagram)
+      const captionText = description || title || '';
+      const hashtags = tags || [];
+      const postDescription = hashtags.length > 0
+        ? `${captionText}\n\n${hashtags.map(h => h.startsWith('#') ? h : `#${h}`).join(' ')}`
+        : captionText;
 
       console.log(`[Facebook] Page ID: ${pageId}`);
       console.log(`[Facebook] Description: ${postDescription.slice(0, 100)}...`);
+      console.log(`[Facebook] Hashtags: ${hashtags.length} tags`);
 
       // Step 1: Initialize Reel upload with file_url
       console.log('[Facebook] Step 1: Initializing Reel upload with video URL...');
@@ -1025,6 +1030,7 @@ async function processPost(
               metadata_source: metadata.status,
             };
           } else if (post.platform === 'facebook' || post.platform === 'facebook_reels') {
+            postTitle = (md as Record<string, unknown>).title as string || postTitle;
             postDescription = (md as Record<string, unknown>).caption as string || (md as Record<string, unknown>).description as string || postDescription;
             postTags = (md as Record<string, unknown>).hashtags as string[] || postTags;
             postMeta = {
