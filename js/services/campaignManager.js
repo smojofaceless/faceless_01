@@ -122,6 +122,12 @@ class CampaignManager {
             }));
             console.log('[CampaignManager] Reusing preview schedule:', schedule.length, 'jobs (presets preserved)');
         } else {
+            // Fetch smart time slots from analytics (if data exists)
+            let smartTimeSlots = null;
+            if (config.useSmartTimes !== false) {
+                smartTimeSlots = await this._fetchSmartTimeSlots(brandId, platforms);
+            }
+
             schedule = this._generateSchedule({
                 videoCount,
                 startDate: new Date(startDate),
@@ -134,9 +140,11 @@ class CampaignManager {
                 presetWeights: weights,
                 generationLeadTimeHours: config.generationLeadTimeHours || this.defaults.generationLeadTimeHours,
                 duration: config.duration || this.defaults.duration,
-                asapMode: config.asapMode || false
+                asapMode: config.asapMode || false,
+                smartTimeSlots
             });
-            console.log('[CampaignManager] Generated new schedule:', schedule.length, 'jobs');
+            console.log('[CampaignManager] Generated new schedule:', schedule.length, 'jobs',
+                smartTimeSlots ? '(using AI-learned best times)' : '(using default windows)');
         }
 
         // Build campaign config (use resolved values)
@@ -359,9 +367,15 @@ class CampaignManager {
     /**
      * Generate a schedule preview (no DB writes)
      * Returns array of scheduled items for UI preview
+     * Now async — fetches best time slots from analytics when brandId provided
      */
-    generateSchedulePreview(options) {
-        return this._generateSchedule(options);
+    async generateSchedulePreview(options) {
+        // Fetch smart time slots if brandId and platforms provided
+        let smartTimeSlots = null;
+        if (options.brandId && options.platforms?.length && options.useSmartTimes !== false) {
+            smartTimeSlots = await this._fetchSmartTimeSlots(options.brandId, options.platforms);
+        }
+        return this._generateSchedule({ ...options, smartTimeSlots });
     }
 
     /**
@@ -471,6 +485,13 @@ class CampaignManager {
             return schedule;
         }
         
+        // Smart time slots: AI-learned best posting times per day-of-week
+        // Map: dayOfWeek (0-6) → [{ hour, score }] sorted by score desc
+        const smartSlots = options.smartTimeSlots || null;
+        if (smartSlots) {
+            console.log('[CampaignManager] 🧠 Using AI-learned time slots for scheduling');
+        }
+
         // Use while loop instead - we may need more days if we skip past times
         let day = 0;
         const maxDays = daysNeeded + 7; // Safety limit: allow up to a week of overflow
@@ -479,12 +500,27 @@ class CampaignManager {
             // Determine windows for this day
             const windowsForDay = this._getWindowsForDay(postsPerDay, day);
 
-            for (const windowId of windowsForDay) {
+            // Get day-of-week for smart slot lookup
+            const dayOfWeek = currentDate.getDay(); // 0=Sun, 6=Sat
+            const daySmartSlots = smartSlots?.[dayOfWeek] || [];
+
+            for (let windowIdx = 0; windowIdx < windowsForDay.length; windowIdx++) {
+                const windowId = windowsForDay[windowIdx];
                 if (videoIndex >= videoCount) break;
 
-                // Get base time for this window
-                const windowHour = windowId === 'A' ? windowAHour : windowBHour;
-                const windowMin = windowId === 'A' ? windowAMin : windowBMin;
+                let windowHour, windowMin;
+
+                // Use smart time slots if available for this day
+                if (daySmartSlots.length > 0) {
+                    // Pick the Nth best slot for this window (1st window = best time, 2nd = second best, etc.)
+                    const slotIdx = Math.min(windowIdx, daySmartSlots.length - 1);
+                    windowHour = daySmartSlots[slotIdx].hour;
+                    windowMin = 0; // Smart slots are hourly
+                } else {
+                    // Fallback to fixed window times
+                    windowHour = windowId === 'A' ? windowAHour : windowBHour;
+                    windowMin = windowId === 'A' ? windowAMin : windowBMin;
+                }
 
                 // Apply jitter
                 const appliedJitter = this._randomInt(-jitter, jitter);
@@ -565,6 +601,70 @@ class CampaignManager {
                 windows.push(i % 2 === 0 ? 'A' : 'B');
             }
             return windows;
+        }
+    }
+
+    /**
+     * Fetch AI-learned best time slots grouped by day-of-week
+     * @param {string} brandId
+     * @param {string[]} platforms - e.g. ['youtube_shorts', 'tiktok']
+     * @returns {Object|null} Map of { [dayOfWeek: 0-6]: [{ hour, score }] } sorted by score desc, or null if no data
+     */
+    async _fetchSmartTimeSlots(brandId, platforms) {
+        try {
+            // Ensure TimeSlotService is available
+            if (typeof timeSlotService === 'undefined' || !timeSlotService) {
+                console.log('[CampaignManager] TimeSlotService not available, using default windows');
+                return null;
+            }
+
+            await timeSlotService.init();
+
+            // Fetch slots for each platform (limit 14 = ~2 per day across 7 days)
+            const allSlots = [];
+            for (const platform of platforms) {
+                const slots = await timeSlotService.getBestTimeSlots(brandId, platform, 30, 14);
+                if (slots && slots.length > 0) {
+                    allSlots.push(...slots);
+                }
+            }
+
+            if (allSlots.length === 0) {
+                console.log('[CampaignManager] No time slot data available, using default windows');
+                return null;
+            }
+
+            // Group by day_of_week and aggregate scores across platforms
+            const byDay = {};
+            for (const slot of allSlots) {
+                const dow = slot.day_of_week; // 0=Sun, 6=Sat
+                if (!byDay[dow]) byDay[dow] = {};
+
+                const hourKey = slot.hour;
+                if (!byDay[dow][hourKey]) {
+                    byDay[dow][hourKey] = { hour: hourKey, totalScore: 0, count: 0 };
+                }
+                byDay[dow][hourKey].totalScore += (slot.score || 0);
+                byDay[dow][hourKey].count += 1;
+            }
+
+            // Convert to sorted arrays per day (average score across platforms)
+            const result = {};
+            for (const [dow, hours] of Object.entries(byDay)) {
+                const sorted = Object.values(hours)
+                    .map(h => ({ hour: h.hour, score: h.totalScore / h.count }))
+                    .sort((a, b) => b.score - a.score);
+                result[dow] = sorted;
+            }
+
+            const totalDays = Object.keys(result).length;
+            const totalSlots = Object.values(result).reduce((s, arr) => s + arr.length, 0);
+            console.log(`[CampaignManager] 🧠 Loaded smart time slots: ${totalSlots} slots across ${totalDays} days`);
+
+            return result;
+        } catch (err) {
+            console.error('[CampaignManager] Error fetching smart time slots:', err);
+            return null;
         }
     }
 
