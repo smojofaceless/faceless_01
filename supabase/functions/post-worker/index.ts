@@ -1511,7 +1511,17 @@ class TwitterAdapter implements PlatformAdapter {
       // 4. If we have a video URL, upload the video
       let mediaId: string | null = null;
       if (videoUrl) {
-        mediaId = await this._uploadVideo(videoUrl, accessToken);
+        try {
+          mediaId = await this._uploadVideo(videoUrl, accessToken);
+        } catch (uploadErr) {
+          const uploadMsg = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
+          // If media upload gets 403, fall back to text-only tweet
+          if (uploadMsg.includes('403')) {
+            console.warn(`[X/Twitter] Media upload 403 — falling back to text-only tweet. Check X Developer Portal → App permissions → "Read and Write". Error: ${uploadMsg}`);
+          } else {
+            throw uploadErr; // re-throw non-403 errors
+          }
+        }
       }
 
       // 5. Create tweet
