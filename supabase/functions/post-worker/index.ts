@@ -12,7 +12,7 @@
 // 1. Checks global kill switch
 // 2. Receives post_id (or claims from queue)
 // 3. Validates post ownership (lease)
-// 4. Calls platform adapter (YouTube, Instagram, Facebook, TikTok, Threads = real)
+// 4. Calls platform adapter (YouTube, Instagram, Facebook, TikTok, Threads, X/Twitter = real)
 // 5. Updates post status (posted/failed)
 // =====================================================
 
@@ -1368,6 +1368,354 @@ class FacebookReelsAdapter implements PlatformAdapter {
   }
 }
 
+// =====================================================
+// REAL X (TWITTER) ADAPTER
+// Uses X API v2 for tweets + v1.1 chunked media upload for video
+// =====================================================
+
+/**
+ * Refresh X (Twitter) OAuth 2.0 token using refresh_token
+ */
+async function refreshTwitterToken(
+  supabase: SupabaseClient,
+  tokenData: PlatformToken
+): Promise<string> {
+  console.log('[X/Twitter] Refreshing access token...');
+
+  const clientId = Deno.env.get('TWITTER_CLIENT_ID');
+  const clientSecret = Deno.env.get('TWITTER_CLIENT_SECRET');
+
+  if (!clientId) {
+    throw new Error('TWITTER_CLIENT_ID not configured');
+  }
+
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: tokenData.refresh_token,
+    client_id: clientId,
+  });
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+  };
+
+  // Use Basic auth if client secret is available
+  if (clientSecret) {
+    headers['Authorization'] = `Basic ${btoa(`${clientId}:${clientSecret}`)}`;
+  }
+
+  const response = await fetch('https://api.twitter.com/2/oauth2/token', {
+    method: 'POST',
+    headers,
+    body: body.toString(),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error('[X/Twitter] Token refresh failed:', errorBody);
+    await supabase
+      .from('platform_tokens')
+      .update({ is_valid: false, last_error: `Token refresh failed: ${response.status}` })
+      .eq('id', tokenData.id);
+    throw new Error(`Twitter token refresh failed: ${response.status}`);
+  }
+
+  const tokens = await response.json();
+  const expiresAt = new Date(Date.now() + (tokens.expires_in || 7200) * 1000).toISOString();
+
+  await supabase
+    .from('platform_tokens')
+    .update({
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token || tokenData.refresh_token,
+      token_expires_at: expiresAt,
+      is_valid: true,
+      last_error: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', tokenData.id);
+
+  console.log('[X/Twitter] Token refreshed successfully, expires:', expiresAt);
+  return tokens.access_token;
+}
+
+/**
+ * Real X (Twitter) adapter — posts tweet with video via v2 API
+ * 
+ * Flow:
+ * 1. Get token from platform_tokens
+ * 2. Download video bytes
+ * 3. Upload via media upload v1.1 (INIT → APPEND → FINALIZE → poll STATUS)
+ * 4. Create tweet with media_id via v2 API
+ */
+class TwitterAdapter implements PlatformAdapter {
+  name = 'twitter';
+  private UPLOAD_URL = 'https://upload.twitter.com/1.1/media/upload.json';
+  private TWEET_URL = 'https://api.twitter.com/2/tweets';
+
+  async post(
+    videoUrl: string,
+    title: string,
+    description: string | null,
+    tags: string[] | null,
+    meta: Record<string, unknown>,
+    supabase?: SupabaseClient,
+    brandId?: string
+  ): Promise<PlatformResult> {
+    console.log(`[X/Twitter] Starting post: "${title?.slice(0, 50)}"`);
+
+    if (!supabase || !brandId) {
+      return { success: false, error_class: 'misconfig', error_message: 'Twitter adapter requires supabase client and brand_id' };
+    }
+
+    try {
+      // 1. Get Twitter token
+      const { data: tokenData, error: tokenError } = await supabase
+        .from('platform_tokens')
+        .select('*')
+        .eq('brand_id', brandId)
+        .eq('platform', 'twitter')
+        .single();
+
+      if (tokenError || !tokenData) {
+        console.error('[X/Twitter] Token lookup failed:', tokenError?.message);
+        return { success: false, error_class: 'misconfig', error_message: 'X not connected for this brand. Please connect in Settings.' };
+      }
+      if (!tokenData.is_valid) {
+        return { success: false, error_class: 'misconfig', error_message: 'X token is invalid. Please reconnect in Settings.' };
+      }
+
+      // 2. Refresh token if near expiry
+      let accessToken = tokenData.access_token;
+      const expiresAt = new Date(tokenData.token_expires_at);
+      const fiveMinutes = 5 * 60 * 1000;
+      if (expiresAt.getTime() - Date.now() < fiveMinutes) {
+        console.log('[X/Twitter] Token expired or expiring soon, refreshing...');
+        accessToken = await refreshTwitterToken(supabase, tokenData as PlatformToken);
+      }
+
+      // 3. Build tweet text (280 char limit)
+      const caption = description || title || '';
+      const hashtags = tags || [];
+      const hashtagStr = hashtags.length > 0
+        ? hashtags.map(h => h.startsWith('#') ? h : `#${h}`).join(' ')
+        : '';
+      
+      // Reserve space for hashtags
+      const availableChars = hashtagStr ? 280 - hashtagStr.length - 2 : 280;
+      const trimmedCaption = caption.length > availableChars ? caption.slice(0, availableChars - 3) + '...' : caption;
+      const tweetText = hashtagStr ? `${trimmedCaption}\n\n${hashtagStr}` : trimmedCaption;
+      
+      console.log(`[X/Twitter] Tweet text (${tweetText.length} chars): ${tweetText.slice(0, 100)}...`);
+
+      // 4. If we have a video URL, upload the video
+      let mediaId: string | null = null;
+      if (videoUrl) {
+        mediaId = await this._uploadVideo(videoUrl, accessToken);
+      }
+
+      // 5. Create tweet
+      console.log('[X/Twitter] Creating tweet...');
+      const tweetBody: Record<string, unknown> = { text: tweetText };
+      if (mediaId) {
+        tweetBody.media = { media_ids: [mediaId] };
+      }
+
+      const tweetResponse = await fetch(this.TWEET_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(tweetBody),
+      });
+
+      const tweetData = await tweetResponse.json();
+
+      if (!tweetResponse.ok) {
+        const errDetail = tweetData.detail || tweetData.title || JSON.stringify(tweetData);
+        console.error('[X/Twitter] Tweet creation failed:', errDetail);
+
+        let errClass: 'transient' | 'dependency' | 'misconfig' | 'permanent' = 'transient';
+        if (tweetResponse.status === 401 || tweetResponse.status === 403) {
+          errClass = 'misconfig';
+          await supabase.from('platform_tokens')
+            .update({ is_valid: false, last_error: errDetail })
+            .eq('id', tokenData.id);
+        } else if (tweetResponse.status === 429) {
+          errClass = 'transient';
+        }
+
+        return { success: false, error_class: errClass, error_message: `X: ${errDetail}` };
+      }
+
+      const tweetId = tweetData.data?.id;
+      const username = tokenData.platform_channel_name?.replace('@', '') || '';
+      const platformUrl = username
+        ? `https://x.com/${username}/status/${tweetId}`
+        : `https://x.com/i/status/${tweetId}`;
+
+      console.log(`[X/Twitter] Tweet posted! ID: ${tweetId}, URL: ${platformUrl}`);
+
+      return {
+        success: true,
+        platform_post_id: tweetId,
+        platform_url: platformUrl,
+      };
+
+    } catch (err) {
+      console.error('[X/Twitter] Unexpected error:', err);
+      return {
+        success: false,
+        error_class: 'transient',
+        error_message: `X error: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+  }
+
+  /**
+   * Upload video via X media upload v1.1 (chunked upload)
+   * Steps: INIT → APPEND (chunks) → FINALIZE → poll STATUS
+   */
+  private async _uploadVideo(videoUrl: string, accessToken: string): Promise<string> {
+    console.log('[X/Twitter] Downloading video for upload...');
+    
+    // Download the video
+    const videoResponse = await fetch(videoUrl);
+    if (!videoResponse.ok) {
+      throw new Error(`Failed to download video: ${videoResponse.status}`);
+    }
+    const videoBytes = new Uint8Array(await videoResponse.arrayBuffer());
+    const totalBytes = videoBytes.length;
+    console.log(`[X/Twitter] Video downloaded: ${(totalBytes / 1024 / 1024).toFixed(2)} MB`);
+
+    // INIT
+    console.log('[X/Twitter] Media upload INIT...');
+    const initParams = new URLSearchParams({
+      command: 'INIT',
+      total_bytes: totalBytes.toString(),
+      media_type: 'video/mp4',
+      media_category: 'tweet_video',
+    });
+
+    const initResponse = await fetch(`${this.UPLOAD_URL}?${initParams}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+    });
+
+    if (!initResponse.ok) {
+      const err = await initResponse.text();
+      throw new Error(`Media INIT failed: ${initResponse.status} — ${err}`);
+    }
+
+    const initData = await initResponse.json();
+    const mediaIdStr = initData.media_id_string;
+    console.log(`[X/Twitter] Media ID: ${mediaIdStr}`);
+
+    // APPEND — upload in 5MB chunks
+    const CHUNK_SIZE = 5 * 1024 * 1024;
+    let segmentIndex = 0;
+    let offset = 0;
+
+    while (offset < totalBytes) {
+      const end = Math.min(offset + CHUNK_SIZE, totalBytes);
+      const chunk = videoBytes.slice(offset, end);
+      
+      console.log(`[X/Twitter] APPEND segment ${segmentIndex}: ${chunk.length} bytes`);
+
+      const formData = new FormData();
+      formData.append('command', 'APPEND');
+      formData.append('media_id', mediaIdStr);
+      formData.append('segment_index', segmentIndex.toString());
+      formData.append('media_data', new Blob([chunk], { type: 'video/mp4' }));
+
+      const appendResponse = await fetch(this.UPLOAD_URL, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${accessToken}` },
+        body: formData,
+      });
+
+      if (!appendResponse.ok && appendResponse.status !== 204) {
+        const err = await appendResponse.text();
+        throw new Error(`Media APPEND failed (segment ${segmentIndex}): ${appendResponse.status} — ${err}`);
+      }
+
+      segmentIndex++;
+      offset = end;
+    }
+
+    // FINALIZE
+    console.log('[X/Twitter] Media upload FINALIZE...');
+    const finalizeParams = new URLSearchParams({
+      command: 'FINALIZE',
+      media_id: mediaIdStr,
+    });
+
+    const finalizeResponse = await fetch(`${this.UPLOAD_URL}?${finalizeParams}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+    });
+
+    if (!finalizeResponse.ok) {
+      const err = await finalizeResponse.text();
+      throw new Error(`Media FINALIZE failed: ${finalizeResponse.status} — ${err}`);
+    }
+
+    const finalizeData = await finalizeResponse.json();
+    
+    // Check if processing is needed
+    if (finalizeData.processing_info) {
+      await this._pollProcessingStatus(mediaIdStr, accessToken);
+    }
+
+    console.log('[X/Twitter] Video upload complete!');
+    return mediaIdStr;
+  }
+
+  /**
+   * Poll media processing status until succeeded or failed
+   */
+  private async _pollProcessingStatus(mediaId: string, accessToken: string): Promise<void> {
+    console.log('[X/Twitter] Polling media processing status...');
+    
+    const maxPolls = 60; // Up to ~10 minutes
+    for (let i = 0; i < maxPolls; i++) {
+      const statusParams = new URLSearchParams({
+        command: 'STATUS',
+        media_id: mediaId,
+      });
+
+      const statusResponse = await fetch(`${this.UPLOAD_URL}?${statusParams}`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${accessToken}` },
+      });
+
+      if (!statusResponse.ok) {
+        throw new Error(`Media STATUS check failed: ${statusResponse.status}`);
+      }
+
+      const statusData = await statusResponse.json();
+      const state = statusData.processing_info?.state;
+      const checkAfterSecs = statusData.processing_info?.check_after_secs || 10;
+      const progressPercent = statusData.processing_info?.progress_percent || 0;
+
+      console.log(`[X/Twitter] Processing: state=${state}, progress=${progressPercent}%, check_after=${checkAfterSecs}s`);
+
+      if (state === 'succeeded') {
+        return;
+      } else if (state === 'failed') {
+        const error = statusData.processing_info?.error;
+        throw new Error(`Media processing failed: ${error?.message || 'Unknown error'}`);
+      }
+
+      // Wait the recommended time
+      await new Promise(r => setTimeout(r, checkAfterSecs * 1000));
+    }
+
+    throw new Error('Media processing timed out after polling');
+  }
+}
+
 /**
  * Get adapter for platform
  */
@@ -1382,6 +1730,9 @@ function getAdapter(platform: string): PlatformAdapter {
       return new TikTokAdapter();
     case 'threads':
       return new ThreadsAdapter();
+    case 'twitter':
+    case 'x':
+      return new TwitterAdapter();
     case 'youtube':
     case 'youtube_shorts':
       return new YouTubeAdapter();
@@ -1491,6 +1842,13 @@ async function processPost(
             };
           } else if (post.platform === 'threads') {
             postDescription = (md as Record<string, unknown>).caption as string || (md as Record<string, unknown>).text as string || postDescription;
+            postMeta = {
+              ...postMeta,
+              metadata_source: metadata.status,
+            };
+          } else if (post.platform === 'twitter') {
+            postDescription = (md as Record<string, unknown>).tweet_text as string || (md as Record<string, unknown>).caption as string || postDescription;
+            postTags = (md as Record<string, unknown>).hashtags as string[] || postTags;
             postMeta = {
               ...postMeta,
               metadata_source: metadata.status,

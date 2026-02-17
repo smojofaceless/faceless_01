@@ -244,6 +244,7 @@
     <script src="../js/services/meta.js"></script>
     <script src="../js/services/tiktok.js"></script>
     <script src="../js/services/threads.js"></script>
+    <script src="../js/services/twitter.js"></script>
     <script src="../js/services/postManager.js"></script>
     <script src="../js/services/scheduler.js"></script>
     <script src="../js/services/brandManager.js"></script>
@@ -281,6 +282,13 @@
         const THREADS_CONFIG = {
             appId: localStorage.getItem('threads_app_id') || '1747466246227767',
             appSecret: localStorage.getItem('threads_app_secret') || '51c57c50e2a25e19e18cb4be3ab3f36a',
+            redirectUri: window.location.href.split('?')[0].split('#')[0]
+        };
+
+        // X (Twitter) OAuth 2.0 with PKCE config
+        const TWITTER_CONFIG = {
+            clientId: localStorage.getItem('twitter_client_id') || '',
+            clientSecret: localStorage.getItem('twitter_client_secret') || '',
             redirectUri: window.location.href.split('?')[0].split('#')[0]
         };
 
@@ -335,6 +343,10 @@
                     } else if (stateData.brandId && stateData.platform === 'threads') {
                         console.log('Threads OAuth callback received for brand:', stateData.brandId);
                         completeThreadsAuth(code, stateData.brandId);
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                    } else if (stateData.brandId && stateData.platform === 'twitter') {
+                        console.log('Twitter/X OAuth callback received for brand:', stateData.brandId);
+                        completeTwitterAuth(code, stateData.brandId);
                         window.history.replaceState({}, document.title, window.location.pathname);
                     } else if (stateData.brandId) {
                         console.log('Meta OAuth callback received for brand:', stateData.brandId);
@@ -547,6 +559,7 @@
             updateMetaBrandContext();
             updateTikTokBrandContext();
             updateThreadsBrandContext();
+            updateTwitterBrandContext();
             loadPlatforms();
             setupModal();
             
@@ -568,6 +581,11 @@
             // Initialize Threads service if credentials exist
             if (THREADS_CONFIG.appId) {
                 threadsService.init(THREADS_CONFIG.appId, THREADS_CONFIG.appSecret);
+            }
+
+            // Initialize Twitter/X service if credentials exist
+            if (TWITTER_CONFIG.clientId) {
+                twitterService.init(TWITTER_CONFIG.clientId);
             }
 
             // Auto-sync Meta tokens to Supabase on page load
@@ -606,6 +624,14 @@
             }
         }
 
+        // Update Twitter/X service with current brand context
+        function updateTwitterBrandContext() {
+            const brand = brandManager.getActiveBrand();
+            if (brand) {
+                twitterService.setBrand(brand.id);
+            }
+        }
+
         function updateBrandHeader() {
             const brand = brandManager.getActiveBrand();
             const notice = document.getElementById('brand-notice');
@@ -616,8 +642,9 @@
                 header.style.display = 'flex';
                 document.getElementById('active-brand-name').textContent = brand.name;
                 
-                // Update YouTube context when brand changes
+                // Update all platform contexts when brand changes
                 updateYouTubeBrandContext();
+                updateTwitterBrandContext();
             } else {
                 notice.style.display = 'flex';
                 header.style.display = 'none';
@@ -630,6 +657,7 @@
             updateMetaBrandContext();
             updateTikTokBrandContext();
             updateThreadsBrandContext();
+            updateTwitterBrandContext();
             
             const container = document.getElementById('platforms-grid');
             const platforms = getAllPlatforms();
@@ -660,6 +688,11 @@
                 // Special handling for Threads
                 if (platform.id === 'threads') {
                     return renderThreadsCard(platform, brand);
+                }
+                
+                // Special handling for Twitter/X
+                if (platform.id === 'twitter') {
+                    return renderTwitterCard(platform, brand);
                 }
                 
                 const account = brand ? 
@@ -1237,6 +1270,162 @@
             THREADS_CONFIG.appSecret = appSecret;
 
             Toast.success('Threads API credentials saved!');
+            loadPlatforms();
+        }
+
+        // ── Twitter/X functions ──
+
+        function renderTwitterCard(platform, brand) {
+            const isConnected = brand ? twitterService.isBrandConnected(brand.id) : false;
+            const connectionInfo = brand ? twitterService.getConnectionInfo() : null;
+
+            var statusHtml = '';
+            if (!brand) {
+                statusHtml = '<div class="platform-card__status"><span class="status-indicator status-indicator--warning"></span><span class="text-muted">Select a brand first</span></div>';
+            } else if (isConnected) {
+                var usernameText = connectionInfo && connectionInfo.username ? '<span class="text-muted">\u00b7 @' + connectionInfo.username + '</span>' : '';
+                statusHtml = '<div class="platform-card__status"><span class="status-indicator status-indicator--success"></span><span>Connected</span>' + usernameText + '</div>';
+            } else {
+                statusHtml = '<div class="platform-card__status"><span class="status-indicator"></span><span class="text-muted">Not connected</span></div>';
+            }
+
+            var footerHtml = '';
+            if (isConnected) {
+                footerHtml = '<button class="btn btn--sm btn--secondary" onclick="testTwitterConnection()">Test</button>' +
+                    '<button class="btn btn--sm btn--error" onclick="disconnectTwitter()">Disconnect</button>';
+            } else {
+                var disabled = !brand ? 'disabled title="Select a brand first"' : '';
+                footerHtml = '<button class="btn btn--sm btn--primary" onclick="connectTwitter()" ' + disabled + '>Connect with X</button>';
+            }
+
+            var needsSetup = !TWITTER_CONFIG.clientId;
+            var setupHtml = needsSetup ? '<div class="platform-card__setup"><button class="btn btn--sm btn--secondary" onclick="openTwitterSetup()">\u2699\ufe0f Setup API Keys</button></div>' : '';
+
+            return '<div class="platform-card platform-card--twitter ' + (isConnected ? 'platform-card--connected' : '') + '">' +
+                '<div class="platform-card__header" style="background: #000000">' +
+                '<svg viewBox="0 0 24 24" fill="currentColor" width="32" height="32"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>' +
+                '</div>' +
+                '<div class="platform-card__body">' +
+                '<h3 class="platform-card__name">X (Twitter)</h3>' +
+                statusHtml +
+                '<div class="platform-card__info">' +
+                '<div class="info-row"><span>Max caption:</span><span>280 chars</span></div>' +
+                '<div class="info-row"><span>Auth:</span><span>OAuth 2.0 PKCE</span></div>' +
+                '</div></div>' +
+                '<div class="platform-card__footer">' + footerHtml + '</div>' +
+                setupHtml +
+                '</div>';
+        }
+
+        async function connectTwitter() {
+            const brand = brandManager.getActiveBrand();
+            if (!brand) {
+                Toast.error('Please select a brand first');
+                return;
+            }
+            if (!TWITTER_CONFIG.clientId) {
+                openTwitterSetup();
+                return;
+            }
+
+            twitterService.init(TWITTER_CONFIG.clientId);
+            twitterService.setBrand(brand.id);
+
+            const csrfState = JSON.stringify({
+                brandId: brand.id,
+                platform: 'twitter',
+                nonce: Math.random().toString(36).substring(7)
+            });
+
+            try {
+                const authUrl = await twitterService.getAuthUrl(TWITTER_CONFIG.redirectUri, csrfState);
+                window.location.href = authUrl;
+            } catch (error) {
+                Toast.error('Failed to generate auth URL: ' + error.message);
+            }
+        }
+
+        async function completeTwitterAuth(code, brandId) {
+            try {
+                Toast.info('Completing X connection...');
+
+                if (!TWITTER_CONFIG.clientId) {
+                    throw new Error('Twitter API credentials not configured. Use Setup button.');
+                }
+
+                twitterService.init(TWITTER_CONFIG.clientId);
+                await twitterService.setBrand(brandId);
+
+                const result = await twitterService.handleCallback(code, TWITTER_CONFIG.redirectUri, TWITTER_CONFIG.clientSecret);
+
+                // Update brand's connectedPlatforms
+                const brand = brandManager.get(brandId);
+                if (brand && !brand.hasPlatform('twitter')) {
+                    brand.connectPlatform('twitter');
+                    await brandManager.update(brandId, { connectedPlatforms: brand.connectedPlatforms });
+                }
+
+                Toast.success('X connected: @' + (result.username || result.userId));
+                loadPlatforms();
+
+            } catch (error) {
+                console.error('Twitter auth error:', error);
+                Toast.error('X connection failed: ' + error.message);
+            }
+        }
+
+        async function disconnectTwitter() {
+            const brand = brandManager.getActiveBrand();
+            if (!brand) {
+                Toast.error('Please select a brand first');
+                return;
+            }
+
+            if (!confirm('Disconnect X (Twitter) for ' + brand.name + '?')) return;
+
+            try {
+                await twitterService.disconnect();
+
+                if (brand.hasPlatform('twitter')) {
+                    brand.disconnectPlatform('twitter');
+                    await brandManager.update(brand.id, { connectedPlatforms: brand.connectedPlatforms });
+                }
+
+                Toast.success('X disconnected');
+                loadPlatforms();
+            } catch (error) {
+                Toast.error('Failed to disconnect: ' + error.message);
+            }
+        }
+
+        async function testTwitterConnection() {
+            Toast.info('Testing X connection...');
+            try {
+                const result = await twitterService.testConnection();
+                if (result.success) {
+                    Toast.success('X working! Connected as @' + result.username);
+                } else {
+                    Toast.error('X test failed: ' + result.error);
+                }
+            } catch (error) {
+                Toast.error('Test failed: ' + error.message);
+            }
+        }
+
+        function openTwitterSetup() {
+            const clientId = prompt('Enter your X (Twitter) OAuth 2.0 Client ID:', TWITTER_CONFIG.clientId);
+            if (clientId === null) return;
+
+            const clientSecret = prompt('Enter your X Client Secret (for token refresh):', TWITTER_CONFIG.clientSecret);
+            if (clientSecret === null) return;
+
+            localStorage.setItem('twitter_client_id', clientId);
+            localStorage.setItem('twitter_client_secret', clientSecret);
+
+            TWITTER_CONFIG.clientId = clientId;
+            TWITTER_CONFIG.clientSecret = clientSecret;
+
+            Toast.success('X API credentials saved!');
             loadPlatforms();
         }
 
