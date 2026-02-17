@@ -1993,6 +1993,16 @@ export async function executeMusicStep(
     console.log(`[MUSIC] Deterministic selection: hash=${hashHex.slice(0,8)} → index ${selectedIndex}/${tracks.length} → ${selected.track_id}`);
 
     // -----------------------------------------------
+    // 3b. Per-track volume override
+    //     If the track has a volume set (0.0–1.0), use it
+    //     instead of the brand-level default_volume.
+    // -----------------------------------------------
+    if (selected.volume != null && typeof selected.volume === 'number') {
+      console.log(`[MUSIC] Per-track volume override: ${selected.volume} (brand default was ${config.default_volume})`);
+      config.default_volume = selected.volume;
+    }
+
+    // -----------------------------------------------
     // 4. Get public URL for the track file from Storage
     // -----------------------------------------------
     const trackPath = selected.file_path || pathForBrandMusic(job.brand_id, selected.track_id);

@@ -23,10 +23,14 @@ CREATE TABLE IF NOT EXISTS music_tracks (
     is_active BOOLEAN NOT NULL DEFAULT true,
     loudness_lufs NUMERIC,
     peak_db NUMERIC,
+    volume NUMERIC DEFAULT NULL,  -- Per-track volume override (0.0-1.0). NULL = use brand default.
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (id, brand_id)
 );
+
+-- Add volume column if table already exists
+ALTER TABLE music_tracks ADD COLUMN IF NOT EXISTS volume NUMERIC DEFAULT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_music_tracks_brand_id ON music_tracks(brand_id);
 CREATE INDEX IF NOT EXISTS idx_music_tracks_brand_active ON music_tracks(brand_id, is_active) WHERE is_active = true;
@@ -120,12 +124,13 @@ CREATE OR REPLACE FUNCTION get_brand_music_tracks(
 ) RETURNS TABLE (
     track_id TEXT, display_name TEXT, file_path TEXT, duration_seconds INT,
     loopable BOOLEAN, mood TEXT, energy TEXT, vibe_presets TEXT[],
-    loudness_lufs NUMERIC, peak_db NUMERIC
+    loudness_lufs NUMERIC, peak_db NUMERIC, volume NUMERIC
 ) LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
     RETURN QUERY
     SELECT mt.id, mt.display_name, mt.file_path, mt.duration_seconds,
-           mt.loopable, mt.mood, mt.energy, mt.vibe_presets, mt.loudness_lufs, mt.peak_db
+           mt.loopable, mt.mood, mt.energy, mt.vibe_presets, mt.loudness_lufs, mt.peak_db,
+           mt.volume
     FROM music_tracks mt
     WHERE mt.brand_id = p_brand_id AND mt.is_active = true
       AND (p_vibe_preset IS NULL OR p_vibe_preset = ANY(mt.vibe_presets)

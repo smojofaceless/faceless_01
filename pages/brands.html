@@ -599,7 +599,7 @@
                 <!-- Volume Control -->
                 <div class="music-volume-section" id="music-volume-section">
                     <div class="music-volume-header">
-                        <span class="music-volume-label">🔊 Background Music Volume</span>
+                        <span class="music-volume-label">🔊 Default Music Volume</span>
                         <span class="music-volume-value" id="music-volume-value">18%</span>
                     </div>
                     <div class="music-volume-slider-row">
@@ -607,7 +607,7 @@
                         <input type="range" id="music-volume-slider" class="music-volume-slider" min="0" max="50" step="1" value="18">
                         <span class="music-volume-icon">🔊</span>
                     </div>
-                    <div class="music-volume-hint">Controls how loud the background music plays relative to narration. Default: 18%</div>
+                    <div class="music-volume-hint">Brand-wide default volume. Override per track using the slider on each track above.</div>
                     <button class="btn btn--primary btn--sm" id="music-volume-save" style="margin-top:8px">Save Volume</button>
                 </div>
             </div>
@@ -2043,6 +2043,44 @@
                         }
                     });
                 });
+
+                // Per-track volume: live label update on slide
+                container.querySelectorAll('.music-track__volume-slider').forEach(slider => {
+                    slider.addEventListener('input', () => {
+                        const valEl = container.querySelector(`.music-track__volume-val[data-track-id="${slider.dataset.trackId}"]`);
+                        if (valEl) valEl.textContent = slider.value + '%';
+                    });
+                });
+
+                // Per-track volume: save button
+                container.querySelectorAll('.music-track__volume-save').forEach(btn => {
+                    btn.addEventListener('click', async () => {
+                        const trackId = btn.dataset.trackId;
+                        const slider = container.querySelector(`.music-track__volume-slider[data-track-id="${trackId}"]`);
+                        const volume = parseInt(slider.value, 10) / 100;
+                        try {
+                            await brandManager.updateTrackVolume(musicBrandId, trackId, volume);
+                            toast.success(`Track volume set to ${slider.value}%`);
+                            loadMusicTracks(); // re-render to show reset button
+                        } catch (e) {
+                            toast.error('Failed to save track volume');
+                        }
+                    });
+                });
+
+                // Per-track volume: reset to brand default
+                container.querySelectorAll('.music-track__volume-reset').forEach(btn => {
+                    btn.addEventListener('click', async () => {
+                        const trackId = btn.dataset.trackId;
+                        try {
+                            await brandManager.updateTrackVolume(musicBrandId, trackId, null);
+                            toast.success('Track volume reset to brand default');
+                            loadMusicTracks();
+                        } catch (e) {
+                            toast.error('Failed to reset track volume');
+                        }
+                    });
+                });
             } catch (e) {
                 console.error('Failed to load tracks:', e);
                 container.innerHTML = `<div class="text-red-400 text-center py-4">Failed to load tracks</div>`;
@@ -2111,6 +2149,9 @@
             };
             const moodColor = moodColors[track.mood] || '#6B7280';
             const isActive = track.is_active;
+            const trackVol = track.volume != null ? Math.round(track.volume * 100) : null;
+            const trackVolDisplay = trackVol != null ? trackVol + '%' : 'default';
+            const sliderVal = trackVol != null ? trackVol : 18;
 
             return `
                 <div class="music-track ${!isActive ? 'music-track--disabled' : ''}">
@@ -2126,6 +2167,13 @@
                                 ${!isActive ? '<span class="text-yellow-400">disabled</span>' : ''}
                             </div>
                         </div>
+                    </div>
+                    <div class="music-track__volume-row">
+                        <span class="music-track__volume-icon">🔈</span>
+                        <input type="range" class="music-track__volume-slider" data-track-id="${track.id}" min="0" max="50" step="1" value="${sliderVal}">
+                        <span class="music-track__volume-val" data-track-id="${track.id}">${trackVolDisplay}</span>
+                        <button class="btn btn--icon btn--xs music-track__volume-save" data-track-id="${track.id}" title="Save volume">💾</button>
+                        ${trackVol != null ? `<button class="btn btn--icon btn--xs music-track__volume-reset" data-track-id="${track.id}" title="Reset to brand default">↩</button>` : ''}
                     </div>
                     <div class="music-track__actions">
                         <button class="btn btn--icon btn--xs music-track__toggle" data-track-id="${track.id}" data-active="${isActive}" title="${isActive ? 'Disable' : 'Enable'}">

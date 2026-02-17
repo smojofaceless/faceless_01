@@ -1,0 +1,148 @@
+[
+  {
+    "top_hooks": [
+      {
+        "hook": "Whispers in the Wind: Seek the Unseen 🌬️",
+        "perf": 97,
+        "post_id": "4a1593a9-bf55-463e-b2f4-3fc71da1b051"
+      },
+      {
+        "hook": "What Did The Toymaker Hide? Uncover The Dark Truth",
+        "perf": 77,
+        "post_id": "ef6398f4-26d0-4081-ab2f-ab37e5893176"
+      },
+      {
+        "hook": "Whispers at Midnight: What Lurks in the Tunnel? 🌙",
+        "perf": 2,
+        "post_id": "3adc6cab-355f-4e6e-b471-d491fbbcf6a2"
+      },
+      {
+        "hook": "7 Tourists, But Only 6 Names? Unsettling Reality...",
+        "perf": 2,
+        "post_id": "9562f13d-bf56-4122-bfd3-3c04a2337e44"
+      },
+      {
+        "hook": "Found a Haunted Vending Machine? What It Dispensed 😱",
+        "perf": 2,
+        "post_id": "800bd146-1cc9-46a1-a05a-4022c6a4df0d"
+      },
+      {
+        "hook": "Who Is the Mirror Man Lurking in Shadows? 🔍",
+        "perf": 19,
+        "post_id": "2bd8cf7b-6848-4dda-8d96-cc25259d6f90"
+      },
+      {
+        "hook": "5 Callers Joined. Only 4 Were Invited. 📞",
+        "perf": 176,
+        "post_id": "90583311-98f5-4940-af3f-ebfc5537faec"
+      },
+      {
+        "hook": "12 Families. No Thefts. Just Chilling Etchings. 🔍",
+        "perf": 162,
+        "post_id": "454dca31-3bef-475a-849e-88eb24f69f2e"
+      },
+      {
+        "hook": "Who Called From The Empty Phone Booth? 👀",
+        "perf": 113,
+        "post_id": "a3ac49d7-a588-40d5-9d81-aa0e03fed888"
+      },
+      {
+        "hook": "Whispers in the Vents: They Knew My Name...",
+        "perf": 1,
+        "post_id": "872b9a74-0553-48d5-a1b5-2b92ac797e3a"
+      }
+    ],
+    "top_hashtags": [
+      {
+        "tag": "mystery",
+        "count": 12,
+        "avg_perf": 202
+      },
+      {
+        "tag": "shorts",
+        "count": 12,
+        "avg_perf": 202
+      },
+      {
+        "tag": "horror",
+        "count": 12,
+        "avg_perf": 202
+      },
+      {
+        "tag": "scary",
+        "count": 11,
+        "avg_perf": 210.1
+      },
+      {
+        "tag": "urban legend",
+        "count": 5,
+        "avg_perf": 388
+      },
+      {
+        "tag": "supernatural",
+        "count": 5,
+        "avg_perf": 46.4
+      },
+      {
+        "tag": "eerie",
+        "count": 4,
+        "avg_perf": 92
+      },
+      {
+        "tag": "horror shorts",
+        "count": 3,
+        "avg_perf": 636
+      },
+      {
+        "tag": "eerie tales",
+        "count": 3,
+        "avg_perf": 576.7
+      },
+      {
+        "tag": "ghost story",
+        "count": 3,
+        "avg_perf": 97
+      },
+      {
+        "tag": "dark origins",
+        "count": 3,
+        "avg_perf": 95
+      },
+      {
+        "tag": "creepy story",
+        "count": 2,
+        "avg_perf": 864.5
+      },
+      {
+        "tag": "paranormal",
+        "count": 2,
+        "avg_perf": 89
+      },
+      {
+        "tag": "suspense",
+        "count": 2,
+        "avg_perf": 39.5
+      },
+      {
+        "tag": "creepy stories",
+        "count": 2,
+        "avg_perf": 24
+      }
+    ],
+    "top_ctas": [
+      {
+        "cta": "subscribe",
+        "count": 12
+      }
+    ],
+    "length_stats": {
+      "avg_perf": 202,
+      "avg_desc_len": 175,
+      "avg_tag_count": 10.6,
+      "avg_title_len": 44
+    },
+    "sample_count": 12,
+    "avg_performance": 202,
+    "computed_at": "2026-02-15T23:21:57.973418+00:00"
+  }
+]

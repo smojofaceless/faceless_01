@@ -760,6 +760,28 @@ class BrandManager {
     }
 
     /**
+     * Update a track's per-track volume override
+     * @param {string} brandId
+     * @param {string} trackId
+     * @param {number|null} volume - 0.0-1.0 float, or null to use brand default
+     */
+    async updateTrackVolume(brandId, trackId, volume) {
+        if (!this.useSupabase) throw new Error('Music tracks require Supabase');
+
+        const { error } = await supabaseClient
+            .from('music_tracks')
+            .update({ volume: volume, updated_at: new Date().toISOString() })
+            .eq('id', trackId)
+            .eq('brand_id', brandId);
+
+        if (error) {
+            console.error('Failed to update track volume:', error);
+            throw error;
+        }
+        this.emit('musicTrackChanged', { brandId, trackId, volume });
+    }
+
+    /**
      * Delete a music track from DB (does NOT remove storage file)
      * @param {string} brandId
      * @param {string} trackId
