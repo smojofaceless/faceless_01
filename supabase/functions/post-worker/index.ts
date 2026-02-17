@@ -12,7 +12,7 @@
 // 1. Checks global kill switch
 // 2. Receives post_id (or claims from queue)
 // 3. Validates post ownership (lease)
-// 4. Calls platform adapter (YouTube, Instagram, Facebook, TikTok = real)
+// 4. Calls platform adapter (YouTube, Instagram, Facebook, TikTok, Threads = real)
 // 5. Updates post status (posted/failed)
 // =====================================================
 
@@ -386,6 +386,238 @@ class TikTokAdapter implements PlatformAdapter {
         success: false,
         error_class: 'transient',
         error_message: `TikTok error: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+  }
+}
+
+// =====================================================
+// REAL THREADS ADAPTER
+// Uses Threads API (graph.threads.net) for video/text posts
+// =====================================================
+
+/**
+ * Refresh Threads long-lived token
+ */
+async function refreshThreadsToken(
+  supabase: SupabaseClient,
+  tokenData: PlatformToken
+): Promise<string> {
+  console.log('[Threads] Refreshing long-lived token...');
+
+  const response = await fetch(
+    `https://graph.threads.net/refresh_access_token?grant_type=th_refresh_token&access_token=${tokenData.access_token}`
+  );
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error('[Threads] Token refresh failed:', errorBody);
+    await supabase
+      .from('platform_tokens')
+      .update({ is_valid: false, last_error: `Token refresh failed: ${response.status}` })
+      .eq('id', tokenData.id);
+    throw new Error(`Threads token refresh failed: ${response.status}`);
+  }
+
+  const tokens = await response.json();
+  const expiresAt = new Date(Date.now() + (tokens.expires_in || 5184000) * 1000).toISOString();
+
+  await supabase
+    .from('platform_tokens')
+    .update({
+      access_token: tokens.access_token,
+      token_expires_at: expiresAt,
+      is_valid: true,
+      last_error: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', tokenData.id);
+
+  console.log('[Threads] Token refreshed successfully, expires:', expiresAt);
+  return tokens.access_token;
+}
+
+/**
+ * Real Threads adapter — posts video via Threads API
+ * Flow: create media container → wait for processing → publish
+ */
+class ThreadsAdapter implements PlatformAdapter {
+  name = 'threads';
+  private API_BASE = 'https://graph.threads.net/v1.0';
+
+  async post(
+    videoUrl: string,
+    title: string,
+    description: string | null,
+    tags: string[] | null,
+    meta: Record<string, unknown>,
+    supabase?: SupabaseClient,
+    brandId?: string
+  ): Promise<PlatformResult> {
+    console.log(`[Threads] Starting post: "${title?.slice(0, 50)}"`);
+
+    if (!supabase || !brandId) {
+      return { success: false, error_class: 'misconfig', error_message: 'Threads adapter requires supabase client and brand_id' };
+    }
+
+    try {
+      // 1. Get Threads token
+      const { data: tokenData, error: tokenError } = await supabase
+        .from('platform_tokens')
+        .select('*')
+        .eq('brand_id', brandId)
+        .eq('platform', 'threads')
+        .single();
+
+      if (tokenError || !tokenData) {
+        console.error('[Threads] Token lookup failed:', tokenError?.message);
+        return { success: false, error_class: 'misconfig', error_message: 'Threads not connected for this brand. Please connect in Settings.' };
+      }
+      if (!tokenData.is_valid) {
+        return { success: false, error_class: 'misconfig', error_message: 'Threads token is invalid. Please reconnect in Settings.' };
+      }
+
+      const threadsUserId = tokenData.platform_channel_id;
+      if (!threadsUserId) {
+        return { success: false, error_class: 'misconfig', error_message: 'No Threads user ID found. Please reconnect in Settings.' };
+      }
+
+      // 2. Refresh token if within 7 days of expiry
+      let accessToken = tokenData.access_token;
+      const expiresAt = new Date(tokenData.token_expires_at);
+      const sevenDays = 7 * 24 * 60 * 60 * 1000;
+      if (expiresAt.getTime() - Date.now() < sevenDays) {
+        console.log('[Threads] Token expiring soon, refreshing...');
+        accessToken = await refreshThreadsToken(supabase, tokenData as PlatformToken);
+      }
+
+      // 3. Build post text
+      const caption = description || title || '';
+      // Threads caption limit: 500 chars
+      const safeCaption = caption.length > 500 ? caption.slice(0, 497) + '...' : caption;
+
+      console.log(`[Threads] Text: ${safeCaption.slice(0, 100)}...`);
+
+      // 4. Create media container
+      // If we have a video URL, post as video; otherwise as text
+      const isVideoPost = !!videoUrl;
+      const containerBody: Record<string, string> = {
+        access_token: accessToken,
+        text: safeCaption,
+      };
+
+      if (isVideoPost) {
+        containerBody.media_type = 'VIDEO';
+        containerBody.video_url = videoUrl;
+      } else {
+        containerBody.media_type = 'TEXT';
+      }
+
+      console.log(`[Threads] Step 1: Creating ${isVideoPost ? 'video' : 'text'} container...`);
+      const containerResponse = await fetch(
+        `${this.API_BASE}/${threadsUserId}/threads`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(containerBody),
+        }
+      );
+
+      const containerData = await containerResponse.json();
+      console.log('[Threads] Container response:', JSON.stringify(containerData));
+
+      if (containerData.error) {
+        const errMsg = containerData.error.message || 'Container creation failed';
+        const errCode = containerData.error.code;
+        console.error(`[Threads] Container error: ${errCode} - ${errMsg}`);
+
+        let errClass: 'transient' | 'dependency' | 'misconfig' | 'permanent' = 'transient';
+        if (errCode === 190 || errMsg.includes('token')) {
+          errClass = 'misconfig';
+          await supabase.from('platform_tokens')
+            .update({ is_valid: false, last_error: errMsg })
+            .eq('id', tokenData.id);
+        }
+
+        return { success: false, error_class: errClass, error_message: `Threads: ${errMsg}` };
+      }
+
+      const containerId = containerData.id;
+      if (!containerId) {
+        return { success: false, error_class: 'transient', error_message: 'Threads: No container ID returned' };
+      }
+
+      // 5. For video posts, poll until processing is done
+      if (isVideoPost) {
+        console.log('[Threads] Step 2: Waiting for video processing...');
+        const maxPolls = 30;
+        const pollInterval = 10000;
+
+        for (let i = 0; i < maxPolls; i++) {
+          await new Promise(r => setTimeout(r, pollInterval));
+
+          const statusResponse = await fetch(
+            `${this.API_BASE}/${containerId}?fields=status,error_message&access_token=${accessToken}`
+          );
+          const statusData = await statusResponse.json();
+          const status = statusData.status;
+          console.log(`[Threads] Poll ${i + 1}/${maxPolls}: status=${status}`);
+
+          if (status === 'FINISHED') {
+            break;
+          } else if (status === 'ERROR') {
+            return {
+              success: false,
+              error_class: 'dependency',
+              error_message: `Threads video processing failed: ${statusData.error_message || 'Unknown error'}`,
+            };
+          }
+          // IN_PROGRESS — keep polling
+        }
+      }
+
+      // 6. Publish the container
+      console.log('[Threads] Step 3: Publishing...');
+      const publishResponse = await fetch(
+        `${this.API_BASE}/${threadsUserId}/threads_publish`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            creation_id: containerId,
+            access_token: accessToken,
+          }),
+        }
+      );
+
+      const publishData = await publishResponse.json();
+      console.log('[Threads] Publish response:', JSON.stringify(publishData));
+
+      if (publishData.error) {
+        return {
+          success: false,
+          error_class: 'transient',
+          error_message: `Threads publish failed: ${publishData.error.message}`,
+        };
+      }
+
+      const postId = publishData.id;
+      const platformUrl = `https://www.threads.net/post/${postId}`;
+
+      console.log(`[Threads] Published successfully! ID: ${postId}`);
+
+      return {
+        success: true,
+        platform_post_id: postId,
+        platform_url: platformUrl,
+      };
+
+    } catch (err) {
+      console.error('[Threads] Unexpected error:', err);
+      return {
+        success: false,
+        error_class: 'transient',
+        error_message: `Threads error: ${err instanceof Error ? err.message : String(err)}`,
       };
     }
   }
@@ -1148,6 +1380,8 @@ function getAdapter(platform: string): PlatformAdapter {
   switch (p) {
     case 'tiktok':
       return new TikTokAdapter();
+    case 'threads':
+      return new ThreadsAdapter();
     case 'youtube':
     case 'youtube_shorts':
       return new YouTubeAdapter();
@@ -1251,6 +1485,12 @@ async function processPost(
             postTitle = (md as Record<string, unknown>).title as string || postTitle;
             postDescription = (md as Record<string, unknown>).caption as string || (md as Record<string, unknown>).description as string || postDescription;
             postTags = (md as Record<string, unknown>).hashtags as string[] || postTags;
+            postMeta = {
+              ...postMeta,
+              metadata_source: metadata.status,
+            };
+          } else if (post.platform === 'threads') {
+            postDescription = (md as Record<string, unknown>).caption as string || (md as Record<string, unknown>).text as string || postDescription;
             postMeta = {
               ...postMeta,
               metadata_source: metadata.status,
