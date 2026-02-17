@@ -40,8 +40,8 @@ class TikTokService {
         this.USER_INFO_URL = 'https://open.tiktokapis.com/v2/user/info/';
         this.UPLOAD_INIT_URL = 'https://open.tiktokapis.com/v2/post/publish/video/init/';
 
-        // Scopes — start with Login Kit only; add video.upload,video.publish after Content Posting API is approved
-        this.SCOPES = 'user.info.basic';
+        // Scopes: Login Kit + Content Posting API
+        this.SCOPES = 'user.info.basic,video.upload,video.publish';
 
         this._initialized = false;
     }

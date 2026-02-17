@@ -987,7 +987,7 @@
             const params = new URLSearchParams({
                 client_key: TIKTOK_CONFIG.clientKey,
                 response_type: 'code',
-                scope: 'user.info.basic',
+                scope: 'user.info.basic,video.upload,video.publish',
                 redirect_uri: TIKTOK_CONFIG.redirectUri,
                 state: csrfState
             });
