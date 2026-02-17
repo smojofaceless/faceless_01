@@ -988,6 +988,76 @@ class BrandManager {
     }
 
     // =================================================================
+    // MUSIC CONFIG (brand-level config_overrides.music)
+    // =================================================================
+
+    /**
+     * Get music config from brand_templates for a brand.
+     * Returns the music object from the default template's config_overrides,
+     * or null if no music config is set.
+     * @param {string} brandId
+     * @returns {Promise<Object|null>}
+     */
+    async getMusicConfig(brandId) {
+        if (!this.useSupabase) {
+            console.warn('Music config requires Supabase');
+            return null;
+        }
+        const { data, error } = await supabaseClient
+            .from('brand_templates')
+            .select('id, template_type, config_overrides, is_default')
+            .eq('brand_id', brandId)
+            .eq('is_default', true)
+            .limit(1)
+            .single();
+
+        if (error) {
+            if (error.code === 'PGRST116') return null;
+            console.error('Failed to load music config:', error);
+            throw error;
+        }
+        return data?.config_overrides?.music || null;
+    }
+
+    /**
+     * Save music config to brand_templates for a brand.
+     * Merges into config_overrides.music on the default template.
+     * @param {string} brandId
+     * @param {Object} musicConfig - e.g. { default_volume: 0.15 }
+     * @returns {Promise<void>}
+     */
+    async saveMusicConfig(brandId, musicConfig) {
+        if (!this.useSupabase) throw new Error('Music config requires Supabase');
+
+        const { data: template, error: fetchErr } = await supabaseClient
+            .from('brand_templates')
+            .select('id, config_overrides')
+            .eq('brand_id', brandId)
+            .eq('is_default', true)
+            .limit(1)
+            .single();
+
+        if (fetchErr) {
+            console.error('Failed to find default template:', fetchErr);
+            throw fetchErr;
+        }
+
+        const overrides = template.config_overrides || {};
+        overrides.music = { ...(overrides.music || {}), ...musicConfig };
+
+        const { error: updateErr } = await supabaseClient
+            .from('brand_templates')
+            .update({ config_overrides: overrides })
+            .eq('id', template.id);
+
+        if (updateErr) {
+            console.error('Failed to save music config:', updateErr);
+            throw updateErr;
+        }
+        console.log('🎵 Music config saved for brand:', brandId);
+    }
+
+    // =================================================================
     // EFFECTS CONFIG (brand-level config_overrides.effects)
     // =================================================================
 
