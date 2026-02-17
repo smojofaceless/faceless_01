@@ -12,7 +12,7 @@
 // 1. Checks global kill switch
 // 2. Receives post_id (or claims from queue)
 // 3. Validates post ownership (lease)
-// 4. Calls platform adapter (YouTube, Instagram, Facebook = real; TikTok = stubbed)
+// 4. Calls platform adapter (YouTube, Instagram, Facebook, TikTok = real)
 // 5. Updates post status (posted/failed)
 // =====================================================
 
@@ -143,13 +143,69 @@ class StubAdapter implements PlatformAdapter {
 }
 
 /**
- * TikTok adapter (stubbed)
+ * Refresh TikTok access token using refresh_token
  */
-class TikTokAdapter extends StubAdapter {
-  constructor() {
-    super('tiktok');
+async function refreshTikTokToken(
+  supabase: SupabaseClient,
+  tokenData: PlatformToken
+): Promise<string> {
+  console.log('[TikTok] Refreshing access token...');
+
+  const clientKey = Deno.env.get('TIKTOK_CLIENT_KEY');
+  const clientSecret = Deno.env.get('TIKTOK_CLIENT_SECRET');
+
+  if (!clientKey || !clientSecret) {
+    throw new Error('TikTok OAuth credentials not configured (TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET)');
   }
-  
+
+  const response = await fetch('https://open.tiktokapis.com/v2/oauth/token/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_key: clientKey,
+      client_secret: clientSecret,
+      grant_type: 'refresh_token',
+      refresh_token: tokenData.refresh_token,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error('[TikTok] Token refresh failed:', errorBody);
+    await supabase
+      .from('platform_tokens')
+      .update({ is_valid: false, last_error: `Token refresh failed: ${response.status}` })
+      .eq('id', tokenData.id);
+    throw new Error(`TikTok token refresh failed: ${response.status}`);
+  }
+
+  const tokens = await response.json();
+  const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+
+  await supabase
+    .from('platform_tokens')
+    .update({
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token || tokenData.refresh_token,
+      token_expires_at: expiresAt,
+      is_valid: true,
+      last_error: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', tokenData.id);
+
+  console.log('[TikTok] Token refreshed successfully, expires:', expiresAt);
+  return tokens.access_token;
+}
+
+/**
+ * Real TikTok adapter — uploads via Content Posting API V2
+ * Flow: init upload → upload video via URL → poll for publish status
+ */
+class TikTokAdapter implements PlatformAdapter {
+  name = 'tiktok';
+  private API_BASE = 'https://open.tiktokapis.com/v2';
+
   async post(
     videoUrl: string,
     title: string,
@@ -159,17 +215,179 @@ class TikTokAdapter extends StubAdapter {
     supabase?: SupabaseClient,
     brandId?: string
   ): Promise<PlatformResult> {
-    // TikTok-specific validation
+    console.log(`[TikTok] Starting upload: "${title?.slice(0, 50)}"`);
+
     if (!videoUrl) {
+      return { success: false, error_class: 'misconfig', error_message: 'TikTok requires a video URL' };
+    }
+    if (!supabase || !brandId) {
+      return { success: false, error_class: 'misconfig', error_message: 'TikTok adapter requires supabase client and brand_id' };
+    }
+
+    try {
+      // 1. Get TikTok token
+      const { data: tokenData, error: tokenError } = await supabase
+        .from('platform_tokens')
+        .select('*')
+        .eq('brand_id', brandId)
+        .eq('platform', 'tiktok')
+        .single();
+
+      if (tokenError || !tokenData) {
+        console.error('[TikTok] Token lookup failed:', tokenError?.message);
+        return { success: false, error_class: 'misconfig', error_message: 'TikTok not connected for this brand. Please connect in Settings.' };
+      }
+      if (!tokenData.is_valid) {
+        return { success: false, error_class: 'misconfig', error_message: 'TikTok token is invalid. Please reconnect in Settings.' };
+      }
+
+      // 2. Refresh token if near expiry
+      let accessToken = tokenData.access_token;
+      const expiresAt = new Date(tokenData.token_expires_at);
+      const fiveMinutes = 5 * 60 * 1000;
+      if (expiresAt.getTime() - Date.now() < fiveMinutes) {
+        console.log('[TikTok] Token expired or expiring soon, refreshing...');
+        accessToken = await refreshTikTokToken(supabase, tokenData as PlatformToken);
+      }
+
+      // 3. Build caption with hashtags
+      const caption = description || title || '';
+      const hashtags = tags || [];
+      const fullCaption = hashtags.length > 0
+        ? `${caption}\n\n${hashtags.map(h => h.startsWith('#') ? h : `#${h}`).join(' ')}`
+        : caption;
+      // TikTok caption limit: 2200 chars
+      const safeCaption = fullCaption.length > 2200 ? fullCaption.slice(0, 2197) + '...' : fullCaption;
+
+      console.log(`[TikTok] Caption: ${safeCaption.slice(0, 100)}...`);
+
+      // 4. Init video publish via "pull from URL" method
+      console.log('[TikTok] Step 1: Initializing video publish (pull from URL)...');
+      const initResponse = await fetch(`${this.API_BASE}/post/publish/video/init/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json; charset=UTF-8',
+        },
+        body: JSON.stringify({
+          post_info: {
+            title: (title || '').slice(0, 150),
+            description: safeCaption,
+            privacy_level: 'PUBLIC_TO_EVERYONE',
+            disable_duet: false,
+            disable_comment: false,
+            disable_stitch: false,
+            video_cover_timestamp_ms: 1000,
+          },
+          source_info: {
+            source: 'PULL_FROM_URL',
+            video_url: videoUrl,
+          },
+        }),
+      });
+
+      const initData = await initResponse.json();
+      console.log('[TikTok] Init response:', JSON.stringify(initData));
+
+      if (initData.error?.code) {
+        const errCode = initData.error.code;
+        const errMsg = initData.error.message || 'Video init failed';
+        console.error(`[TikTok] Init error: ${errCode} - ${errMsg}`);
+
+        // Classify errors
+        let errClass: 'transient' | 'dependency' | 'misconfig' | 'permanent' = 'transient';
+        if (['access_token_invalid', 'token_expired', 'scope_not_authorized'].includes(errCode)) {
+          errClass = 'misconfig';
+          // Mark token invalid
+          await supabase.from('platform_tokens')
+            .update({ is_valid: false, last_error: errMsg })
+            .eq('id', tokenData.id);
+        } else if (['spam_risk_too_many_posts', 'rate_limit_exceeded'].includes(errCode)) {
+          errClass = 'transient';
+        } else if (['url_download_failed'].includes(errCode)) {
+          errClass = 'dependency';
+        }
+
+        return { success: false, error_class: errClass, error_message: `TikTok: ${errCode} — ${errMsg}` };
+      }
+
+      const publishId = initData.data?.publish_id;
+      if (!publishId) {
+        return { success: false, error_class: 'transient', error_message: 'TikTok: No publish_id returned from init' };
+      }
+
+      console.log(`[TikTok] Publish ID: ${publishId}`);
+
+      // 5. Poll for publish status (TikTok processes async)
+      console.log('[TikTok] Step 2: Polling publish status...');
+      let finalStatus = 'PROCESSING';
+      let platformPostId = '';
+      const maxPolls = 30; // Up to ~5 minutes
+      const pollInterval = 10000; // 10 seconds
+
+      for (let i = 0; i < maxPolls; i++) {
+        await new Promise(r => setTimeout(r, pollInterval));
+
+        const statusResponse = await fetch(
+          `${this.API_BASE}/post/publish/status/fetch/`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json; charset=UTF-8',
+            },
+            body: JSON.stringify({ publish_id: publishId }),
+          }
+        );
+
+        const statusData = await statusResponse.json();
+        finalStatus = statusData.data?.status || 'UNKNOWN';
+        console.log(`[TikTok] Poll ${i + 1}/${maxPolls}: status=${finalStatus}`);
+
+        if (finalStatus === 'PUBLISH_COMPLETE') {
+          platformPostId = statusData.data?.publicaly_available_post_id ||
+                           statusData.data?.publish_id ||
+                           publishId;
+          break;
+        } else if (finalStatus === 'FAILED') {
+          const failReason = statusData.data?.fail_reason || 'Unknown failure';
+          console.error(`[TikTok] Publish failed: ${failReason}`);
+          return {
+            success: false,
+            error_class: 'dependency',
+            error_message: `TikTok publish failed: ${failReason}`,
+          };
+        }
+        // PROCESSING_UPLOAD, PROCESSING_DOWNLOAD, SENDING_TO_USER_INBOX — keep polling
+      }
+
+      if (finalStatus !== 'PUBLISH_COMPLETE') {
+        // Timeout — might still succeed, return optimistically
+        console.warn(`[TikTok] Publish still processing after ${maxPolls * pollInterval / 1000}s. Status: ${finalStatus}`);
+        return {
+          success: true,
+          platform_post_id: publishId,
+          platform_url: `https://www.tiktok.com/@/video/${publishId}`,
+        };
+      }
+
+      const platformUrl = `https://www.tiktok.com/@/video/${platformPostId}`;
+      console.log(`[TikTok] Published successfully! ID: ${platformPostId}, URL: ${platformUrl}`);
+
+      return {
+        success: true,
+        platform_post_id: platformPostId,
+        platform_url: platformUrl,
+      };
+
+    } catch (err) {
+      console.error('[TikTok] Unexpected error:', err);
       return {
         success: false,
-        error_class: 'misconfig',
-        error_message: 'TikTok requires a video URL',
+        error_class: 'transient',
+        error_message: `TikTok error: ${err instanceof Error ? err.message : String(err)}`,
       };
     }
-    
-    // Delegate to stub (TODO: implement real TikTok upload)
-    return super.post(videoUrl, title, description, tags, meta, supabase, brandId);
   }
 }
 
