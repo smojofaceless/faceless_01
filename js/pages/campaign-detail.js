@@ -1648,6 +1648,41 @@ class CampaignDetailPage {
                 </div>
             </div>`;
         }
+
+        // === Uniqueness Improvement Tips ===
+        const tips = [];
+        if (score !== '-') {
+            // Concept-level checks
+            if (!storyConcept && !setting) {
+                tips.push({ icon: '🎯', area: 'Concept Metadata', tip: 'Story has no extracted setting or concept — the uniqueness check fell back to full-text hashing. Richer concept metadata would enable smarter thematic comparison.' });
+            }
+            if (hasCollision) {
+                tips.push({ icon: '🔄', area: 'Theme Overlap', tip: `${collisionCount} other story shares the same setting + concept combination. Use a completely different location or premise to avoid thematic repetition.` });
+            }
+            // Dimensional improvement suggestions (the "missing 5%")
+            if (!hasCollision) {
+                tips.push({ icon: '📐', area: 'Title Similarity', tip: 'The system currently checks concept-level collisions but doesn\'t compare title phrasing across stories. Varying your title structure (e.g. question vs. statement vs. fragment) adds another layer of differentiation.' });
+                tips.push({ icon: '🪝', area: 'Hook Variation', tip: 'Try varying the opening hook style — alternate between "Did you know..." factual hooks, cold-open immersion ("The door was already open."), or counting/number hooks. Diverse hooks prevent audience pattern fatigue.' });
+                tips.push({ icon: '🧩', area: 'Narrative Structure', tip: 'Rotate between story structures: linear chronological, dual-timeline (then vs. now), reverse reveal, or documentary reconstruction. Same concept with different structure feels like a different story.' });
+                tips.push({ icon: '👥', area: 'Character Archetypes', tip: 'Swap character archetypes between posts — unreliable narrator, reluctant investigator, oblivious bystander, calm documentarian. Each archetype changes how the same horror lands.' });
+                tips.push({ icon: '🌡️', area: 'Tone Spectrum', tip: 'Shift tone across posts: clinical/factual → confessional/intimate → sardonic/dark humor → slow-burn dread. Keeps the brand unpredictable even within the same genre.' });
+            }
+        }
+
+        if (tips.length > 0) {
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">💡 How to Reach 100% Uniqueness</div>
+                <div style="font-size:12px;line-height:1.7;display:flex;flex-direction:column;gap:8px">
+                    ${score !== '-' && !hasCollision ? `<div style="color:#8b949e;margin-bottom:4px">Score is <strong style="color:#3fb950">${score}%</strong> — no concept collisions detected. The remaining <strong>${100 - score}%</strong> represents dimensions the system doesn't yet measure automatically. Here's what would push it higher:</div>` : ''}
+                    ${tips.map(t => `
+                        <div style="padding:8px 12px;background:rgba(88,166,255,0.04);border:1px solid rgba(88,166,255,0.12);border-radius:6px">
+                            <div style="font-weight:600;color:#c9d1d9;margin-bottom:2px">${t.icon} ${t.area}</div>
+                            <div style="color:#8b949e">${t.tip}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>`;
+        }
         
         return html;
     }

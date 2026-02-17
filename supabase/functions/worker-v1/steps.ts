@@ -563,7 +563,20 @@ export async function executeStoryStep(
 
     const parsed = JSON.parse(content);
     const title = parsed.title || 'Untitled Story';
-    const storyText = parsed.story || parsed.content || parsed.text;
+    let storyText = parsed.story || parsed.content || parsed.text;
+
+    // Sanitize dashes from narration text — em-dashes and standalone hyphens
+    // don't render well in subtitles/captions
+    if (storyText) {
+      storyText = storyText
+        .replace(/\s*—\s*/g, ', ')      // em-dash → comma
+        .replace(/\s*–\s*/g, ', ')      // en-dash → comma
+        .replace(/\s+-\s+/g, ', ')      // spaced hyphen → comma
+        .replace(/,\s*,/g, ',')         // clean up double commas
+        .replace(/,\s*\./g, '.')        // clean up comma before period
+        .trim();
+      console.log(`[STORY] Sanitized dashes from narration text`);
+    }
     // Extract concept metadata for thematic uniqueness (GPT returns these)
     const storySetting = parsed.setting || '';
     const storyConcept = parsed.concept || '';
@@ -755,6 +768,7 @@ TONE & STYLE:
 - Use SPECIFIC numbers ("there were ${size.start} of us", "the count showed ${size.extra}") — vague counts kill counting horror
 - Ground the reader in physical details (What does the space look like? Where is everyone sitting? What does the air feel like?)
 - Short punchy sentences for tension. Longer flowing ones for unease.
+- NEVER use dashes (—, –, -) as punctuation. Use commas, periods, or semicolons instead.
 - The hook should grab attention in the first 3 seconds — "Did you know..." hooks, shocking statements, or immediate immersion all work
 - End with something that lingers — unresolved, a final image, proof that won't go away
 
@@ -768,41 +782,49 @@ Each story MUST use a completely different and unique setting from all previous 
  */
 function getStorySystemPrompt(vibePreset: string): string {
   if (vibePreset === 'one_too_many') {
-    return `You are a master storyteller specializing in short-form horror and mystery content for TikTok/Reels narration. For counting horror stories, you can use ANY narrative voice that best serves the story — first-person ("I counted again..."), third-person documentary ("They counted again..."), or even a "Did you know..." factual hook style. Choose whichever voice makes THIS particular story most gripping. You write like a calm, factual narrator recounting something deeply unsettling — the horror comes from the math not adding up, not from gore or monsters.`;
+    return `You are a master storyteller specializing in short-form horror and mystery content for TikTok/Reels narration. For counting horror stories, you can use ANY narrative voice that best serves the story, first-person ("I counted again..."), third-person documentary ("They counted again..."), or even a "Did you know..." factual hook style. Choose whichever voice makes THIS particular story most gripping. You write like a calm, factual narrator recounting something deeply unsettling, the horror comes from the math not adding up, not from gore or monsters.
+
+CRITICAL FORMATTING RULE: NEVER use dashes, em-dashes (—), en-dashes (–), or hyphens (-) as punctuation in the narration. Use commas, periods, semicolons, or ellipses instead. This text will be displayed as on-screen subtitles and used as platform captions where dashes render poorly.`;
   }
   if (vibePreset === 'reddit_trending_horror') {
-    return `You are a master storyteller who writes ORIGINAL horror scripts in the style of viral Reddit posts. You write in FIRST-PERSON — the narrator is someone recounting what happened to them, like a real person confessing a real experience. Your voice is CONFESSIONAL, not dramatic. You sound like someone sitting across from a friend saying "okay so this is going to sound crazy but..." — reluctant, self-aware, grounded in mundane reality before the horror creeps in.
+    return `You are a master storyteller who writes ORIGINAL horror scripts in the style of viral Reddit posts. You write in FIRST-PERSON, the narrator is someone recounting what happened to them, like a real person confessing a real experience. Your voice is CONFESSIONAL, not dramatic. You sound like someone sitting across from a friend saying "okay so this is going to sound crazy but...", reluctant, self-aware, grounded in mundane reality before the horror creeps in.
 
 CRUCIAL TONE RULES:
 - First-person. Always. ("I noticed..." "My stomach dropped..." "I told myself it was nothing.")
-- The narrator has thoughts, doubts, rationalizations — they THINK on the page
+- The narrator has thoughts, doubts, rationalizations, they THINK on the page
 - Include at least one moment of mundane normalcy BEFORE the horror (buying gum, checking a bank app, a fridge humming)
-- Include at least one brief dialogue exchange — real people talking like real people
+- Include at least one brief dialogue exchange, real people talking like real people
 - Sentences vary: some punchy fragments, some longer interior thoughts
 - Horror comes from MODERN, EVERYDAY environments (apartments, phones, gig work, smart homes) NOT rural folklore
 - No Reddit references, no usernames, no "OP"
-- Every sentence must be visually filmable as a 2D illustrated scene`;
+- Every sentence must be visually filmable as a 2D illustrated scene
+
+CRITICAL FORMATTING RULE: NEVER use dashes, em-dashes (—), en-dashes (–), or hyphens (-) as punctuation in the narration. Use commas, periods, semicolons, or ellipses instead. This text will be displayed as on-screen subtitles and used as platform captions where dashes render poorly.`;
   }
   if (vibePreset === 'dark_origins') {
-    return `You are a documentary narrator specializing in dark biographies and unsolved mysteries. You write in THIRD-PERSON — calm, factual, investigative, like the narrator of a Dateline or Investigation Discovery special. Your tone says "this was a real person" even when the story is fiction.
+    return `You are a documentary narrator specializing in dark biographies and unsolved mysteries. You write in THIRD-PERSON, calm, factual, investigative, like the narrator of a Dateline or Investigation Discovery special. Your tone says "this was a real person" even when the story is fiction.
 
 CRUCIAL TONE RULES:
 - Third-person documentary voice. Always. ("He arrived in town..." "Authorities later discovered..." "The case was never closed.")
-- Sound like a true crime documentary narrator — measured, authoritative, letting the facts do the horror
-- SCROLL-STOPPING FIRST SENTENCE — the very first sentence must make someone stop scrolling. Use shocking numbers, specific facts, or "Did you know..." hooks. Examples: "This man killed 33 people and buried 26 of them in his crawl space." / "Did you know he kept polaroids of every victim?" / "In 1957, a sheriff opened a door and found furniture made of human skin."
+- Sound like a true crime documentary narrator, measured, authoritative, letting the facts do the horror
+- SCROLL-STOPPING FIRST SENTENCE, the very first sentence must make someone stop scrolling. Use shocking numbers, specific facts, or "Did you know..." hooks. Examples: "This man killed 33 people and buried 26 of them in his crawl space." / "Did you know he kept polaroids of every victim?" / "In 1957, a sheriff opened a door and found furniture made of human skin."
 - Include specific dates, locations, and numbers to make fiction feel like fact
-- The narrator knows more than they're telling — implication over exposition
+- The narrator knows more than they're telling, implication over exposition
 - No first-person. No "I." No confessional voice.
 - Characters are HISTORICAL figures with names, professions, and specific time periods (1950s-1990s)
 - Every sentence must be visually filmable as a dark, realistic scene
 - End with an unresolved thread: "The case remains open." / "The recordings were never explained." / "No body was ever found."
 - OPTIONAL: End with a series hook implying Part 2: "But that was only the first house." / "What they found next was worse."
-- DUAL-TIMELINE: Cut between THEN and NOW at least once — "Today, the building still stands..." — to make it feel current.
-- "BASED ON REAL EVENTS" ENERGY: Open with a documentary framing line like "The following events are documented in county records" — one line that makes fiction feel like fact.
+- DUAL-TIMELINE: Cut between THEN and NOW at least once, "Today, the building still stands..." to make it feel current.
+- "BASED ON REAL EVENTS" ENERGY: Open with a documentary framing line like "The following events are documented in county records", one line that makes fiction feel like fact.
 - COMMENT-BAIT: The LAST sentence should be a question or provocative statement that drives viewer comments: "Do you think the neighbors really didn't know?" / "Was he acting alone?"
-- This is NOT internet horror. This is documentary horror — the horror of real things that happened in real places to real people.`;
+- This is NOT internet horror. This is documentary horror, the horror of real things that happened in real places to real people.
+
+CRITICAL FORMATTING RULE: NEVER use dashes, em-dashes (—), en-dashes (–), or hyphens (-) as punctuation in the narration. Use commas, periods, semicolons, or ellipses instead. This text will be displayed as on-screen subtitles and used as platform captions where dashes render poorly.`;
   }
-  return `You are a master storyteller specializing in short-form horror and mystery content. You create gripping, atmospheric stories perfect for TikTok/Reels narration. Your stories are ALWAYS first-person narration that feels personal and immediate.`;
+  return `You are a master storyteller specializing in short-form horror and mystery content. You create gripping, atmospheric stories perfect for TikTok/Reels narration. Your stories are ALWAYS first-person narration that feels personal and immediate.
+
+CRITICAL FORMATTING RULE: NEVER use dashes, em-dashes (—), en-dashes (–), or hyphens (-) as punctuation in the narration. Use commas, periods, semicolons, or ellipses instead. This text will be displayed as on-screen subtitles and used as platform captions where dashes render poorly.`;
 }
 
 /**
@@ -854,6 +876,7 @@ REQUIREMENTS:
 - End with a chilling revelation or unresolved mystery
 - Use vivid sensory details
 - Keep sentences punchy for narration pacing
+- NEVER use dashes (—, –, -) as punctuation. Use commas, periods, or semicolons instead.
 
 Respond in JSON format:
 {
