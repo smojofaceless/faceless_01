@@ -264,7 +264,7 @@
 
         // Meta (Instagram/Facebook) OAuth config
         const META_CONFIG = {
-            appId: localStorage.getItem('meta_app_id') || '',
+            appId: localStorage.getItem('meta_app_id') || '912945051115410',
             appSecret: localStorage.getItem('meta_app_secret') || '',
             // Use current page URL for redirect (handles GitHub Pages subdirectories)
             redirectUri: window.location.href.split('?')[0].split('#')[0]
@@ -279,7 +279,7 @@
 
         // Threads OAuth config (uses same Meta App)
         const THREADS_CONFIG = {
-            appId: localStorage.getItem('threads_app_id') || localStorage.getItem('meta_app_id') || '',
+            appId: localStorage.getItem('threads_app_id') || localStorage.getItem('meta_app_id') || '912945051115410',
             appSecret: localStorage.getItem('threads_app_secret') || localStorage.getItem('meta_app_secret') || '',
             redirectUri: window.location.href.split('?')[0].split('#')[0]
         };
