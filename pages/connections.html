@@ -303,9 +303,6 @@
             });
             brandSwitcher.init();
 
-            // Handle OAuth callbacks
-            handleOAuthCallback();
-
             // Re-render when brands finish loading from Supabase
             brandManager.on('brands:loaded', () => {
                 updateBrandHeader();
@@ -553,40 +550,41 @@
             loadPlatforms();
         }
 
-        function init() {
+        async function init() {
             updateBrandHeader();
-            updateYouTubeBrandContext();
-            updateMetaBrandContext();
-            updateTikTokBrandContext();
-            updateThreadsBrandContext();
-            updateTwitterBrandContext();
-            loadPlatforms();
-            setupModal();
             
-            // Initialize YouTube service if credentials exist
+            // Initialize services first (synchronous)
             if (YOUTUBE_CONFIG.clientId) {
                 youtubeService.init(YOUTUBE_CONFIG.clientId);
             }
-            
-            // Initialize Meta service if credentials exist
             if (META_CONFIG.appId) {
                 metaService.init(META_CONFIG.appId, META_CONFIG.appSecret);
             }
-
-            // Initialize TikTok service if credentials exist
             if (TIKTOK_CONFIG.clientKey) {
                 tiktokService.init(TIKTOK_CONFIG.clientKey, TIKTOK_CONFIG.clientSecret);
             }
-
-            // Initialize Threads service if credentials exist
             if (THREADS_CONFIG.appId) {
                 threadsService.init(THREADS_CONFIG.appId, THREADS_CONFIG.appSecret);
             }
-
-            // Initialize Twitter/X service if credentials exist
             if (TWITTER_CONFIG.clientId) {
                 twitterService.init(TWITTER_CONFIG.clientId);
             }
+
+            // Set brand context (some are async — must await before rendering)
+            await Promise.all([
+                updateTikTokBrandContext(),
+                updateThreadsBrandContext(),
+                updateTwitterBrandContext(),
+            ]);
+            updateYouTubeBrandContext();
+            updateMetaBrandContext();
+
+            // Now render — all services have loaded their tokens
+            loadPlatforms();
+            setupModal();
+
+            // Handle OAuth callbacks (must run after init)
+            handleOAuthCallback();
 
             // Auto-sync Meta tokens to Supabase on page load
             setTimeout(() => syncMetaTokensToSupabase(), 2000);
@@ -609,26 +607,26 @@
         }
 
         // Update TikTok service with current brand context
-        function updateTikTokBrandContext() {
+        async function updateTikTokBrandContext() {
             const brand = brandManager.getActiveBrand();
             if (brand) {
-                tiktokService.setBrand(brand.id);
+                await tiktokService.setBrand(brand.id);
             }
         }
 
         // Update Threads service with current brand context
-        function updateThreadsBrandContext() {
+        async function updateThreadsBrandContext() {
             const brand = brandManager.getActiveBrand();
             if (brand) {
-                threadsService.setBrand(brand.id);
+                await threadsService.setBrand(brand.id);
             }
         }
 
         // Update Twitter/X service with current brand context
-        function updateTwitterBrandContext() {
+        async function updateTwitterBrandContext() {
             const brand = brandManager.getActiveBrand();
             if (brand) {
-                twitterService.setBrand(brand.id);
+                await twitterService.setBrand(brand.id);
             }
         }
 
@@ -651,13 +649,15 @@
             }
         }
 
-        function loadPlatforms() {
-            // Update brand contexts before loading
+        async function loadPlatforms() {
+            // Update brand contexts before loading (await async ones)
             updateYouTubeBrandContext();
             updateMetaBrandContext();
-            updateTikTokBrandContext();
-            updateThreadsBrandContext();
-            updateTwitterBrandContext();
+            await Promise.all([
+                updateTikTokBrandContext(),
+                updateThreadsBrandContext(),
+                updateTwitterBrandContext(),
+            ]);
             
             const container = document.getElementById('platforms-grid');
             const platforms = getAllPlatforms();
