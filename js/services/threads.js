@@ -57,6 +57,30 @@ class ThreadsService {
         if (this.brandId === brandId) return;
         this.brandId = brandId;
         this._loadFromStorage();
+
+        // Load from Supabase (source of truth)
+        if (typeof supabaseClient !== 'undefined') {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('platform_tokens')
+                    .select('*')
+                    .eq('brand_id', brandId)
+                    .eq('platform', 'threads')
+                    .single();
+
+                if (data && !error) {
+                    this.accessToken = data.access_token;
+                    this.userId = data.platform_channel_id;
+                    this.username = (data.platform_channel_name || '').replace(/^@/, '');
+                    localStorage.setItem(`threads_connected_${brandId}`, 'true');
+                    this._saveToStorage();
+                    console.log(`🧵 Loaded Threads tokens from Supabase for brand ${brandId}`);
+                }
+            } catch (e) {
+                console.warn('🧵 Failed to load Threads tokens from Supabase:', e.message);
+            }
+        }
+
         console.log(`🧵 Threads Service: Brand set to ${brandId}`);
     }
 
