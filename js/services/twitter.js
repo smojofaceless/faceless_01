@@ -70,7 +70,7 @@ class TwitterService {
                     .select('*')
                     .eq('brand_id', brandId)
                     .eq('platform', 'twitter')
-                    .single();
+                    .maybeSingle();
 
                 if (data && !error) {
                     this.accessToken = data.access_token;
@@ -80,6 +80,8 @@ class TwitterService {
                     localStorage.setItem(`twitter_connected_${brandId}`, 'true');
                     this._saveToStorage();
                     console.log(`🐦 Loaded Twitter tokens from Supabase for brand ${brandId}`);
+                } else {
+                    console.log(`🐦 No Twitter tokens in Supabase for brand ${brandId}`);
                 }
             } catch (e) {
                 console.warn('🐦 Failed to load Twitter tokens from Supabase:', e.message);

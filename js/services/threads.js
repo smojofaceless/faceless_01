@@ -66,7 +66,7 @@ class ThreadsService {
                     .select('*')
                     .eq('brand_id', brandId)
                     .eq('platform', 'threads')
-                    .single();
+                    .maybeSingle();
 
                 if (data && !error) {
                     this.accessToken = data.access_token;
@@ -75,6 +75,8 @@ class ThreadsService {
                     localStorage.setItem(`threads_connected_${brandId}`, 'true');
                     this._saveToStorage();
                     console.log(`🧵 Loaded Threads tokens from Supabase for brand ${brandId}`);
+                } else {
+                    console.log(`🧵 No Threads tokens in Supabase for brand ${brandId}`);
                 }
             } catch (e) {
                 console.warn('🧵 Failed to load Threads tokens from Supabase:', e.message);

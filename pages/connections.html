@@ -329,10 +329,23 @@
                 window.history.replaceState({}, document.title, window.location.pathname);
             }
             
-            // Check for TikTok, Threads, or Meta OAuth callback
+            // Check for TikTok, Threads, Twitter, or Meta OAuth callback
             if (code && state && !state.startsWith('youtube_auth:')) {
+                let stateData = null;
+                // Try JSON.parse first, then base64-decode (Twitter encodes state)
                 try {
-                    const stateData = JSON.parse(state);
+                    stateData = JSON.parse(state);
+                } catch (_) {
+                    try {
+                        stateData = JSON.parse(atob(state));
+                        console.log('🔑 Decoded base64 state:', stateData);
+                    } catch (_2) {
+                        console.warn('⚠️ Could not parse OAuth state:', state);
+                    }
+                }
+
+                if (stateData) {
+                    console.log('🔑 OAuth callback — platform:', stateData.platform, 'brand:', stateData.brandId);
                     if (stateData.brandId && stateData.platform === 'tiktok') {
                         console.log('TikTok OAuth callback received for brand:', stateData.brandId);
                         completeTikTokAuth(code, stateData.brandId);
@@ -342,7 +355,7 @@
                         completeThreadsAuth(code, stateData.brandId);
                         window.history.replaceState({}, document.title, window.location.pathname);
                     } else if (stateData.brandId && stateData.platform === 'twitter') {
-                        console.log('Twitter/X OAuth callback received for brand:', stateData.brandId);
+                        console.log('🐦 Twitter/X OAuth callback received for brand:', stateData.brandId);
                         completeTwitterAuth(code, stateData.brandId);
                         window.history.replaceState({}, document.title, window.location.pathname);
                     } else if (stateData.brandId) {
@@ -350,8 +363,6 @@
                         completeMetaAuth(code, stateData.brandId);
                         window.history.replaceState({}, document.title, window.location.pathname);
                     }
-                } catch (e) {
-                    // Not a Meta/TikTok/Threads callback
                 }
             }
         }
@@ -1336,9 +1347,11 @@
                 platform: 'twitter',
                 nonce: Math.random().toString(36).substring(7)
             });
+            // Base64-encode state — Twitter strips quotes/commas from raw JSON
+            const encodedState = btoa(csrfState);
 
             try {
-                const authUrl = await twitterService.getAuthUrl(TWITTER_CONFIG.redirectUri, csrfState);
+                const authUrl = await twitterService.getAuthUrl(TWITTER_CONFIG.redirectUri, encodedState);
                 window.location.href = authUrl;
             } catch (error) {
                 Toast.error('Failed to generate auth URL: ' + error.message);
