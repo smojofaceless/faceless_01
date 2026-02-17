@@ -141,7 +141,8 @@ class TwitterService {
     }
 
     /**
-     * Exchange authorization code for tokens (PKCE flow)
+     * Exchange authorization code for tokens via server-side proxy
+     * (Twitter's token endpoint doesn't support CORS from browsers)
      */
     async handleCallback(code, redirectUri, clientSecret) {
         if (!this.clientId) {
@@ -153,38 +154,37 @@ class TwitterService {
             throw new Error('PKCE code verifier not found — please try connecting again');
         }
 
-        console.log('🐦 Exchanging code for tokens (PKCE)...');
+        console.log('🐦 Exchanging code for tokens via server proxy...');
 
-        // Build token request body
-        const body = new URLSearchParams({
-            grant_type: 'authorization_code',
-            code: code,
-            redirect_uri: redirectUri,
-            client_id: this.clientId,
-            code_verifier: codeVerifier,
-        });
+        // Use Supabase Edge Function proxy (Twitter doesn't allow CORS from browsers)
+        const SUPABASE_URL = typeof supabaseClient !== 'undefined' && supabaseClient.supabaseUrl
+            ? supabaseClient.supabaseUrl
+            : 'https://ustmetegzisztqqcjigt.supabase.co';
+        const SUPABASE_ANON_KEY = typeof supabaseClient !== 'undefined' && supabaseClient.supabaseKey
+            ? supabaseClient.supabaseKey
+            : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzdG1ldGVnemlzenRxcWNqaWd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1NDc0NzksImV4cCI6MjA4NTEyMzQ3OX0.5lEiAP6PS4yY3WwAL5v4XWFHWJS5hzBWPXQxuxWe5d4';
 
-        // Build headers — use Basic auth if client_secret available, else just Content-Type
-        const headers = {
-            'Content-Type': 'application/x-www-form-urlencoded',
-        };
-        if (clientSecret) {
-            headers['Authorization'] = 'Basic ' + btoa(`${this.clientId}:${clientSecret}`);
-        }
-
-        const tokenResponse = await fetch(this.TOKEN_URL, {
+        const proxyResponse = await fetch(`${SUPABASE_URL}/functions/v1/twitter-auth`, {
             method: 'POST',
-            headers,
-            body: body.toString(),
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            },
+            body: JSON.stringify({
+                action: 'exchange',
+                code: code,
+                redirect_uri: redirectUri,
+                code_verifier: codeVerifier,
+            }),
         });
 
-        if (!tokenResponse.ok) {
-            const err = await tokenResponse.text();
+        if (!proxyResponse.ok) {
+            const err = await proxyResponse.text();
             console.error('🐦 Token exchange failed:', err);
             throw new Error(`Token exchange failed: ${err}`);
         }
 
-        const tokenData = await tokenResponse.json();
+        const tokenData = await proxyResponse.json();
         console.log('🐦 Tokens obtained. Expires in:', tokenData.expires_in, 'seconds');
 
         this.accessToken = tokenData.access_token;
@@ -193,16 +193,10 @@ class TwitterService {
         // Clean up code verifier
         localStorage.removeItem(this.STORAGE_KEYS.CODE_VERIFIER);
 
-        // Get user profile
-        console.log('🐦 Fetching user profile...');
-        const profileResponse = await fetch(`${this.API_BASE}/users/me`, {
-            headers: { 'Authorization': `Bearer ${this.accessToken}` },
-        });
-
-        if (profileResponse.ok) {
-            const profile = await profileResponse.json();
-            this.userId = profile.data?.id;
-            this.username = profile.data?.username;
+        // Use user from proxy response (already fetched server-side)
+        if (tokenData.user) {
+            this.userId = tokenData.user.id;
+            this.username = tokenData.user.username;
             console.log(`🐦 Connected as @${this.username} (${this.userId})`);
         }
 
