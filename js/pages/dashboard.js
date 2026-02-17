@@ -36,7 +36,8 @@
             instagram_reels: 'Instagram', instagram: 'Instagram',
             facebook_reels: 'Facebook', facebook: 'Facebook',
             tiktok: 'TikTok', tiktok_videos: 'TikTok',
-            x: 'X', twitter: 'X'
+            x: 'X', twitter: 'X',
+            threads: 'Threads'
         };
         return m[p] || p;
     }
@@ -47,7 +48,8 @@
             instagram_reels: '#E1306C', instagram: '#E1306C',
             facebook_reels: '#1877F2', facebook: '#1877F2',
             tiktok: '#00f2ea', tiktok_videos: '#00f2ea',
-            x: '#000000', twitter: '#000000'
+            x: '#000000', twitter: '#000000',
+            threads: '#000000'
         };
         return m[p] || '#8b5cf6';
     }
@@ -58,7 +60,8 @@
             instagram_reels: 'instagram', instagram: 'instagram',
             facebook_reels: 'facebook', facebook: 'facebook',
             tiktok: 'tiktok', tiktok_videos: 'tiktok',
-            x: 'x', twitter: 'x'
+            x: 'x', twitter: 'x',
+            threads: 'threads'
         };
         return m[p] || '';
     }
@@ -316,6 +319,7 @@
                 { id: 'instagram', name: 'Instagram Reels', color: '#E1306C' },
                 { id: 'facebook', name: 'Facebook Reels', color: '#1877F2' },
                 { id: 'tiktok', name: 'TikTok', color: '#00f2ea' },
+                { id: 'threads', name: 'Threads', color: '#000000' },
                 { id: 'x', name: 'X', color: '#000000' }
             ];
 

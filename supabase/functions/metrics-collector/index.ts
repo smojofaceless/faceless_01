@@ -662,6 +662,13 @@ function getMetricsAdapter(platform: string): MetricsAdapter {
       return new FacebookMetricsAdapter();
     case 'tiktok':
       return new TikTokMetricsAdapter();
+    case 'threads':
+      console.log(`[Metrics] Threads metrics adapter (stub)`);
+      return new TikTokMetricsAdapter(); // Stub - returns zeros
+    case 'twitter':
+    case 'x':
+      console.log(`[Metrics] Twitter/X metrics adapter (stub)`);
+      return new TikTokMetricsAdapter(); // Stub - returns zeros
     default:
       console.log(`[Metrics] No adapter for platform: ${platform}, using stub`);
       return new TikTokMetricsAdapter(); // Fallback stub

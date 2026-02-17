@@ -5184,6 +5184,9 @@ export async function executeScheduleStep(
     'fb': 'facebook_reels',
     'tiktok': 'tiktok',
     'tt': 'tiktok',
+    'threads': 'threads',
+    'twitter': 'twitter',
+    'x': 'twitter',
   };
 
   // Determine platforms and normalize names

@@ -44,6 +44,8 @@ const MAX_PER_PLATFORM: Record<string, number> = {
   youtube: 5,
   instagram: 5,
   facebook: 5,
+  threads: 5,
+  twitter: 5,
   default: 3, // Unknown platforms get lower limit
 };
 
