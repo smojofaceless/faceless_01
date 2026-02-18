@@ -43,6 +43,23 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '100mb' })); // Increased for base64 images
 
+// ─── Auth middleware for render endpoints ───
+// Set RENDERER_AUTH_KEY env var to require authentication on mutation endpoints
+const RENDERER_AUTH_KEY = process.env.RENDERER_AUTH_KEY || '';
+
+function requireAuth(req, res, next) {
+  if (!RENDERER_AUTH_KEY) {
+    // No auth key configured — allow all (backwards compatible)
+    return next();
+  }
+  const provided = req.headers['x-renderer-key'] || req.headers['authorization']?.replace('Bearer ', '');
+  if (provided !== RENDERER_AUTH_KEY) {
+    console.warn(`[AUTH] Rejected request from ${req.ip} to ${req.path}`);
+    return res.status(401).json({ error: 'Unauthorized — invalid or missing x-renderer-key header' });
+  }
+  next();
+}
+
 // In-memory job storage (use Redis in production for persistence)
 const jobs = new Map();
 
@@ -1690,7 +1707,7 @@ async function burnSubtitles(inputPath, assPath, outputPath, lowMemory = false) 
  * 
  * v3.0: Now accepts visual_dna for deterministic aesthetics
  */
-app.post('/render', async (req, res) => {
+app.post('/render', requireAuth, async (req, res) => {
   // Check capacity
   if (activeRenders >= MAX_CONCURRENT_RENDERS) {
     return res.status(503).json({ 
@@ -3202,9 +3219,43 @@ app.get('/', (req, res) => {
   });
 });
 
+// ─── Graceful shutdown ───
+let isShuttingDown = false;
+
+function gracefulShutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`\n⚠️  Received ${signal} — starting graceful shutdown...`);
+  console.log(`   Active renders: ${activeRenders}`);
+
+  // Stop accepting new requests
+  server.close(() => {
+    console.log('   HTTP server closed');
+  });
+
+  // Wait for active renders to finish (max 5 min)
+  const shutdownTimeout = setTimeout(() => {
+    console.error('   ⏰ Shutdown timeout — forcing exit');
+    process.exit(1);
+  }, 5 * 60 * 1000);
+
+  const checkDone = setInterval(() => {
+    if (activeRenders === 0) {
+      clearInterval(checkDone);
+      clearTimeout(shutdownTimeout);
+      console.log('   ✅ All renders complete — exiting cleanly');
+      process.exit(0);
+    }
+    console.log(`   Waiting for ${activeRenders} active render(s)...`);
+  }, 5000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 // Start server
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log('');
   console.log('🎬 Horror Video Renderer v2.1');
   console.log('================================');

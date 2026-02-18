@@ -418,6 +418,8 @@ function buildUserPrompt(
       length_stats?: { avg_title_len?: number; avg_desc_len?: number; avg_tag_count?: number };
     };
     variantInstructions?: string;
+    scheduledAt?: string;
+    strategyType?: string;
   }
 ): string {
   const storySummary =
@@ -506,13 +508,41 @@ Use these insights to guide your choices — adapt, don't copy.`;
     }
   }
 
+  // Build time-awareness section
+  let timeSection = "";
+  if (data.scheduledAt) {
+    try {
+      const schedDate = new Date(data.scheduledAt);
+      const dayOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][schedDate.getUTCDay()];
+      const hour = schedDate.getUTCHours();
+      const timeOfDay = hour < 6 ? 'late night' : hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
+      timeSection = `\n\nPOSTING CONTEXT:\nThis video will be posted on ${dayOfWeek} ${timeOfDay} (${hour}:00 UTC).\nTailor the tone, urgency, and CTA style to match when the audience will see it.\n- Morning: energetic hooks, share-worthy\n- Afternoon: curiosity-driven, snackable\n- Evening/Night: atmospheric, binge-worthy, "watch before sleep" energy`;
+    } catch { /* non-fatal */ }
+  }
+
+  // Build strategy section
+  let strategySection = "";
+  if (data.strategyType) {
+    const strategyGuide: Record<string, string> = {
+      'hook_first': 'Lead with the most shocking or curiosity-inducing element. Front-load the hook in the first 5 words.',
+      'emotional_arc': 'Build an emotional journey in the metadata — start mysterious, hint at revelation.',
+      'question_hook': 'Frame the title/caption as a compelling question the viewer MUST answer by watching.',
+      'list_format': 'Use numbered or list-style framing ("3 Signs...", "5 Things...") for high click-through.',
+      'controversy': 'Take a mildly controversial angle to drive comments and debate.',
+      'fomo': 'Create urgency and fear of missing out — limited time, exclusive angle.',
+      'storytelling': 'Use narrative framing — "What happened next changed everything..."',
+      'community': 'Speak directly to the community — "Only true horror fans..."',
+      'authority': 'Position as expert/insider knowledge — "The truth about..."',
+      'trend_ride': 'Reference current trends or popular formats while staying on brand.',
+    };
+    const guide = strategyGuide[data.strategyType] || `Use the "${data.strategyType}" content strategy approach.`;
+    strategySection = `\n\nCONTENT STRATEGY: ${data.strategyType}\n${guide}`;
+  }
+
   // Build A/B variant section (if assigned)
   let variantSection = "";
   if (data.variantInstructions) {
-    variantSection = `
-
-A/B VARIANT INSTRUCTIONS:
-${data.variantInstructions}`;
+    variantSection = `\n\nA/B VARIANT INSTRUCTIONS:\n${data.variantInstructions}`;
   }
 
   return `Generate ${platformConfig.platform} metadata for this horror short video.
@@ -534,7 +564,7 @@ EXAMPLE OUTPUT:
 ${exampleBlock}
 
 PLATFORM-SPECIFIC GUIDANCE:
-${platformConfig.guidance}${exemplarsSection}${negativeSection}${patternsSection}${variantSection}
+${platformConfig.guidance}${exemplarsSection}${negativeSection}${patternsSection}${timeSection}${strategySection}${variantSection}
 
 Generate the metadata JSON now. Output ONLY the JSON object.`;
 }
@@ -797,7 +827,7 @@ async function generateForPost(
     // 3. Fetch post data
     const { data: post, error: postErr } = await supabase
       .from("posts")
-      .select("id, job_id, platform, brand_id, title")
+      .select("id, job_id, platform, brand_id, title, scheduled_at")
       .eq("id", postId)
       .single();
 
@@ -953,6 +983,35 @@ async function generateForPost(
       }
     }
 
+    // 7c. Fetch strategy for this platform (from get_top_strategies)
+    let strategyType: string | undefined;
+    if (post.brand_id) {
+      try {
+        const { data: strategies } = await supabase.rpc("get_top_strategies", {
+          p_brand_id: post.brand_id,
+          p_platform: platform,
+          p_limit: 3,
+        });
+        if (strategies && strategies.length > 0) {
+          // Pick the top strategy probabilistically (weighted by avg_engagement)
+          const totalEng = strategies.reduce((s: number, st: { avg_engagement: number }) => s + (st.avg_engagement || 1), 0);
+          let roll = Math.random() * totalEng;
+          for (const st of strategies as Array<{ strategy_type: string; avg_engagement: number }>) {
+            roll -= st.avg_engagement || 1;
+            if (roll <= 0) {
+              strategyType = st.strategy_type;
+              break;
+            }
+          }
+          if (!strategyType) strategyType = strategies[0].strategy_type;
+          console.log(`[METADATA] 🎯 Strategy: ${strategyType} for ${platform}`);
+        }
+      } catch (sErr) {
+        // Non-fatal
+        console.warn("[METADATA] Could not fetch strategies:", sErr);
+      }
+    }
+
     // 8. Platform config
     const platformConfig = PLATFORM_CONFIGS[platform];
     if (!platformConfig) {
@@ -971,6 +1030,8 @@ async function generateForPost(
       negativeExemplars: negativeExemplars.length > 0 ? negativeExemplars : undefined,
       winningPatterns,
       variantInstructions,
+      scheduledAt: post.scheduled_at || undefined,
+      strategyType,
     });
 
     // 10. Call OpenAI (the expensive part — budget/slot checked above)

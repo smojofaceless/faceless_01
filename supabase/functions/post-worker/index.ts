@@ -29,7 +29,7 @@ const VERSION = "3.0";
 // =====================================================
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": Deno.env.get("ALLOWED_ORIGIN") || "https://smojofaceless.github.io",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
@@ -2252,23 +2252,31 @@ serve(async (req: Request) => {
           continue;
         }
         
-        // Claim if not already owned
+        // Claim if not already owned — use targeted UPDATE instead of batch claim
+        // to avoid race condition where claim_due_posts could grab a different post
         if (post.locked_by !== workerId && post.status === 'scheduled') {
-          const { data: claimResult } = await supabase.rpc('claim_due_posts', {
-            p_worker_id: workerId,
-            p_limit: 1,
-            p_lease_seconds: DEFAULT_LEASE_SECONDS,
-          });
+          const leaseUntil = new Date(Date.now() + DEFAULT_LEASE_SECONDS * 1000).toISOString();
+          const { data: claimResult, error: claimError } = await supabase
+            .from('posts')
+            .update({
+              status: 'posting',
+              locked_by: workerId,
+              locked_until: leaseUntil,
+              attempt_count: (post.attempt_count || 0) + 1,
+            })
+            .eq('id', postId)
+            .eq('status', 'scheduled')  // Optimistic lock: only claim if still scheduled
+            .select('id')
+            .single();
           
-          // Verify we claimed this specific post
-          const claimed = claimResult?.find((c: PostToClaim) => c.post_id === postId);
-          if (!claimed) {
+          if (claimError || !claimResult) {
+            console.log(`[POST-WORKER] Could not claim post ${postId} (already claimed or status changed)`);
             result.errors.push(`Post ${postId}: could not claim`);
             result.details.push({
               post_id: postId,
               platform: post.platform,
               status: 'skipped',
-              error: 'Could not claim',
+              error: 'Could not claim (race condition or status changed)',
             });
             result.posts_skipped++;
             continue;
@@ -2292,11 +2300,42 @@ serve(async (req: Request) => {
       }
     }
 
+    // Per-platform rate limit delays (seconds between posts to same platform)
+    const PLATFORM_DELAYS: Record<string, number> = {
+      youtube: 10,
+      youtube_shorts: 10,
+      instagram: 5,
+      instagram_reels: 5,
+      facebook: 5,
+      facebook_reels: 5,
+      tiktok: 5,
+      twitter: 3,
+      x: 3,
+      threads: 3,
+    };
+    const lastPostTime: Record<string, number> = {};
+
     // Process each post
     for (const post of postsToProcess) {
       result.posts_processed++;
+
+      // Inter-post rate limiting: delay if we recently posted to this platform
+      const platformKey = post.platform;
+      const requiredDelay = (PLATFORM_DELAYS[platformKey] || 3) * 1000;
+      const lastTime = lastPostTime[platformKey] || 0;
+      const elapsed = Date.now() - lastTime;
+      if (lastTime > 0 && elapsed < requiredDelay) {
+        const waitMs = requiredDelay - elapsed;
+        console.log(`[POST-WORKER] Rate limit: waiting ${waitMs}ms before next ${platformKey} post`);
+        await new Promise(r => setTimeout(r, waitMs));
+      }
       
       const { status, result: platformResult } = await processPost(supabase, post, workerId);
+
+      // Track last post time per platform
+      if (status === 'posted') {
+        lastPostTime[platformKey] = Date.now();
+      }
       
       result.details.push({
         post_id: post.post_id,

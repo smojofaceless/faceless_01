@@ -26,7 +26,7 @@ import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2.39.3";
 // =====================================================
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": Deno.env.get("ALLOWED_ORIGIN") || "https://smojofaceless.github.io",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
@@ -47,6 +47,106 @@ const DEFAULT_LEASE_SECONDS = 900; // 15 minutes
 
 // Timeout for run-job call (ms) - we don't wait for completion, but log quick failures
 const RUN_JOB_TIMEOUT_MS = 30000;
+
+// =====================================================
+// ALERT WEBHOOK HELPER
+// Sends notifications to configured webhooks (Discord, Slack, etc.)
+// Reads from system_alert_config + brand_alert_config tables
+// =====================================================
+
+interface AlertPayload {
+  event: 'kill_switch' | 'budget_exceeded' | 'campaign_paused' | 'failure_cluster' | 'scheduler_error';
+  severity: 'info' | 'warning' | 'critical';
+  title: string;
+  message: string;
+  brand_id?: string;
+  data?: Record<string, unknown>;
+}
+
+async function sendAlertWebhooks(supabase: SupabaseClient, payload: AlertPayload): Promise<void> {
+  try {
+    // Get system-level webhook configs
+    const { data: systemConfigs } = await supabase
+      .from('system_alert_config')
+      .select('*')
+      .eq('enabled', true)
+      .contains('events', [payload.event]);
+
+    // Get brand-level webhook configs if brand_id is present
+    let brandConfigs: Array<Record<string, unknown>> = [];
+    if (payload.brand_id) {
+      const { data: bc } = await supabase
+        .from('brand_alert_config')
+        .select('*')
+        .eq('brand_id', payload.brand_id)
+        .eq('enabled', true)
+        .contains('events', [payload.event]);
+      brandConfigs = bc || [];
+    }
+
+    const allConfigs = [...(systemConfigs || []), ...brandConfigs];
+    if (allConfigs.length === 0) {
+      console.log(`[ALERTS] No webhook configs for event: ${payload.event}`);
+      return;
+    }
+
+    for (const config of allConfigs) {
+      try {
+        const webhookUrl = config.webhook_url as string;
+        const type = config.webhook_type as string || 'discord';
+
+        let body: Record<string, unknown>;
+
+        if (type === 'discord') {
+          // Discord webhook format
+          const color = payload.severity === 'critical' ? 0xFF0000
+            : payload.severity === 'warning' ? 0xFFA500 : 0x00FF00;
+          body = {
+            embeds: [{
+              title: `${payload.severity === 'critical' ? '🚨' : payload.severity === 'warning' ? '⚠️' : 'ℹ️'} ${payload.title}`,
+              description: payload.message,
+              color,
+              timestamp: new Date().toISOString(),
+              fields: payload.data ? Object.entries(payload.data).map(([k, v]) => ({
+                name: k, value: String(v), inline: true
+              })) : [],
+            }],
+          };
+        } else if (type === 'slack') {
+          // Slack webhook format
+          body = {
+            text: `*${payload.title}*\n${payload.message}`,
+            attachments: payload.data ? [{
+              fields: Object.entries(payload.data).map(([k, v]) => ({
+                title: k, value: String(v), short: true
+              })),
+            }] : [],
+          };
+        } else {
+          // Generic JSON
+          body = { ...payload, sent_at: new Date().toISOString() };
+        }
+
+        const resp = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+        if (!resp.ok) {
+          console.warn(`[ALERTS] Webhook ${type} returned ${resp.status}`);
+        } else {
+          console.log(`[ALERTS] ✓ Sent ${payload.event} alert to ${type}`);
+        }
+      } catch (e) {
+        console.warn(`[ALERTS] Webhook send failed: ${e}`);
+      }
+    }
+  } catch (e) {
+    // Alerting should never crash the scheduler
+    console.warn(`[ALERTS] Alert system error: ${e}`);
+  }
+}
 
 // =====================================================
 // TYPES
@@ -341,6 +441,13 @@ serve(async (req) => {
       console.warn(`[SCHEDULER] ⚠️ Could not check kill switch: ${killError.message}`);
     } else if (killSwitchActive) {
       console.log(`[SCHEDULER] ⛔ Kill switch is ACTIVE - aborting scheduler run`);
+      // Fire alert webhook
+      await sendAlertWebhooks(supabase, {
+        event: 'kill_switch',
+        severity: 'critical',
+        title: 'Kill Switch Activated',
+        message: 'The global kill switch is active. All scheduling is halted.',
+      });
       return new Response(
         JSON.stringify({ 
           success: true, 
@@ -364,6 +471,18 @@ serve(async (req) => {
       // Continue anyway - budget check is a guardrail, not a hard gate
     } else if (globalBudget && !globalBudget.can_proceed) {
       console.log(`[SCHEDULER] 💰 Global budget exceeded ($${(globalBudget.daily_spend_cents / 100).toFixed(2)}/$${(globalBudget.daily_budget_cents / 100).toFixed(2)}) - pausing scheduler`);
+      // Fire alert webhook
+      await sendAlertWebhooks(supabase, {
+        event: 'budget_exceeded',
+        severity: 'warning',
+        title: 'Daily Budget Exceeded',
+        message: `Spending $${(globalBudget.daily_spend_cents / 100).toFixed(2)} exceeds daily budget $${(globalBudget.daily_budget_cents / 100).toFixed(2)}. Scheduling paused.`,
+        data: {
+          daily_spend: `$${(globalBudget.daily_spend_cents / 100).toFixed(2)}`,
+          daily_budget: `$${(globalBudget.daily_budget_cents / 100).toFixed(2)}`,
+          pct_used: `${globalBudget.pct_used}%`,
+        },
+      });
       return new Response(
         JSON.stringify({ 
           success: true, 
@@ -401,6 +520,21 @@ serve(async (req) => {
         paused.forEach((p: { campaign_name: string; failure_class: string; failure_count: number }) => {
           console.log(`  - ${p.campaign_name} (${p.failure_class}: ${p.failure_count} failures)`);
         });
+        // Fire alert webhook for each paused campaign
+        for (const p of paused as Array<{ campaign_name: string; failure_class: string; failure_count: number; brand_id?: string }>) {
+          await sendAlertWebhooks(supabase, {
+            event: 'campaign_paused',
+            severity: 'warning',
+            title: `Campaign Auto-Paused: ${p.campaign_name}`,
+            message: `Campaign "${p.campaign_name}" was auto-paused due to ${p.failure_count} ${p.failure_class} failures in the last 10 minutes.`,
+            brand_id: p.brand_id,
+            data: {
+              campaign: p.campaign_name,
+              failure_class: p.failure_class,
+              failure_count: String(p.failure_count),
+            },
+          });
+        }
       }
     }
     

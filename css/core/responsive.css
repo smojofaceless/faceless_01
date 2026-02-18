@@ -1,0 +1,182 @@
+/* =====================================================
+   RESPONSIVE ENHANCEMENTS
+   Global mobile-first responsive improvements
+   ===================================================== */
+
+/* ─── Viewport Meta Hint ─── */
+/* Ensure <meta name="viewport" content="width=device-width, initial-scale=1"> is in HTML */
+
+/* ─── Mobile-first table handling ─── */
+@media (max-width: 640px) {
+  /* Stack horizontal card layouts */
+  .stat-card,
+  .metric-card {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .stat-card__value,
+  .metric-card__value {
+    font-size: var(--text-2xl);
+  }
+
+  /* Form improvements */
+  .form-row,
+  .form-grid,
+  .form-grid--2,
+  .form-grid--3 {
+    grid-template-columns: 1fr !important;
+    gap: var(--space-3);
+  }
+
+  /* Button groups stack */
+  .btn-group,
+  .action-buttons,
+  .modal__footer {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .btn-group .btn,
+  .action-buttons .btn,
+  .modal__footer .btn {
+    width: 100%;
+  }
+
+  /* Modal full-screen on mobile */
+  .modal__content,
+  .modal__content--lg,
+  .modal__content--xl {
+    max-width: 100%;
+    margin: var(--space-2);
+    max-height: 95vh;
+  }
+
+  /* Page header adjustments */
+  .page-header {
+    flex-direction: column;
+    gap: var(--space-3);
+    align-items: flex-start;
+  }
+
+  .page-header h1,
+  .page-header .page-title {
+    font-size: var(--text-xl);
+  }
+
+  /* Tab bar horizontal scroll */
+  .tab-bar,
+  .tabs,
+  .nav-tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap;
+    gap: var(--space-1);
+  }
+
+  .tab-bar::-webkit-scrollbar,
+  .tabs::-webkit-scrollbar,
+  .nav-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab-bar .tab,
+  .tabs .tab,
+  .nav-tabs .tab {
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-size: var(--text-sm);
+    padding: var(--space-2) var(--space-3);
+  }
+}
+
+/* ─── Connections page mobile ─── */
+@media (max-width: 640px) {
+  .platform-card {
+    padding: var(--space-3);
+  }
+
+  .platform-card__header {
+    flex-direction: column;
+    gap: var(--space-2);
+    align-items: flex-start;
+  }
+
+  .platform-card .status-badge {
+    align-self: flex-start;
+  }
+
+  .page-list .page-option {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+}
+
+/* ─── Calendar mobile ─── */
+@media (max-width: 640px) {
+  .calendar-grid {
+    font-size: var(--text-xs);
+  }
+
+  .calendar-day {
+    min-height: 48px;
+    padding: var(--space-1);
+  }
+
+  .calendar-event {
+    font-size: 0.65rem;
+    padding: 1px 3px;
+  }
+}
+
+/* ─── Dashboard stats grid mobile ─── */
+@media (max-width: 640px) {
+  .stats-grid,
+  .summary-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-2);
+  }
+}
+
+@media (max-width: 380px) {
+  .stats-grid,
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ─── Touch targets ─── */
+@media (max-width: 768px) {
+  /* Ensure minimum 44px touch targets */
+  .btn,
+  .tab,
+  .sidebar-link,
+  .nav-link,
+  button {
+    min-height: 44px;
+  }
+
+  /* Slightly larger dropdown items */
+  .dropdown-item {
+    padding: var(--space-3) var(--space-4);
+  }
+}
+
+/* ─── Print styles ─── */
+@media print {
+  .sidebar,
+  .sidebar-overlay,
+  .mobile-header,
+  .btn-group,
+  .action-buttons {
+    display: none !important;
+  }
+
+  .main-content,
+  .page-content {
+    margin-left: 0 !important;
+    padding: 0 !important;
+  }
+}

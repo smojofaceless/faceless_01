@@ -341,6 +341,30 @@ class InstagramMetricsAdapter implements MetricsAdapter {
 
     const accessToken = tokenData.access_token;
 
+    // Check if token needs refresh (Instagram long-lived tokens last 60 days)
+    if (tokenData.token_expires_at) {
+      const expiresAt = new Date(tokenData.token_expires_at);
+      if (expiresAt <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)) {
+        // Token expires within 7 days — proactively refresh
+        try {
+          const newToken = await this.refreshToken(supabase, tokenData as PlatformToken);
+          return this.fetchMetrics(platformPostId, newToken, supabase, brandId, tokenData as PlatformToken);
+        } catch (e) {
+          console.log(`[Instagram Metrics] Proactive refresh failed, using current token: ${e}`);
+        }
+      }
+    }
+
+    return this.fetchMetrics(platformPostId, accessToken, supabase, brandId, tokenData as PlatformToken);
+  }
+
+  private async fetchMetrics(
+    platformPostId: string,
+    accessToken: string,
+    supabase: SupabaseClient,
+    brandId: string,
+    tokenData: PlatformToken
+  ): Promise<MetricsResult> {
     try {
       // Fetch basic metrics (include media_product_type to detect Reels)
       const mediaResponse = await fetch(
@@ -369,7 +393,24 @@ class InstagramMetricsAdapter implements MetricsAdapter {
       }
 
       if (mediaResponse.status === 401 || mediaResponse.status === 403) {
-        // Mark token invalid so we don't keep hammering the API
+        // Try token refresh before giving up
+        try {
+          console.log(`[Instagram Metrics] Got ${mediaResponse.status}, attempting token refresh...`);
+          const newToken = await this.refreshToken(supabase, tokenData);
+          const retryResponse = await fetch(
+            `${this.API_BASE}/${platformPostId}?fields=like_count,comments_count,timestamp,media_type,media_product_type&access_token=${newToken}`
+          );
+          if (retryResponse.ok) {
+            // Retry succeeded — parse this response
+            const retryMediaData = await retryResponse.json();
+            // Continue with refreshed token for insights
+            return this.fetchInsightsAndBuild(platformPostId, newToken, retryMediaData);
+          }
+        } catch (refreshErr) {
+          console.log(`[Instagram Metrics] Token refresh failed: ${refreshErr}`);
+        }
+
+        // Refresh failed or retry failed — mark token invalid
         await supabase
           .from('platform_tokens')
           .update({ is_valid: false, last_error: `Metrics: Instagram token error ${mediaResponse.status}` })
@@ -461,6 +502,104 @@ class InstagramMetricsAdapter implements MetricsAdapter {
         error_message: `Network error: ${e instanceof Error ? e.message : String(e)}`,
       };
     }
+  }
+
+  // Fetch insights and build result (used after token refresh retry)
+  private async fetchInsightsAndBuild(
+    platformPostId: string,
+    accessToken: string,
+    mediaData: Record<string, unknown>
+  ): Promise<MetricsResult> {
+    let insightsData: Record<string, unknown> | null = null;
+    try {
+      const insightsResponse = await fetch(
+        `${this.API_BASE}/${platformPostId}/insights?metric=views,likes,comments,saved,shares,reach&access_token=${accessToken}`
+      );
+      if (insightsResponse.ok) {
+        insightsData = await insightsResponse.json();
+      }
+    } catch { /* non-fatal */ }
+
+    let saves = 0, shares = 0, views = 0, insightLikes = -1, insightComments = -1;
+    if (insightsData && (insightsData as { data?: Array<{ name: string; values: Array<{ value: number }> }> }).data) {
+      const insights = (insightsData as { data: Array<{ name: string; values: Array<{ value: number }> }> }).data;
+      for (const insight of insights) {
+        const value = insight.values?.[0]?.value || 0;
+        switch (insight.name) {
+          case 'saved': saves = value; break;
+          case 'shares': shares = value; break;
+          case 'views': views = value; break;
+          case 'impressions': views = value; break;
+          case 'likes': insightLikes = value; break;
+          case 'comments': insightComments = value; break;
+        }
+      }
+    }
+
+    const finalLikes = insightLikes >= 0 ? insightLikes : ((mediaData as { like_count?: number }).like_count || 0);
+    const finalComments = insightComments >= 0 ? insightComments : ((mediaData as { comments_count?: number }).comments_count || 0);
+
+    return {
+      success: true,
+      metrics: { views, likes: finalLikes, comments: finalComments, shares, saves },
+      raw: { media: mediaData, insights: insightsData },
+    };
+  }
+
+  // Refresh Instagram long-lived token (valid 60 days, refreshable if not expired)
+  private async refreshToken(supabase: SupabaseClient, tokenData: PlatformToken): Promise<string> {
+    console.log('[Instagram Metrics] Refreshing long-lived token...');
+
+    // Instagram Graph API long-lived token refresh
+    // GET /oauth/access_token?grant_type=ig_refresh_token&access_token={token}
+    const response = await fetch(
+      `https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=${tokenData.access_token}`
+    );
+
+    if (!response.ok) {
+      // Fallback: try Facebook token exchange (for IG Business via Facebook Login)
+      const fbAppSecret = Deno.env.get('FACEBOOK_APP_SECRET');
+      const fbAppId = Deno.env.get('FACEBOOK_APP_ID');
+      if (fbAppId && fbAppSecret) {
+        console.log('[Instagram Metrics] IG refresh failed, trying FB token exchange...');
+        const fbResponse = await fetch(
+          `https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${fbAppId}&client_secret=${fbAppSecret}&fb_exchange_token=${tokenData.access_token}`
+        );
+        if (fbResponse.ok) {
+          const fbData = await fbResponse.json();
+          const expiresAt = new Date(Date.now() + (fbData.expires_in || 5184000) * 1000).toISOString();
+          await supabase
+            .from('platform_tokens')
+            .update({
+              access_token: fbData.access_token,
+              token_expires_at: expiresAt,
+              is_valid: true,
+              last_error: null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', tokenData.id);
+          return fbData.access_token;
+        }
+      }
+      throw new Error(`Instagram token refresh failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const expiresAt = new Date(Date.now() + (data.expires_in || 5184000) * 1000).toISOString();
+
+    await supabase
+      .from('platform_tokens')
+      .update({
+        access_token: data.access_token,
+        token_expires_at: expiresAt,
+        is_valid: true,
+        last_error: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', tokenData.id);
+
+    console.log(`[Instagram Metrics] Token refreshed, expires: ${expiresAt}`);
+    return data.access_token;
   }
 }
 
@@ -619,37 +758,13 @@ class FacebookMetricsAdapter implements MetricsAdapter {
 }
 
 // ─────────────────────────────────────────────────────
-// TikTok Metrics Adapter (STUB)
-// TikTok API access is very limited — returns zeros
-// ─────────────────────────────────────────────────────
-class TikTokMetricsAdapter implements MetricsAdapter {
-  name = 'tiktok';
-
-  async getMetrics(
-    platformPostId: string,
-    _supabase: SupabaseClient,
-    _brandId: string
-  ): Promise<MetricsResult> {
-    console.log(`[TikTok Metrics] Stub — returning zeros for: ${platformPostId}`);
-
-    return {
-      success: true,
-      metrics: {
-        views: 0,
-        likes: 0,
-        comments: 0,
-        shares: 0,
-        saves: 0,
-      },
-      raw: { stub: true, platformPostId, note: 'TikTok API not yet integrated' },
-    };
-  }
-}
-
-// ─────────────────────────────────────────────────────
 // Adapter Registry
+// Returns null for platforms without real API adapters
+// so we skip them instead of recording fake zeros
 // ─────────────────────────────────────────────────────
-function getMetricsAdapter(platform: string): MetricsAdapter {
+const STUB_PLATFORMS = new Set(['tiktok', 'threads', 'twitter', 'x']);
+
+function getMetricsAdapter(platform: string): MetricsAdapter | null {
   switch (platform) {
     case 'youtube':
     case 'youtube_shorts':
@@ -661,17 +776,14 @@ function getMetricsAdapter(platform: string): MetricsAdapter {
     case 'facebook_reels':
       return new FacebookMetricsAdapter();
     case 'tiktok':
-      return new TikTokMetricsAdapter();
     case 'threads':
-      console.log(`[Metrics] Threads metrics adapter (stub)`);
-      return new TikTokMetricsAdapter(); // Stub - returns zeros
     case 'twitter':
     case 'x':
-      console.log(`[Metrics] Twitter/X metrics adapter (stub)`);
-      return new TikTokMetricsAdapter(); // Stub - returns zeros
+      console.log(`[Metrics] Skipping stub platform: ${platform} (no API adapter yet)`);
+      return null;
     default:
-      console.log(`[Metrics] No adapter for platform: ${platform}, using stub`);
-      return new TikTokMetricsAdapter(); // Fallback stub
+      console.log(`[Metrics] No adapter for platform: ${platform}, skipping`);
+      return null;
   }
 }
 
@@ -686,7 +798,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', {
       headers: {
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') || 'https://smojofaceless.github.io',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
         'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
       },
@@ -762,6 +874,7 @@ Deno.serve(async (req: Request) => {
     let errorCount = 0;
     let terminalCount = 0;
     let skippedCooldown = 0;
+    let skippedStub = 0;
     const errors: Array<{ post_id: string; platform: string; error: string }> = [];
 
     // Per-platform 429 cooldown: skip remaining posts on a platform after rate limit hit
@@ -769,6 +882,13 @@ Deno.serve(async (req: Request) => {
 
     for (const post of posts) {
       try {
+        // Skip stub platforms entirely — no fake zeros
+        if (STUB_PLATFORMS.has(post.platform)) {
+          console.log(`[Metrics Collector] Skipping stub platform ${post.platform} | ${post.platform_post_id}`);
+          skippedStub++;
+          continue;
+        }
+
         // Skip if this platform hit a rate limit earlier in this batch
         if (platformCooldown.has(post.platform)) {
           console.log(`[Metrics Collector] Skipping ${post.platform} | ${post.platform_post_id} (platform cooldown)`);
@@ -780,6 +900,12 @@ Deno.serve(async (req: Request) => {
 
         // Get adapter
         const adapter = getMetricsAdapter(post.platform);
+
+        if (!adapter) {
+          console.log(`[Metrics Collector] No adapter for ${post.platform}, skipping`);
+          skippedStub++;
+          continue;
+        }
 
         // Fetch metrics
         const result = await adapter.getMetrics(post.platform_post_id, supabase, post.brand_id);
@@ -895,6 +1021,7 @@ Deno.serve(async (req: Request) => {
       errors: errorCount,
       terminal: terminalCount,
       skipped_cooldown: skippedCooldown,
+      skipped_stub: skippedStub,
       cooled_platforms: platformCooldown.size > 0 ? Array.from(platformCooldown) : undefined,
       duration_ms: durationMs,
       error_details: errors.length > 0 ? errors.slice(0, 10) : undefined,
@@ -906,6 +1033,7 @@ Deno.serve(async (req: Request) => {
     console.log(`  Success: ${successCount}`);
     console.log(`  Errors: ${errorCount}`);
     console.log(`  Terminal: ${terminalCount}`);
+    console.log(`  Skipped (stub): ${skippedStub}`);
     console.log(`  Skipped (cooldown): ${skippedCooldown}`);
     console.log(`  Cooled platforms: ${platformCooldown.size > 0 ? Array.from(platformCooldown).join(', ') : 'none'}`);
     console.log(`  Duration: ${durationMs}ms`);

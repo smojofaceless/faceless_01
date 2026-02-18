@@ -986,6 +986,30 @@ export async function executeUniquenessStep(
     const hasCollision = (similarStories?.length || 0) > 0;
     const uniquenessScore = hasCollision ? 0.5 : 0.95;
 
+    // ─── Uniqueness threshold enforcement ───
+    // If score is too low, reject this story and force regeneration
+    const UNIQUENESS_THRESHOLD = 0.6; // Configurable: stories below this are too similar
+    if (uniquenessScore < UNIQUENESS_THRESHOLD) {
+      console.warn(`[UNIQUENESS] ⚠ Score ${uniquenessScore} < threshold ${UNIQUENESS_THRESHOLD} — story too similar to ${similarStories?.length} existing stories`);
+      
+      // Store the rejection for debugging
+      await upsertAsset(supabase, job.id, idempotencyKey, 'uniqueness_check', '', null, {
+        checked: true,
+        story_hash: storyHash,
+        uniqueness_score: uniquenessScore,
+        has_collision: hasCollision,
+        collision_count: similarStories?.length || 0,
+        rejected: true,
+        similar_job_ids: (similarStories || []).map((s: { job_id: string }) => s.job_id).slice(0, 3),
+      });
+
+      return {
+        success: false,
+        error: `Story uniqueness score ${uniquenessScore} is below threshold ${UNIQUENESS_THRESHOLD}. ${similarStories?.length || 0} similar stories exist for this brand. Regenerate with a different angle.`,
+        data: { uniqueness_score: uniquenessScore, collision_count: similarStories?.length || 0, rejected: true },
+      };
+    }
+
     // Store result
     await upsertAsset(supabase, job.id, idempotencyKey, 'uniqueness_check', '', null, {
       checked: true,

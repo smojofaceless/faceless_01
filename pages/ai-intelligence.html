@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="../css/core/base.css">
     <link rel="stylesheet" href="../css/core/components.css">
     <link rel="stylesheet" href="../css/core/layout.css">
+    <link rel="stylesheet" href="../css/core/responsive.css">
     <link rel="stylesheet" href="../css/dashboard.css">
     <link rel="stylesheet" href="../css/ai-intelligence.css">
 </head>
@@ -150,6 +151,10 @@
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                         Recent Posts &amp; Insights
                     </button>
+                    <button class="ai-section-tab" data-tab="cross-platform">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+                        Cross-Platform &amp; Strategy
+                    </button>
                 </div>
 
                 <!-- Tab: Overview (existing grid) -->
@@ -247,6 +252,39 @@
                 <div class="ai-tab-panel" id="tab-recent-posts">
                     <div id="recent-posts-container">
                         <div class="ai-loading">Loading recent post insights…</div>
+                    </div>
+                </div>
+
+                <!-- Tab: Cross-Platform & Strategy -->
+                <div class="ai-tab-panel" id="tab-cross-platform">
+                    <div class="ai-grid">
+                        <!-- Cross-Platform Comparison -->
+                        <div class="ai-card ai-card--full">
+                            <div class="ai-card__header">
+                                <h3 class="ai-card__title">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+                                    Platform Comparison
+                                </h3>
+                                <span class="ai-card__badge">Cross-Platform</span>
+                            </div>
+                            <div class="ai-card__body" id="cross-platform-comparison">
+                                <div class="ai-loading">Loading platform comparison…</div>
+                            </div>
+                        </div>
+
+                        <!-- Strategy Performance -->
+                        <div class="ai-card ai-card--full">
+                            <div class="ai-card__header">
+                                <h3 class="ai-card__title">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                                    Strategy Performance
+                                </h3>
+                                <span class="ai-card__badge">Content Strategies</span>
+                            </div>
+                            <div class="ai-card__body" id="strategy-performance">
+                                <div class="ai-loading">Loading strategy data…</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

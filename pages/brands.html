@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="../css/core/base.css">
     <link rel="stylesheet" href="../css/core/components.css">
     <link rel="stylesheet" href="../css/core/layout.css">
+    <link rel="stylesheet" href="../css/core/responsive.css">
     <link rel="stylesheet" href="../css/dashboard.css">
     <link rel="stylesheet" href="../css/brands.css">
     
@@ -1384,30 +1385,30 @@
                 </div>
             `).join('');
 
-            // Fetch enrichment data (credentials, music counts, post stats) in parallel
+            // Fetch enrichment data (credentials, music counts, post stats)
+            // Pre-fetch ALL post stats in 2 bulk queries (not N+1 per brand)
+            const brandIds = brands.map(b => b.id);
+            const [allPosts, scheduledPosts] = await Promise.all([
+                supabaseClient.from('posts').select('brand_id').in('brand_id', brandIds),
+                supabaseClient.from('posts').select('brand_id').in('brand_id', brandIds).eq('status', 'scheduled'),
+            ]);
+            const totalCountMap = {};
+            const scheduledCountMap = {};
+            (allPosts.data || []).forEach(p => { totalCountMap[p.brand_id] = (totalCountMap[p.brand_id] || 0) + 1; });
+            (scheduledPosts.data || []).forEach(p => { scheduledCountMap[p.brand_id] = (scheduledCountMap[p.brand_id] || 0) + 1; });
+
             const enrichments = {};
             await Promise.all(brands.map(async (brand) => {
                 try {
-                    const [creds, tracks, postStats] = await Promise.all([
+                    const [creds, tracks] = await Promise.all([
                         brandManager.getAllCredentials(brand.id).catch(() => []),
                         brandManager.getMusicTracks(brand.id).catch(() => []),
-                        // Real post counts from Supabase
-                        (async () => {
-                            try {
-                                const { count: total } = await supabaseClient
-                                    .from('posts').select('*', { count: 'exact', head: true })
-                                    .eq('brand_id', brand.id);
-                                const { count: scheduled } = await supabaseClient
-                                    .from('posts').select('*', { count: 'exact', head: true })
-                                    .eq('brand_id', brand.id).eq('status', 'scheduled');
-                                return { totalPosts: total || 0, scheduledPosts: scheduled || 0 };
-                            } catch { return { totalPosts: 0, scheduledPosts: 0 }; }
-                        })()
                     ]);
                     enrichments[brand.id] = {
                         credentials: creds || [],
                         musicCount: (tracks || []).length,
-                        ...postStats
+                        totalPosts: totalCountMap[brand.id] || 0,
+                        scheduledPosts: scheduledCountMap[brand.id] || 0,
                     };
                 } catch (e) {
                     enrichments[brand.id] = { credentials: [], musicCount: 0, totalPosts: 0, scheduledPosts: 0 };

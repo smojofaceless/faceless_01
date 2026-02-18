@@ -119,6 +119,11 @@ const AIIntelligence = (() => {
             ]);
         } else if (currentTab === 'recent-posts') {
             await loadRecentPostInsights();
+        } else if (currentTab === 'cross-platform') {
+            await Promise.all([
+                loadCrossPlatformComparison(),
+                loadStrategyPerformance(),
+            ]);
         }
     }
 
@@ -1153,6 +1158,135 @@ const AIIntelligence = (() => {
         } catch (err) {
             console.error('[AI Intelligence] loadRecentPostInsights error:', err);
             container.innerHTML = '<div class="ai-empty">Failed to load post insights. Please try again.</div>';
+        }
+    }
+
+    // ─── Cross-Platform Comparison ─────────────────────────────────
+
+    async function loadCrossPlatformComparison() {
+        const container = el('cross-platform-comparison');
+        if (!container) return;
+        container.innerHTML = '<div class="ai-loading">Loading platform comparison…</div>';
+
+        try {
+            const { data, error } = await supabase
+                .from('v_cross_platform_performance')
+                .select('*')
+                .eq('brand_id', currentBrandId);
+
+            if (error || !data?.length) {
+                container.innerHTML = '<div class="ai-empty">No cross-platform data yet. Post to multiple platforms to see comparisons.</div>';
+                return;
+            }
+
+            // Build comparison table
+            const maxViews = Math.max(...data.map(d => d.avg_views || 0), 1);
+
+            let html = `
+                <div class="ai-comparison-table">
+                    <table style="width:100%; border-collapse:collapse;">
+                        <thead>
+                            <tr style="border-bottom:1px solid var(--border-subtle);">
+                                <th style="text-align:left; padding:8px;">Platform</th>
+                                <th style="text-align:right; padding:8px;">Posts</th>
+                                <th style="text-align:right; padding:8px;">Avg Views</th>
+                                <th style="text-align:right; padding:8px;">Avg Likes</th>
+                                <th style="text-align:right; padding:8px;">Avg Comments</th>
+                                <th style="text-align:right; padding:8px;">Engagement %</th>
+                                <th style="padding:8px; width:30%;">Performance</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
+
+            for (const row of data.sort((a, b) => (b.avg_views || 0) - (a.avg_views || 0))) {
+                const platformLabel = {
+                    youtube_shorts: '🎬 YouTube',
+                    instagram_reels: '📸 Instagram',
+                    facebook_reels: '📘 Facebook',
+                    tiktok: '🎵 TikTok',
+                    twitter: '🐦 Twitter/X',
+                    threads: '🧵 Threads',
+                }[row.platform] || row.platform;
+
+                const barWidth = Math.round(((row.avg_views || 0) / maxViews) * 100);
+                const engRate = row.avg_views > 0 ? (((row.avg_likes || 0) + (row.avg_comments || 0)) / row.avg_views * 100).toFixed(2) : '0.00';
+
+                html += `
+                    <tr style="border-bottom:1px solid var(--border-subtle);">
+                        <td style="padding:8px; font-weight:600;">${platformLabel}</td>
+                        <td style="text-align:right; padding:8px;">${row.total_posts || 0}</td>
+                        <td style="text-align:right; padding:8px;">${fmt(row.avg_views)}</td>
+                        <td style="text-align:right; padding:8px;">${fmt(row.avg_likes)}</td>
+                        <td style="text-align:right; padding:8px;">${fmt(row.avg_comments)}</td>
+                        <td style="text-align:right; padding:8px; color:${parseFloat(engRate) > 5 ? 'var(--success)' : 'var(--text-secondary)'};">${engRate}%</td>
+                        <td style="padding:8px;">
+                            <div style="background:var(--surface-secondary); border-radius:4px; height:20px; overflow:hidden;">
+                                <div style="background:linear-gradient(90deg, var(--primary), var(--primary-light, #a78bfa)); height:100%; width:${barWidth}%; border-radius:4px; transition:width 0.3s;"></div>
+                            </div>
+                        </td>
+                    </tr>`;
+            }
+
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        } catch (err) {
+            console.error('[AI Intelligence] loadCrossPlatformComparison error:', err);
+            container.innerHTML = '<div class="ai-empty">Failed to load platform comparison.</div>';
+        }
+    }
+
+    // ─── Strategy Performance ────────────────────────────────────────
+
+    async function loadStrategyPerformance() {
+        const container = el('strategy-performance');
+        if (!container) return;
+        container.innerHTML = '<div class="ai-loading">Loading strategy data…</div>';
+
+        try {
+            const { data, error } = await supabase
+                .from('v_strategy_performance')
+                .select('*')
+                .eq('brand_id', currentBrandId)
+                .order('avg_engagement', { ascending: false });
+
+            if (error || !data?.length) {
+                container.innerHTML = '<div class="ai-empty">No strategy data yet. Strategies are assigned automatically during content generation.</div>';
+                return;
+            }
+
+            const maxEng = Math.max(...data.map(d => d.avg_engagement || 0), 1);
+
+            let html = '<div class="ai-strategy-grid" style="display:grid; gap:12px;">';
+
+            for (const s of data) {
+                const barWidth = Math.round(((s.avg_engagement || 0) / maxEng) * 100);
+                const engColor = barWidth > 70 ? 'var(--success)' : barWidth > 40 ? 'var(--warning)' : 'var(--text-muted)';
+                const platformBadge = s.platform ? `<span class="ai-card__badge" style="font-size:0.7rem;">${s.platform}</span>` : '';
+
+                html += `
+                    <div style="background:var(--surface-secondary); border-radius:var(--radius-lg); padding:12px 16px; display:flex; align-items:center; gap:12px;">
+                        <div style="flex:1;">
+                            <div style="font-weight:600; color:var(--text-primary); font-size:0.9rem;">
+                                ${(s.strategy_type || '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                ${platformBadge}
+                            </div>
+                            <div style="font-size:0.8rem; color:var(--text-secondary); margin-top:2px;">
+                                ${s.total_uses || 0} uses · Avg Engagement: ${fmt(s.avg_engagement)} · Win Rate: ${s.win_rate ? (s.win_rate * 100).toFixed(0) : 0}%
+                            </div>
+                        </div>
+                        <div style="width:120px;">
+                            <div style="background:var(--surface-tertiary); border-radius:4px; height:16px; overflow:hidden;">
+                                <div style="background:${engColor}; height:100%; width:${barWidth}%; border-radius:4px;"></div>
+                            </div>
+                        </div>
+                    </div>`;
+            }
+
+            html += '</div>';
+            container.innerHTML = html;
+        } catch (err) {
+            console.error('[AI Intelligence] loadStrategyPerformance error:', err);
+            container.innerHTML = '<div class="ai-empty">Failed to load strategy data.</div>';
         }
     }
 

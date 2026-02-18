@@ -379,16 +379,23 @@
                 return;
             }
 
-            // Get post counts per brand in parallel
-            const countPromises = brands.map(b =>
-                sb.from('posts').select('id', { count: 'exact', head: true })
-                    .eq('brand_id', b.id).eq('status', 'posted')
-            );
-            const counts = await Promise.all(countPromises);
+            // Get post counts per brand in a SINGLE query (not N+1)
+            const brandIds = brands.map(b => b.id);
+            const { data: postedPosts } = await sb
+                .from('posts')
+                .select('brand_id')
+                .in('brand_id', brandIds)
+                .eq('status', 'posted');
 
-            container.innerHTML = brands.map((b, i) => {
+            // Count client-side
+            const countMap = {};
+            (postedPosts || []).forEach(p => {
+                countMap[p.brand_id] = (countMap[p.brand_id] || 0) + 1;
+            });
+
+            container.innerHTML = brands.map((b) => {
                 const color = b.theme?.primaryColor || '#8b5cf6';
-                const postCount = counts[i]?.count || 0;
+                const postCount = countMap[b.id] || 0;
                 return `
                     <div class="brand-item ${b.is_active ? 'brand-item--active' : ''}">
                         <div class="brand-item__indicator" style="background: ${color}"></div>
