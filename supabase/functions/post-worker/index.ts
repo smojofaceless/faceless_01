@@ -200,7 +200,8 @@ async function refreshTikTokToken(
 
 /**
  * Real TikTok adapter — uploads via Content Posting API V2
- * Flow: init upload → upload video via URL → poll for publish status
+ * Flow: init upload → FILE_UPLOAD (chunked) → poll for publish status
+ * Uses FILE_UPLOAD instead of PULL_FROM_URL to avoid domain verification.
  */
 class TikTokAdapter implements PlatformAdapter {
   name = 'tiktok';
@@ -261,8 +262,46 @@ class TikTokAdapter implements PlatformAdapter {
 
       console.log(`[TikTok] Caption: ${safeCaption.slice(0, 100)}...`);
 
-      // 4. Init video publish via "pull from URL" method
-      console.log('[TikTok] Step 1: Initializing video publish (pull from URL)...');
+      // 4. Query Creator Info to get available privacy levels
+      console.log('[TikTok] Step 1: Querying creator info...');
+      const creatorInfoResponse = await fetch(`${this.API_BASE}/post/publish/creator_info/query/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json; charset=UTF-8',
+        },
+      });
+      const creatorInfo = await creatorInfoResponse.json();
+      let privacyLevel = 'SELF_ONLY'; // safest default
+      if (creatorInfo.data?.privacy_level_options) {
+        const options = creatorInfo.data.privacy_level_options as string[];
+        console.log(`[TikTok] Available privacy levels: ${options.join(', ')}`);
+        // Prefer PUBLIC > FOLLOWERS > FRIENDS > SELF_ONLY
+        if (options.includes('PUBLIC_TO_EVERYONE')) privacyLevel = 'PUBLIC_TO_EVERYONE';
+        else if (options.includes('FOLLOWER_OF_CREATOR')) privacyLevel = 'FOLLOWER_OF_CREATOR';
+        else if (options.includes('MUTUAL_FOLLOW_FRIENDS')) privacyLevel = 'MUTUAL_FOLLOW_FRIENDS';
+        else if (options.includes('SELF_ONLY')) privacyLevel = 'SELF_ONLY';
+      } else {
+        console.warn('[TikTok] Could not get privacy options, using SELF_ONLY');
+      }
+      console.log(`[TikTok] Using privacy level: ${privacyLevel}`);
+
+      // 5. Download video bytes first (for FILE_UPLOAD)
+      console.log('[TikTok] Step 1: Downloading video...');
+      const videoResponse = await fetch(videoUrl);
+      if (!videoResponse.ok) {
+        return { success: false, error_class: 'dependency', error_message: `TikTok: Failed to download video: ${videoResponse.status}` };
+      }
+      const videoBytes = new Uint8Array(await videoResponse.arrayBuffer());
+      const totalBytes = videoBytes.length;
+      console.log(`[TikTok] Video downloaded: ${(totalBytes / 1024 / 1024).toFixed(2)} MB`);
+
+      // Determine chunk count (max 64MB per chunk, min 1 chunk)
+      const MAX_CHUNK = 64 * 1024 * 1024;
+      const chunkCount = Math.max(1, Math.ceil(totalBytes / MAX_CHUNK));
+
+      // 5. Init video publish via FILE_UPLOAD
+      console.log(`[TikTok] Step 2: Initializing video publish (FILE_UPLOAD, ${chunkCount} chunk(s))...`);
       const initResponse = await fetch(`${this.API_BASE}/post/publish/video/init/`, {
         method: 'POST',
         headers: {
@@ -273,15 +312,17 @@ class TikTokAdapter implements PlatformAdapter {
           post_info: {
             title: (title || '').slice(0, 150),
             description: safeCaption,
-            privacy_level: 'PUBLIC_TO_EVERYONE',
+            privacy_level: privacyLevel,
             disable_duet: false,
             disable_comment: false,
             disable_stitch: false,
             video_cover_timestamp_ms: 1000,
           },
           source_info: {
-            source: 'PULL_FROM_URL',
-            video_url: videoUrl,
+            source: 'FILE_UPLOAD',
+            video_size: totalBytes,
+            chunk_size: Math.ceil(totalBytes / chunkCount),
+            total_chunk_count: chunkCount,
           },
         }),
       });
@@ -316,10 +357,46 @@ class TikTokAdapter implements PlatformAdapter {
         return { success: false, error_class: 'transient', error_message: 'TikTok: No publish_id returned from init' };
       }
 
-      console.log(`[TikTok] Publish ID: ${publishId}`);
+      // Get upload URL from init response
+      const uploadUrl = initData.data?.upload_url;
+      if (!uploadUrl) {
+        return { success: false, error_class: 'transient', error_message: 'TikTok: No upload_url returned from init' };
+      }
 
-      // 5. Poll for publish status (TikTok processes async)
-      console.log('[TikTok] Step 2: Polling publish status...');
+      console.log(`[TikTok] Publish ID: ${publishId}, Upload URL received`);
+
+      // 6. Upload video chunks to TikTok
+      console.log(`[TikTok] Step 3: Uploading video (${chunkCount} chunk(s), ${(totalBytes / 1024 / 1024).toFixed(2)} MB)...`);
+      const chunkSize = Math.ceil(totalBytes / chunkCount);
+
+      for (let i = 0; i < chunkCount; i++) {
+        const start = i * chunkSize;
+        const end = Math.min(start + chunkSize, totalBytes);
+        const chunk = videoBytes.slice(start, end);
+
+        console.log(`[TikTok] Uploading chunk ${i + 1}/${chunkCount}: bytes ${start}-${end - 1} (${chunk.length} bytes)`);
+
+        const uploadResponse = await fetch(uploadUrl, {
+          method: 'PUT',
+          headers: {
+            'Content-Range': `bytes ${start}-${end - 1}/${totalBytes}`,
+            'Content-Length': chunk.length.toString(),
+            'Content-Type': 'video/mp4',
+          },
+          body: chunk,
+        });
+
+        if (!uploadResponse.ok && uploadResponse.status !== 201) {
+          const uploadErr = await uploadResponse.text();
+          console.error(`[TikTok] Chunk upload failed: ${uploadResponse.status} — ${uploadErr}`);
+          return { success: false, error_class: 'transient', error_message: `TikTok: Chunk upload failed: ${uploadResponse.status}` };
+        }
+
+        console.log(`[TikTok] Chunk ${i + 1}/${chunkCount} uploaded successfully`);
+      }
+
+      // 7. Poll for publish status (TikTok processes async)
+      console.log('[TikTok] Step 4: Polling publish status...');
       let finalStatus = 'PROCESSING';
       let platformPostId = '';
       const maxPolls = 30; // Up to ~5 minutes
