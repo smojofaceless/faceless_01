@@ -1010,132 +1010,297 @@
     color: var(--color-accent-primary);
 }
 
-/* AI Influence section */
-.insight-influence {
-    padding: var(--space-3) var(--space-5);
-    border-bottom: 1px solid var(--color-border-default);
-    background: linear-gradient(135deg, transparent 0%, rgba(99, 102, 241, 0.03) 100%);
-}
-
-.insight-influence__title {
-    font-size: var(--text-xs);
-    font-weight: 600;
-    color: var(--color-accent-primary);
-    margin: 0 0 var(--space-2) 0;
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-}
-
-.insight-influence__list {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-}
-
-.insight-influence__list li {
-    font-size: var(--text-xs);
-    color: var(--color-text-secondary);
-    padding-left: var(--space-4);
-    position: relative;
-}
-
-.insight-influence__list li::before {
-    content: '→';
-    position: absolute;
-    left: 0;
-    color: var(--color-accent-primary);
-}
-
-.insight-influence__tag {
-    display: inline-block;
-    padding: 0 6px;
-    background: rgba(99, 102, 241, 0.1);
-    border-radius: var(--radius-sm);
-    font-size: 10px;
-    font-weight: 600;
-    color: var(--color-accent-primary);
-    margin-right: 4px;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-}
-
-/* Analysis sections */
-.insight-card__analysis {
+/* ─── AI Brain Blocks ─────────────────────────────────────── */
+.insight-card__brain {
     padding: var(--space-3) var(--space-5) var(--space-4);
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
 }
 
-.insight-section {
-    padding: var(--space-3);
+.ai-brain-block {
     border-radius: var(--radius-lg);
-    border: 1px solid transparent;
+    border: 1px solid var(--color-border-default);
+    overflow: hidden;
 }
 
-.insight-section__title {
-    font-size: var(--text-xs);
-    font-weight: 600;
-    margin: 0 0 var(--space-2) 0;
+.ai-brain-block__header {
     display: flex;
     align-items: center;
     gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    border-bottom: 1px solid var(--color-border-default);
 }
 
-.insight-section__title svg {
-    width: 14px;
-    height: 14px;
-    flex-shrink: 0;
+.ai-brain-block__icon {
+    font-size: 13px;
+    line-height: 1;
 }
 
-.insight-section__list {
-    margin: 0;
-    padding: 0 0 0 var(--space-5);
-    font-size: var(--text-xs);
-    color: var(--color-text-secondary);
+.ai-brain-block__content {
+    padding: var(--space-3);
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-2);
 }
 
-/* Section theme colors */
-.insight-section--well {
-    background: rgba(34, 197, 94, 0.04);
-    border-color: rgba(34, 197, 94, 0.15);
-}
-
-.insight-section--well .insight-section__title {
-    color: var(--color-success);
-}
-
-.insight-section--poor {
-    background: rgba(239, 68, 68, 0.04);
-    border-color: rgba(239, 68, 68, 0.15);
-}
-
-.insight-section--poor .insight-section__title {
-    color: var(--color-error);
-}
-
-.insight-section--learned {
-    background: rgba(234, 179, 8, 0.04);
-    border-color: rgba(234, 179, 8, 0.15);
-}
-
-.insight-section--learned .insight-section__title {
-    color: #d97706;
-}
-
-.insight-section--forward {
-    background: rgba(99, 102, 241, 0.04);
+/* Signal block */
+.ai-brain-block--signal {
+    background: rgba(99, 102, 241, 0.03);
     border-color: rgba(99, 102, 241, 0.15);
 }
 
-.insight-section--forward .insight-section__title {
+.ai-brain-block--signal .ai-brain-block__header {
+    color: var(--color-accent-primary);
+    background: rgba(99, 102, 241, 0.06);
+    border-bottom-color: rgba(99, 102, 241, 0.10);
+}
+
+.ai-brain-datum {
+    display: block;
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
+    line-height: 1.5;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    letter-spacing: -0.2px;
+}
+
+.ai-brain-datum em {
+    color: var(--color-text-tertiary);
+    font-style: normal;
+}
+
+.ai-brain-datum--dim {
+    color: var(--color-text-tertiary);
+    font-style: italic;
+}
+
+.ai-brain-hit {
+    color: var(--color-success);
+    font-weight: 700;
+}
+
+.ai-brain-miss {
+    color: var(--color-error);
+    font-weight: 700;
+}
+
+/* Pattern Analysis block */
+.ai-brain-block--patterns {
+    background: rgba(234, 179, 8, 0.02);
+    border-color: rgba(234, 179, 8, 0.15);
+}
+
+.ai-brain-block--patterns .ai-brain-block__header {
+    color: #d97706;
+    background: rgba(234, 179, 8, 0.06);
+    border-bottom-color: rgba(234, 179, 8, 0.10);
+}
+
+.ai-brain-pattern {
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
+    line-height: 1.6;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    border-left: 3px solid var(--color-border-default);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.ai-brain-pattern strong {
+    color: var(--color-text-primary);
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 10px;
+    letter-spacing: 0.5px;
+}
+
+.ai-brain-pattern em {
+    color: var(--color-accent-primary);
+    font-style: normal;
+    font-weight: 600;
+}
+
+.ai-brain-pattern--match {
+    border-left-color: var(--color-success);
+    background: rgba(34, 197, 94, 0.03);
+}
+
+.ai-brain-pattern--mismatch {
+    border-left-color: var(--color-error);
+    background: rgba(239, 68, 68, 0.03);
+}
+
+.ai-brain-pattern--neutral {
+    border-left-color: rgba(234, 179, 8, 0.5);
+    background: rgba(234, 179, 8, 0.03);
+}
+
+.ai-brain-pattern code {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 10px;
+    padding: 1px 5px;
+    background: rgba(99, 102, 241, 0.08);
+    border-radius: 3px;
+    color: var(--color-accent-primary);
+}
+
+.ai-tag-label {
+    font-weight: 600;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-right: 4px;
+}
+
+.ai-tag-label--hit {
+    color: var(--color-success);
+}
+
+.ai-tag-label--miss {
+    color: var(--color-error);
+}
+
+/* Decision Log block */
+.ai-brain-block--decisions {
+    background: rgba(139, 92, 246, 0.02);
+    border-color: rgba(139, 92, 246, 0.15);
+}
+
+.ai-brain-block--decisions .ai-brain-block__header {
+    color: #8b5cf6;
+    background: rgba(139, 92, 246, 0.06);
+    border-bottom-color: rgba(139, 92, 246, 0.10);
+}
+
+.ai-brain-decision {
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
+    line-height: 1.6;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.ai-brain-decision code {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 10px;
+    padding: 1px 5px;
+    background: rgba(99, 102, 241, 0.08);
+    border-radius: 3px;
+    color: var(--color-accent-primary);
+}
+
+.ai-brain-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+
+.ai-brain-badge--promote {
+    background: rgba(34, 197, 94, 0.12);
+    color: var(--color-success);
+    border: 1px solid rgba(34, 197, 94, 0.25);
+}
+
+.ai-brain-badge--reinforce {
+    background: rgba(34, 197, 94, 0.08);
+    color: var(--color-success);
+    border: 1px solid rgba(34, 197, 94, 0.20);
+}
+
+.ai-brain-badge--demote {
+    background: rgba(234, 179, 8, 0.10);
+    color: #d97706;
+    border: 1px solid rgba(234, 179, 8, 0.25);
+}
+
+.ai-brain-badge--negative {
+    background: rgba(239, 68, 68, 0.10);
+    color: var(--color-error);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.ai-brain-badge--adjust {
+    background: rgba(99, 102, 241, 0.10);
+    color: var(--color-accent-primary);
+    border: 1px solid rgba(99, 102, 241, 0.25);
+}
+
+.ai-brain-decision--promote {
+    border-left: 3px solid var(--color-success);
+    background: rgba(34, 197, 94, 0.03);
+}
+
+.ai-brain-decision--reinforce {
+    border-left: 3px solid var(--color-success);
+    background: rgba(34, 197, 94, 0.02);
+}
+
+.ai-brain-decision--demote {
+    border-left: 3px solid #d97706;
+    background: rgba(234, 179, 8, 0.03);
+}
+
+.ai-brain-decision--negative {
+    border-left: 3px solid var(--color-error);
+    background: rgba(239, 68, 68, 0.03);
+}
+
+.ai-brain-decision--adjust {
+    border-left: 3px solid var(--color-accent-primary);
+    background: rgba(99, 102, 241, 0.03);
+}
+
+/* Strategy block */
+.ai-brain-block--strategy {
+    background: rgba(34, 197, 94, 0.02);
+    border-color: rgba(34, 197, 94, 0.15);
+}
+
+.ai-brain-block--strategy .ai-brain-block__header {
+    color: var(--color-success);
+    background: rgba(34, 197, 94, 0.06);
+    border-bottom-color: rgba(34, 197, 94, 0.10);
+}
+
+.ai-brain-action {
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
+    line-height: 1.6;
+    padding: var(--space-1) var(--space-3);
+    position: relative;
+    padding-left: calc(var(--space-3) + 14px);
+}
+
+.ai-brain-action::before {
+    content: '→';
+    position: absolute;
+    left: var(--space-3);
+    color: var(--color-success);
+    font-weight: 700;
+}
+
+.ai-brain-action strong {
+    color: var(--color-text-primary);
+    font-weight: 600;
+}
+
+.ai-brain-action code {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 10px;
+    padding: 1px 5px;
+    background: rgba(99, 102, 241, 0.08);
+    border-radius: 3px;
     color: var(--color-accent-primary);
 }
 
