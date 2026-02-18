@@ -717,6 +717,7 @@ const AIIntelligence = (() => {
                 supabase.from('time_slot_scores')
                     .select('day_of_week, hour, score, post_count')
                     .eq('brand_id', currentBrandId)
+                    .eq('platform', plat)
                     .order('score', { ascending: false })
                     .limit(5),
             ]);
