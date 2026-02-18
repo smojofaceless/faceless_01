@@ -140,7 +140,20 @@
                 <!-- Platform Filter Tabs -->
                 <div class="platform-tabs" id="platform-tabs"></div>
 
-                <!-- Grid Layout -->
+                <!-- Section Tabs (main views) -->
+                <div class="ai-section-tabs" id="ai-section-tabs">
+                    <button class="ai-section-tab ai-section-tab--active" data-tab="overview">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                        Overview
+                    </button>
+                    <button class="ai-section-tab" data-tab="recent-posts">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                        Recent Posts &amp; Insights
+                    </button>
+                </div>
+
+                <!-- Tab: Overview (existing grid) -->
+                <div class="ai-tab-panel ai-tab-panel--active" id="tab-overview">
                 <div class="ai-grid">
 
                     <!-- Performance Trend -->
@@ -228,6 +241,15 @@
                     </div>
 
                 </div><!-- .ai-grid -->
+                </div><!-- tab-overview -->
+
+                <!-- Tab: Recent Posts & Insights -->
+                <div class="ai-tab-panel" id="tab-recent-posts">
+                    <div id="recent-posts-container">
+                        <div class="ai-loading">Loading recent post insights…</div>
+                    </div>
+                </div>
+
             </div><!-- .content -->
         </main>
     </div>
@@ -250,6 +272,7 @@
     
     <!-- Services -->
     <script src="../js/services/brandManager.js"></script>
+    <script src="../js/services/metricsService.js"></script>
     
     <!-- Page Controller -->
     <script src="../js/pages/ai-intelligence.js"></script>

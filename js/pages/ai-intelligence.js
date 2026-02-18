@@ -17,6 +17,8 @@ const AIIntelligence = (() => {
     let currentBrandId = null;
     let currentPlatform = 'all';
 
+    let currentTab = 'overview';
+
     const PLATFORMS = [
         { key: 'all', label: 'All Platforms' },
         { key: 'youtube_shorts', label: 'YouTube' },
@@ -61,6 +63,7 @@ const AIIntelligence = (() => {
         }
 
         renderPlatformTabs();
+        renderSectionTabs();
         await loadAll();
     }
 
@@ -81,18 +84,42 @@ const AIIntelligence = (() => {
         });
     }
 
+    function renderSectionTabs() {
+        const container = document.getElementById('ai-section-tabs');
+        if (!container) return;
+        container.addEventListener('click', e => {
+            const btn = e.target.closest('.ai-section-tab');
+            if (!btn) return;
+            const tab = btn.dataset.tab;
+            if (tab === currentTab) return;
+            currentTab = tab;
+            container.querySelectorAll('.ai-section-tab').forEach(b => b.classList.remove('ai-section-tab--active'));
+            btn.classList.add('ai-section-tab--active');
+            document.querySelectorAll('.ai-tab-panel').forEach(p => p.classList.remove('ai-tab-panel--active'));
+            const panel = document.getElementById('tab-' + tab);
+            if (panel) panel.classList.add('ai-tab-panel--active');
+            loadAll();
+        });
+    }
+
     async function loadAll() {
         if (!currentBrandId) return;
-        // load all sections in parallel
-        await Promise.all([
-            loadStatusBar(),
-            loadPerformanceTrend(),
-            loadWinningPatterns(),
-            loadExemplars(),
-            loadTimeSlotHeatmap(),
-            loadThemePerformance(),
-            loadGenerationHistory(),
-        ]);
+
+        // Always load status bar
+        await loadStatusBar();
+
+        if (currentTab === 'overview') {
+            await Promise.all([
+                loadPerformanceTrend(),
+                loadWinningPatterns(),
+                loadExemplars(),
+                loadTimeSlotHeatmap(),
+                loadThemePerformance(),
+                loadGenerationHistory(),
+            ]);
+        } else if (currentTab === 'recent-posts') {
+            await loadRecentPostInsights();
+        }
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────
@@ -621,6 +648,322 @@ const AIIntelligence = (() => {
         html += '</div>';
 
         container.innerHTML = html;
+    }
+
+    // ─── Utilities ───────────────────────────────────────────────────
+
+    // ─── 8. Recent Post Insights ─────────────────────────────────────
+
+    async function loadRecentPostInsights() {
+        const container = el('recent-posts-container');
+        if (!container) return;
+        container.innerHTML = '<div class="ai-loading">Loading recent post insights…</div>';
+
+        try {
+            // 1. Fetch recent posted posts for this brand (all platforms)
+            let postQuery = supabase
+                .from('posts')
+                .select('id, title, description, tags, platform, status, posted_at, video_url, job_id, meta, batch_id')
+                .eq('brand_id', currentBrandId)
+                .eq('status', 'posted')
+                .order('posted_at', { ascending: false })
+                .limit(20);
+
+            if (platformFilter()) {
+                postQuery = postQuery.eq('platform', platformFilter());
+            }
+
+            const { data: posts, error: postErr } = await postQuery;
+            if (postErr || !posts?.length) {
+                container.innerHTML = '<div class="ai-empty">No posted content yet. Publish some posts to see insights here.</div>';
+                return;
+            }
+
+            // 2. Fetch metrics for all these posts in one batch
+            const postIds = posts.map(p => p.id);
+            const { data: allMetrics } = await supabase
+                .from('v_post_metrics_latest')
+                .select('post_id, platform, views, likes, comments, shares, saves, collected_at')
+                .in('post_id', postIds);
+
+            const metricsMap = {};
+            for (const m of (allMetrics || [])) {
+                metricsMap[m.post_id] = m;
+            }
+
+            // 3. Deduplicate by job_id to get "per-story" groups
+            const jobGroups = {};
+            for (const p of posts) {
+                const key = p.job_id || p.id;
+                if (!jobGroups[key]) {
+                    jobGroups[key] = { title: p.title, posts: [], totalViews: 0, totalLikes: 0, totalComments: 0, totalShares: 0, earliestPosted: p.posted_at, meta: p.meta };
+                }
+                const m = metricsMap[p.id];
+                jobGroups[key].posts.push({ ...p, metrics: m || null });
+                if (m) {
+                    jobGroups[key].totalViews += m.views || 0;
+                    jobGroups[key].totalLikes += m.likes || 0;
+                    jobGroups[key].totalComments += m.comments || 0;
+                    jobGroups[key].totalShares += m.shares || 0;
+                }
+            }
+
+            // 4. Fetch winning patterns for AI comparison
+            const plat = platformFilter() || 'youtube_shorts';
+            const { data: patternsData } = await supabase.rpc('get_winning_patterns', {
+                p_brand_id: currentBrandId,
+                p_platform: plat,
+                p_vibe_preset: null,
+            });
+            const patterns = patternsData?.[0] || null;
+
+            // 5. Compute brand-wide averages from all metrics
+            const allPosts = Object.values(jobGroups);
+            const postsWithMetrics = allPosts.filter(g => g.totalViews > 0 || g.totalLikes > 0);
+            const brandAvg = {
+                views: postsWithMetrics.length ? Math.round(postsWithMetrics.reduce((s, g) => s + g.totalViews, 0) / postsWithMetrics.length) : 0,
+                likes: postsWithMetrics.length ? Math.round(postsWithMetrics.reduce((s, g) => s + g.totalLikes, 0) / postsWithMetrics.length) : 0,
+                comments: postsWithMetrics.length ? Math.round(postsWithMetrics.reduce((s, g) => s + g.totalComments, 0) / postsWithMetrics.length) : 0,
+            };
+
+            // 6. Build HTML
+            const sortedGroups = Object.entries(jobGroups).sort((a, b) => {
+                return new Date(b[1].earliestPosted) - new Date(a[1].earliestPosted);
+            });
+
+            let html = '';
+
+            // Summary header
+            html += `
+                <div class="insights-summary">
+                    <div class="insights-summary__stat">
+                        <span class="insights-summary__value">${sortedGroups.length}</span>
+                        <span class="insights-summary__label">Recent Stories</span>
+                    </div>
+                    <div class="insights-summary__stat">
+                        <span class="insights-summary__value">${fmt(brandAvg.views)}</span>
+                        <span class="insights-summary__label">Avg Views/Story</span>
+                    </div>
+                    <div class="insights-summary__stat">
+                        <span class="insights-summary__value">${fmt(brandAvg.likes)}</span>
+                        <span class="insights-summary__label">Avg Likes/Story</span>
+                    </div>
+                    <div class="insights-summary__stat">
+                        <span class="insights-summary__value">${fmt(brandAvg.comments)}</span>
+                        <span class="insights-summary__label">Avg Comments/Story</span>
+                    </div>
+                </div>
+            `;
+
+            // Per-story insight cards
+            html += '<div class="insights-list">';
+            for (const [jobId, group] of sortedGroups) {
+                const postedDate = new Date(group.earliestPosted);
+                const dateStr = postedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                const timeStr = postedDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                const vibePreset = group.meta?.vibe_preset || 'default';
+
+                // Performance score (views + 5*likes + 10*comments + 10*shares)
+                const perfScore = group.totalViews + 5 * group.totalLikes + 10 * group.totalComments + 10 * group.totalShares;
+                const avgPerfScore = brandAvg.views + 5 * brandAvg.likes + 10 * brandAvg.comments;
+
+                // Determine performance tier
+                let perfTier, perfClass, perfIcon;
+                if (avgPerfScore === 0 || perfScore >= avgPerfScore * 1.3) {
+                    perfTier = 'Above Average';
+                    perfClass = 'perf--high';
+                    perfIcon = '&#9650;'; // ▲
+                } else if (perfScore >= avgPerfScore * 0.7) {
+                    perfTier = 'Average';
+                    perfClass = 'perf--mid';
+                    perfIcon = '&#9644;'; // ▬
+                } else {
+                    perfTier = 'Below Average';
+                    perfClass = 'perf--low';
+                    perfIcon = '&#9660;'; // ▼
+                }
+
+                // What went well / what didn't
+                const wellList = [];
+                const poorList = [];
+                const learnedList = [];
+                const forwardList = [];
+
+                // Analyze views relative to average
+                if (brandAvg.views > 0) {
+                    const viewRatio = group.totalViews / brandAvg.views;
+                    if (viewRatio >= 1.3) {
+                        wellList.push(`Strong reach — ${fmt(group.totalViews)} views (${Math.round((viewRatio - 1) * 100)}% above avg)`);
+                        learnedList.push('This story had high discoverability; the hook/title drew attention');
+                    } else if (viewRatio < 0.7) {
+                        poorList.push(`Low reach — ${fmt(group.totalViews)} views (${Math.round((1 - viewRatio) * 100)}% below avg)`);
+                        learnedList.push('The title or thumbnail may not be grabbing attention. Consider more curiosity-driven hooks');
+                    }
+                }
+
+                // Analyze engagement rate (likes+comments per view)
+                if (group.totalViews > 0) {
+                    const engRate = ((group.totalLikes + group.totalComments) / group.totalViews) * 100;
+                    const avgEngRate = brandAvg.views > 0 ? ((brandAvg.likes + brandAvg.comments) / brandAvg.views) * 100 : 0;
+                    if (engRate >= avgEngRate * 1.3 || engRate > 5) {
+                        wellList.push(`High engagement rate — ${engRate.toFixed(1)}% (${group.totalLikes} likes, ${group.totalComments} comments)`);
+                        learnedList.push('Viewers are connecting with this content style');
+                    } else if (engRate < avgEngRate * 0.7 && group.totalViews > 50) {
+                        poorList.push(`Low engagement rate — ${engRate.toFixed(1)}%`);
+                        learnedList.push('Views without engagement may indicate clickbait or story didn\'t hold interest');
+                    }
+                }
+
+                // Analyze shares
+                if (group.totalShares > 0) {
+                    wellList.push(`${group.totalShares} shares — content is being recommended`);
+                }
+
+                // Check vibe_preset influence
+                if (vibePreset !== 'default') {
+                    const vibeLabel = vibePreset.replace(/_/g, ' ');
+                    if (perfTier === 'Above Average') {
+                        wellList.push(`"${vibeLabel}" vibe preset resonated well with the audience`);
+                        forwardList.push(`Continue using "${vibeLabel}" style for similar stories`);
+                    } else if (perfTier === 'Below Average') {
+                        poorList.push(`"${vibeLabel}" vibe underperformed compared to other presets`);
+                        forwardList.push(`Consider testing different vibe presets instead of "${vibeLabel}"`);
+                    }
+                }
+
+                // AI influence section
+                let aiInfluenceHTML = '';
+                if (patterns) {
+                    const topHook = patterns.top_hooks?.[0]?.hook;
+                    const topTags = patterns.top_hashtags?.slice(0, 3).map(t => '#' + t.tag).join(', ');
+                    aiInfluenceHTML = `
+                        <div class="insight-influence">
+                            <h5 class="insight-influence__title">How AI Data Influenced This Post</h5>
+                            <ul class="insight-influence__list">
+                                ${topHook ? `<li><span class="insight-influence__tag">Top Hook</span> The winning hook pattern "${escHtml(topHook.slice(0, 80))}…" was injected as an exemplar for the AI to learn from</li>` : ''}
+                                ${topTags ? `<li><span class="insight-influence__tag">Top Tags</span> Best-performing tags ${topTags} were used as reference patterns</li>` : ''}
+                                ${patterns.length_stats ? `<li><span class="insight-influence__tag">Optimal Length</span> AI targeted ~${Math.round(patterns.length_stats.avg_desc_len || 0)} char descriptions based on top performers</li>` : ''}
+                                <li><span class="insight-influence__tag">Diversity</span> Story DNA system ensured unique theme/threat/setting combo</li>
+                            </ul>
+                        </div>
+                    `;
+                }
+
+                // Forward strategy
+                if (forwardList.length === 0) {
+                    if (perfTier === 'Above Average') {
+                        forwardList.push('Replicate this content style in upcoming posts');
+                        forwardList.push('This post\'s metadata will be promoted as an exemplar for AI generation');
+                    } else if (perfTier === 'Below Average') {
+                        forwardList.push('AI will deprioritize patterns from this post in future generations');
+                        forwardList.push('Testing different hook styles and posting times');
+                    } else {
+                        forwardList.push('Continue monitoring as metrics accumulate');
+                        forwardList.push('The AI learning loop will incorporate these results at the next pattern refresh');
+                    }
+                }
+
+                // Platform badges
+                const platformBadges = group.posts.map(p => {
+                    const m = p.metrics;
+                    const views = m ? fmt(m.views) : '—';
+                    const platName = (p.platform || '').replace('_reels', '').replace('_shorts', '');
+                    return `<span class="insight-platform-badge insight-platform-badge--${p.platform}" title="${m ? `Views: ${m.views}, Likes: ${m.likes}, Comments: ${m.comments}` : 'No metrics yet'}">
+                        ${platName} <span class="insight-platform-badge__views">${views}</span>
+                    </span>`;
+                }).join('');
+
+                html += `
+                    <div class="insight-card">
+                        <div class="insight-card__header">
+                            <div class="insight-card__title-row">
+                                <h4 class="insight-card__title">${escHtml(group.title)}</h4>
+                                <span class="insight-card__perf ${perfClass}" title="Performance: ${perfScore}">
+                                    ${perfIcon} ${perfTier}
+                                </span>
+                            </div>
+                            <div class="insight-card__meta">
+                                <span class="insight-card__date">${dateStr} at ${timeStr}</span>
+                                <span class="insight-card__vibe">${escHtml(vibePreset.replace(/_/g, ' '))}</span>
+                            </div>
+                            <div class="insight-card__platforms">${platformBadges}</div>
+                        </div>
+
+                        <div class="insight-card__metrics">
+                            <div class="insight-metric">
+                                <span class="insight-metric__value">${fmt(group.totalViews)}</span>
+                                <span class="insight-metric__label">Views</span>
+                            </div>
+                            <div class="insight-metric">
+                                <span class="insight-metric__value">${fmt(group.totalLikes)}</span>
+                                <span class="insight-metric__label">Likes</span>
+                            </div>
+                            <div class="insight-metric">
+                                <span class="insight-metric__value">${fmt(group.totalComments)}</span>
+                                <span class="insight-metric__label">Comments</span>
+                            </div>
+                            <div class="insight-metric">
+                                <span class="insight-metric__value">${fmt(group.totalShares)}</span>
+                                <span class="insight-metric__label">Shares</span>
+                            </div>
+                            <div class="insight-metric insight-metric--score">
+                                <span class="insight-metric__value">${fmt(perfScore)}</span>
+                                <span class="insight-metric__label">Perf Score</span>
+                            </div>
+                        </div>
+
+                        ${aiInfluenceHTML}
+
+                        <div class="insight-card__analysis">
+                            ${wellList.length ? `
+                                <div class="insight-section insight-section--well">
+                                    <h5 class="insight-section__title">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                                        What Went Well
+                                    </h5>
+                                    <ul class="insight-section__list">${wellList.map(w => `<li>${w}</li>`).join('')}</ul>
+                                </div>
+                            ` : ''}
+
+                            ${poorList.length ? `
+                                <div class="insight-section insight-section--poor">
+                                    <h5 class="insight-section__title">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                                        What Didn't Go Well
+                                    </h5>
+                                    <ul class="insight-section__list">${poorList.map(w => `<li>${w}</li>`).join('')}</ul>
+                                </div>
+                            ` : ''}
+
+                            ${learnedList.length ? `
+                                <div class="insight-section insight-section--learned">
+                                    <h5 class="insight-section__title">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                                        What Was Learned
+                                    </h5>
+                                    <ul class="insight-section__list">${learnedList.map(w => `<li>${w}</li>`).join('')}</ul>
+                                </div>
+                            ` : ''}
+
+                            <div class="insight-section insight-section--forward">
+                                <h5 class="insight-section__title">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                                    Going Forward
+                                </h5>
+                                <ul class="insight-section__list">${forwardList.map(w => `<li>${w}</li>`).join('')}</ul>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            html += '</div>';
+            container.innerHTML = html;
+
+        } catch (err) {
+            console.error('[AI Intelligence] loadRecentPostInsights error:', err);
+            container.innerHTML = '<div class="ai-empty">Failed to load post insights. Please try again.</div>';
+        }
     }
 
     // ─── Utilities ───────────────────────────────────────────────────
