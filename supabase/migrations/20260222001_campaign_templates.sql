@@ -106,4 +106,20 @@ INSERT INTO campaign_templates (brand_id, name, description, config, tags) VALUE
     "asapMode": false
   }',
   ARRAY['monthly', 'sustained', 'drip']
+),
+(
+  NULL,
+  'Twice Daily (1 Week)',
+  '2 videos per day for 7 days. Balanced frequency for steady growth without oversaturating.',
+  '{
+    "videoCount": 14,
+    "postsPerDay": 2,
+    "platforms": ["youtube_shorts", "instagram_reels", "facebook_reels", "threads"],
+    "windows": ["10:00", "20:00", "20:00"],
+    "jitterMinutes": 30,
+    "platformOffsetMinutes": 5,
+    "sceneCount": 0,
+    "asapMode": false
+  }',
+  ARRAY['weekly', 'twice-daily']
 );
