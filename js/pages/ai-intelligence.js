@@ -26,6 +26,27 @@ const AIIntelligence = (() => {
         { key: 'facebook_reels', label: 'Facebook' },
     ];
 
+    const PLATFORM_LABELS = {
+        youtube_shorts: 'YouTube', youtube: 'YouTube',
+        instagram_reels: 'Instagram', instagram: 'Instagram',
+        facebook_reels: 'Facebook', facebook: 'Facebook',
+        tiktok: 'TikTok', threads: 'Threads',
+    };
+
+    const PLATFORM_SHORT = {
+        youtube_shorts: 'YT', youtube: 'YT',
+        instagram_reels: 'IG', instagram: 'IG',
+        facebook_reels: 'FB', facebook: 'FB',
+        tiktok: 'TT', threads: 'TH',
+    };
+
+    const PLATFORM_COLORS = {
+        youtube_shorts: '#cc0000', youtube: '#cc0000',
+        instagram_reels: '#c13584', instagram: '#c13584',
+        facebook_reels: '#1877f2', facebook: '#1877f2',
+        tiktok: '#ff0050', threads: '#6b7280',
+    };
+
     // ─── Initialisation ──────────────────────────────────────────────
 
     async function init() {
@@ -277,7 +298,7 @@ const AIIntelligence = (() => {
                         <span class="ai-tooltip">${fmt(p.views)} views · ${p.likes} likes</span>
                     </div>
                     <div class="trend-bar trend-bar--likes" style="height:${likeH}px"></div>
-                    <span class="trend-bar__label">${platLabel.charAt(0).toUpperCase()}</span>
+                    <span class="trend-bar__label">${PLATFORM_SHORT[p.platform] || platLabel.charAt(0).toUpperCase()}</span>
                 </div>
             `;
         }
@@ -638,7 +659,7 @@ const AIIntelligence = (() => {
             const date = new Date(v.created_at);
             const timeStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
                 date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-            const platLabel = (v.platform || '').replace('_reels', '').replace('_shorts', '');
+            const platLabel = PLATFORM_LABELS[v.platform] || (v.platform || '').replace('_reels', '').replace('_shorts', '');
             const typeLabel = isEdit ? 'Manual edit' : `AI generated${v.generation_model ? ' · ' + v.generation_model : ''}`;
             const variantLabel = v.variant_key ? ` · Variant: ${v.variant_key}` : '';
 
@@ -692,11 +713,11 @@ const AIIntelligence = (() => {
         container.innerHTML = '<div class="ai-loading">Analyzing post performance data…</div>';
 
         try {
-            // ── Fetch posts ──
+            // ── Fetch posts (last 90 posts to cover ~30 days) ──
             let postQuery = supabase.from('posts')
                 .select('id, title, description, tags, platform, status, posted_at, video_url, job_id, meta, batch_id')
                 .eq('brand_id', currentBrandId).eq('status', 'posted')
-                .order('posted_at', { ascending: false }).limit(20);
+                .order('posted_at', { ascending: false }).limit(90);
             if (platformFilter()) postQuery = postQuery.eq('platform', platformFilter());
 
             const { data: posts, error: postErr } = await postQuery;
@@ -730,7 +751,7 @@ const AIIntelligence = (() => {
             const metricsMap = {};
             for (const m of (metricsRes.data || [])) metricsMap[m.post_id] = m;
 
-            // ── Build story groups ──
+            // ── Build story groups (by job_id) ──
             const jobGroups = {};
             for (const p of posts) {
                 const key = p.job_id || p.id;
@@ -765,7 +786,7 @@ const AIIntelligence = (() => {
                 comments: withMetrics.length ? Math.round(withMetrics.reduce((s, g) => s + g.totalComments, 0) / withMetrics.length) : 0,
             };
 
-            // ── Pre-compute hook pattern stats from winning hooks ──
+            // ── Hook pattern stats ──
             const hookPatternPerf = {};
             for (const h of (patterns?.top_hooks || [])) {
                 const cls = classifyHook(h.hook);
@@ -777,8 +798,6 @@ const AIIntelligence = (() => {
                 }
             }
             for (const p of Object.values(hookPatternPerf)) p.avg = Math.round(p.total / p.count);
-
-            // Find the dominant (best avg) hook pattern
             let bestHookType = null;
             for (const [type, data] of Object.entries(hookPatternPerf)) {
                 if (!bestHookType || data.avg > hookPatternPerf[bestHookType].avg) bestHookType = type;
@@ -788,20 +807,53 @@ const AIIntelligence = (() => {
             const exemplarPerfs = exemplars.map(e => e.performance_value).sort((a, b) => b - a);
             const exemplarThreshold = exemplarPerfs.length >= 5 ? exemplarPerfs[exemplarPerfs.length - 1] : 0;
 
-            // Build tag performance lookup from winning patterns
+            // Tag performance lookup
             const winTagMap = {};
             for (const wt of (patterns?.top_hashtags || [])) {
                 winTagMap[wt.tag.toLowerCase()] = wt;
             }
 
-            // ── Render ──
-            const sorted = Object.entries(jobGroups).sort((a, b) =>
-                new Date(b[1].earliestPosted) - new Date(a[1].earliestPosted));
+            // ╔══════════════════════════════════════════════════════════╗
+            // ║  LAYER 1: DAILY PERFORMANCE CHART (last 30 days)       ║
+            // ╚══════════════════════════════════════════════════════════╝
 
-            let html = `
+            // Aggregate views by date + platform
+            const dailyData = {};  // { 'YYYY-MM-DD': { youtube_shorts: N, instagram_reels: N, ... } }
+            const platformsSeen = new Set();
+
+            for (const p of posts) {
+                if (!p.posted_at) continue;
+                const dateKey = p.posted_at.split('T')[0];
+                const m = metricsMap[p.id];
+                const views = m ? (m.views || 0) : 0;
+                const plf = p.platform || 'unknown';
+                platformsSeen.add(plf);
+
+                if (!dailyData[dateKey]) dailyData[dateKey] = {};
+                dailyData[dateKey][plf] = (dailyData[dateKey][plf] || 0) + views;
+            }
+
+            // Build sorted date range (last 30 days that have data, or all dates)
+            const allDates = Object.keys(dailyData).sort();
+            const chartDates = allDates.slice(-30);
+            const platformList = [...platformsSeen].sort();
+
+            // Find max daily total for scaling
+            let maxDayTotal = 0;
+            let grandTotal = 0;
+            for (const d of chartDates) {
+                const dayTotal = Object.values(dailyData[d]).reduce((s, v) => s + v, 0);
+                if (dayTotal > maxDayTotal) maxDayTotal = dayTotal;
+                grandTotal += dayTotal;
+            }
+
+            let html = '';
+
+            // Summary bar
+            html += `
                 <div class="insights-summary">
                     <div class="insights-summary__stat">
-                        <span class="insights-summary__value">${sorted.length}</span>
+                        <span class="insights-summary__value">${allGroups.length}</span>
                         <span class="insights-summary__label">Stories Analyzed</span>
                     </div>
                     <div class="insights-summary__stat">
@@ -818,16 +870,100 @@ const AIIntelligence = (() => {
                     </div>
                 </div>`;
 
+            // Daily chart
+            html += `<div class="daily-perf">
+                <div class="daily-perf__header">
+                    <h3 class="daily-perf__title">Daily Views by Platform</h3>
+                    <span class="daily-perf__total">Last ${chartDates.length} days &middot; <strong>${fmt(grandTotal)}</strong> total views</span>
+                </div>`;
+
+            if (chartDates.length === 0 || maxDayTotal === 0) {
+                html += '<div class="daily-perf__no-data">No view data available yet. Metrics are collected after posts are published.</div>';
+            } else {
+                html += '<div class="daily-perf__chart">';
+                for (const date of chartDates) {
+                    const dayData = dailyData[date];
+                    const dayTotal = Object.values(dayData).reduce((s, v) => s + v, 0);
+                    const d = new Date(date + 'T12:00:00');
+                    const dateLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+                    // Tooltip content
+                    let tooltipRows = `<div class="daily-perf__tooltip-row"><strong>${dateLabel}</strong> — ${fmt(dayTotal)} views</div>`;
+                    for (const plf of platformList) {
+                        const v = dayData[plf] || 0;
+                        if (v > 0) {
+                            const color = PLATFORM_COLORS[plf] || '#6b7280';
+                            const label = PLATFORM_LABELS[plf] || plf;
+                            tooltipRows += `<div class="daily-perf__tooltip-row">
+                                <span class="daily-perf__tooltip-dot" style="background:${color}"></span>
+                                ${label}: ${fmt(v)}
+                            </div>`;
+                        }
+                    }
+
+                    // Bar segments (bottom-to-top)
+                    let segmentsHTML = '';
+                    for (const plf of platformList) {
+                        const v = dayData[plf] || 0;
+                        if (v > 0) {
+                            const h = Math.max(2, (v / maxDayTotal) * 160);
+                            segmentsHTML += `<div class="daily-perf__segment daily-perf__segment--${plf}" style="height:${h}px" title="${PLATFORM_LABELS[plf] || plf}: ${fmt(v)}"></div>`;
+                        }
+                    }
+
+                    html += `
+                        <div class="daily-perf__bar-group">
+                            <div class="daily-perf__tooltip">${tooltipRows}</div>
+                            <div class="daily-perf__bar-stack">${segmentsHTML}</div>
+                            <span class="daily-perf__date">${dateLabel}</span>
+                        </div>`;
+                }
+                html += '</div>';  // close chart
+
+                // Legend
+                html += '<div class="daily-perf__legend">';
+                for (const plf of platformList) {
+                    html += `<span class="daily-perf__legend-item">
+                        <span class="daily-perf__legend-dot daily-perf__legend-dot--${plf}"></span>
+                        ${PLATFORM_LABELS[plf] || plf}
+                    </span>`;
+                }
+                html += '</div>';
+            }
+
+            html += '</div>';  // close daily-perf
+
+            // ╔══════════════════════════════════════════════════════════╗
+            // ║  LAYER 2: TOP 5 PERFORMERS (sorted by perf score)      ║
+            // ╚══════════════════════════════════════════════════════════╝
+
+            const scoredGroups = Object.entries(jobGroups).map(([jobId, group]) => {
+                const perfScore = group.totalViews + 5 * group.totalLikes + 10 * group.totalComments + 10 * group.totalShares;
+                return { jobId, group, perfScore };
+            }).filter(g => g.perfScore > 0)
+              .sort((a, b) => b.perfScore - a.perfScore)
+              .slice(0, 5);
+
+            const avgPerfScore = brandAvg.views + 5 * brandAvg.likes + 10 * brandAvg.comments;
+
+            html += `<div class="top-performers">
+                <div class="top-performers__header">
+                    <h3 class="top-performers__title">&#127942; Top Performers</h3>
+                    <span class="top-performers__subtitle">Ranked by composite performance score &middot; AI brain analysis per story</span>
+                </div>`;
+
+            if (!scoredGroups.length) {
+                html += '<div class="ai-empty">No performance data yet. Posts need metrics before ranking.</div>';
+            }
+
             html += '<div class="insights-list">';
 
-            for (const [jobId, group] of sorted) {
+            for (let rank = 0; rank < scoredGroups.length; rank++) {
+                const { jobId, group, perfScore } = scoredGroups[rank];
                 const posted = new Date(group.earliestPosted);
                 const dateStr = posted.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
                 const timeStr = posted.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
                 const vibePreset = group.meta?.vibe_preset || 'default';
-
-                const perfScore = group.totalViews + 5 * group.totalLikes + 10 * group.totalComments + 10 * group.totalShares;
-                const avgPerfScore = brandAvg.views + 5 * brandAvg.likes + 10 * brandAvg.comments;
 
                 let perfTier, perfClass, perfIcon;
                 if (avgPerfScore === 0 || perfScore >= avgPerfScore * 1.3) {
@@ -837,6 +973,12 @@ const AIIntelligence = (() => {
                 } else {
                     perfTier = 'Below Average'; perfClass = 'perf--low'; perfIcon = '&#9660;';
                 }
+
+                // Outlier multiplier
+                const multiplier = avgPerfScore > 0 ? (perfScore / avgPerfScore) : 0;
+                const outlierBadge = multiplier >= 1.5
+                    ? `<span class="outlier-badge">${multiplier.toFixed(1)}× avg</span>`
+                    : '';
 
                 // ──────────────────────────────────────────────────────────
                 // AI BRAIN: per-story analysis
@@ -885,8 +1027,6 @@ const AIIntelligence = (() => {
 
                 // ── 2. PATTERN ANALYSIS ──
                 const patternItems = [];
-
-                // Hook pattern comparison
                 const thisPatternData = hookPatternPerf[postHook.type];
                 const bestPatternData = bestHookType ? hookPatternPerf[bestHookType] : null;
 
@@ -895,13 +1035,11 @@ const AIIntelligence = (() => {
                         patternItems.push(`<div class="ai-brain-pattern ai-brain-pattern--match">
                             <strong>HOOK →</strong> "${escHtml(group.title.slice(0, 70))}" uses <em>${postHook.label}</em> pattern.
                             This IS the top-performing format — avg ${fmt(thisPatternData.avg)} views across ${thisPatternData.count} tracked posts.
-                            Current best in this style: "${escHtml(thisPatternData.best.hook.slice(0, 60))}" at ${fmt(thisPatternData.best.perf)} views.
                         </div>`);
                     } else {
                         patternItems.push(`<div class="ai-brain-pattern ai-brain-pattern--mismatch">
                             <strong>HOOK →</strong> "${escHtml(group.title.slice(0, 70))}" uses <em>${postHook.label}</em> pattern (avg ${fmt(thisPatternData.avg)} views).
-                            The data shows <em>${bestPatternData.label}</em> outperforms at avg ${fmt(bestPatternData.avg)} views —
-                            best example: "${escHtml(bestPatternData.best.hook.slice(0, 60))}" (${fmt(bestPatternData.best.perf)} views).
+                            The data shows <em>${bestPatternData.label}</em> outperforms at avg ${fmt(bestPatternData.avg)} views.
                         </div>`);
                     }
                 } else if (patterns?.top_hooks?.length) {
@@ -912,7 +1050,7 @@ const AIIntelligence = (() => {
                     </div>`);
                 }
 
-                // Tag overlap analysis
+                // Tag overlap
                 const matchedTags = [];
                 const missedTopTags = [];
                 for (const wt of (patterns?.top_hashtags || []).slice(0, 8)) {
@@ -925,18 +1063,18 @@ const AIIntelligence = (() => {
                 const topTagCount = (patterns?.top_hashtags || []).slice(0, 8).length;
                 if (topTagCount > 0) {
                     let tagLine = `<div class="ai-brain-pattern${matchedTags.length >= topTagCount * 0.6 ? ' ai-brain-pattern--match' : matchedTags.length <= topTagCount * 0.3 ? ' ai-brain-pattern--mismatch' : ' ai-brain-pattern--neutral'}">
-                        <strong>TAGS →</strong> ${matchedTags.length}/${topTagCount} top-performing tags present in this post.`;
+                        <strong>TAGS →</strong> ${matchedTags.length}/${topTagCount} top-performing tags present.`;
                     if (matchedTags.length) {
                         tagLine += `<br><span class="ai-tag-label ai-tag-label--hit">Using:</span> ${matchedTags.map(t => `<code>#${t.tag}</code> <em>(avg ${fmt(t.avg_perf)})</em>`).join(', ')}`;
                     }
                     if (missedTopTags.length) {
-                        tagLine += `<br><span class="ai-tag-label ai-tag-label--miss">Missing high-performers:</span> ${missedTopTags.slice(0, 3).map(t => `<code>#${t.tag}</code> <em>(avg ${fmt(t.avg_perf)})</em>`).join(', ')}`;
+                        tagLine += `<br><span class="ai-tag-label ai-tag-label--miss">Missing:</span> ${missedTopTags.slice(0, 3).map(t => `<code>#${t.tag}</code> <em>(avg ${fmt(t.avg_perf)})</em>`).join(', ')}`;
                     }
                     tagLine += '</div>';
                     patternItems.push(tagLine);
                 }
 
-                // Description length comparison
+                // Description length
                 if (patterns?.length_stats?.avg_desc_len) {
                     const optLen = Math.round(patterns.length_stats.avg_desc_len);
                     const delta = postDescLen - optLen;
@@ -944,13 +1082,13 @@ const AIIntelligence = (() => {
                     let descClass = Math.abs(pct) <= 20 ? 'ai-brain-pattern--match' : 'ai-brain-pattern--mismatch';
                     patternItems.push(`<div class="ai-brain-pattern ${descClass}">
                         <strong>LENGTH →</strong> Description: ${postDescLen} chars (winning avg: ~${optLen}).
-                        ${pct <= 20 ? 'Within optimal range — no adjustment needed.' :
-                          delta > 0 ? `${pct}% longer than top performers. Tighter descriptions may improve scroll-stop rate.` :
-                          `${pct}% shorter. Adding more narrative detail may improve discoverability.`}
+                        ${pct <= 20 ? 'Within optimal range.' :
+                          delta > 0 ? `${pct}% longer than top performers.` :
+                          `${pct}% shorter than top performers.`}
                     </div>`);
                 }
 
-                // Posting time comparison
+                // Posting time
                 const dow = posted.getDay();
                 const hour = posted.getHours();
                 const bestSlot = topTimeSlots[0];
@@ -959,13 +1097,12 @@ const AIIntelligence = (() => {
                     if (thisSlot) {
                         patternItems.push(`<div class="ai-brain-pattern ai-brain-pattern--match">
                             <strong>TIMING →</strong> Posted ${DAY_NAMES[dow]} ${formatHour(hour)} —
-                            this IS a top-performing time slot (score: ${thisSlot.score}).
+                            top-performing time slot (score: ${thisSlot.score}).
                         </div>`);
                     } else {
                         patternItems.push(`<div class="ai-brain-pattern ai-brain-pattern--mismatch">
                             <strong>TIMING →</strong> Posted ${DAY_NAMES[dow]} ${formatHour(hour)}.
-                            Data shows best slot: <strong>${DAY_NAMES[bestSlot.day_of_week]} ${formatHour(bestSlot.hour)}</strong> (score: ${bestSlot.score}).
-                            ${topTimeSlots.length > 1 ? `Also strong: ${topTimeSlots.slice(1, 3).map(s => `${DAY_NAMES[s.day_of_week]} ${formatHour(s.hour)}`).join(', ')}.` : ''}
+                            Best slot: <strong>${DAY_NAMES[bestSlot.day_of_week]} ${formatHour(bestSlot.hour)}</strong> (score: ${bestSlot.score}).
                         </div>`);
                     }
                 }
@@ -984,60 +1121,50 @@ const AIIntelligence = (() => {
 
                 if (perfScore > 0) {
                     if (perfScore >= exemplarThreshold || exemplars.length < 5) {
-                        const rank = exemplarPerfs.filter(p => p >= perfScore).length + 1;
+                        const rankInPool = exemplarPerfs.filter(p => p >= perfScore).length + 1;
                         decisions.push(`<div class="ai-brain-decision ai-brain-decision--promote">
                             <span class="ai-brain-badge ai-brain-badge--promote">✓ PROMOTE TO EXEMPLAR</span>
-                            Qualifies for exemplar pool at rank #${rank}/${exemplars.length} (perf ${fmt(perfScore)} exceeds threshold ${fmt(exemplarThreshold)}).
-                            Next AI generation cycle will inject this post's metadata — title pattern, tag combo, description style — as a top-performing template to replicate.
+                            Qualifies for exemplar pool at rank #${rankInPool}/${exemplars.length} (perf ${fmt(perfScore)} exceeds threshold ${fmt(exemplarThreshold)}).
                         </div>`);
                     } else {
                         decisions.push(`<div class="ai-brain-decision ai-brain-decision--demote">
                             <span class="ai-brain-badge ai-brain-badge--demote">↓ BELOW EXEMPLAR THRESHOLD</span>
                             Perf score ${fmt(perfScore)} below pool minimum (${fmt(exemplarThreshold)}).
-                            This metadata will not be used as a positive generation template.
                         </div>`);
                     }
 
                     if (perfTier === 'Below Average') {
                         decisions.push(`<div class="ai-brain-decision ai-brain-decision--negative">
                             <span class="ai-brain-badge ai-brain-badge--negative">✗ NEGATIVE SIGNAL</span>
-                            Flagged for the "patterns to avoid" pool. Future generation prompts will explicitly reference this post's patterns as examples of what NOT to replicate.
+                            Flagged for "patterns to avoid" pool.
                         </div>`);
                     }
                 }
 
-                // Hook adjustment decision
                 if (postHook.type !== bestHookType && bestPatternData && thisPatternData) {
                     decisions.push(`<div class="ai-brain-decision ai-brain-decision--adjust">
                         <span class="ai-brain-badge ai-brain-badge--adjust">⟳ HOOK STYLE SHIFT</span>
-                        Data shows ${postHook.label} hooks avg ${fmt(thisPatternData.avg)} views vs ${bestPatternData.label} at ${fmt(bestPatternData.avg)}.
-                        AI will deprioritize ${postHook.label} format and generate using ${bestPatternData.label} structure instead.
-                        Target template: "${escHtml(bestPatternData.best.hook.slice(0, 55))}…"
+                        ${postHook.label} hooks avg ${fmt(thisPatternData.avg)} views vs ${bestPatternData.label} at ${fmt(bestPatternData.avg)}.
                     </div>`);
                 } else if (postHook.type === bestHookType && perfTier === 'Above Average') {
                     decisions.push(`<div class="ai-brain-decision ai-brain-decision--reinforce">
                         <span class="ai-brain-badge ai-brain-badge--reinforce">↑ PATTERN REINFORCED</span>
-                        ${postHook.label} pattern confirmed as dominant performer. Weight increased for next generation cycle.
-                        This style will be the primary hook template for upcoming content.
+                        ${postHook.label} pattern confirmed as dominant performer.
                     </div>`);
                 }
 
-                // Tag adjustment
                 if (missedTopTags.length > 0) {
                     const topMissed = missedTopTags.sort((a, b) => (b.avg_perf || 0) - (a.avg_perf || 0)).slice(0, 3);
                     decisions.push(`<div class="ai-brain-decision ai-brain-decision--adjust">
                         <span class="ai-brain-badge ai-brain-badge--adjust">⟳ TAG INJECTION</span>
-                        High-value tags not present: ${topMissed.map(t => `<code>#${t.tag}</code> (avg ${fmt(t.avg_perf)} views)`).join(', ')}.
-                        Adding these to the priority reference pool for next batch generation.
+                        Missing: ${topMissed.map(t => `<code>#${t.tag}</code> (avg ${fmt(t.avg_perf)})`).join(', ')}.
                     </div>`);
                 }
 
-                // Timing adjustment
                 if (bestSlot && !thisSlot) {
                     decisions.push(`<div class="ai-brain-decision ai-brain-decision--adjust">
                         <span class="ai-brain-badge ai-brain-badge--adjust">⟳ SCHEDULE SHIFT</span>
-                        ${DAY_NAMES[dow]} ${formatHour(hour)} is not a top-5 engagement slot.
-                        Recommending shift to ${DAY_NAMES[bestSlot.day_of_week]} ${formatHour(bestSlot.hour)} (score: ${bestSlot.score}) for similar future content.
+                        Recommend ${DAY_NAMES[bestSlot.day_of_week]} ${formatHour(bestSlot.hour)} (score: ${bestSlot.score}).
                     </div>`);
                 }
 
@@ -1056,30 +1183,30 @@ const AIIntelligence = (() => {
                 if (bestPatternData) {
                     const keepHook = postHook.type === bestHookType && perfTier !== 'Below Average';
                     actions.push(keepHook
-                        ? `<strong>Hook:</strong> Continue ${postHook.label} pattern — dominant with avg ${fmt(bestPatternData.avg)} views. Use as primary template.`
+                        ? `<strong>Hook:</strong> Continue ${postHook.label} pattern — dominant with avg ${fmt(bestPatternData.avg)} views.`
                         : `<strong>Hook:</strong> Shift to ${bestPatternData.label}. Model: "${escHtml(bestPatternData.best.hook.slice(0, 55))}…" (${fmt(bestPatternData.best.perf)} views).`
                     );
                 }
 
                 if (patterns?.length_stats) {
-                    actions.push(`<strong>Description:</strong> Target ~${Math.round(patterns.length_stats.avg_desc_len)} chars with ~${Math.round(patterns.length_stats.avg_tag_count)} tags — current winning formula from ${patterns.sample_count || '?'} posts.`);
+                    actions.push(`<strong>Description:</strong> Target ~${Math.round(patterns.length_stats.avg_desc_len)} chars with ~${Math.round(patterns.length_stats.avg_tag_count)} tags.`);
                 }
 
                 if (matchedTags.length || missedTopTags.length) {
                     const priorityTags = [...matchedTags, ...missedTopTags]
                         .sort((a, b) => (b.avg_perf || 0) - (a.avg_perf || 0)).slice(0, 5);
-                    actions.push(`<strong>Priority tags for next gen:</strong> ${priorityTags.map(t => `<code>#${t.tag}</code>`).join(' ')}`);
+                    actions.push(`<strong>Priority tags:</strong> ${priorityTags.map(t => `<code>#${t.tag}</code>`).join(' ')}`);
                 }
 
                 if (bestSlot) {
-                    actions.push(`<strong>Optimal posting:</strong> ${DAY_NAMES[bestSlot.day_of_week]} ${formatHour(bestSlot.hour)}${topTimeSlots.length > 1 ? `, or ${DAY_NAMES[topTimeSlots[1].day_of_week]} ${formatHour(topTimeSlots[1].hour)}` : ''} (best engagement windows).`);
+                    actions.push(`<strong>Optimal posting:</strong> ${DAY_NAMES[bestSlot.day_of_week]} ${formatHour(bestSlot.hour)}${topTimeSlots.length > 1 ? `, or ${DAY_NAMES[topTimeSlots[1].day_of_week]} ${formatHour(topTimeSlots[1].hour)}` : ''}.`);
                 }
 
                 if (vibePreset !== 'default') {
                     const vibeLabel = vibePreset.replace(/_/g, ' ');
                     actions.push(perfTier === 'Below Average'
-                        ? `<strong>Vibe:</strong> "${vibeLabel}" underperformed. AI will test alternative presets for next batch.`
-                        : `<strong>Vibe:</strong> "${vibeLabel}" ${perfTier === 'Above Average' ? 'performing well — keep in rotation.' : 'at baseline — monitoring.'}`
+                        ? `<strong>Vibe:</strong> "${vibeLabel}" underperformed — test alternatives next batch.`
+                        : `<strong>Vibe:</strong> "${vibeLabel}" ${perfTier === 'Above Average' ? 'performing well — keep.' : 'at baseline — monitoring.'}`
                     );
                 }
 
@@ -1094,24 +1221,26 @@ const AIIntelligence = (() => {
                         </div>
                     </div>` : '';
 
-                // Platform badges
+                // Platform badges (FIXED: proper labels)
                 const platformBadges = group.posts.map(p => {
                     const m = p.metrics;
                     const views = m ? fmt(m.views) : '—';
-                    const platName = (p.platform || '').replace('_reels', '').replace('_shorts', '');
+                    const platLabel = PLATFORM_LABELS[p.platform] || p.platform || '?';
                     return `<span class="insight-platform-badge insight-platform-badge--${p.platform}"
                         title="${m ? `Views: ${m.views}, Likes: ${m.likes}, Comments: ${m.comments}` : 'No metrics yet'}">
-                        ${platName} <span class="insight-platform-badge__views">${views}</span></span>`;
+                        ${platLabel} <span class="insight-platform-badge__views">${views}</span></span>`;
                 }).join('');
 
                 html += `
                     <div class="insight-card">
                         <div class="insight-card__header">
                             <div class="insight-card__title-row">
+                                <span class="top-performers__rank top-performers__rank--${rank + 1}">${rank + 1}</span>
                                 <h4 class="insight-card__title">${escHtml(group.title)}</h4>
                                 <span class="insight-card__perf ${perfClass}" title="Performance: ${perfScore}">
                                     ${perfIcon} ${perfTier}
                                 </span>
+                                ${outlierBadge}
                             </div>
                             <div class="insight-card__meta">
                                 <span class="insight-card__date">${dateStr} at ${timeStr}</span>
@@ -1152,7 +1281,8 @@ const AIIntelligence = (() => {
                     </div>`;
             }
 
-            html += '</div>';
+            html += '</div>';  // close insights-list
+            html += '</div>';  // close top-performers
             container.innerHTML = html;
 
         } catch (err) {
