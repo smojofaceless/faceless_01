@@ -1,6 +1,35 @@
 # Deployment Rollout Guide
 
-## Feature Commit: `3f6fc71` (Effects, Cost Controls, Music, DLQ)
+## Latest Deployment: `773b62e` → `system hardening batch` (Feb 19, 2026)
+
+### Migrations Applied
+| Migration | Contents |
+|-----------|----------|
+| `20260319020_system_hardening_batch.sql` | Data cleanup cron, multi-window winning patterns, recency decay, story uniqueness RPC, dead post sweeper, cross-platform view, strategy tables (20 seeds), strategy RPCs, A/B variant assignment, visual performance view, draft RPCs, alert webhook tables |
+| `20260319021_fix_ab_variant_assignment.sql` | Fix `auto_assign_ab_variants` — table uses `job_id` not `post_id` |
+
+### Edge Functions Deployed (8)
+```
+metrics-collector, post-worker, schedule-jobs, worker-v1,
+generate-post-metadata, schedule-posts, auto-poster, metadata-scheduler
+```
+
+### Smoke Test: `scripts/smoke-test-system-hardening.js`
+```powershell
+$env:SUPABASE_SERVICE_ROLE_KEY = "your-key"
+node scripts/smoke-test-system-hardening.js
+# Expected: 44 passed, 0 failed, 1 skipped
+```
+
+### Env Vars Required
+| Service | Variable | Purpose |
+|---------|----------|---------|
+| Edge Functions | `ALLOWED_ORIGIN` | CORS origin (default: `https://smojofaceless.github.io`) |
+| Video Renderer | `RENDERER_AUTH_KEY` | Auth key for `/render` endpoint (optional — no key = open access) |
+
+---
+
+## Previous Deployment: `3f6fc71` (Effects, Cost Controls, Music, DLQ)
 
 This commit bundles 4 roadmap items. Apply migrations and deploy in the order below
 to minimize risk and allow per-feature rollback.

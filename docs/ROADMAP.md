@@ -1,7 +1,7 @@
 # Project Roadmap
 
-> **Document Version:** 3.5  
-> **Last Updated:** February 16, 2026  
+> **Document Version:** 4.0  
+> **Last Updated:** February 19, 2026  
 > **Author:** System Architect  
 > **Status:** Active Development
 
@@ -11,6 +11,7 @@
 
 | Date | Version | Changes |
 |------|---------|--------|
+| Feb 19, 2026 | 4.0 | **System Hardening Batch (20 improvements)**: Data cleanup cron (monthly: job_logs 30d, lifecycle 90d, metrics 365d). Winning patterns multi-window (7/14/30d) with exponential recency decay (`EXP(-0.03 * days_old)`). Story uniqueness threshold RPC (`check_story_uniqueness`). Dead post sweeper (`sweep_dead_posts`). Cross-platform performance view (`v_cross_platform_performance`). Strategy intelligence system: `post_strategies` + `platform_strategies` tables (20 seeded strategies across 6 platforms), `v_strategy_performance` view, `assign_post_strategy` + `get_top_strategies` RPCs, strategy-driven metadata generation with probabilistic selection. A/B variant auto-assignment RPC (`auto_assign_ab_variants`). Visual performance tracking (`v_visual_performance`). Draft/preview mode RPCs (`promote_draft_to_scheduled`, `reject_draft`). Alert webhook tables (`brand_alert_config`, `system_alert_config`) + Discord/Slack/generic webhook sender in schedule-jobs. metrics-collector: stub platform skipping + Instagram token refresh (proactive 7-day-before-expiry + 401/403 retry). post-worker: per-platform rate limiting + optimistic lock claim. worker-v1: uniqueness threshold enforcement (0.6). generate-post-metadata: time-awareness + strategy-driven prompts. Video renderer: auth middleware (`RENDERER_AUTH_KEY`) + graceful shutdown (SIGTERM/SIGINT). CORS tightened on 6 internal edge functions. Mobile responsive CSS (`responsive.css`) linked in 13 pages. Dashboard N+1 query fix. Cross-Platform & Strategy tab on AI Intelligence page. Migrations: `20260319020` + `20260319021`. |
 | Feb 16, 2026 | 3.5 | **Caption/Tags Learning Loop**: `post_metadata_versions` append-only version history table, `post_metadata_variant_assignments` A/B test config table, `v_post_variant_performance` + `v_top_metadata_patterns` views, 5 RPCs (`record_post_metadata_version`, `get_post_metadata_versions`, `get_variant_performance`, `assign_ab_variant`, `get_generation_exemplars`), `generate-post-metadata` v3.0 with exemplar injection + A/B variant prompting + version recording, `metadataVersionService.js` frontend service, Calendar version history panel (collapsible, expandable entries, performance badges). Level 3 scope — no ML, no auto-optimization. **Hardened**: `get_generation_exemplars` with exemplar bucketing (vibe_preset→brand-wide fallback cascade, `p_window_days` time scope, `p_preset_name` priority), `get_negative_exemplars` RPC (bottom performers injected as "avoid these patterns", fixed: added `p_preset_name` param), `v_post_variant_performance` + `v_top_metadata_patterns` views now include `collected_at`. **Winning Patterns Cache**: `winning_metadata_patterns` table (derived cache per brand/platform/vibe), `recompute_winning_patterns` + `recompute_all_winning_patterns` RPCs, `get_winning_patterns` RPC (vibe→brand-wide fallback), pg_cron nightly 03:00 UTC, generator injects top hooks/hashtags/CTAs/length stats into prompt. Migration: `20260317003`. |
 | Feb 15, 2026 | 3.4 | **Time Slot Scoring**: `time_slot_scores` table (7×24 grid per brand/platform/window), weighted engagement formula (`views + 5*likes + 10*comments + 10*shares`), timezone-aware bucketing via `AT TIME ZONE`, 4 RPCs (`recompute_time_slot_scores`, `recompute_all_time_slot_scores`, `get_time_slot_scores`, `get_best_time_slots`), pg_cron every 6h, `timeSlotService.js` frontend service, Calendar "Best Times" panel (toggle, platform/window selectors, top-5 chips). Analytics-only — no auto-scheduling. |
 | Feb 15, 2026 | 3.3 | **Metrics Collection v1**: Replaced unused `post_analytics` scaffold with proper append-only `post_metrics` time-series table. Decay-based collection schedule (30min→weekly over 90 days). `metrics-collector` Edge Function with platform adapters (YouTube real API, Instagram Graph API, Facebook Graph API, TikTok stub). `find_metrics_eligible_posts` RPC respects decay schedule + terminal posts. 7 RPCs (`record_post_metrics`, `get_post_metrics`, `get_latest_metrics`, `get_latest_metrics_batch`, `get_job_metrics`, `get_campaign_metrics`, `cleanup_old_post_metrics`). 3 views (`v_post_metrics_latest`, `v_post_metrics_summary`, `v_metrics_collection_status`). UI: metrics badges on calendar posted items, engagement stats + collection history in post detail modals (calendar + posts pages). `metricsService.js` frontend service. New doc: POST_ANALYTICS_SYSTEM.md. |
@@ -44,6 +45,7 @@
 
 | Item | Date | Notes |
 |------|------|-------|
+| **System Hardening Batch** | Feb 19, 2026 | 20 improvements in one batch. Data cleanup cron, multi-window winning patterns with recency decay, story uniqueness RPC, dead post sweeper, cross-platform view, strategy intelligence (20 seeded strategies), A/B variant auto-assignment, visual performance view, draft/preview RPCs, alert webhook system. Edge function hardening: stub platform skip, Instagram token refresh, per-platform rate limiting, optimistic lock, uniqueness enforcement, time-aware + strategy-driven metadata, renderer auth + graceful shutdown, CORS tightening. Frontend: responsive.css on all pages, dashboard N+1 fix, cross-platform tab. Migrations: `20260319020` + `20260319021`. |
 | **Caption/Tags Learning Loop** | Feb 16, 2026 | `post_metadata_versions` (append-only version history) + `post_metadata_variant_assignments` (A/B test config). Views: `v_post_variant_performance`, `v_top_metadata_patterns`. 9 RPCs (incl. `get_negative_exemplars`, `recompute_winning_patterns`, `recompute_all_winning_patterns`, `get_winning_patterns`). `winning_metadata_patterns` derived cache table (top hooks, hashtags, CTAs, length stats per brand/platform/vibe). pg_cron nightly 03:00 UTC. `generate-post-metadata` v3.0: exemplar bucketing (vibe→brand-wide fallback, 30d window), negative exemplar injection, winning patterns injection, A/B variant prompting, automatic version recording. `metadataVersionService.js`. Calendar: collapsible version history panel, performance badges, expandable field snapshots. Migrations: `20260317001` + `20260317002` + `20260317003`. |
 | **Time Slot Scoring** | Feb 15, 2026 | `time_slot_scores` table (7×24 grid, UNIQUE per brand/platform/tz/window/dow/hour), weighted engagement scoring formula, timezone-aware bucketing, 4 RPCs, pg_cron every 6h, `timeSlotService.js`, Calendar Best Times panel (top-5 chips, platform/window selectors). Analytics-only. Migration: `20260316001_time_slot_scoring.sql`. |
 | **Metrics Collection v1** | Feb 15, 2026 | `post_metrics` append-only time-series (replaces unused `post_analytics`), `metrics-collector` Edge Function with YouTube/Instagram/Facebook/TikTok adapters, decay-based collection schedule, 7 RPCs, 3 views, `metricsService.js`, metrics badges on calendar + post detail modals. Migration: `20260315001_metrics_collection_v1.sql`. |
@@ -944,23 +946,31 @@ score = AVG(performance_value) per (brand, platform, tz, dow, hour)
 
 ---
 
-### 22. Story Reuse Weighting / Similarity Thresholds
+### 22. ✅ Story Uniqueness Threshold Enforcement — COMPLETE
 
-- [ ] Finalize `story_uniqueness_config`
-- [ ] Embeddings + cooldown logic
-- [ ] Similarity threshold tuning
-- [ ] Story reuse scoring
+> **Status:** ✅ COMPLETE (February 19, 2026)
+
+- [x] `check_story_uniqueness` RPC — brand-level collision check with configurable threshold
+- [x] Worker-v1 enforcement — rejects stories below 0.6 uniqueness score
+- [x] Rejection metadata stored (similar_job_ids, score)
+- [x] Forces regeneration on uniqueness failure
+- [ ] Embeddings + cooldown logic (future)
+- [ ] Story reuse scoring (future)
 
 **Reference:** [STORY_UNIQUENESS.md](STORY_UNIQUENESS.md)
 
 ---
 
-### 23. Human Review Mode (Optional)
+### 23. Human Review Mode (Partial)
 
-- [ ] Generate but don't post until approved
+> **Status:** 🟡 Foundation laid (February 19, 2026)
+
+- [x] Draft status support — posts can be created as 'draft'
+- [x] `promote_draft_to_scheduled` RPC — approve draft → scheduled
+- [x] `reject_draft` RPC — reject draft → cancelled with reason
 - [ ] Review queue UI
-- [ ] Approve/Reject/Edit workflow
 - [ ] Batch approval
+- [ ] Generate but don't post until approved (full pipeline integration)
 
 ---
 
@@ -985,17 +995,30 @@ score = AVG(performance_value) per (brand, platform, tz, dow, hour)
 
 ## 🏁 LEVEL 5 — FULLY COMPLETE SYSTEM
 
-### 26. Cross-Platform Optimization Engine
+### 26. Cross-Platform Optimization Engine (Partial)
 
+> **Status:** 🟡 Foundation laid (February 19, 2026)
+
+- [x] `v_cross_platform_performance` view — per-platform metrics with perf_score
+- [x] Strategy intelligence system — `post_strategies` + `platform_strategies` tables, 20 seeded strategies
+- [x] `v_strategy_performance` view — strategy effectiveness by platform/brand
+- [x] `get_top_strategies` RPC — probabilistic weighted selection
+- [x] Strategy-driven metadata generation — strategy type injected into AI prompts
+- [x] Time-aware metadata generation — day/time of posting influences prompt tone
+- [x] Cross-Platform & Strategy tab on AI Intelligence page
 - [ ] Preset weights adapt by performance
 - [ ] Schedule adapts by performance
-- [ ] Platform-specific optimization
 - [ ] ML-driven recommendations
 
 ---
 
-### 27. Dashboard
+### 27. Dashboard (Partial)
 
+> **Status:** 🟡 Progress (February 19, 2026)
+
+- [x] `v_visual_performance` view — image pipeline stats linked to metrics
+- [x] Dashboard N+1 fix — bulk queries for brand overview
+- [x] Mobile responsive design — all 13 pages responsive
 - [ ] Costs per video
 - [ ] Failure rates
 - [ ] Performance by preset
@@ -1005,14 +1028,19 @@ score = AVG(performance_value) per (brand, platform, tz, dow, hour)
 
 ---
 
-### 28. Alerts/Notifications
+### 28. ✅ Alerts/Notifications — COMPLETE
 
-- [ ] Job failed alerts
-- [ ] Posting failed alerts
-- [ ] Spend spike warnings
-- [ ] Campaign complete notifications
+> **Status:** ✅ COMPLETE (February 19, 2026)
+
+- [x] `brand_alert_config` table — per-brand webhook URLs
+- [x] `system_alert_config` table — global alert webhooks
+- [x] `sendAlertWebhooks()` in schedule-jobs — fires on kill switch, budget exceeded, campaign paused
+- [x] Discord webhook support — color-coded embeds by severity
+- [x] Slack webhook support — attachments with fields
+- [x] Generic JSON webhook support
+- [x] Configurable events per webhook (token_expired, campaign_paused, budget_exceeded, renderer_down, etc.)
 - [ ] Daily/weekly summaries
-- [ ] Configurable thresholds
+- [ ] Campaign complete notifications
 
 ---
 
@@ -1044,19 +1072,19 @@ MID (Level 3)
 ├── 17. ✅ Post Registry (DONE)
 ├── 18. ✅ Metrics Collection (DONE)
 ├── 19. ✅ Time Slot Scoring (DONE)
-└── 20. Caption Learning
+└── 20. ✅ Caption Learning (DONE)
 
 LATER (Level 4)
 ├── 21. Multi-Worker
-├── 22. Similarity Thresholds
-├── 23. Human Review
+├── 22. ✅ Similarity Thresholds (DONE)
+├── 23. 🟡 Human Review (Foundation)
 ├── 24. Brand Automation
 └── 25. Campaign Templates
 
 FINAL (Level 5)
-├── 26. Optimization Engine
-├── 27. Dashboard
-└── 28. Alerts
+├── 26. 🟡 Optimization Engine (Foundation)
+├── 27. 🟡 Dashboard (Partial)
+└── 28. ✅ Alerts (DONE)
 ```
 
 ---
@@ -1070,3 +1098,7 @@ FINAL (Level 5)
 - [PRESET_SOURCE_OF_TRUTH.md](PRESET_SOURCE_OF_TRUTH.md) — Preset loading architecture
 - [BRAND_SELECTION.md](BRAND_SELECTION.md) — Brand system
 - [BACKGROUND_MUSIC.md](BACKGROUND_MUSIC.md) — Background music system
+- [STRATEGY_INTELLIGENCE_ROADMAP.md](STRATEGY_INTELLIGENCE_ROADMAP.md) — Strategy intelligence system
+- [POST_ANALYTICS_SYSTEM.md](POST_ANALYTICS_SYSTEM.md) — Metrics collection
+- [FAILURE_PROTECTION_DLQ.md](FAILURE_PROTECTION_DLQ.md) — Failure protection & DLQ
+- [POST_METADATA_SYSTEM.md](POST_METADATA_SYSTEM.md) — AI metadata generation

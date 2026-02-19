@@ -1,9 +1,9 @@
 # Post Queue System
 
-> **Version:** 1.1  
-> **Date:** February 10, 2026  
+> **Version:** 1.2  
+> **Date:** February 19, 2026  
 > **Status:** ✅ Production Ready  
-> **Verified:** February 10, 2026 (Full End-to-End Verified)  
+> **Verified:** February 19, 2026 (System Hardening Batch)  
 > **Related:** ROADMAP.md Item #9
 
 ---
@@ -17,6 +17,13 @@ The Post Queue System automates video publishing to social media platforms. When
 2. **Automatic Import:** Database trigger creates posts when video completes (no manual step)
 3. **Idempotency:** Never double-create or double-post
 4. **Safety:** Respects kill switch, campaign pause, and retry limits
+
+### v1.2 Enhancements (Feb 19, 2026)
+
+- **Per-Platform Rate Limiting**: YouTube 10s, Instagram/Facebook/TikTok 5s, Twitter/Threads 3s delay between consecutive posts to avoid API rate limits
+- **Optimistic Lock Claim**: Replaced batch `claim_due_posts` RPC with targeted UPDATE optimistic lock on specific post_id, eliminating race condition where wrong post could be claimed
+- **Dead Post Sweeper**: `sweep_dead_posts(3)` runs every 5 min via cron, moves posts with ≥3 failed attempts from 'scheduled' to 'failed'
+- **Draft Mode Support**: Posts with status='draft' are skipped by claim logic; `promote_draft_to_scheduled` / `reject_draft` RPCs for review workflow
 
 ---
 

@@ -1,14 +1,20 @@
 # Post Metadata System — Technical Design Spec
 
-> **Version:** 1.0  
-> **Date:** February 12, 2026  
-> **Status:** Implementation Ready
+> **Version:** 2.0  
+> **Date:** February 19, 2026  
+> **Status:** ✅ Production (Strategy + Time-Aware)
 
 ---
 
 ## Overview
 
 AI-generated, platform-specific metadata (title, description, tags, hashtags, etc.) for each scheduled post. Runs asynchronously after video generation completes, stores structured data per (post, platform), supports user editing with revision history, and feeds into the post-worker for automated publishing.
+
+### v2.0 Enhancements (Feb 19, 2026)
+
+- **Time-Awareness**: Parses `scheduled_at` to inject day-of-week and time-of-day context. Morning posts get energetic/fresh tone, evening gets atmospheric/reflective, night gets dark/intimate.
+- **Strategy Intelligence**: Fetches top-performing strategies via `get_top_strategies` RPC. Probabilistic weighted selection by avg_engagement. 10 strategy types each inject specific prompt guidance (hook_first, emotional_arc, question_hook, list_format, controversy, fomo, storytelling, community, authority, trend_ride).
+- **Strategy Binding**: Strategy type and time context sections added to the base prompt template before GPT generation.
 
 ---
 

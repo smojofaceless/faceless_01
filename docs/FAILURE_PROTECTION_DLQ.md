@@ -1,8 +1,8 @@
 # Failure Cluster Protection + Dead Letter Queue (DLQ)
 
-> **Version:** 1.1  
+> **Version:** 1.2  
 > **Implemented:** February 22, 2026  
-> **Updated:** February 10, 2026  
+> **Updated:** February 19, 2026  
 > **Status:** ✅ Production Ready
 
 ---
@@ -18,6 +18,8 @@ This system protects the video generation pipeline from cascading failures when 
 5. **DLQ View** - Visibility into failed jobs with actionable data
 6. **Bulk Requeue** - One-click recovery when services restore
 7. **Retry Policies** - Exponential backoff to avoid hammering failing services
+8. **External Alert Webhooks** - Discord/Slack/generic notifications on failures
+9. **Dead Post Sweeper** - `sweep_dead_posts()` catches stuck posts (≥3 attempts)
 
 ---
 

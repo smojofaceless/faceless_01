@@ -1,7 +1,7 @@
 # Story Storage & Uniqueness System
 
-> **Last Updated:** February 12, 2026  
-> **Module Version:** 2.2.0 (Rich Story Generation + Thematic Uniqueness)
+> **Last Updated:** February 19, 2026  
+> **Module Version:** 2.3.0 (Uniqueness Threshold Enforcement)
 
 ---
 
@@ -9,6 +9,7 @@
 
 | Date | Version | Changes |
 |------|---------|--------|
+| Feb 19, 2026 | 2.3.0 | **Uniqueness Threshold Enforcement**: `check_story_uniqueness` RPC (brand_id, concept_hash, job_id, threshold) returns is_unique, uniqueness_score, collision_count, colliding_titles. Worker-v1 `steps.ts` enforces 0.6 threshold — rejects below-threshold stories with metadata (similar_job_ids). Forces regeneration loop. Migration: `20260319020`. |
 | Feb 12, 2026 | 2.2.0 | Rich one_too_many prompt engine with randomized trope packs. 8-dimension storytelling toolkit. Thematic avoidance prompt with concept_hash dedup. Cinematography-driven shot selection. |
 | Feb 8, 2026 | 2.1.0 | Added "Write Path Contract" section (Gap 1: when DNA tables must be written) |
 | Feb 8, 2026 | 2.1.0 | Added "Expected Empty Tables" reference (Gap 2: which tables are aggregation-only) |
