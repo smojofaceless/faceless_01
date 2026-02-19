@@ -5260,7 +5260,25 @@ export async function executeScheduleStep(
     return normalized;
   });
   // Deduplicate (in case multiple variants map to the same canonical name)
-  const uniquePlatforms = [...new Set(platforms)];
+  const allUnique = [...new Set(platforms)];
+
+  // ── Disabled platforms ──────────────────────────────────────────────
+  // TikTok: API still in review — nothing actually posts (StubAdapter generates fake IDs)
+  // Twitter/X: Requires paid API tier — posting fails permanently
+  // Remove these from the schedule until their APIs are production-ready.
+  const DISABLED_PLATFORMS = new Set(['tiktok', 'twitter']);
+  const uniquePlatforms = allUnique.filter(p => {
+    if (DISABLED_PLATFORMS.has(p)) {
+      console.log(`[SCHEDULE] ⏭ Skipping disabled platform "${p}" (API not available)`);
+      return false;
+    }
+    return true;
+  });
+
+  if (uniquePlatforms.length === 0) {
+    console.warn('[SCHEDULE] All platforms are disabled — nothing to schedule');
+    return { success: true, data: { scheduled_at: null, platforms: [], results: {}, note: 'All platforms disabled' } };
+  }
 
   // Determine scheduled time
   const scheduledAt = freshJob.scheduled_post_at

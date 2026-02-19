@@ -758,11 +758,228 @@ class FacebookMetricsAdapter implements MetricsAdapter {
 }
 
 // ─────────────────────────────────────────────────────
+// Threads Metrics Adapter
+// Uses Threads API — insights endpoint for views, likes, replies, reposts, quotes
+// API: graph.threads.net/v1.0/{media_id}/insights?metric=views,likes,replies,reposts,quotes
+// ─────────────────────────────────────────────────────
+class ThreadsMetricsAdapter implements MetricsAdapter {
+  name = 'threads';
+  private API_BASE = 'https://graph.threads.net/v1.0';
+
+  async getMetrics(
+    platformPostId: string,
+    supabase: SupabaseClient,
+    brandId: string
+  ): Promise<MetricsResult> {
+    console.log(`[Threads Metrics] Fetching for media: ${platformPostId}`);
+
+    // 1. Get token
+    const { data: tokenData, error: tokenError } = await supabase
+      .from('platform_tokens')
+      .select('*')
+      .eq('brand_id', brandId)
+      .eq('platform', 'threads')
+      .single();
+
+    if (tokenError || !tokenData) {
+      return {
+        success: false,
+        error_class: 'misconfig',
+        error_message: 'Threads not connected for this brand',
+      };
+    }
+
+    if (!tokenData.is_valid) {
+      return {
+        success: false,
+        error_class: 'misconfig',
+        error_message: 'Threads token is invalid. Please reconnect.',
+      };
+    }
+
+    let accessToken = tokenData.access_token;
+
+    // 2. Proactively refresh token if expiring within 7 days
+    if (tokenData.token_expires_at) {
+      const expiresAt = new Date(tokenData.token_expires_at);
+      if (expiresAt.getTime() - Date.now() < 7 * 24 * 60 * 60 * 1000) {
+        try {
+          accessToken = await this.refreshToken(supabase, tokenData as PlatformToken);
+        } catch (e) {
+          console.log(`[Threads Metrics] Proactive refresh failed, using current token: ${e}`);
+        }
+      }
+    }
+
+    return this.fetchMetrics(platformPostId, accessToken, supabase, brandId, tokenData as PlatformToken);
+  }
+
+  private async fetchMetrics(
+    platformPostId: string,
+    accessToken: string,
+    supabase: SupabaseClient,
+    brandId: string,
+    tokenData: PlatformToken
+  ): Promise<MetricsResult> {
+    try {
+      // Threads Insights API — fetch all available metrics
+      // Available metrics: views, likes, replies, reposts, quotes
+      const insightsUrl = `${this.API_BASE}/${platformPostId}/insights?metric=views,likes,replies,reposts,quotes&access_token=${accessToken}`;
+      const insightsRes = await fetch(insightsUrl);
+
+      if (insightsRes.status === 404 || insightsRes.status === 400) {
+        const errData = await insightsRes.json().catch(() => ({}));
+        const errMsg = (errData as { error?: { message?: string } })?.error?.message || '';
+        // Invalid media ID or deleted post
+        if (insightsRes.status === 404 || errMsg.includes('does not exist')) {
+          return {
+            success: false,
+            error_class: 'permanent',
+            error_message: 'Threads post not found (deleted or unavailable)',
+          };
+        }
+        // Some posts may not have insights yet (too new)
+        return {
+          success: false,
+          error_class: 'transient',
+          error_message: `Threads insights error ${insightsRes.status}: ${errMsg}`,
+        };
+      }
+
+      if (insightsRes.status === 429) {
+        return {
+          success: false,
+          error_class: 'dependency',
+          error_message: 'Threads API rate limit exceeded',
+        };
+      }
+
+      if (insightsRes.status === 401 || insightsRes.status === 403) {
+        // Try token refresh
+        try {
+          console.log(`[Threads Metrics] Got ${insightsRes.status}, attempting token refresh...`);
+          const newToken = await this.refreshToken(supabase, tokenData);
+          const retryRes = await fetch(
+            `${this.API_BASE}/${platformPostId}/insights?metric=views,likes,replies,reposts,quotes&access_token=${newToken}`
+          );
+          if (retryRes.ok) {
+            return this.parseInsights(await retryRes.json());
+          }
+        } catch (refreshErr) {
+          console.log(`[Threads Metrics] Token refresh failed: ${refreshErr}`);
+        }
+
+        // Refresh failed — mark token invalid
+        await supabase
+          .from('platform_tokens')
+          .update({ is_valid: false, last_error: `Metrics: Threads token error ${insightsRes.status}` })
+          .eq('brand_id', brandId)
+          .eq('platform', 'threads');
+
+        return {
+          success: false,
+          error_class: 'misconfig',
+          error_message: `Threads token error: ${insightsRes.status}. Token marked invalid.`,
+        };
+      }
+
+      if (!insightsRes.ok) {
+        return {
+          success: false,
+          error_class: 'transient',
+          error_message: `Threads API error: ${insightsRes.status}`,
+        };
+      }
+
+      const insightsData = await insightsRes.json();
+      return this.parseInsights(insightsData);
+
+    } catch (e) {
+      return {
+        success: false,
+        error_class: 'transient',
+        error_message: `Network error: ${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
+  }
+
+  private parseInsights(insightsData: unknown): MetricsResult {
+    // Threads insights response format:
+    // { data: [ { name: "views", values: [{ value: N }] }, ... ] }
+    let views = 0;
+    let likes = 0;
+    let replies = 0;  // maps to comments
+    let reposts = 0;  // maps to shares
+    let quotes = 0;
+
+    const data = (insightsData as { data?: Array<{ name: string; values: Array<{ value: number }> }> })?.data;
+    if (data) {
+      for (const insight of data) {
+        const value = insight.values?.[0]?.value ?? 0;
+        switch (insight.name) {
+          case 'views': views = value; break;
+          case 'likes': likes = value; break;
+          case 'replies': replies = value; break;
+          case 'reposts': reposts = value; break;
+          case 'quotes': quotes = value; break;
+        }
+      }
+    }
+
+    console.log(`[Threads Metrics] views=${views}, likes=${likes}, replies=${replies}, reposts=${reposts}, quotes=${quotes}`);
+
+    return {
+      success: true,
+      metrics: {
+        views,
+        likes,
+        comments: replies,       // Threads "replies" = our "comments"
+        shares: reposts + quotes, // Threads "reposts" + "quotes" = our "shares"
+        saves: 0,                 // Threads doesn't expose saves
+      },
+      raw: insightsData as Record<string, unknown>,
+    };
+  }
+
+  // Refresh Threads long-lived token (valid 60 days, refreshable)
+  private async refreshToken(supabase: SupabaseClient, tokenData: PlatformToken): Promise<string> {
+    console.log('[Threads Metrics] Refreshing long-lived token...');
+
+    const response = await fetch(
+      `https://graph.threads.net/refresh_access_token?grant_type=th_refresh_token&access_token=${tokenData.access_token}`
+    );
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error('[Threads Metrics] Token refresh failed:', errorBody);
+      throw new Error(`Threads token refresh failed: ${response.status}`);
+    }
+
+    const tokens = await response.json();
+    const expiresAt = new Date(Date.now() + (tokens.expires_in || 5184000) * 1000).toISOString();
+
+    await supabase
+      .from('platform_tokens')
+      .update({
+        access_token: tokens.access_token,
+        token_expires_at: expiresAt,
+        is_valid: true,
+        last_error: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', tokenData.id);
+
+    console.log(`[Threads Metrics] Token refreshed, expires: ${expiresAt}`);
+    return tokens.access_token;
+  }
+}
+
+// ─────────────────────────────────────────────────────
 // Adapter Registry
 // Returns null for platforms without real API adapters
 // so we skip them instead of recording fake zeros
 // ─────────────────────────────────────────────────────
-const STUB_PLATFORMS = new Set(['tiktok', 'threads', 'twitter', 'x']);
+const STUB_PLATFORMS = new Set(['tiktok', 'twitter', 'x']);
 
 function getMetricsAdapter(platform: string): MetricsAdapter | null {
   switch (platform) {
@@ -775,8 +992,9 @@ function getMetricsAdapter(platform: string): MetricsAdapter | null {
     case 'facebook':
     case 'facebook_reels':
       return new FacebookMetricsAdapter();
-    case 'tiktok':
     case 'threads':
+      return new ThreadsMetricsAdapter();
+    case 'tiktok':
     case 'twitter':
     case 'x':
       console.log(`[Metrics] Skipping stub platform: ${platform} (no API adapter yet)`);

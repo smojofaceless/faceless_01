@@ -1812,6 +1812,20 @@ function getAdapter(platform: string): PlatformAdapter {
     return new StubAdapter('unknown');
   }
   const p = platform.toLowerCase();
+
+  // ── Disabled platforms ──────────────────────────────────────────────
+  // TikTok: API in review — nothing actually posts
+  // Twitter/X: Requires paid API tier
+  const DISABLED_PLATFORMS: Record<string, string> = {
+    'tiktok': 'TikTok API is in review — posting disabled until approved',
+    'twitter': 'Twitter/X requires paid API tier — posting disabled',
+    'x': 'Twitter/X requires paid API tier — posting disabled',
+  };
+  if (DISABLED_PLATFORMS[p]) {
+    console.warn(`[POST-WORKER] Platform "${p}" is disabled: ${DISABLED_PLATFORMS[p]}`);
+    throw new Error(`Platform disabled: ${DISABLED_PLATFORMS[p]}`);
+  }
+
   switch (p) {
     case 'tiktok':
       return new TikTokAdapter();
@@ -2035,7 +2049,7 @@ async function processPost(
         p_meta: {
           posted_by: workerId,
           adapter: adapter.name,
-          adapter_version: ['youtube', 'instagram_reels', 'facebook_reels'].includes(adapter.name) ? 'real_1.0' : 'stub_1.0',
+          adapter_version: ['youtube', 'instagram_reels', 'facebook_reels', 'threads'].includes(adapter.name) ? 'real_1.0' : 'stub_1.0',
         },
       });
       
