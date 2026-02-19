@@ -12,6 +12,7 @@
   const BRAND_CATALOG = [
     {
       key: 'stories_that_stalk',
+      brandId: '68a58afb-8c85-4d6d-9eec-144ab7e5f106',
       name: 'Stories That Stalk',
       icon: '📜',
       concept: 'AI-generated horror short stories with narration, images, music, and effects.',
@@ -496,6 +497,12 @@
   // ─── Match catalog brand → DB brand ─────────────────
   function matchBrandToDb(catalogBrand) {
     if (!live.brands.length) return null;
+    // Direct ID match first (most reliable)
+    if (catalogBrand.brandId) {
+      const direct = live.brands.find(b => b.id === catalogBrand.brandId);
+      if (direct) return direct;
+    }
+    // Fuzzy name / slug fallback
     const nameLower = catalogBrand.name.toLowerCase().replace(/[^a-z0-9]/g, '');
     return live.brands.find(b => {
       const dbName = (b.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -506,6 +513,8 @@
   }
 
   function getBrandId(brand) {
+    // Direct ID shortcut
+    if (brand.brandId) return brand.brandId;
     const db = matchBrandToDb(brand);
     return db ? db.id : null;
   }
