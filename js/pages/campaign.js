@@ -10,6 +10,7 @@
 const PRESET_CATALOG = {
     urban_legend: {
         id: 'urban_legend',
+        brand: 'stories_that_stalk',
         name: 'Urban Legend',
         icon: '📜',
         tagline: 'Documentary folklore',
@@ -42,6 +43,7 @@ const PRESET_CATALOG = {
     },
     one_too_many: {
         id: 'one_too_many',
+        brand: 'stories_that_stalk',
         name: 'One Too Many',
         icon: '👥',
         tagline: 'Counting horror',
@@ -75,6 +77,7 @@ const PRESET_CATALOG = {
     },
     custom: {
         id: 'custom',
+        brand: '_universal',
         name: 'Custom DNA',
         icon: '🧬',
         tagline: 'Full control',
@@ -99,6 +102,7 @@ const PRESET_CATALOG = {
     },
     reddit_trending_horror: {
         id: 'reddit_trending_horror',
+        brand: 'stories_that_stalk',
         name: 'Reddit Trending Horror',
         icon: '🔥',
         tagline: 'Internet nightmares retold',
@@ -131,6 +135,7 @@ const PRESET_CATALOG = {
     },
     dark_origins: {
         id: 'dark_origins',
+        brand: 'stories_that_stalk',
         name: 'Dark Origins',
         icon: '🕯️',
         tagline: 'Documentary dark biographies',
@@ -160,7 +165,118 @@ const PRESET_CATALOG = {
             bestFor: 'True crime deep dives, horror icon origins, dark biographies, serial killer documentaries',
             exampleHook: '"Edgar Holloway was the best taxidermist in Dane County. His private collection was not animals."'
         }
+    },
+
+    // ─── DecideThisDaily ───────────────────────────────
+    no_good_choice: {
+        id: 'no_good_choice',
+        brand: 'decide_this_daily',
+        name: 'No Good Choice',
+        icon: '⚖️',
+        tagline: 'Lose-lose dilemmas',
+        description: 'Both options suck — realistic scenarios where every path has a cost. Second-person address, gameplay-style visuals, ending with a direct question that forces the audience to pick a side.',
+        defaults: {
+            vibe_preset: 'no_good_choice',
+            era: 'modern',
+            tone: 0.5,
+            ending: 'open_question',
+            visual_style: 'gameplay_clean',
+            color_palette: 'neutral_warm',
+            motion_profile: 'gentle_drift'
+        },
+        visual: {
+            gradient: 'linear-gradient(145deg, #1f2937 0%, #111827 30%, #292524 70%, #0a0a0a 100%)',
+            overlay: 'radial-gradient(ellipse at 50% 50%, rgba(245, 158, 11, 0.15), transparent 60%)',
+            accentColor: '#f59e0b',
+            accentBg: 'rgba(245, 158, 11, 0.15)',
+            artStyle: 'Gameplay Clean',
+            colorPalette: 'Neutral Warm',
+            motionProfile: 'Gentle Drift'
+        },
+        details: {
+            era: 'Modern',
+            ending: 'Open Question',
+            effects: ['Gentle Ken Burns drift', 'Very subtle vignette', 'Neutral warm grade'],
+            bestFor: 'Moral dilemmas, trolley problems, impossible workplace/relationship choices',
+            exampleHook: '"Your best friend confesses they hit someone with their car last night. They\'re asking you to stay quiet."'
+        }
+    },
+    one_rule_one_power: {
+        id: 'one_rule_one_power',
+        brand: 'decide_this_daily',
+        name: 'One Rule One Power',
+        icon: '✨',
+        tagline: 'Power with a catch',
+        description: 'You get one extraordinary ability — but there\'s one rule that makes it complicated. Moody, surreal visuals. The audience debates whether the power is worth the cost.',
+        defaults: {
+            vibe_preset: 'one_rule_one_power',
+            era: 'modern',
+            tone: 0.55,
+            ending: 'open_question',
+            visual_style: 'moody_surreal',
+            color_palette: 'deep_blue_amber',
+            motion_profile: 'slow_contemplative'
+        },
+        visual: {
+            gradient: 'linear-gradient(145deg, #0c1929 0%, #1a0a2e 30%, #1e1b4b 60%, #0a0a1a 100%)',
+            overlay: 'radial-gradient(ellipse at 60% 40%, rgba(139, 92, 246, 0.20), transparent 60%)',
+            accentColor: '#8b5cf6',
+            accentBg: 'rgba(139, 92, 246, 0.15)',
+            artStyle: 'Surreal Contemplative',
+            colorPalette: 'Deep Blue Amber',
+            motionProfile: 'Slow Contemplative'
+        },
+        details: {
+            era: 'Modern',
+            ending: 'Open Question',
+            effects: ['Slow contemplative zoom', 'Moderate vignette', 'Deep blue-amber grade', 'Barely-there grain'],
+            bestFor: 'Power fantasies with restrictions, "would you accept?" debates, thought experiments',
+            exampleHook: '"You can read anyone\'s mind — but only when they\'re lying to you."'
+        }
+    },
+    two_doors: {
+        id: 'two_doors',
+        brand: 'decide_this_daily',
+        name: 'Two Doors',
+        icon: '🚪',
+        tagline: 'Binary choices, big consequences',
+        description: 'A framing device (doors, pills, paths) presents two options with unknown but permanent consequences. High-contrast cinematic visuals. The audience picks sides in the comments.',
+        defaults: {
+            vibe_preset: 'two_doors',
+            era: 'modern',
+            tone: 0.6,
+            ending: 'open_question',
+            visual_style: 'cinematic_contrast',
+            color_palette: 'bold_contrast',
+            motion_profile: 'dramatic_zoom'
+        },
+        visual: {
+            gradient: 'linear-gradient(145deg, #18181b 0%, #1c1917 30%, #27272a 60%, #0a0a0a 100%)',
+            overlay: 'radial-gradient(ellipse at 40% 60%, rgba(239, 68, 68, 0.18), transparent 60%)',
+            accentColor: '#ef4444',
+            accentBg: 'rgba(239, 68, 68, 0.15)',
+            artStyle: 'Cinematic Contrast',
+            colorPalette: 'Bold Contrast',
+            motionProfile: 'Dramatic Zoom'
+        },
+        details: {
+            era: 'Modern',
+            ending: 'Open Question',
+            effects: ['Moderate dramatic zoom', 'Focus vignette', 'Bold high-contrast grade', 'Minimal texture'],
+            bestFor: 'Red pill/blue pill scenarios, door-choice mysteries, irreversible binary decisions',
+            exampleHook: '"Two envelopes. One contains the date you die. The other contains the date everyone you love dies."'
+        }
     }
+};
+
+/**
+ * Brand key → slug mapping for filtering presets by brand
+ * Maps brand DB slugs (from brands table) to PRESET_CATALOG brand keys
+ */
+const BRAND_SLUG_MAP = {
+    'stories-that-stalk': 'stories_that_stalk',
+    'decide-this-daily': 'decide_this_daily',
+    // Add more as brands are created
 };
 
 /**
@@ -491,7 +607,7 @@ class CampaignPage {
      */
     async loadPresetWeights() {
         if (!this.currentBrand?.id) {
-            this.presetWeights = { urban_legend: 60, one_too_many: 40 };
+            this.presetWeights = {};
             this.presetWeightsDirty = false;
             this.renderPresetWeights();
             return;
@@ -518,11 +634,11 @@ class CampaignPage {
                     }
                 } else {
                     this.brandPresets = [];
-                    this.presetWeights = { urban_legend: 60, one_too_many: 40 };
+                    this.presetWeights = this._getDefaultPresetWeights();
                 }
             } else {
                 this.brandPresets = [];
-                this.presetWeights = { urban_legend: 60, one_too_many: 40 };
+                this.presetWeights = this._getDefaultPresetWeights();
             }
             
             this.presetWeightsDirty = false;
@@ -530,10 +646,31 @@ class CampaignPage {
         } catch (error) {
             console.error('Failed to load preset weights:', error);
             this.brandPresets = [];
-            this.presetWeights = { urban_legend: 60, one_too_many: 40 };
+            this.presetWeights = this._getDefaultPresetWeights();
             this.presetWeightsDirty = false;
             this.renderPresetWeights();
         }
+    }
+
+    /**
+     * Get default preset weights based on the current brand.
+     * Used as fallback when DB returns no templates.
+     */
+    _getDefaultPresetWeights() {
+        const brandKey = this._getBrandCatalogKey();
+        // Collect presets from catalog that match this brand
+        const brandPresets = Object.keys(PRESET_CATALOG).filter(
+            id => PRESET_CATALOG[id].brand === brandKey
+        );
+        if (brandPresets.length > 0) {
+            // Equal split
+            const w = Math.round(100 / brandPresets.length);
+            const weights = {};
+            brandPresets.forEach(id => { weights[id] = w; });
+            return weights;
+        }
+        // Ultimate fallback
+        return { urban_legend: 60, one_too_many: 40 };
     }
 
     /**
@@ -921,17 +1058,36 @@ class CampaignPage {
     // ==================== Preset Gallery ====================
 
     /**
-     * Render the preset gallery cards
+     * Get the brand catalog key for the current brand.
+     * Uses slug → brand key mapping, falling back to slug itself.
      */
+    _getBrandCatalogKey() {
+        if (!this.currentBrand) return null;
+        const slug = this.currentBrand.slug || '';
+        return BRAND_SLUG_MAP[slug] || slug.replace(/-/g, '_');
+    }
+
     renderPresetGallery() {
         const grid = this.presetGalleryGrid;
         if (!grid) return;
 
         // Get active presets from weight data (or defaults)
         const activePresets = Object.keys(this.presetWeights);
+        const brandKey = this._getBrandCatalogKey();
         
-        // Build cards for all presets in catalog
-        const presetIds = Object.keys(PRESET_CATALOG);
+        // Only show presets that belong to this brand or are universal
+        // Primary: show presets the brand actually has in DB (activePresets)
+        // Secondary: show catalog presets tagged for this brand
+        const presetIds = Object.keys(PRESET_CATALOG).filter(id => {
+            const preset = PRESET_CATALOG[id];
+            // Always show if the brand has it in its DB templates
+            if (activePresets.includes(id)) return true;
+            // Show brand-matched presets from catalog (even if not yet in DB)
+            if (preset.brand === brandKey) return true;
+            // Show universal presets (like custom)
+            if (preset.brand === '_universal') return true;
+            return false;
+        });
         
         grid.innerHTML = presetIds.map(id => {
             const preset = PRESET_CATALOG[id];
