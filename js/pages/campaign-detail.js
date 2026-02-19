@@ -80,6 +80,7 @@ class CampaignDetailPage {
         this.pauseBtn = document.getElementById('btn-pause');
         this.resumeBtn = document.getElementById('btn-resume');
         this.cancelBtn = document.getElementById('btn-cancel');
+        this.cloneBtn = document.getElementById('btn-clone');
         
         // Stats
         this.statTotal = document.getElementById('stat-total');
@@ -129,6 +130,7 @@ class CampaignDetailPage {
         this.pauseBtn?.addEventListener('click', () => this.confirmAction('pause'));
         this.resumeBtn?.addEventListener('click', () => this.confirmAction('resume'));
         this.cancelBtn?.addEventListener('click', () => this.confirmAction('cancel'));
+        this.cloneBtn?.addEventListener('click', () => this.cloneCampaign());
         
         // Filter
         this.filterStatus?.addEventListener('change', (e) => {
@@ -555,6 +557,29 @@ class CampaignDetailPage {
      */
     formatPresetName(preset) {
         return preset.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    }
+
+    /**
+     * Clone this campaign — store config in sessionStorage and navigate to campaign creation page
+     */
+    cloneCampaign() {
+        if (!this.campaign) return;
+
+        // Build a config object from the campaign's stored config + top-level fields
+        const stored = this.campaign.config || {};
+        const config = {
+            videoCount: this.campaign.video_count || stored.videoCount || 7,
+            postsPerDay: stored.postsPerDay || 3,
+            platforms: stored.platforms || ['youtube_shorts'],
+            windows: stored.windows || ['12:00', '12:00', '12:00'],
+            jitterMinutes: stored.jitterMinutes ?? 30,
+            platformOffsetMinutes: stored.platformOffsetMinutes ?? 5,
+            sceneCount: stored.sceneCount || 0,
+            asapMode: stored.asapMode || false
+        };
+
+        sessionStorage.setItem('cloneCampaignConfig', JSON.stringify(config));
+        window.location.href = 'campaign.html';
     }
 
     /**

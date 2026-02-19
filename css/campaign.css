@@ -3153,3 +3153,121 @@
 }
 .voice-aligned-badge--yes { background: rgba(16, 185, 129, 0.15); color: #10B981; }
 .voice-aligned-badge--no  { background: rgba(107, 114, 128, 0.15); color: #6B7280; }
+
+/* ==========================================================================
+   Campaign Templates Bar
+   ========================================================================== */
+
+.template-bar {
+    margin-bottom: var(--space-6);
+}
+
+.template-bar.hidden { display: none !important; }
+
+.template-bar__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-4);
+    gap: var(--space-3);
+    flex-wrap: wrap;
+}
+
+.template-bar__title-area {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+}
+
+.template-bar__title {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    color: var(--color-text-primary);
+    margin: 0;
+}
+
+.template-bar__subtitle {
+    font-size: var(--text-sm);
+}
+
+.template-bar__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: var(--space-4);
+}
+
+.template-card {
+    background: var(--color-surface-raised, rgba(255,255,255,0.03));
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.template-card:hover {
+    border-color: var(--brand-primary, #8b5cf6);
+    box-shadow: 0 0 0 1px var(--brand-primary, #8b5cf6);
+}
+
+.template-card__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+}
+
+.template-card__name {
+    font-weight: 600;
+    font-size: var(--text-sm);
+    color: var(--color-text-primary);
+}
+
+.template-card__desc {
+    font-size: var(--text-xs);
+    color: var(--color-text-tertiary);
+    margin: 0;
+    line-height: 1.4;
+}
+
+.template-card__summary {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--brand-primary, #8b5cf6);
+    letter-spacing: 0.01em;
+}
+
+.template-card__tags {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.template-tag {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 500;
+    background: rgba(139, 92, 246, 0.1);
+    color: var(--brand-primary, #8b5cf6);
+}
+
+.template-card__footer {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-top: var(--space-1);
+}
+
+@media (max-width: 640px) {
+    .template-bar__grid {
+        grid-template-columns: 1fr;
+    }
+    .template-bar__header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}

@@ -178,7 +178,10 @@
             loadPlatformStatus(),
             loadBrandOverview(),
             loadRecentActivity(),
-            loadPerformanceOverview()
+            loadPerformanceOverview(),
+            loadCostOverview(),
+            loadPresetPerformance(),
+            loadBestTimes()
         ]);
     }
 
@@ -575,6 +578,244 @@
         } catch (e) {
             console.error('loadPerformanceOverview:', e);
             container.innerHTML = '<div class="empty-state"><p>Failed to load performance data</p></div>';
+        }
+    }
+
+    // ── Cost Overview ─────────────────────────────────
+    async function loadCostOverview() {
+        const container = document.getElementById('cost-overview');
+        const period = document.getElementById('cost-period');
+        if (!container) return;
+
+        try {
+            // Query mv_daily_usage for cost data (last 7 days)
+            const weekAgo = new Date();
+            weekAgo.setDate(weekAgo.getDate() - 7);
+            const { data: usage, error } = await sb
+                .from('mv_daily_usage')
+                .select('usage_date, total_cost_cents, total_tokens, call_count')
+                .gte('usage_date', weekAgo.toISOString().slice(0, 10))
+                .order('usage_date', { ascending: false });
+
+            if (error) throw error;
+
+            if (!usage || usage.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <p>No cost data yet</p>
+                        <p class="text-muted">Costs appear after jobs run</p>
+                    </div>`;
+                return;
+            }
+
+            const today = usage[0] || {};
+            const weekTotalCents = usage.reduce((s, u) => s + (u.total_cost_cents || 0), 0);
+            const weekTotal = weekTotalCents / 100;
+            const todayCost = (today.total_cost_cents || 0) / 100;
+            const weekCalls = usage.reduce((s, u) => s + (u.call_count || 0), 0);
+            const avgPerCall = weekCalls > 0 ? (weekTotal / weekCalls) : 0;
+
+            if (period) period.textContent = `Last ${usage.length} days`;
+
+            container.innerHTML = `
+                <div class="cost-grid">
+                    <div class="cost-stat">
+                        <span class="cost-stat__value">$${todayCost.toFixed(2)}</span>
+                        <span class="cost-stat__label">Today</span>
+                    </div>
+                    <div class="cost-stat">
+                        <span class="cost-stat__value">$${weekTotal.toFixed(2)}</span>
+                        <span class="cost-stat__label">7-Day Total</span>
+                    </div>
+                    <div class="cost-stat">
+                        <span class="cost-stat__value">$${avgPerCall.toFixed(3)}</span>
+                        <span class="cost-stat__label">Avg / Call</span>
+                    </div>
+                    <div class="cost-stat">
+                        <span class="cost-stat__value">${fmt(weekCalls)}</span>
+                        <span class="cost-stat__label">API Calls (7d)</span>
+                    </div>
+                </div>
+                <div class="cost-bar-chart">
+                    ${usage.slice().reverse().map(u => {
+                        const max = Math.max(...usage.map(x => x.total_cost_cents || 1));
+                        const pct = max > 0 ? Math.round(((u.total_cost_cents || 0) / max) * 100) : 0;
+                        const day = new Date(u.usage_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' });
+                        return `
+                            <div class="cost-bar" title="$${((u.total_cost_cents || 0) / 100).toFixed(2)} — ${u.usage_date}">
+                                <div class="cost-bar__fill" style="height: ${Math.max(pct, 4)}%"></div>
+                                <span class="cost-bar__label">${day}</span>
+                            </div>`;
+                    }).join('')}
+                </div>
+            `;
+        } catch (e) {
+            console.error('loadCostOverview:', e);
+            container.innerHTML = '<div class="empty-state"><p>Failed to load costs</p></div>';
+        }
+    }
+
+    // ── Preset Performance ──────────────────────────
+    async function loadPresetPerformance() {
+        const container = document.getElementById('preset-performance');
+        if (!container) return;
+
+        try {
+            // Query jobs table for vibe_preset data
+            let jobQuery = sb
+                .from('jobs')
+                .select('id, vibe_preset, status')
+                .not('vibe_preset', 'is', null);
+
+            if (activeBrandId) {
+                jobQuery = jobQuery.eq('brand_id', activeBrandId);
+            }
+
+            const { data: jobs, error: jobErr } = await jobQuery;
+            if (jobErr) throw jobErr;
+
+            if (!jobs || jobs.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <p>No preset data yet</p>
+                        <p class="text-muted">Complete some jobs to see preset performance</p>
+                    </div>`;
+                return;
+            }
+
+            // Get posts linked to these jobs, then their metrics
+            const jobIds = jobs.map(j => j.id);
+            const { data: posts } = await sb
+                .from('posts')
+                .select('id, job_id')
+                .in('job_id', jobIds);
+            const jobToPost = {};
+            (posts || []).forEach(p => { jobToPost[p.job_id] = p.id; });
+
+            const postIds = Object.values(jobToPost);
+            let metricsMap = {};
+            if (postIds.length > 0) {
+                const { data: metrics } = await sb
+                    .from('v_post_metrics_latest')
+                    .select('post_id, views, likes')
+                    .in('post_id', postIds);
+                if (metrics) {
+                    metrics.forEach(m => { metricsMap[m.post_id] = m; });
+                }
+            }
+
+            // Aggregate by preset
+            const byPreset = {};
+            jobs.forEach(j => {
+                const key = j.vibe_preset;
+                if (!byPreset[key]) byPreset[key] = { jobs: 0, completed: 0, views: 0, likes: 0 };
+                byPreset[key].jobs++;
+                if (j.status === 'complete' || j.status === 'completed') byPreset[key].completed++;
+                const postId = jobToPost[j.id];
+                const m = postId ? metricsMap[postId] : null;
+                if (m) {
+                    byPreset[key].views += (m.views || 0);
+                    byPreset[key].likes += (m.likes || 0);
+                }
+            });
+
+            const sorted = Object.entries(byPreset).sort((a, b) => b[1].views - a[1].views);
+            const maxViews = Math.max(...sorted.map(([, d]) => d.views), 1);
+
+            container.innerHTML = `
+                <div class="preset-perf-list">
+                    ${sorted.map(([preset, d]) => {
+                        const pct = Math.round((d.views / maxViews) * 100);
+                        const prettyName = preset.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                        return `
+                            <div class="preset-perf-row">
+                                <div class="preset-perf-row__header">
+                                    <span class="preset-perf-row__name">${prettyName}</span>
+                                    <span class="preset-perf-row__stat">${fmt(d.views)} views · ${d.jobs} jobs</span>
+                                </div>
+                                <div class="preset-perf-bar-wrap">
+                                    <div class="preset-perf-bar" style="width: ${Math.max(pct, 3)}%"></div>
+                                </div>
+                            </div>`;
+                    }).join('')}
+                </div>
+            `;
+        } catch (e) {
+            console.error('loadPresetPerformance:', e);
+            container.innerHTML = '<div class="empty-state"><p>Failed to load preset data</p></div>';
+        }
+    }
+
+    // ── Best Posting Times ──────────────────────────
+    async function loadBestTimes() {
+        const container = document.getElementById('best-times');
+        if (!container) return;
+
+        try {
+            // Try the RPC first
+            let slots = null;
+            try {
+                const { data, error } = await sb.rpc('get_best_time_slots', {
+                    p_brand_id: activeBrandId,
+                    p_limit: 6
+                });
+                if (!error && data) slots = data;
+            } catch (_) { /* RPC may not exist — fallback below */ }
+
+            if (!slots || slots.length === 0) {
+                // Fallback: compute from posted posts
+                const { data: posts } = await sb
+                    .from('posts')
+                    .select('posted_at')
+                    .eq('status', 'posted')
+                    .not('posted_at', 'is', null)
+                    .order('posted_at', { ascending: false })
+                    .limit(200);
+
+                if (!posts || posts.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <p>Not enough data yet</p>
+                            <p class="text-muted">Post more content to see best times</p>
+                        </div>`;
+                    return;
+                }
+
+                // Bucket by hour
+                const hourCounts = {};
+                posts.forEach(p => {
+                    const h = new Date(p.posted_at).getHours();
+                    hourCounts[h] = (hourCounts[h] || 0) + 1;
+                });
+                slots = Object.entries(hourCounts)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 6)
+                    .map(([h, count]) => ({ hour: parseInt(h), post_count: count }));
+            }
+
+            const maxCount = Math.max(...slots.map(s => s.post_count || s.avg_views || 1));
+
+            container.innerHTML = `
+                <div class="best-times-grid">
+                    ${slots.map(s => {
+                        const hour = s.hour ?? s.slot_hour ?? 12;
+                        const label = hour === 0 ? '12 AM' : hour < 12 ? `${hour} AM` : hour === 12 ? '12 PM' : `${hour - 12} PM`;
+                        const value = s.post_count || s.avg_views || 0;
+                        const pct = Math.round((value / maxCount) * 100);
+                        return `
+                            <div class="best-time-chip" title="${value} posts at ${label}">
+                                <span class="best-time-chip__hour">${label}</span>
+                                <div class="best-time-chip__bar-wrap">
+                                    <div class="best-time-chip__bar" style="width: ${Math.max(pct, 8)}%"></div>
+                                </div>
+                                <span class="best-time-chip__count">${value}</span>
+                            </div>`;
+                    }).join('')}
+                </div>
+            `;
+        } catch (e) {
+            console.error('loadBestTimes:', e);
+            container.innerHTML = '<div class="empty-state"><p>Failed to load time data</p></div>';
         }
     }
 

@@ -1,7 +1,7 @@
 # Project Roadmap
 
-> **Document Version:** 4.2  
-> **Last Updated:** February 19, 2026  
+> **Document Version:** 4.3  
+> **Last Updated:** February 22, 2026  
 > **Author:** System Architect  
 > **Status:** Active Development
 
@@ -11,6 +11,7 @@
 
 | Date | Version | Changes |
 |------|---------|--------|
+| Feb 22, 2026 | 4.3 | **Campaign Templates (#25) + Dashboard Enhancement (#27)**: `campaign_templates` table with RLS, `increment_template_usage` RPC, 3 seeded system templates (Daily Horror 7-Day, Weekend Blitz, Month-Long Drip). `campaignTemplateService.js` (CRUD + usage tracking). Template bar on campaign page (load/save/delete templates). Clone Campaign button on campaign-detail page (stores config in sessionStorage → prefills create form). Dashboard: 3 new cards — Cost Overview (7-day bar chart from `mv_daily_usage`), Preset Performance (jobs + metrics aggregated by vibe_preset), Best Posting Times (hour-bucketed from posts or `get_best_time_slots` RPC with fallback). New CSS for template cards, cost bars, preset bars, time chips. Smoke test: 20/20 pass. |
 | Feb 19, 2026 | 4.2 | **Brand Profiles Fully Automated (#24)**: Voice config modal on brands page (9 OpenAI voices, custom instructions, speed slider) with brand-level override in `config_overrides.voice` — worker reads from DB with preset fallback. Schedule windows modal (posting hours, active days, max posts/day, min gap, blackout hours) stored in `config_overrides.schedule`. Music advanced settings (enable/disable toggle, ducking volume/attack/release, fade in/out durations) surfaced in collapsible panel. brandManager service: `getVoiceConfig/saveVoiceConfig`, `getScheduleConfig/saveScheduleConfig`. worker-v1 `getPresetVoiceConfig()` now accepts brand override. Smoke tests: 32/32 pass. |
 | Feb 19, 2026 | 4.1 | **Kill Switch UI + Presets + Quality Gates**: Kill switch admin toggle on settings page (System Controls section, badge with ACTIVE/OFF/ERROR, reason input, reads `system_config`, calls `set_kill_switch` RPC). Presets finalized at 4: urban_legend (default), one_too_many, reddit_trending_horror, dark_origins. Quality gates for 3 presets in worker-v1 `steps.ts`: `gateOneToMany()` (counting language + numbers + reveal moment), `gateRedditTrendingHorror()` (first-person + mundane grounding + dialogue), `gateDarkOrigins()` (third-person + dates + locations + unresolved ending). Up to 2 retries before accepting. Platform cleanup verified (15/15 tests). Smoke tests: 37/37 pass (kill switch toggle, 4 presets, quality gate unit tests). Level 1 complete (11/11). Level 2: 12-16 complete. |
 | Feb 19, 2026 | 4.0 | **System Hardening Batch (20 improvements)**: Data cleanup cron (monthly: job_logs 30d, lifecycle 90d, metrics 365d). Winning patterns multi-window (7/14/30d) with exponential recency decay (`EXP(-0.03 * days_old)`). Story uniqueness threshold RPC (`check_story_uniqueness`). Dead post sweeper (`sweep_dead_posts`). Cross-platform performance view (`v_cross_platform_performance`). Strategy intelligence system: `post_strategies` + `platform_strategies` tables (20 seeded strategies across 6 platforms), `v_strategy_performance` view, `assign_post_strategy` + `get_top_strategies` RPCs, strategy-driven metadata generation with probabilistic selection. A/B variant auto-assignment RPC (`auto_assign_ab_variants`). Visual performance tracking (`v_visual_performance`). Draft/preview mode RPCs (`promote_draft_to_scheduled`, `reject_draft`). Alert webhook tables (`brand_alert_config`, `system_alert_config`) + Discord/Slack/generic webhook sender in schedule-jobs. metrics-collector: stub platform skipping + Instagram token refresh (proactive 7-day-before-expiry + 401/403 retry). post-worker: per-platform rate limiting + optimistic lock claim. worker-v1: uniqueness threshold enforcement (0.6). generate-post-metadata: time-awareness + strategy-driven prompts. Video renderer: auth middleware (`RENDERER_AUTH_KEY`) + graceful shutdown (SIGTERM/SIGINT). CORS tightened on 6 internal edge functions. Mobile responsive CSS (`responsive.css`) linked in 13 pages. Dashboard N+1 query fix. Cross-Platform & Strategy tab on AI Intelligence page. Migrations: `20260319020` + `20260319021`. |
@@ -47,6 +48,7 @@
 
 | Item | Date | Notes |
 |------|------|-------|
+| **Campaign Templates + Dashboard Enhancement** | Feb 22, 2026 | `campaign_templates` table (3 system seeds), template bar on campaign page, Clone Campaign button on campaign-detail, 3 new dashboard cards (Cost Overview, Preset Performance, Best Posting Times). `campaignTemplateService.js`. 20/20 smoke tests pass. |
 | **Brand Profiles Fully Automated** | Feb 19, 2026 | Voice config modal (9 voices, instructions, speed), schedule windows modal (posting hours, active days, max posts/day, gap, blackout), music advanced panel (enable/disable, ducking, fade). All config in `brand_templates.config_overrides`. Worker voice loading from DB. 32/32 tests pass. |
 | **Kill Switch UI + Presets + Quality Gates** | Feb 19, 2026 | Kill switch admin toggle on settings page. 4 active presets finalized (urban_legend, one_too_many, reddit_trending_horror, dark_origins). Quality gates for 3 presets (one_too_many, reddit_trending_horror, dark_origins) with up to 2 retries. Platform cleanup verified (15/15). All smoke tests pass (37/37). Level 1: 11/11 complete. |
 | **System Hardening Batch** | Feb 19, 2026 | 20 improvements in one batch. Data cleanup cron, multi-window winning patterns with recency decay, story uniqueness RPC, dead post sweeper, cross-platform view, strategy intelligence (20 seeded strategies), A/B variant auto-assignment, visual performance view, draft/preview RPCs, alert webhook system. Edge function hardening: stub platform skip, Instagram token refresh, per-platform rate limiting, optimistic lock, uniqueness enforcement, time-aware + strategy-driven metadata, renderer auth + graceful shutdown, CORS tightening. Frontend: responsive.css on all pages, dashboard N+1 fix, cross-platform tab. Migrations: `20260319020` + `20260319021`. |
@@ -1058,12 +1060,24 @@ All brand configuration is now in `brand_templates.config_overrides` JSONB with 
 
 ---
 
-### 25. Campaign Templates
+### 25. ✅ Campaign Templates — COMPLETE
 
-- [ ] One-click recurring plans
-- [ ] Template library
-- [ ] Clone existing campaigns
-- [ ] Seasonal templates
+> **Status:** ✅ COMPLETE (February 22, 2026)
+
+- [x] One-click recurring plans — Template bar with "Use" button prefills form
+- [x] Template library — `campaign_templates` table, 3 system seeds, custom save/delete
+- [x] Clone existing campaigns — Clone button on campaign-detail page → sessionStorage → create form
+- [x] Seasonal templates — Tag-based system (starter, weekly, monthly, blitz, sustained, drip)
+
+**Files touched:**
+- `supabase/migrations/20260222001_campaign_templates.sql` (table + RLS + RPC + seeds)
+- `js/services/campaignTemplateService.js` (CRUD + usage tracking)
+- `pages/campaign.html` (template bar HTML + script tag)
+- `js/pages/campaign.js` (template load/save/apply/delete + clone detection)
+- `pages/campaign-detail.html` (Clone button)
+- `js/pages/campaign-detail.js` (cloneCampaign method)
+- `css/campaign.css` (template card styles)
+- `scripts/smoke-test-campaign-templates-dashboard.js`
 
 ---
 
@@ -1086,19 +1100,24 @@ All brand configuration is now in `brand_templates.config_overrides` JSONB with 
 
 ---
 
-### 27. Dashboard (Partial)
+### 27. ✅ Dashboard — COMPLETE
 
-> **Status:** 🟡 Progress (February 19, 2026)
+> **Status:** ✅ COMPLETE (February 22, 2026)
 
 - [x] `v_visual_performance` view — image pipeline stats linked to metrics
 - [x] Dashboard N+1 fix — bulk queries for brand overview
 - [x] Mobile responsive design — all 13 pages responsive
-- [ ] Costs per video
-- [ ] Failure rates
-- [ ] Performance by preset
-- [ ] Best time windows
-- [ ] Brand comparisons
-- [ ] Trend analysis
+- [x] Costs per video — Cost Overview card (7-day bar chart from `mv_daily_usage`, today/week/avg/calls stats)
+- [x] Failure rates — Failed stat card already in stats grid (count + color-coded)
+- [x] Performance by preset — Preset Performance card (jobs + metrics aggregated by vibe_preset, ranked bars)
+- [x] Best time windows — Best Posting Times card (hour-bucketed from posts with `get_best_time_slots` RPC fallback)
+- [x] Brand comparisons — Brand Overview card already shows per-brand post counts with active indicator
+- [x] Trend analysis — Cost bar chart shows daily trend, preset bars show relative performance
+
+**Files touched:**
+- `index.html` (3 new dashboard card sections)
+- `js/pages/dashboard.js` (loadCostOverview, loadPresetPerformance, loadBestTimes)
+- `css/dashboard.css` (cost-grid, cost-bar-chart, preset-perf, best-time styles)
 
 ---
 
@@ -1153,11 +1172,11 @@ LATER (Level 4)
 ├── 22. ✅ Similarity Thresholds (DONE)
 ├── 23. 🟡 Human Review (Foundation)
 ├── 24. ✅ Brand Automation (DONE)
-└── 25. Campaign Templates
+└── 25. ✅ Campaign Templates (DONE)
 
 FINAL (Level 5)
 ├── 26. 🟡 Optimization Engine (Foundation)
-├── 27. 🟡 Dashboard (Partial)
+├── 27. ✅ Dashboard (DONE)
 └── 28. ✅ Alerts (DONE)
 ```
 

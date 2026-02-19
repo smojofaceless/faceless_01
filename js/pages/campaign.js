@@ -215,6 +215,12 @@ class CampaignPage {
             this.showNoBrandState();
         }
         
+        // Load templates
+        await this.loadTemplates();
+        
+        // Check for cloned campaign config (from campaign-detail Clone button)
+        this._applyClonedConfig();
+        
         // Load existing campaigns
         await this.loadCampaignsList();
     }
@@ -282,6 +288,11 @@ class CampaignPage {
         // Campaigns list
         this.campaignsTbody = document.getElementById('campaigns-tbody');
         this.noCampaignsMsg = document.getElementById('no-campaigns');
+        
+        // Templates
+        this.templateBar = document.getElementById('template-bar');
+        this.templateGrid = document.getElementById('template-grid');
+        this.saveTemplateBtn = document.getElementById('btn-save-template');
     }
 
     /**
@@ -369,6 +380,15 @@ class CampaignPage {
         if (typeof brandManager !== 'undefined') {
             brandManager.on('brand:activated', (brand) => this.loadBrand(brand));
         }
+        
+        // Template buttons
+        this.saveTemplateBtn?.addEventListener('click', () => this.saveAsTemplate());
+        this.templateGrid?.addEventListener('click', (e) => {
+            const useBtn = e.target.closest('[data-template-use]');
+            const delBtn = e.target.closest('[data-template-delete]');
+            if (useBtn) this.applyTemplate(useBtn.dataset.templateUse);
+            if (delBtn) this.deleteTemplate(delBtn.dataset.templateDelete);
+        });
     }
 
     /**
@@ -1344,6 +1364,192 @@ class CampaignPage {
         } else {
             console.log(`[${type.toUpperCase()}] ${message}`);
             alert(message);
+        }
+    }
+
+    // ── Campaign Templates ──────────────────────────
+
+    /**
+     * Load templates from DB and render the template bar
+     */
+    async loadTemplates() {
+        if (typeof campaignTemplateService === 'undefined') return;
+        try {
+            const brandId = this.currentBrand?.id || null;
+            this._templates = await campaignTemplateService.getTemplates(brandId);
+            this.renderTemplateBar();
+        } catch (e) {
+            console.error('Failed to load templates:', e);
+        }
+    }
+
+    /**
+     * Render the template bar cards
+     */
+    renderTemplateBar() {
+        if (!this.templateGrid || !this.templateBar) return;
+        const tpls = this._templates || [];
+        if (tpls.length === 0) {
+            this.templateBar.classList.add('hidden');
+            return;
+        }
+        this.templateBar.classList.remove('hidden');
+
+        this.templateGrid.innerHTML = tpls.map(t => {
+            const svc = typeof campaignTemplateService !== 'undefined' ? campaignTemplateService : null;
+            const summary = svc ? svc.configSummary(t.config) : '';
+            const isSystem = !t.brand_id;
+            const tags = (t.tags || []).slice(0, 3).map(tag =>
+                `<span class="template-tag">${tag}</span>`
+            ).join('');
+
+            return `
+                <div class="template-card">
+                    <div class="template-card__header">
+                        <span class="template-card__name">${t.name}</span>
+                        ${isSystem ? '<span class="badge badge--info" style="font-size:10px">System</span>' : ''}
+                    </div>
+                    <p class="template-card__desc">${t.description || ''}</p>
+                    <div class="template-card__summary">${summary}</div>
+                    ${tags ? `<div class="template-card__tags">${tags}</div>` : ''}
+                    <div class="template-card__footer">
+                        <button class="btn btn--primary btn--sm" data-template-use="${t.id}">Use</button>
+                        ${!isSystem ? `<button class="btn btn--ghost btn--sm btn--danger" data-template-delete="${t.id}" title="Delete">✕</button>` : ''}
+                        <span class="text-muted" style="font-size:10px;margin-left:auto">${t.usage_count || 0} uses</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    /**
+     * Apply a template to the form
+     */
+    async applyTemplate(templateId) {
+        const tpl = (this._templates || []).find(t => t.id === templateId);
+        if (!tpl) return;
+
+        this._applyConfigToForm(tpl.config);
+
+        // Bump usage count
+        if (typeof campaignTemplateService !== 'undefined') {
+            await campaignTemplateService.incrementUsage(templateId);
+            tpl.usage_count = (tpl.usage_count || 0) + 1;
+            this.renderTemplateBar();
+        }
+
+        this.showToast(`Template "${tpl.name}" applied`, 'success');
+    }
+
+    /**
+     * Save current form as a template
+     */
+    async saveAsTemplate() {
+        const config = this.getFormConfig();
+        const name = prompt('Template name:', '');
+        if (!name) return;
+        const desc = prompt('Short description (optional):', '') || '';
+
+        try {
+            if (typeof campaignTemplateService === 'undefined') throw new Error('Template service not loaded');
+            await campaignTemplateService.saveTemplate({
+                brandId: this.currentBrand?.id || null,
+                name,
+                description: desc,
+                config,
+                tags: []
+            });
+            this.showToast('Template saved!', 'success');
+            await this.loadTemplates();
+        } catch (e) {
+            console.error('saveAsTemplate:', e);
+            this.showToast('Failed to save template: ' + e.message, 'error');
+        }
+    }
+
+    /**
+     * Delete a custom template
+     */
+    async deleteTemplate(templateId) {
+        if (!confirm('Delete this template?')) return;
+        try {
+            if (typeof campaignTemplateService === 'undefined') throw new Error('Template service not loaded');
+            await campaignTemplateService.deleteTemplate(templateId);
+            this.showToast('Template deleted', 'info');
+            await this.loadTemplates();
+        } catch (e) {
+            console.error('deleteTemplate:', e);
+            this.showToast('Failed to delete template', 'error');
+        }
+    }
+
+    /**
+     * Apply a config object to the form fields
+     */
+    _applyConfigToForm(config) {
+        if (!config) return;
+
+        // Video count
+        if (config.videoCount && this.videoCountInput) {
+            this.videoCountInput.value = config.videoCount;
+        }
+
+        // Posts per day
+        if (config.postsPerDay && this.postsPerDaySelect) {
+            this.postsPerDaySelect.value = config.postsPerDay;
+        }
+
+        // Platforms
+        if (config.platforms && this.platformCheckboxes) {
+            this.platformCheckboxes.forEach(cb => {
+                cb.checked = config.platforms.includes(cb.value);
+            });
+        }
+
+        // Scene count
+        if (config.sceneCount !== undefined && this.sceneCountInput) {
+            this.sceneCountInput.value = config.sceneCount;
+        }
+
+        // ASAP mode
+        if (config.asapMode !== undefined && this.asapModeCheckbox) {
+            this.asapModeCheckbox.checked = config.asapMode;
+        }
+
+        // Time windows
+        if (config.windows && this.timeWindowInputs) {
+            config.windows.forEach((w, i) => {
+                if (this.timeWindowInputs[i]) this.timeWindowInputs[i].value = w;
+            });
+        }
+
+        // Jitter
+        if (config.jitterMinutes !== undefined && this.jitterInput) {
+            this.jitterInput.value = config.jitterMinutes;
+        }
+
+        // Platform offset
+        if (config.platformOffsetMinutes !== undefined && this.platformOffsetInput) {
+            this.platformOffsetInput.value = config.platformOffsetMinutes;
+        }
+
+        // Trigger form change for summary + preview
+        this.onFormChange();
+    }
+
+    /**
+     * Check sessionStorage for a cloned campaign config
+     */
+    _applyClonedConfig() {
+        try {
+            const raw = sessionStorage.getItem('cloneCampaignConfig');
+            if (!raw) return;
+            sessionStorage.removeItem('cloneCampaignConfig');
+            const config = JSON.parse(raw);
+            this._applyConfigToForm(config);
+            this.showToast('Cloned campaign config loaded — adjust and create!', 'info');
+        } catch (e) {
+            console.error('_applyClonedConfig:', e);
         }
     }
 }

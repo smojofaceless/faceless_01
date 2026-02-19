@@ -1,6 +1,50 @@
 # Deployment Rollout Guide
 
-## Latest Deployment: `e222590` → `Brand Profiles + Kill Switch + Quality Gates` (Feb 22, 2026)
+## Latest Deployment: Campaign Templates + Dashboard Enhancement (Feb 22, 2026)
+
+### What Changed
+
+#### Campaign Templates (#25)
+- **`campaign_templates` table:** UUID pk, brand_id (nullable FK to brands), name, description, config (JSONB), tags (TEXT[]), usage_count, is_active, timestamps. RLS enabled. Indexes on brand_id and is_active.
+- **`increment_template_usage` RPC:** Bumps usage counter atomically.
+- **3 system seed templates:** Daily Horror (7 Days), Weekend Blitz, Month-Long Drip — brand_id NULL (available to all brands).
+- **Template bar UI:** Horizontal grid of template cards on campaign page. "Use" button prefills form, "Save as Template" saves current config, soft-delete for custom templates.
+- **Clone Campaign:** Button on campaign-detail page. Stores campaign config in sessionStorage, navigates to create page which reads and prefills the form.
+
+#### Dashboard Enhancement (#27)
+- **Cost Overview card:** 7-day bar chart from `mv_daily_usage`. Shows today, 7-day total, avg per API call, total API calls.
+- **Preset Performance card:** Aggregates `jobs` table by `vibe_preset`, joins with `posts` and `v_post_metrics_latest` for views/likes. Ranked horizontal bars.
+- **Best Posting Times card:** Buckets posted-at hours from `posts` table (falls back from `get_best_time_slots` RPC). Shows top 6 hours with proportional bars.
+
+### New Migration
+```
+supabase/migrations/20260222001_campaign_templates.sql
+```
+Applied with: `npx supabase db push --linked --include-all`
+
+### Smoke Tests
+```powershell
+$env:SUPABASE_SERVICE_ROLE_KEY = "your-key"
+node scripts/smoke-test-campaign-templates-dashboard.js   # 20/20 passed
+```
+
+### Files Changed
+- `supabase/migrations/20260222001_campaign_templates.sql`
+- `js/services/campaignTemplateService.js` (new)
+- `pages/campaign.html` (template bar + script tag)
+- `js/pages/campaign.js` (template load/save/apply/delete + clone detection)
+- `pages/campaign-detail.html` (Clone button)
+- `js/pages/campaign-detail.js` (cloneCampaign method)
+- `css/campaign.css` (template card styles)
+- `index.html` (3 new dashboard card sections)
+- `js/pages/dashboard.js` (3 new loaders: cost, preset perf, best times)
+- `css/dashboard.css` (cost/preset/time styles)
+- `scripts/smoke-test-campaign-templates-dashboard.js` (new)
+- `docs/ROADMAP.md`, `docs/CAMPAIGN_SYSTEM.md`, `docs/ROLLOUT_GUIDE.md`
+
+---
+
+## Previous Deployment: `e222590` → `Brand Profiles + Kill Switch + Quality Gates` (Feb 22, 2026)
 
 ### What Changed (3 commits: `58535c5` → `a08d46c` → `e222590`)
 

@@ -1,9 +1,9 @@
 # Campaign System Architecture & Scheduling Design
 
-> **Document Version:** 2.5  
-> **Last Updated:** February 10, 2026  
+> **Document Version:** 2.6  
+> **Last Updated:** February 22, 2026  
 > **Author:** System Architect  
-> **Status:** ✅ V1 COMPLETE + END-TO-END VERIFIED
+> **Status:** ✅ V1 COMPLETE + END-TO-END VERIFIED + TEMPLATES
 
 ---
 
@@ -11,6 +11,7 @@
 
 | Date | Version | Changes |
 |------|---------|--------|
+| Feb 22, 2026 | 2.6 | **Campaign Templates**: `campaign_templates` table (UUID pk, brand_id nullable FK, name, description, config JSONB, tags TEXT[], usage_count, is_active). RLS + indexes. `increment_template_usage` RPC. 3 seeded system templates: Daily Horror (7 Days), Weekend Blitz, Month-Long Drip. `campaignTemplateService.js` (getTemplates, saveTemplate, deleteTemplate, incrementUsage). Template bar on campaign page. Clone Campaign button on campaign-detail → sessionStorage → prefill create form. |
 | Feb 10, 2026 | 2.5 | **End-to-End Verified**: worker-v1 (--no-verify-jwt), video-renderer, auto-import trigger, subtitles, UI auto-refresh, video preview button. Full automated pipeline working. |
 | Feb 8, 2026 | 2.4 | UI compatibility fixes: schedule preview, brand loading, campaign detail page |
 | Feb 8, 2026 | 2.3 | Job Claim + Lease system integrated: atomic claims, heartbeat, stale sweeper |
@@ -33,7 +34,10 @@
 | Campaign Creation UI | ✅ Done | `/pages/campaign.html`, `/js/pages/campaign.js` |
 | Campaign Detail UI | ✅ Done | `/pages/campaign-detail.html`, `/js/pages/campaign-detail.js` |
 | Campaign Manager Service | ✅ Done | `/js/services/campaignManager.js` |
+| Campaign Template Service | ✅ Done | `/js/services/campaignTemplateService.js` |
 | Campaign CSS | ✅ Done | `/css/campaign.css` |
+| `campaign_templates` Table | ✅ Done | `20260222001_campaign_templates.sql` |
+| `increment_template_usage` RPC | ✅ Done | `20260222001_campaign_templates.sql` |
 | `create_campaign` RPC | ✅ Done | `20260210_campaign_system_v1.sql`, `20260211_job_scheduler.sql` |
 | `update_campaign_status` RPC | ✅ Done | `20260210_campaign_system_v1.sql` |
 | `get_campaign_summary` RPC | ✅ Done | `20260210_campaign_system_v1.sql` |

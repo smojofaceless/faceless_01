@@ -192,6 +192,27 @@
                     </div>
                 </div>
 
+                <!-- Campaign Templates Bar -->
+                <div id="template-bar" class="template-bar hidden">
+                    <div class="template-bar__header">
+                        <div class="template-bar__title-area">
+                            <h3 class="template-bar__title">📋 Campaign Templates</h3>
+                            <span class="template-bar__subtitle text-muted">Quick-launch from saved configs</span>
+                        </div>
+                        <button class="btn btn--ghost btn--sm" id="btn-save-template" title="Save current form settings as a template">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+                                <polyline points="17 21 17 13 7 13 7 21"/>
+                                <polyline points="7 3 7 8 15 8"/>
+                            </svg>
+                            Save as Template
+                        </button>
+                    </div>
+                    <div class="template-bar__grid" id="template-grid">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
                 <!-- Campaign Form -->
                 <div id="campaign-form" class="campaign-interface hidden">
                     <!-- Full-width Campaign Summary Bar -->
@@ -542,6 +563,7 @@
     <script src="../js/services/apiKeys.js"></script>
     <script src="../js/services/brandManager.js"></script>
     <script src="../js/services/campaignManager.js"></script>
+    <script src="../js/services/campaignTemplateService.js"></script>
     
     <!-- Components -->
     <script src="../js/components/brand-switcher.js"></script>
