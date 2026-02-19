@@ -891,12 +891,12 @@ const AIIntelligence = (() => {
                     let tooltipRows = `<div class="daily-perf__tooltip-row"><strong>${dateLabel}</strong> — ${fmt(dayTotal)} views</div>`;
                     for (const plf of platformList) {
                         const v = dayData[plf] || 0;
-                        if (v > 0) {
+                        if (v >= 0 && dailyData[date][plf] !== undefined) {
                             const color = PLATFORM_COLORS[plf] || '#6b7280';
                             const label = PLATFORM_LABELS[plf] || plf;
                             tooltipRows += `<div class="daily-perf__tooltip-row">
                                 <span class="daily-perf__tooltip-dot" style="background:${color}"></span>
-                                ${label}: ${fmt(v)}
+                                ${label}: ${v > 0 ? fmt(v) : '0 views (posted)'}
                             </div>`;
                         }
                     }
@@ -905,9 +905,10 @@ const AIIntelligence = (() => {
                     let segmentsHTML = '';
                     for (const plf of platformList) {
                         const v = dayData[plf] || 0;
-                        if (v > 0) {
-                            const h = Math.max(2, (v / maxDayTotal) * 160);
-                            segmentsHTML += `<div class="daily-perf__segment daily-perf__segment--${plf}" style="height:${h}px" title="${PLATFORM_LABELS[plf] || plf}: ${fmt(v)}"></div>`;
+                        if (dailyData[date][plf] !== undefined) {
+                            const h = v > 0 ? Math.max(4, (v / maxDayTotal) * 160) : 3;
+                            const opacity = v === 0 ? ' opacity:0.4;' : '';
+                            segmentsHTML += `<div class="daily-perf__segment daily-perf__segment--${plf}" style="height:${h}px;${opacity}" title="${PLATFORM_LABELS[plf] || plf}: ${v > 0 ? fmt(v) : '0 views'}"></div>`;
                         }
                     }
 
