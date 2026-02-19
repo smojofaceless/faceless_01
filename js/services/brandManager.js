@@ -1331,6 +1331,129 @@ class BrandManager {
         }
         console.log('📝 Subtitle config saved for brand:', brandId);
     }
+
+    // =================================================================
+    // VOICE CONFIG (brand-level config_overrides.voice)
+    // =================================================================
+
+    /**
+     * Get voice config from brand_templates for a brand.
+     * Returns the voice object from the default template's config_overrides,
+     * or null if no voice config is set (falls back to preset defaults).
+     * @param {string} brandId
+     * @returns {Promise<Object|null>}
+     */
+    async getVoiceConfig(brandId) {
+        if (!this.useSupabase) return null;
+        const { data, error } = await supabaseClient
+            .from('brand_templates')
+            .select('id, config_overrides, is_default')
+            .eq('brand_id', brandId)
+            .eq('is_default', true)
+            .limit(1)
+            .single();
+        if (error) {
+            if (error.code === 'PGRST116') return null;
+            console.error('Failed to load voice config:', error);
+            throw error;
+        }
+        return data?.config_overrides?.voice || null;
+    }
+
+    /**
+     * Save voice config to brand_templates for a brand.
+     * Merges into config_overrides.voice on the default template.
+     * If voiceConfig is null, removes the voice key entirely.
+     * @param {string} brandId
+     * @param {Object|null} voiceConfig
+     * @returns {Promise<void>}
+     */
+    async saveVoiceConfig(brandId, voiceConfig) {
+        if (!this.useSupabase) throw new Error('Voice config requires Supabase');
+        const { data: template, error: fetchErr } = await supabaseClient
+            .from('brand_templates')
+            .select('id, config_overrides')
+            .eq('brand_id', brandId)
+            .eq('is_default', true)
+            .limit(1)
+            .single();
+        if (fetchErr) throw fetchErr;
+
+        const overrides = template.config_overrides || {};
+        if (voiceConfig === null) {
+            delete overrides.voice;
+        } else {
+            overrides.voice = voiceConfig;
+        }
+
+        const { error: updateErr } = await supabaseClient
+            .from('brand_templates')
+            .update({ config_overrides: overrides })
+            .eq('id', template.id);
+        if (updateErr) throw updateErr;
+        console.log('🎙️ Voice config saved for brand:', brandId);
+    }
+
+    // =================================================================
+    // SCHEDULE CONFIG (brand-level config_overrides.schedule)
+    // =================================================================
+
+    /**
+     * Get schedule config from brand_templates for a brand.
+     * Returns the schedule object from the default template's config_overrides,
+     * or null if no schedule config is set.
+     * @param {string} brandId
+     * @returns {Promise<Object|null>}
+     */
+    async getScheduleConfig(brandId) {
+        if (!this.useSupabase) return null;
+        const { data, error } = await supabaseClient
+            .from('brand_templates')
+            .select('id, config_overrides, is_default')
+            .eq('brand_id', brandId)
+            .eq('is_default', true)
+            .limit(1)
+            .single();
+        if (error) {
+            if (error.code === 'PGRST116') return null;
+            console.error('Failed to load schedule config:', error);
+            throw error;
+        }
+        return data?.config_overrides?.schedule || null;
+    }
+
+    /**
+     * Save schedule config to brand_templates for a brand.
+     * Merges into config_overrides.schedule on the default template.
+     * @param {string} brandId
+     * @param {Object|null} scheduleConfig
+     * @returns {Promise<void>}
+     */
+    async saveScheduleConfig(brandId, scheduleConfig) {
+        if (!this.useSupabase) throw new Error('Schedule config requires Supabase');
+        const { data: template, error: fetchErr } = await supabaseClient
+            .from('brand_templates')
+            .select('id, config_overrides')
+            .eq('brand_id', brandId)
+            .eq('is_default', true)
+            .limit(1)
+            .single();
+        if (fetchErr) throw fetchErr;
+
+        const overrides = template.config_overrides || {};
+        if (scheduleConfig === null) {
+            delete overrides.schedule;
+        } else {
+            overrides.schedule = scheduleConfig;
+        }
+
+        const { error: updateErr } = await supabaseClient
+            .from('brand_templates')
+            .update({ config_overrides: overrides })
+            .eq('id', template.id);
+        if (updateErr) throw updateErr;
+        console.log('📅 Schedule config saved for brand:', brandId);
+    }
 }
 
 // Create singleton instance

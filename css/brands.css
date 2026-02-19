@@ -1327,3 +1327,239 @@
     transform: scale(1.1);
     display: inline-block;
 }
+
+/* =====================================================
+   VOICE CONFIG MODAL
+   ===================================================== */
+
+.voice-preview {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: var(--bg-tertiary, #1a1a2e);
+    border-radius: 8px;
+    border: 1px solid var(--border-primary, #2a2a4a);
+}
+
+.voice-preview__label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary, #888);
+    margin-right: 8px;
+}
+
+.voice-preview__status {
+    font-size: 13px;
+    color: var(--text-primary, #ccc);
+}
+
+.voice-preview__status--default {
+    color: var(--text-secondary, #888);
+}
+
+.voice-preview__status--custom {
+    color: #10B981;
+}
+
+/* =====================================================
+   SCHEDULE WINDOWS MODAL
+   ===================================================== */
+
+.schedule-time-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+}
+
+.schedule-time-field {
+    flex: 1;
+}
+
+.schedule-time-sep {
+    font-size: 14px;
+    color: var(--text-secondary, #888);
+    padding-bottom: 10px;
+}
+
+.schedule-days {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.schedule-day-btn {
+    width: 48px;
+    height: 36px;
+    border: 1px solid var(--border-primary, #2a2a4a);
+    border-radius: 6px;
+    background: var(--bg-tertiary, #1a1a2e);
+    color: var(--text-secondary, #888);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.schedule-day-btn:hover {
+    border-color: var(--accent, #8B5CF6);
+    color: var(--text-primary, #ccc);
+}
+
+.schedule-day-btn.active {
+    background: var(--accent, #8B5CF6);
+    border-color: var(--accent, #8B5CF6);
+    color: #fff;
+}
+
+.schedule-summary {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: var(--bg-tertiary, #1a1a2e);
+    border-radius: 8px;
+    border: 1px solid var(--border-primary, #2a2a4a);
+}
+
+.schedule-summary__label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary, #888);
+    margin-right: 8px;
+}
+
+.schedule-summary__text {
+    font-size: 13px;
+    color: var(--text-primary, #ccc);
+}
+
+/* =====================================================
+   SLIDER ROW (reusable)
+   ===================================================== */
+
+.slider-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.slider-row .form-range {
+    flex: 1;
+}
+
+.slider-value {
+    min-width: 48px;
+    text-align: right;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary, #ccc);
+    font-variant-numeric: tabular-nums;
+}
+
+/* =====================================================
+   MUSIC ADVANCED SETTINGS
+   ===================================================== */
+
+.music-advanced {
+    margin-top: 16px;
+    border: 1px solid var(--border-primary, #2a2a4a);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.music-advanced__toggle {
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary, #888);
+    cursor: pointer;
+    background: var(--bg-tertiary, #1a1a2e);
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    user-select: none;
+}
+
+.music-advanced__toggle:hover {
+    color: var(--text-primary, #ccc);
+}
+
+.music-advanced__toggle::-webkit-details-marker {
+    display: none;
+}
+
+.music-advanced__toggle::before {
+    content: '▸';
+    transition: transform 0.15s ease;
+}
+
+.music-advanced[open] .music-advanced__toggle::before {
+    transform: rotate(90deg);
+}
+
+.music-advanced__body {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* =====================================================
+   BRAND CARD CONFIG ROW — Wrap for 7 buttons
+   ===================================================== */
+
+.brand-card__config-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.brand-config-btn {
+    font-size: 10px;
+    padding: 4px 6px;
+}
+
+/* =====================================================
+   FORM GRID HELPERS
+   ===================================================== */
+
+.form-grid--2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.form-label--sm {
+    font-size: 11px;
+}
+
+.form-hint--inline {
+    font-size: 11px;
+    color: var(--text-secondary, #888);
+    font-weight: 400;
+}
+
+/* =====================================================
+   RESPONSIVE: Stack schedule/voice on mobile
+   ===================================================== */
+
+@media (max-width: 480px) {
+    .schedule-time-row {
+        flex-direction: column;
+        gap: 8px;
+    }
+    .schedule-time-sep {
+        display: none;
+    }
+    .schedule-days {
+        gap: 4px;
+    }
+    .schedule-day-btn {
+        width: 40px;
+        height: 32px;
+        font-size: 11px;
+    }
+    .form-grid--2 {
+        grid-template-columns: 1fr;
+    }
+}

@@ -76,7 +76,18 @@ export const OPENAI_TTS_INSTRUCTIONS = "Speak in a dark, atmospheric, storytelli
 
 // Preset-specific voice configurations for OpenAI TTS
 // Different presets benefit from different voice timbres and delivery styles
-export function getPresetVoiceConfig(vibePreset: string): { voice: string; instructions: string } {
+// Now supports brand-level overrides from config_overrides.voice
+export function getPresetVoiceConfig(vibePreset: string, brandVoiceConfig?: { voice?: string; instructions?: string; speed?: number } | null): { voice: string; instructions: string; speed?: number } {
+  // Brand-level override takes priority
+  if (brandVoiceConfig && (brandVoiceConfig.voice || brandVoiceConfig.instructions)) {
+    return {
+      voice: brandVoiceConfig.voice || OPENAI_TTS_VOICE,
+      instructions: brandVoiceConfig.instructions || OPENAI_TTS_INSTRUCTIONS,
+      ...(brandVoiceConfig.speed && brandVoiceConfig.speed !== 1.0 ? { speed: brandVoiceConfig.speed } : {}),
+    };
+  }
+
+  // Preset-specific defaults
   if (vibePreset === 'dark_origins') {
     return {
       voice: 'onyx', // Deep, authoritative — perfect for documentary narration

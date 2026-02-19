@@ -1410,8 +1410,21 @@ export async function executeScenesStep(
     const vibePreset = job.vibe_preset || (job.meta?.vibe_preset as string) || 'urban_legend';
     
     // Provider-aware voice info for pipeline hash
+    // Load brand-level voice override from config_overrides.voice
+    let brandVoiceConfig: { voice?: string; instructions?: string; speed?: number } | null = null;
+    try {
+      const { data: voiceTemplate } = await supabase
+        .from('brand_templates')
+        .select('config_overrides')
+        .eq('brand_id', job.brand_id)
+        .eq('is_default', true)
+        .limit(1)
+        .single();
+      brandVoiceConfig = voiceTemplate?.config_overrides?.voice || null;
+    } catch (_) { /* soft-fail: use preset defaults */ }
+
     const ttsProvider: TtsProvider = (env.TTS_PROVIDER || 'openai') as TtsProvider;
-    const pipelineVoiceConfig = getPresetVoiceConfig(vibePreset);
+    const pipelineVoiceConfig = getPresetVoiceConfig(vibePreset, brandVoiceConfig);
     const voiceId = ttsProvider === 'openai' ? pipelineVoiceConfig.voice : ELEVENLABS_VOICE_ID;
     const voiceModel = ttsProvider === 'openai' ? OPENAI_TTS_MODEL : 'eleven_turbo_v2_5';
 
@@ -1517,8 +1530,20 @@ async function executeVoiceStepOpenAI(
   // === EXTERNAL IDEMPOTENCY: Hash includes provider+model+voice+text ===
   const ttsModel = OPENAI_TTS_MODEL;
   // Use preset-specific voice if available, then job override, then default
+  // Load brand-level voice override from config_overrides.voice
   const vibePreset = job.vibe_preset || (job.meta?.vibe_preset as string) || 'urban_legend';
-  const presetVoice = getPresetVoiceConfig(vibePreset);
+  let brandVoiceOverride: { voice?: string; instructions?: string; speed?: number } | null = null;
+  try {
+    const { data: voiceTemplate } = await supabase
+      .from('brand_templates')
+      .select('config_overrides')
+      .eq('brand_id', job.brand_id)
+      .eq('is_default', true)
+      .limit(1)
+      .single();
+    brandVoiceOverride = voiceTemplate?.config_overrides?.voice || null;
+  } catch (_) { /* soft-fail */ }
+  const presetVoice = getPresetVoiceConfig(vibePreset, brandVoiceOverride);
   const ttsVoice = (job.meta?.tts_voice as string) || presetVoice.voice;
   const ttsInstructions = (job.meta?.tts_instructions as string) || presetVoice.instructions;
   const canonicalVoiceInput = `openai|${ttsModel}|${ttsVoice}|${job.story_text}`;

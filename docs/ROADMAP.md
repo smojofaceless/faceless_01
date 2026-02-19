@@ -1,6 +1,6 @@
 # Project Roadmap
 
-> **Document Version:** 4.1  
+> **Document Version:** 4.2  
 > **Last Updated:** February 19, 2026  
 > **Author:** System Architect  
 > **Status:** Active Development
@@ -11,6 +11,7 @@
 
 | Date | Version | Changes |
 |------|---------|--------|
+| Feb 19, 2026 | 4.2 | **Brand Profiles Fully Automated (#24)**: Voice config modal on brands page (9 OpenAI voices, custom instructions, speed slider) with brand-level override in `config_overrides.voice` — worker reads from DB with preset fallback. Schedule windows modal (posting hours, active days, max posts/day, min gap, blackout hours) stored in `config_overrides.schedule`. Music advanced settings (enable/disable toggle, ducking volume/attack/release, fade in/out durations) surfaced in collapsible panel. brandManager service: `getVoiceConfig/saveVoiceConfig`, `getScheduleConfig/saveScheduleConfig`. worker-v1 `getPresetVoiceConfig()` now accepts brand override. Smoke tests: 32/32 pass. |
 | Feb 19, 2026 | 4.1 | **Kill Switch UI + Presets + Quality Gates**: Kill switch admin toggle on settings page (System Controls section, badge with ACTIVE/OFF/ERROR, reason input, reads `system_config`, calls `set_kill_switch` RPC). Presets finalized at 4: urban_legend (default), one_too_many, reddit_trending_horror, dark_origins. Quality gates for 3 presets in worker-v1 `steps.ts`: `gateOneToMany()` (counting language + numbers + reveal moment), `gateRedditTrendingHorror()` (first-person + mundane grounding + dialogue), `gateDarkOrigins()` (third-person + dates + locations + unresolved ending). Up to 2 retries before accepting. Platform cleanup verified (15/15 tests). Smoke tests: 37/37 pass (kill switch toggle, 4 presets, quality gate unit tests). Level 1 complete (11/11). Level 2: 12-16 complete. |
 | Feb 19, 2026 | 4.0 | **System Hardening Batch (20 improvements)**: Data cleanup cron (monthly: job_logs 30d, lifecycle 90d, metrics 365d). Winning patterns multi-window (7/14/30d) with exponential recency decay (`EXP(-0.03 * days_old)`). Story uniqueness threshold RPC (`check_story_uniqueness`). Dead post sweeper (`sweep_dead_posts`). Cross-platform performance view (`v_cross_platform_performance`). Strategy intelligence system: `post_strategies` + `platform_strategies` tables (20 seeded strategies across 6 platforms), `v_strategy_performance` view, `assign_post_strategy` + `get_top_strategies` RPCs, strategy-driven metadata generation with probabilistic selection. A/B variant auto-assignment RPC (`auto_assign_ab_variants`). Visual performance tracking (`v_visual_performance`). Draft/preview mode RPCs (`promote_draft_to_scheduled`, `reject_draft`). Alert webhook tables (`brand_alert_config`, `system_alert_config`) + Discord/Slack/generic webhook sender in schedule-jobs. metrics-collector: stub platform skipping + Instagram token refresh (proactive 7-day-before-expiry + 401/403 retry). post-worker: per-platform rate limiting + optimistic lock claim. worker-v1: uniqueness threshold enforcement (0.6). generate-post-metadata: time-awareness + strategy-driven prompts. Video renderer: auth middleware (`RENDERER_AUTH_KEY`) + graceful shutdown (SIGTERM/SIGINT). CORS tightened on 6 internal edge functions. Mobile responsive CSS (`responsive.css`) linked in 13 pages. Dashboard N+1 query fix. Cross-Platform & Strategy tab on AI Intelligence page. Migrations: `20260319020` + `20260319021`. |
 | Feb 16, 2026 | 3.5 | **Caption/Tags Learning Loop**: `post_metadata_versions` append-only version history table, `post_metadata_variant_assignments` A/B test config table, `v_post_variant_performance` + `v_top_metadata_patterns` views, 5 RPCs (`record_post_metadata_version`, `get_post_metadata_versions`, `get_variant_performance`, `assign_ab_variant`, `get_generation_exemplars`), `generate-post-metadata` v3.0 with exemplar injection + A/B variant prompting + version recording, `metadataVersionService.js` frontend service, Calendar version history panel (collapsible, expandable entries, performance badges). Level 3 scope — no ML, no auto-optimization. **Hardened**: `get_generation_exemplars` with exemplar bucketing (vibe_preset→brand-wide fallback cascade, `p_window_days` time scope, `p_preset_name` priority), `get_negative_exemplars` RPC (bottom performers injected as "avoid these patterns", fixed: added `p_preset_name` param), `v_post_variant_performance` + `v_top_metadata_patterns` views now include `collected_at`. **Winning Patterns Cache**: `winning_metadata_patterns` table (derived cache per brand/platform/vibe), `recompute_winning_patterns` + `recompute_all_winning_patterns` RPCs, `get_winning_patterns` RPC (vibe→brand-wide fallback), pg_cron nightly 03:00 UTC, generator injects top hooks/hashtags/CTAs/length stats into prompt. Migration: `20260317003`. |
@@ -46,6 +47,7 @@
 
 | Item | Date | Notes |
 |------|------|-------|
+| **Brand Profiles Fully Automated** | Feb 19, 2026 | Voice config modal (9 voices, instructions, speed), schedule windows modal (posting hours, active days, max posts/day, gap, blackout), music advanced panel (enable/disable, ducking, fade). All config in `brand_templates.config_overrides`. Worker voice loading from DB. 32/32 tests pass. |
 | **Kill Switch UI + Presets + Quality Gates** | Feb 19, 2026 | Kill switch admin toggle on settings page. 4 active presets finalized (urban_legend, one_too_many, reddit_trending_horror, dark_origins). Quality gates for 3 presets (one_too_many, reddit_trending_horror, dark_origins) with up to 2 retries. Platform cleanup verified (15/15). All smoke tests pass (37/37). Level 1: 11/11 complete. |
 | **System Hardening Batch** | Feb 19, 2026 | 20 improvements in one batch. Data cleanup cron, multi-window winning patterns with recency decay, story uniqueness RPC, dead post sweeper, cross-platform view, strategy intelligence (20 seeded strategies), A/B variant auto-assignment, visual performance view, draft/preview RPCs, alert webhook system. Edge function hardening: stub platform skip, Instagram token refresh, per-platform rate limiting, optimistic lock, uniqueness enforcement, time-aware + strategy-driven metadata, renderer auth + graceful shutdown, CORS tightening. Frontend: responsive.css on all pages, dashboard N+1 fix, cross-platform tab. Migrations: `20260319020` + `20260319021`. |
 | **Caption/Tags Learning Loop** | Feb 16, 2026 | `post_metadata_versions` (append-only version history) + `post_metadata_variant_assignments` (A/B test config). Views: `v_post_variant_performance`, `v_top_metadata_patterns`. 9 RPCs (incl. `get_negative_exemplars`, `recompute_winning_patterns`, `recompute_all_winning_patterns`, `get_winning_patterns`). `winning_metadata_patterns` derived cache table (top hooks, hashtags, CTAs, length stats per brand/platform/vibe). pg_cron nightly 03:00 UTC. `generate-post-metadata` v3.0: exemplar bucketing (vibe→brand-wide fallback, 30d window), negative exemplar injection, winning patterns injection, A/B variant prompting, automatic version recording. `metadataVersionService.js`. Calendar: collapsible version history panel, performance badges, expandable field snapshots. Migrations: `20260317001` + `20260317002` + `20260317003`. |
@@ -1011,13 +1013,48 @@ score = AVG(performance_value) per (brand, platform, tz, dow, hour)
 
 ---
 
-### 24. Brand Profiles Fully Automated
+### 24. ✅ Brand Profiles Fully Automated — COMPLETE
 
-- [ ] Presets per brand
-- [ ] Music selection per brand
-- [ ] Subtitle styles per brand
-- [ ] Schedule windows per brand
-- [ ] All config in `brand_templates`
+> **Status:** ✅ COMPLETE (February 19, 2026)
+
+All brand configuration is now in `brand_templates.config_overrides` JSONB with full UI on the brands page.
+
+**Already Complete (from prior work):**
+- [x] Presets per brand — Vibe Presets modal (add/remove/weight sliders/distribution preview)
+- [x] Music selection per brand — Music modal (upload MP3, per-track volume/mood/energy, play preview)
+- [x] Subtitle styles per brand — Subtitle modal (10 styles, font size, position, emphasis, live preview)
+- [x] Effects per brand — Effects modal (Ken Burns, grain, flicker, vignette, color grade, fade, brand ceilings)
+- [x] Image prompts per brand — Image Prompt modal (art style, environment, palette, lighting, mood, cameras)
+
+**New in this update:**
+- [x] Voice config per brand — Voice modal (9 OpenAI TTS voices, custom instructions, speed multiplier)
+  - Worker reads `config_overrides.voice` with preset-level fallback
+  - `getPresetVoiceConfig(vibePreset, brandVoiceConfig)` — brand override > preset default
+- [x] Schedule windows per brand — Schedule modal (posting hours, active days, max posts/day, min gap, blackout)
+  - Stored in `config_overrides.schedule` JSONB
+- [x] Music advanced settings — Collapsible panel (enable/disable toggle, ducking volume/attack/release, fade in/out)
+  - Was in DB but lacked UI — now fully surfaced
+- [x] All config in `brand_templates.config_overrides` — Keys: music, effects, subtitles, image_prompt, voice, schedule
+
+**Config Override Keys (all per-brand):**
+| Key | UI | Worker | Notes |
+|-----|-----|--------|-------|
+| `music` | Music modal | `get_brand_music_config` RPC | Volume, ducking, fade |
+| `effects` | Effects modal | `get_effects_config_for_job` RPC | 4-layer merge |
+| `subtitles` | Subtitle modal | `get_subtitle_config_for_job` RPC | 4-layer merge |
+| `image_prompt` | Image Prompt modal | `get_image_prompt_config_for_job` RPC | 4-layer merge |
+| `voice` | Voice modal | Direct DB read in steps.ts | Preset fallback |
+| `schedule` | Schedule modal | Read by scheduler (planned) | Posting windows |
+
+**Smoke Tests:** 32/32 pass — voice CRUD, schedule CRUD, music advanced CRUD, config completeness
+
+**Files:**
+- `pages/brands.html` (Voice + Schedule modals, music advanced panel, JS controllers)
+- `css/brands.css` (voice preview, schedule days/time/summary, music advanced, slider rows)
+- `js/services/brandManager.js` (getVoiceConfig, saveVoiceConfig, getScheduleConfig, saveScheduleConfig)
+- `supabase/functions/worker-v1/helpers.ts` (getPresetVoiceConfig with brand override param)
+- `supabase/functions/worker-v1/steps.ts` (brand voice config loading in scene + voice steps)
+- `scripts/smoke-test-brand-profiles.js`
 
 ---
 
@@ -1115,7 +1152,7 @@ LATER (Level 4)
 ├── 21. Multi-Worker
 ├── 22. ✅ Similarity Thresholds (DONE)
 ├── 23. 🟡 Human Review (Foundation)
-├── 24. Brand Automation
+├── 24. ✅ Brand Automation (DONE)
 └── 25. Campaign Templates
 
 FINAL (Level 5)
