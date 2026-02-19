@@ -326,19 +326,23 @@ class CampaignPage {
         // Check for active brand
         const activeBrand = this.getActiveBrand();
         if (activeBrand) {
-            await this.loadBrand(activeBrand);
+            try {
+                await this.loadBrand(activeBrand);
+            } catch (err) {
+                console.error('loadBrand error:', err);
+            }
         } else {
             this.showNoBrandState();
         }
         
-        // Load templates
-        await this.loadTemplates();
-        
         // Check for cloned campaign config (from campaign-detail Clone button)
         this._applyClonedConfig();
         
-        // Load existing campaigns
-        await this.loadCampaignsList();
+        // Safety net: ensure campaigns + templates are loaded even if loadBrand had issues
+        if (!this._campaignsLoaded) {
+            await this.loadTemplates();
+            await this.loadCampaignsList();
+        }
     }
 
     /**
@@ -549,8 +553,8 @@ class CampaignPage {
         this.currentBrand = brand;
         
         // Update brand display
-        this.brandEmoji.textContent = brand?.emoji || '👻';
-        this.brandName.textContent = brand?.name || 'Unknown Brand';
+        if (this.brandEmoji) this.brandEmoji.textContent = brand?.emoji || '👻';
+        if (this.brandName) this.brandName.textContent = brand?.name || 'Unknown Brand';
         
         // Load preset weights from DB
         await this.loadPresetWeights();
@@ -558,14 +562,22 @@ class CampaignPage {
         // Show form and hide loading
         this.hideAllStates();
         this.presetGallery?.classList.remove('hidden');
-        this.campaignForm.classList.remove('hidden');
-        this.campaignsListSection.classList.remove('hidden');
+        this.campaignForm?.classList.remove('hidden');
+        this.campaignsListSection?.classList.remove('hidden');
         
         // Render preset gallery
-        this.renderPresetGallery();
+        try {
+            this.renderPresetGallery();
+        } catch (err) {
+            console.error('renderPresetGallery error:', err);
+        }
         
         // Generate initial preview
         this.onFormChange();
+
+        // Refresh campaigns list and templates for this brand
+        await this.loadCampaignsList();
+        await this.loadTemplates();
     }
 
     /**
@@ -1342,6 +1354,7 @@ class CampaignPage {
             }
             
             this.renderCampaignsList(campaigns);
+            this._campaignsLoaded = true;
         } catch (error) {
             console.error('Failed to load campaigns:', error);
         }
