@@ -1,7 +1,8 @@
 # Preset Source of Truth
 
-> **Document Version:** 1.0  
+> **Document Version:** 1.1  
 > **Created:** February 8, 2026  
+> **Updated:** February 22, 2026  
 > **Author:** System Architect  
 > **Status:** Implemented
 
@@ -56,6 +57,31 @@ This created **drift risk**: if someone added a preset to one place but not the 
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Active Presets (v4.1)
+
+As of February 2026, there are **4 active presets** in production:
+
+| Preset Key | Display Name | Status | Notes |
+|-----------|-------------|--------|-------|
+| `urban_legend` | Urban Legend | ✅ ACTIVE | Documentary folklore style |
+| `one_too_many` | One Too Many | ✅ ACTIVE | Counting horror (N+1 trope) |
+| `reddit_trending_horror` | Reddit Trending Horror | ✅ ACTIVE | Viral Reddit-style narration |
+| `dark_origins` | Dark Origins | ✅ ACTIVE | Origin-story folklore, slow-burn dread |
+
+### Deprecated Presets
+
+The following presets have been removed from active rotation. Any jobs referencing them will fall back to `urban_legend`:
+
+| Preset Key | Reason |
+|-----------|--------|
+| `faux_true_crime` | Consolidated into urban_legend |
+| `historical_case_file` | Low engagement |
+| `psychological_descent` | Story quality inconsistent |
+| `analog_broadcast` | Niche overlap with urban_legend |
+| `innocence_horror` | Consolidated into dark_origins |
 
 ---
 
@@ -195,6 +221,7 @@ Removing it would break these cases.
 | [js/templates/horror.js](../js/templates/horror.js) | Hardcoded preset metadata (icons, descriptions) |
 | [css/styles.css](../css/styles.css) | Fallback warning and source badge styles |
 | [DNA_AND_DB_OPTION1_IMPLEMENTATION_PLAN.md](DNA_AND_DB_OPTION1_IMPLEMENTATION_PLAN.md) | Full Option 1 implementation plan |
+| [STORY_PROFILE.md](STORY_PROFILE.md) | Story profile system (preset-specific narrative) |
 
 ---
 

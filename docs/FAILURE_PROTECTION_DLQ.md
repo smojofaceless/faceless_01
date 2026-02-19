@@ -256,7 +256,7 @@ SELECT set_kill_switch(
 |-----------|----------|
 | `schedule-jobs` | Returns 503, skips all job processing |
 | `worker-v1` | Exits early with message |
-| Dashboard | Should show banner (future UI) |
+| Settings page | Shows ACTIVE/OFF/ERROR badge, toggle button, reason input (delivered #11) |
 
 ### Storage
 
@@ -492,7 +492,7 @@ Includes:
 
 ## Future Enhancements
 
-1. **Dashboard UI** - Visual DLQ management page
+1. ~~**Dashboard UI** - Visual DLQ management page~~ → **Kill Switch UI delivered** (#11) on Settings page (ACTIVE/OFF/ERROR badge, reason input, toggle). DLQ management page remains future.
 2. **Alerting** - Email/Slack notifications for clusters
 3. **Service Health** - Pre-flight checks before job start
 4. ~~**Cost Tracking** - Estimate wasted spend during outages~~ → **Delivered** in Cost Controls (Item #6)

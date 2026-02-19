@@ -1,6 +1,44 @@
 # Deployment Rollout Guide
 
-## Latest Deployment: `773b62e` → `system hardening batch` (Feb 19, 2026)
+## Latest Deployment: `e222590` → `Brand Profiles + Kill Switch + Quality Gates` (Feb 22, 2026)
+
+### What Changed (3 commits: `58535c5` → `a08d46c` → `e222590`)
+
+#### Platform Cleanup (`58535c5`)
+- TikTok and Twitter scheduling **disabled** in worker-v1 and post-worker
+- Fake TikTok/Twitter post records cleaned from database
+- Threads metrics adapter wired up in metrics-collector
+
+#### Kill Switch UI + Quality Gates + Presets (`a08d46c`)
+- **Kill Switch UI (#11):** System Controls section added to Settings page — toggle, ACTIVE/OFF/ERROR badge, reason input. Reads `system_config` table, calls `set_kill_switch` RPC.
+- **Presets finalized (#12):** 4 active presets verified: `urban_legend`, `one_too_many`, `reddit_trending_horror`, `dark_origins`. 5 deprecated presets mapped to `urban_legend` fallback.
+- **Quality Gates (#13):** 3 preset-specific validation functions in worker-v1 (`gateOneToMany`, `gateRedditTrendingHorror`, `gateDarkOrigins`). Run after story generation, retry up to 2×.
+
+#### Brand Profiles (#24) (`e222590`)
+- **Voice Config modal:** 9 OpenAI TTS voices, custom instructions, speed slider (0.7–1.3×). Stored in `config_overrides.voice`.
+- **Schedule Windows modal:** Posting hours, 7 day-of-week toggles, max posts/day, min gap, blackout window. Stored in `config_overrides.schedule`.
+- **Music Advanced panel:** Collapsible `<details>` with enable/disable, ducking volume/attack/release, fade in/out sliders.
+- **Worker integration:** `getPresetVoiceConfig()` now accepts brand voice config override (brand > preset > global default).
+
+### Edge Functions Deployed
+```
+worker-v1, metrics-collector, post-worker
+```
+
+### Smoke Tests
+```powershell
+$env:SUPABASE_SERVICE_ROLE_KEY = "your-key"
+node scripts/smoke-test-platform-cleanup.js    # 15 passed
+node scripts/smoke-test-kill-presets-gates.js   # 37 passed
+node scripts/smoke-test-brand-profiles.js       # 32 passed
+```
+
+### No New Migrations
+All changes are code-only (settings UI, worker logic, brand config UI). No SQL migrations required.
+
+---
+
+## Previous Deployment: `773b62e` → `system hardening batch` (Feb 19, 2026)
 
 ### Migrations Applied
 | Migration | Contents |

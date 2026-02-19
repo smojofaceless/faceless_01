@@ -138,7 +138,8 @@ interface MetricsAdapter {
 | YouTube Shorts | **Real** | YouTube Data API v3 `/videos?part=statistics` | Uses OAuth from `platform_tokens` |
 | Instagram Reels | **Real** | Graph API `/media?fields=like_count,comments_count` + `/insights` | Uses long-lived token from `platform_tokens` |
 | Facebook Reels | **Real** | Graph API `/video_insights` | Uses page token from `platform_tokens` |
-| TikTok | **Stub** | N/A | Returns zeros; TikTok API access is limited |
+| Threads | **Real** | Threads API `/insights` | Wired up Feb 2026 (platform cleanup) |
+| TikTok | **Disabled** | N/A | Scheduling disabled; metrics adapter returns zeros |
 
 ### Error Classification (reuses existing pattern)
 

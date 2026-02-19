@@ -110,6 +110,8 @@ Background Music V1 adds pre-licensed background music to generated videos with:
 
 If not configured, system defaults are used (via `get_brand_music_config` RPC).
 
+> **UI (Feb 2026):** The Brands page Music modal now includes a collapsible **Advanced Settings** panel for editing ducking and fade parameters directly. Enable/disable toggle, ducking volume/attack/release sliders, and fade in/out sliders are available per-brand.
+
 ---
 
 ## RPCs
@@ -289,9 +291,10 @@ Reads music config from `job.meta.music_config` and passes to renderer:
 | Adaptive music (mood-reactive) | ❌ Not in v1 | Requires per-scene analysis |
 | Multi-track layering | ❌ Not in v1 | Complexity, memory concerns |
 | Per-scene music switching | ❌ Not in v1 | Single track per video in v1 |
-| User-uploaded tracks | ❌ Not in v1 | Licensing concerns, UI needed |
+| User-uploaded tracks | ❌ Not in v1 | Licensing concerns |
 | Music generation APIs | ❌ Never | Pre-licensed tracks only |
 | Beat-sync to visuals | ❌ Not in v1 | Requires BPM analysis |
+| ~~Music advanced settings UI~~ | ✅ Delivered | Brands page collapsible panel (Feb 2026) |
 
 ---
 

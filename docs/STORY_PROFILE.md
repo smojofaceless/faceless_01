@@ -1,6 +1,6 @@
 # Story Profile System v1.0
 
-> **Last Updated:** February 12, 2026
+> **Last Updated:** February 22, 2026
 
 A brand-agnostic narrative enforcement system for story generation. This system mirrors the Effects Profile system but controls narrative structure, motif recurrence, voice format compliance, and closure behavior.
 
@@ -18,7 +18,7 @@ The Story Profile system ensures generated stories adhere to structural contract
 │       ↓                                                          │
 │  Template Defaults (by niche: horror, food, finance, etc.)       │
 │       ↓                                                          │
-│  Preset Profiles  (by vibe: urban_legend, radio_transcript)      │
+│  Preset Profiles  (by vibe: urban_legend, one_too_many, etc.)        │
 │       ↓                                                          │
 │  Brand Overrides  (from brand.settings.storyProfile)             │
 │       ↓                                                          │
@@ -150,9 +150,11 @@ interface StoryProfile {
 
 ## Preset Profiles (Vibe-Based)
 
-> **Note (Feb 2026):** As of v4.0, only **two story engines** are actively used in production:
+> **Note (Feb 2026):** As of v4.1, **four story engines** are actively used in production:
 > - `urban_legend` - Documentary folklore style
 > - `one_too_many` - Counting horror style
+> - `reddit_trending_horror` - Viral Reddit-style narration
+> - `dark_origins` - Origin-story folklore, slow-burn dread
 >
 > Legacy presets are deprecated and map to `urban_legend` for backwards compatibility.
 
@@ -160,6 +162,8 @@ interface StoryProfile {
 |--------|--------------|-------|------------|-------------|
 | `urban_legend` | 90% | 3+ | 5 | Documentary voice, ACTIVE |
 | `one_too_many` | 90% | 3+ | 5 | Counting horror (N+1), ACTIVE |
+| `reddit_trending_horror` | 85% | 2+ | 5 | Viral Reddit hooks, ACTIVE |
+| `dark_origins` | 90% | 3+ | 5 | Origin folklore, slow-burn, ACTIVE |
 | `radio_transcript` | 95% | 3+ | 5 | Structural markers [STATIC] (deprecated) |
 | `police_report` | 85% | 2+ | 5 | Official document format (deprecated) |
 | `slow_creepy` | 80% | 3+ | 5 | Atmospheric buildup (deprecated) |
@@ -297,6 +301,25 @@ const { story, compliance } = processStoryOutput(rawStory, contract);
 console.log(complianceToLog(compliance));
 // "✅ PASSED (score: 95/100), words=142, beats=5, motif=3, unique=2"
 ```
+
+## Quality Gates (v4.1)
+
+Quality gates are preset-specific validation functions that run **after story generation** to enforce narrative quality. If a gate fails, the story is regenerated (up to 2 retries).
+
+| Gate | Preset | Checks |
+|------|--------|--------|
+| `gateOneToMany` | `one_too_many` | Counting language present ("counted", "one too many", N→N+1 pattern, digit sequences) |
+| `gateRedditTrendingHorror` | `reddit_trending_horror` | First-person voice ("I ", "my ", "me "), community refs ("reddit", "posted", "thread") |
+| `gateDarkOrigins` | `dark_origins` | Origin language ("origin", "began", "first", "ancient"), past-tense framing |
+
+**Retry Logic:**
+- Attempt 1: Generate story → run gate → if fail, clear idempotency asset, throw error
+- Attempt 2: Regenerate → run gate → if fail, accept with warning log
+- Gate results stored in `job.meta.quality_gate_attempts`
+
+**Implementation:** `supabase/functions/worker-v1/steps.ts` — `runQualityGate()` dispatcher
+
+---
 
 ## Future Enhancements
 

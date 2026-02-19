@@ -111,7 +111,7 @@ posts
 ├── brand_id (UUID, FK → brands)
 ├── job_id (UUID, FK → jobs)
 ├── batch_id (UUID, FK → generation_batches)  -- For campaign gating
-├── platform (TEXT)  -- 'tiktok', 'youtube', 'instagram'
+├── platform (TEXT)  -- 'youtube', 'instagram', 'facebook', 'threads', 'tiktok' (disabled)
 ├── video_url (TEXT)
 ├── title (TEXT)
 ├── description (TEXT)
@@ -259,9 +259,11 @@ SELECT * FROM requeue_failed_post('post-uuid', 5);
 Error signatures enable cluster-protection for posting outages. Format: `{class}:{platform}:{detail}`
 
 Examples:
-- `dependency:tiktok:api_down`
+- `dependency:youtube:api_down`
 - `transient:youtube:rate_limit`
 - `permanent:instagram:content_rejected`
+
+> **Note (Feb 2026):** TikTok and Twitter scheduling are currently **disabled** in worker-v1 and post-worker. Fake TikTok/Twitter post records have been cleaned from the database. These platforms may be re-enabled when API access is available.
 
 ---
 
@@ -271,10 +273,11 @@ Schedule-posts v1.1 enforces per-platform limits per run to prevent hammering fa
 
 | Platform | Max Per Run |
 |----------|-------------|
-| TikTok | 5 |
 | YouTube | 5 |
 | Instagram | 5 |
 | Facebook | 5 |
+| Threads | 5 |
+| TikTok | 5 (disabled) |
 | Other | 3 |
 
 **Auto-Throttle:** Platforms with 5+ failures in 10 minutes are automatically skipped until recovery.
@@ -568,6 +571,8 @@ curl -X POST https://<project>.supabase.co/functions/v1/schedule-posts \
 
 Currently **stubbed** — all platforms return fake IDs.
 
+> **Note (Feb 2026):** TikTok and Twitter adapters are disabled. Only YouTube, Instagram, Facebook, and Threads are active.
+
 ### Adapter Interface
 
 ```typescript
@@ -587,9 +592,12 @@ interface PlatformAdapter {
 
 | Platform | Class | Notes |
 |----------|-------|-------|
-| TikTok | `TikTokAdapter` | Validates video URL required |
 | YouTube | `YouTubeAdapter` | Validates title < 100 chars |
 | Instagram | `InstagramAdapter` | Generic stub |
+| Facebook | `FacebookAdapter` | Generic stub |
+| Threads | `ThreadsAdapter` | Added Feb 2026 |
+| TikTok | `TikTokAdapter` | **Disabled** — scheduling removed (Feb 2026) |
+| Twitter | N/A | **Disabled** — never wired up |
 
 ### Future Integration
 

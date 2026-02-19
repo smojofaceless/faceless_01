@@ -1,7 +1,7 @@
 # Brand Selection System Architecture
 
-> **Document Version:** 1.1  
-> **Last Updated:** February 8, 2026  
+> **Document Version:** 1.2  
+> **Last Updated:** February 22, 2026  
 > **Author:** System Architect  
 > **Status:** Implementation Reference
 
@@ -11,6 +11,7 @@
 
 | Date | Version | Changes |
 |------|---------|--------|
+| Feb 22, 2026 | 1.2 | Added Brand Config Overrides section (voice, schedule, music advanced) — Brand Profiles #24 |
 | Feb 8, 2026 | 1.1 | Added "Authoritative Brand for an Operation" section (Gap 1 clarification) |
 | Feb 8, 2026 | 1.1 | Added "Cross-Tab Safety" section explaining multi-tab behavior |
 | Feb 8, 2026 | 1.0 | Initial document |
@@ -778,3 +779,110 @@ brandManager.on('brand:activated', (brand) => {
 ## Document End
 
 This document describes the brand selection system as implemented. For questions about how brands integrate with video generation, see [CAMPAIGN_SYSTEM.md](./CAMPAIGN_SYSTEM.md).
+
+---
+
+## 11. Brand Config Overrides (v1.2)
+
+Brand-level configuration is stored in `brand_templates.config_overrides` (JSONB). Each config domain has a dedicated UI modal on the Brands page and corresponding `BrandManager` methods.
+
+### 11.1 Config Override Keys
+
+| Key | UI Modal | Purpose | Worker Integration |
+|-----|----------|---------|-------------------|
+| `music` | Music Config | Track selection, ducking, fades | `executeMusicStep()` reads config |
+| `effects` | Effects Config | Intensity, Ken Burns, grain, flicker | `assembleWithRenderer()` reads config |
+| `subtitles` | Subtitles Config | Font, size, position, colors | `executeSubtitleStep()` reads config |
+| `image_prompt` | Image Config | Style, negative prompts, model | `executeImageStep()` reads config |
+| `voice` | Voice Config | TTS voice, instructions, speed | `getPresetVoiceConfig()` merges brand override |
+| `schedule` | Schedule Config | Posting hours, active days, limits | Future scheduler integration |
+
+### 11.2 Voice Config (`config_overrides.voice`)
+
+Added in Brand Profiles (#24). Allows per-brand TTS voice selection.
+
+```json
+{
+  "voice": "onyx",
+  "custom_instructions": "Speak slowly with dramatic pauses",
+  "speed": 0.95
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `voice` | string | (preset default) | OpenAI TTS voice: alloy, echo, fable, onyx, nova, shimmer, ash, coral, sage |
+| `custom_instructions` | string | `""` | Additional voice direction appended to system prompt |
+| `speed` | number | `1.0` | TTS speed multiplier (0.7–1.3) |
+
+**Worker merge order:** Brand voice config > Preset-specific voice > Global default (`onyx`)
+
+**BrandManager methods:**
+- `getVoiceConfig(brandId)` — reads from default template's `config_overrides.voice`
+- `saveVoiceConfig(brandId, voiceConfig)` — writes to default template's `config_overrides.voice`
+
+### 11.3 Schedule Config (`config_overrides.schedule`)
+
+Added in Brand Profiles (#24). Allows per-brand posting windows.
+
+```json
+{
+  "post_start_hour": 9,
+  "post_end_hour": 21,
+  "active_days": [1, 2, 3, 4, 5],
+  "max_posts_per_day": 3,
+  "min_gap_hours": 4,
+  "blackout_start": "",
+  "blackout_end": ""
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `post_start_hour` | number | `9` | Earliest posting hour (0–23) |
+| `post_end_hour` | number | `21` | Latest posting hour (0–23) |
+| `active_days` | number[] | `[0–6]` | Days of week (0=Sun, 6=Sat) |
+| `max_posts_per_day` | number | `3` | Maximum posts per 24h |
+| `min_gap_hours` | number | `4` | Minimum hours between posts |
+| `blackout_start` | string | `""` | Blackout window start (HH:MM) |
+| `blackout_end` | string | `""` | Blackout window end (HH:MM) |
+
+**BrandManager methods:**
+- `getScheduleConfig(brandId)` — reads from default template's `config_overrides.schedule`
+- `saveScheduleConfig(brandId, scheduleConfig)` — writes to default template's `config_overrides.schedule`
+
+### 11.4 Music Advanced Config (`config_overrides.music`)
+
+The music config modal now includes an advanced collapsible panel for ducking and fade settings:
+
+```json
+{
+  "enabled": true,
+  "default_volume": 0.18,
+  "ducking": {
+    "enabled": true,
+    "duck_volume": 0.08,
+    "attack_ms": 150,
+    "release_ms": 250
+  },
+  "fade": {
+    "in_ms": 800,
+    "out_ms": 1200
+  }
+}
+```
+
+See [BACKGROUND_MUSIC.md](BACKGROUND_MUSIC.md) for full schema reference.
+
+### 11.5 UI: Brands Page Config Buttons
+
+Each brand card footer shows **7 config buttons**:
+
+```
+[ Presets ] [ Music ] [ Images ] [ Effects ] [ Subs ] [ Voice ] [ Schedule ]
+```
+
+Each opens a dedicated modal for that config domain. All modals follow the same pattern:
+1. Load current config from `config_overrides` via `BrandManager`
+2. Populate form fields
+3. Save back to `config_overrides` on submit
