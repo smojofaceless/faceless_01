@@ -1023,7 +1023,321 @@ export const PRESET_STORY_PROFILES: Record<string, PartialStoryProfile> = {
       source_transform: "archetype_to_original",
     },
   },
-  
+
+  // =====================================================
+  // DECIDETHISDAILY — Decision-First Content Presets
+  // =====================================================
+  // Brand: DecideThisDaily
+  // Core Promise: "Every video forces you to choose — and live with it."
+  // Tone: Direct, neutral narrator, slightly ominous, no moralizing.
+  // Voice: Always second-person ("You have to choose...")
+  // =====================================================
+
+  // =====================================================
+  // NO_GOOD_CHOICE - Lose-Lose Decision Engine
+  // =====================================================
+  // Forces a decision where every option has a downside.
+  // Viewer is uncomfortable either way. No correct answer.
+  //
+  // STRUCTURAL RULES:
+  // - Second-person direct address (always)
+  // - Exactly two options, both negative
+  // - No correct answer — both suck
+  // - Short sentences, rising tension
+  // - End with a direct question
+  // - 100-140 words (strict for 30-45s TTS timing)
+  // - No supernatural/fantasy elements
+  // - Every sentence must be concrete and specific
+  //
+  // VISUAL: Gameplay only (no AI images)
+  //
+  // FAILURE MODES:
+  // - Word count outside 100-140 = fail
+  // - First-person narration = fail (must be second-person)
+  // - Less than 2 clear options = fail
+  // - No final question = fail
+  // - Supernatural elements = fail
+  // =====================================================
+  no_good_choice: {
+    profile_name: "no_good_choice",
+
+    voiceFormat: {
+      format: "direct_address",
+      structuralMarkers: [],
+      enforceMarkers: false,
+      povConstraint: "second" as any,
+      styleNotes: "Second-person address — speaking TO the viewer. Short declarative sentences. No hedging ('maybe', 'perhaps'). No softening consequences. Present both options with equal weight — never hint at the 'right' answer. Final sentence MUST be a direct question.",
+    },
+
+    motif: {
+      minMentions: 0,
+      shouldEscalate: false,
+      distribution: "spread",
+    },
+
+    uniqueElement: {
+      minAppearances: 0,
+      requireEscalation: false,
+      finalMentionPosition: "any",
+      enforce: false,
+    },
+
+    beatStructure: {
+      beatCount: 4,
+      beatLabels: ["SETUP", "OPTION_A", "OPTION_B", "PRESSURE"],
+      requireGroundingDetail: true,
+      groundingTypes: ["object", "consequence", "social", "time_pressure"],
+      minWordsPerBeat: 15,
+      maxWordsPerBeat: 45,
+      minGroundingPerBeat: 1,
+      repairOnMissingGrounding: false,
+    },
+
+    embodiment: {
+      eraLevel: "objects",
+      requirePeriodObjects: false,
+      requireLocationSensory: false,
+    },
+
+    authority: {
+      style: "absent",
+      minDetailSentences: 0,
+    },
+
+    ending: {
+      antiClosure: 1.0,
+      enforceFinalImage: false,
+      allowedEndingTypes: ["open_loop", "direct_question"],
+      endingStyle: "open_loop",
+    },
+
+    wordCount: {
+      target: 120,
+      variance: 20,
+      priority: "structure",
+      strictEnforcement: true,
+    },
+
+    visualReadiness: {
+      failOnMissingGrounding: false,
+      warnOnMissingGrounding: false,
+      failOnMissingEnvironment: false,
+      warnOnMissingEnvironment: false,
+      failOnAbstract: false,
+      minScoreForReady: 0,
+    },
+
+    genreFlags: {
+      preset_category: "decision",
+      core_anomaly: "lose_lose_binary",
+      engagement_intent: "argument",
+      visual_type: "gameplay",
+      platform_fit: { tiktok: 5, instagram_reels: 4, youtube_shorts: 4, x: 5, threads: 4 },
+    },
+  },
+
+  // =====================================================
+  // ONE_RULE_ONE_POWER - Power Fantasy Trade-Off Engine
+  // =====================================================
+  // Power fantasy with one crippling limitation.
+  // Forces deep "would I take it?" thinking.
+  //
+  // STRUCTURAL RULES:
+  // - Second-person ("You can now...")
+  // - Exactly one power, exactly one restriction
+  // - Restriction must meaningfully limit usefulness
+  // - Calm, confident narrator — like offering a deal
+  // - Imply scenarios, don't list them
+  // - End with "Would you take it?"
+  // - 85-115 words (strict for 30-45s TTS)
+  //
+  // VISUAL: AI-generated moody/surreal images (3-5)
+  //
+  // FAILURE MODES:
+  // - Word count outside 85-115 = fail
+  // - More than one power = fail
+  // - No restriction present = fail
+  // - No final question = fail
+  // - Horror framing = fail
+  // =====================================================
+  one_rule_one_power: {
+    profile_name: "one_rule_one_power",
+
+    voiceFormat: {
+      format: "calm_authority",
+      structuralMarkers: [],
+      enforceMarkers: false,
+      povConstraint: "second" as any,
+      styleNotes: "Calm, confident narrator addressing the viewer directly. NOT ominous — more like a deal being offered. Focus on THE RULE, not the power. Let the viewer's imagination do the work. Avoid listing scenarios — imply them. The restriction must be specific and visceral, not abstract. One power. One rule. No exceptions, no loopholes.",
+    },
+
+    motif: {
+      minMentions: 0,
+      shouldEscalate: false,
+      distribution: "front",
+    },
+
+    uniqueElement: {
+      minAppearances: 0,
+      requireEscalation: false,
+      finalMentionPosition: "any",
+      enforce: false,
+    },
+
+    beatStructure: {
+      beatCount: 4,
+      beatLabels: ["HOOK", "EXPANSION", "THE_RULE", "QUESTION"],
+      requireGroundingDetail: false,
+      groundingTypes: ["symbolic", "consequence", "sensory"],
+      minWordsPerBeat: 10,
+      maxWordsPerBeat: 45,
+      minGroundingPerBeat: 0,
+      repairOnMissingGrounding: false,
+    },
+
+    embodiment: {
+      eraLevel: "objects",
+      requirePeriodObjects: false,
+      requireLocationSensory: false,
+    },
+
+    authority: {
+      style: "absent",
+      minDetailSentences: 0,
+    },
+
+    ending: {
+      antiClosure: 1.0,
+      enforceFinalImage: false,
+      allowedEndingTypes: ["open_loop", "direct_question"],
+      endingStyle: "open_loop",
+    },
+
+    wordCount: {
+      target: 100,
+      variance: 15,
+      priority: "structure",
+      strictEnforcement: true,
+    },
+
+    visualReadiness: {
+      failOnMissingGrounding: false,
+      warnOnMissingGrounding: false,
+      failOnMissingEnvironment: false,
+      warnOnMissingEnvironment: false,
+      failOnAbstract: false,
+      minScoreForReady: 0,
+    },
+
+    genreFlags: {
+      preset_category: "decision",
+      core_anomaly: "asymmetric_tradeoff",
+      engagement_intent: "debate",
+      visual_type: "ai_images_moody",
+      platform_fit: { tiktok: 4, instagram_reels: 5, youtube_shorts: 4, x: 3, threads: 3 },
+    },
+  },
+
+  // =====================================================
+  // TWO_DOORS - Symbolic Binary Choice Engine
+  // =====================================================
+  // Symbolic binary choice where each path leads to a
+  // radically different life. Structured contrast.
+  //
+  // STRUCTURAL RULES:
+  // - Second-person ("Two doors appear...")
+  // - Exactly two options, both tempting
+  // - Parallel sentence structure
+  // - Framing device required (doors/pills/paths/etc.)
+  // - End before consequences — cut blind
+  // - 95-125 words (strict for 30-45s TTS)
+  //
+  // VISUAL: AI-generated high-contrast paired images
+  //
+  // FAILURE MODES:
+  // - Word count outside 95-125 = fail
+  // - No framing device = fail
+  // - One option clearly better = fail (by design, not gate-checkable)
+  // - No final question = fail
+  // =====================================================
+  two_doors: {
+    profile_name: "two_doors",
+
+    voiceFormat: {
+      format: "structured_contrast",
+      structuralMarkers: [],
+      enforceMarkers: false,
+      povConstraint: "second" as any,
+      styleNotes: "Parallel sentence structure between the two options. Neutral delivery — both options described with equal weight and appeal. Neither path is 'the good one'. Use contrast in texture: one warm/organic, one cool/technological. Or one adventurous, one peaceful. The framing metaphor (doors/pills/paths) is stated once at the top and never explained. End BEFORE revealing what happens. Let the viewer choose blind.",
+    },
+
+    motif: {
+      minMentions: 0,
+      shouldEscalate: false,
+      distribution: "spread",
+    },
+
+    uniqueElement: {
+      minAppearances: 0,
+      requireEscalation: false,
+      finalMentionPosition: "any",
+      enforce: false,
+    },
+
+    beatStructure: {
+      beatCount: 4,
+      beatLabels: ["FRAME", "PATH_A", "PATH_B", "CUT"],
+      requireGroundingDetail: false,
+      groundingTypes: ["symbolic", "contrast", "sensory"],
+      minWordsPerBeat: 10,
+      maxWordsPerBeat: 50,
+      minGroundingPerBeat: 0,
+      repairOnMissingGrounding: false,
+    },
+
+    embodiment: {
+      eraLevel: "objects",
+      requirePeriodObjects: false,
+      requireLocationSensory: false,
+    },
+
+    authority: {
+      style: "absent",
+      minDetailSentences: 0,
+    },
+
+    ending: {
+      antiClosure: 1.0,
+      enforceFinalImage: false,
+      allowedEndingTypes: ["open_loop", "direct_question"],
+      endingStyle: "open_loop",
+    },
+
+    wordCount: {
+      target: 110,
+      variance: 15,
+      priority: "structure",
+      strictEnforcement: true,
+    },
+
+    visualReadiness: {
+      failOnMissingGrounding: false,
+      warnOnMissingGrounding: false,
+      failOnMissingEnvironment: false,
+      warnOnMissingEnvironment: false,
+      failOnAbstract: false,
+      minScoreForReady: 0,
+    },
+
+    genreFlags: {
+      preset_category: "decision",
+      core_anomaly: "binary_contrast",
+      engagement_intent: "side_picking",
+      visual_type: "ai_images_contrast",
+      platform_fit: { tiktok: 5, instagram_reels: 5, youtube_shorts: 4, x: 4, threads: 4 },
+    },
+  },
+
   // =====================================================
   // DEPRECATED PRESETS - ARCHIVED
   // =====================================================

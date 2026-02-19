@@ -872,6 +872,49 @@ function buildStoryPrompt(vibePreset: string, wordRange: { min: number; max: num
     backrooms: 'a liminal space or "backrooms" style horror about accidentally entering wrong places, glitches in reality, or spaces that shouldn\'t exist',
     nosleep: 'a first-person creepypasta/NoSleep style horror that starts mundane but escalates into something terrifying',
     glitch: 'a glitch in the matrix story about strange repetitions, déjà vu, NPCs acting weird, or reality not working right',
+    no_good_choice: `a decision scenario where EVERY option has a genuine downside. The viewer must choose between two equally bad outcomes.
+
+Rules:
+- Second person ("You're standing in front of...")
+- Setup the situation in 2-3 sentences (grounded, specific, modern)
+- Present Option A with its clear downside
+- Present Option B with a DIFFERENT clear downside
+- End with a direct question: "Which one do you pick?"
+- No correct answer. No moral. No softening.
+- Short sentences. Rising tension. No exposition dumps.
+- ${wordRange.min}-${wordRange.max} words total.
+- Do NOT use horror, supernatural, or fantasy elements.
+- Do NOT frame as confession or personal story.
+- Scenarios: career, money, relationships, survival, reputation, trust, time`,
+    one_rule_one_power: `a power-fantasy trade-off. Present ONE supernatural or impossible power and EXACTLY ONE restriction that meaningfully limits it.
+
+Rules:
+- Second person ("You can now...")
+- Open with the power stated cleanly in one sentence
+- Briefly let the viewer imagine 2-3 implications (don't list, imply)
+- Introduce THE RULE: one specific, visceral limitation
+- The rule must make the power genuinely hard to use, not impossible
+- End with: "Would you take it?" or similar
+- Calm, confident tone, like offering a deal
+- ${wordRange.min}-${wordRange.max} words total
+- Do NOT list scenarios ("You could do X, Y, Z...")
+- Do NOT make the rule trivial or the power useless
+- Do NOT use horror framing
+- The outcome should be ambiguous, not tragic, not utopian`,
+    two_doors: `a symbolic binary choice using a framing device (two doors, two pills, two paths, two envelopes, two timelines). Each option leads to a radically different life.
+
+Rules:
+- Second person ("Two doors appear in front of you...")
+- State the framing device in ONE sentence, no backstory
+- Describe Path A: vivid, specific, genuinely appealing
+- Describe Path B: equally vivid, contrasting, equally appealing
+- Both paths must be TEMPTING, no obvious villain option
+- Use parallel sentence structure (A mirrors B's rhythm)
+- End with: "Which door do you open?" or similar
+- Do NOT reveal consequences or outcomes
+- Do NOT make one path clearly better
+- ${wordRange.min}-${wordRange.max} words total
+- Contrast types: adventure/stability, knowledge/bliss, power/love, freedom/belonging`,
   };
 
   const vibeDesc = vibeDescriptions[vibePreset] || vibeDescriptions.urban_legend;
@@ -898,6 +941,19 @@ Respond in JSON format:
   "story": "The full story text...",
   "setting": "One or two words describing the primary setting/location (e.g. 'van road trip', 'ferry deck', 'escape room')",
   "concept": "One sentence summarizing the core concept/premise (e.g. 'Extra person appears during van road trip to gas station')"
+}`;
+  }
+
+  // DecideThisDaily presets: self-contained prompt (word count, tone, style all in vibeDesc)
+  if (['no_good_choice', 'one_rule_one_power', 'two_doors'].includes(vibePreset)) {
+    return `Create ${vibeDesc}.${avoidanceSection}
+
+Respond in JSON format:
+{
+  "title": "Short catchy title (3-7 words, question-first for no_good_choice, power-first for one_rule_one_power, framing-device for two_doors)",
+  "story": "The full script text...",
+  "setting": "One or two words describing the scenario domain (e.g. 'career dilemma', 'time power', 'two timelines')",
+  "concept": "One sentence summarizing the core choice/trade-off"
 }`;
   }
 
@@ -945,6 +1001,12 @@ function runQualityGate(vibePreset: string, storyText: string, title: string): Q
       return gateRedditTrendingHorror(storyText, lower, sentences, failures);
     case 'dark_origins':
       return gateDarkOrigins(storyText, lower, sentences, failures);
+    case 'no_good_choice':
+      return gateNoGoodChoice(storyText, lower, sentences, failures);
+    case 'one_rule_one_power':
+      return gateOneRuleOnePower(storyText, lower, sentences, failures);
+    case 'two_doors':
+      return gateTwoDoors(storyText, lower, sentences, failures);
     default:
       // No quality gate for other presets
       return { passed: true, failures: [] };
@@ -1049,6 +1111,125 @@ function gateDarkOrigins(text: string, lower: string, sentences: string[], failu
     // Softer check: question mark at end
     if (!lastTwo.includes('?')) {
       failures.push('Ending lacks unresolved thread — should end with mystery, question, or "the case remains..."');
+    }
+  }
+
+  return { passed: failures.length === 0, failures };
+}
+
+// =====================================================
+// DecideThisDaily Quality Gates
+// =====================================================
+// Shared rules: second-person, ends with question, first
+// sentence passes "mute test" (curiosity without audio).
+// =====================================================
+
+/**
+ * Global check for all DecideThisDaily presets:
+ * - Second-person voice (≥2 uses of "you/your")
+ * - Ends with a question mark
+ * - First Sentence Kill Test: first sentence is ≤15 words and creates curiosity
+ */
+function sharedDecisionGateChecks(text: string, lower: string, sentences: string[], failures: string[]): void {
+  // Second-person check
+  const youCount = (lower.match(/\byou\b|\byour\b|\byou're\b|\byou've\b|\byou'll\b|\byou'd\b/g) || []).length;
+  if (youCount < 2) {
+    failures.push(`Weak second-person voice — only ${youCount} uses of "you/your" (need 2+)`);
+  }
+
+  // Must end with question
+  const lastSentence = sentences[sentences.length - 1] || '';
+  if (!lastSentence.trim().endsWith('?')) {
+    failures.push('Must end with a direct question — last sentence has no question mark');
+  }
+
+  // First Sentence Kill Test: first sentence should be short and curiosity-generating
+  const firstSentence = sentences[0] || '';
+  const firstWordCount = firstSentence.split(/\s+/).length;
+  if (firstWordCount > 20) {
+    failures.push(`First sentence too long (${firstWordCount} words) — should hook in ≤20 words for mute-scroll retention`);
+  }
+}
+
+/**
+ * no_good_choice: Both options must be negative. Realistic scenarios only.
+ */
+function gateNoGoodChoice(text: string, lower: string, sentences: string[], failures: string[]): QualityGateResult {
+  sharedDecisionGateChecks(text, lower, sentences, failures);
+
+  // Check for two distinct options
+  // Look for structural markers: "Option A/B", "First/Second", "on one hand/other", or parallel "If you..." patterns
+  const twoOptionPatterns = /\b(option [ab]|choice [ab12]|on one hand|on the other|first option|second option|if you choose|either way|path [ab12]|door [12])\b/i;
+  const orPattern = /\bor\b/i;
+  if (!twoOptionPatterns.test(text) && (text.match(orPattern) || []).length < 1) {
+    failures.push('Cannot identify two distinct options — needs clear binary structure');
+  }
+
+  // No supernatural/fantasy elements
+  const supernaturalPatterns = /\b(magic|spell|ghost|demon|vampire|werewolf|zombie|supernatural|teleport|superpow|immortal|wizard|witch|dragon|curse|haunted|potion|enchant)\b/i;
+  if (supernaturalPatterns.test(lower)) {
+    failures.push('Supernatural/fantasy elements detected — no_good_choice must be realistic');
+  }
+
+  // No first-person narration
+  const textWithoutQuotes = text.replace(/[""\u201C\u201D].*?[""\u201C\u201D]|".*?"/g, '');
+  const narratorICount = (textWithoutQuotes.match(/\bI\b/g) || []).length;
+  if (narratorICount > 1) {
+    failures.push(`First-person narrator detected (${narratorICount} uses of "I") — must be second-person address`);
+  }
+
+  return { passed: failures.length === 0, failures };
+}
+
+/**
+ * one_rule_one_power: Exactly one power, exactly one restriction.
+ */
+function gateOneRuleOnePower(text: string, lower: string, sentences: string[], failures: string[]): QualityGateResult {
+  sharedDecisionGateChecks(text, lower, sentences, failures);
+
+  // Check for restriction/rule language
+  const rulePatterns = /\b(but|however|the (rule|catch|cost|price|condition|restriction|limitation)|here's the (thing|catch|rule)|there's (one|a) (rule|catch|condition)|except|only if|every time you|each time you|whenever you|the moment you|you (can't|cannot|lose|sacrifice|give up|forget))\b/i;
+  if (!rulePatterns.test(text)) {
+    failures.push('No restriction/rule language found — needs clear "but here\'s the catch" moment');
+  }
+
+  // Check it's not listing scenarios (anti-list check: no "you could X, Y, and Z" patterns)
+  const listPatterns = /you could[\s\S]{0,30},[\s\S]{0,30},[\s\S]{0,30}(and|or)/i;
+  if (listPatterns.test(text)) {
+    failures.push('Scenario listing detected — should imply uses, not list them');
+  }
+
+  // No horror framing
+  const horrorPatterns = /\b(terrif|horrif|blood|scream|die|death|kill|murder|corpse|nightmare|torture|agony|suffer)\b/i;
+  if (horrorPatterns.test(lower)) {
+    failures.push('Horror framing detected — one_rule_one_power should be contemplative, not horror');
+  }
+
+  return { passed: failures.length === 0, failures };
+}
+
+/**
+ * two_doors: Must use a framing device and present two parallel paths.
+ */
+function gateTwoDoors(text: string, lower: string, sentences: string[], failures: string[]): QualityGateResult {
+  sharedDecisionGateChecks(text, lower, sentences, failures);
+
+  // Check for framing device
+  const framingPatterns = /\b(two (doors|pills|paths|portals|envelopes|timelines|keys|boxes|buttons|corridors|gates|roads)|door (one|two|1|2)|pill (one|two|1|2)|path (one|two|1|2)|behind (door|the first|the second)|left (door|path|pill)|right (door|path|pill))\b/i;
+  if (!framingPatterns.test(text)) {
+    failures.push('No framing device found — needs doors/pills/paths/portals/envelopes/timelines');
+  }
+
+  // Check for parallel structure (both paths described)
+  // Simple heuristic: text mentions "first/one" and "second/other" or "behind...behind"
+  const parallelA = /\b(behind the first|the first (door|path|pill)|door (one|1)|on the left|path a)\b/i;
+  const parallelB = /\b(behind the second|the second (door|path|pill)|door (two|2)|on the right|path b)\b/i;
+  const genericParallel = /\b(one leads|the other leads|on one side|on the other)\b/i;
+  if (!((parallelA.test(text) && parallelB.test(text)) || genericParallel.test(text))) {
+    // Softer check: at least has contrast language
+    const contrastPatterns = /\b(but|while|whereas|instead|the other|or you|alternatively)\b/i;
+    if (!contrastPatterns.test(text)) {
+      failures.push('Cannot identify two parallel paths — needs clear A vs B structure');
     }
   }
 

@@ -57,6 +57,22 @@
       }
     },
     {
+      key: 'decide_this_daily',
+      brandId: '45c229a5-e647-49d2-8912-d5fa24f66fda',
+      name: 'DecideThisDaily',
+      icon: '🤔',
+      concept: 'Decision-first content: lose-lose dilemmas, power-with-a-catch, and binary choices designed to stop scrollers and ignite comment wars.',
+      phase: 1,
+      status: 'planned',
+      costTier: 1,
+      engagement: ['replies', 'shares', 'retention'],
+      platforms: { primary: 'tiktok', active: ['tiktok', 'instagram_reels', 'youtube_shorts', 'threads'] },
+      presets: {
+        active: [],
+        planned: ['no_good_choice', 'one_rule_one_power', 'two_doors']
+      }
+    },
+    {
       key: 'lego_history',
       name: 'Lego History',
       icon: '🧱',

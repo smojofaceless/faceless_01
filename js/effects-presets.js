@@ -333,6 +333,51 @@ const PRESET_EFFECT_SUMMARY = {
     colorPreset: "noir_documentary",
     mood: "Cold, clinical, true-crime documentary dread",
   },
+
+  // =====================================================
+  // DecideThisDaily presets
+  // =====================================================
+
+  no_good_choice: {
+    label: "No Good Choice",
+    description: "Clean, modern — gameplay-ready minimal look for decision content",
+    activeEffects: [
+      { name: "Ken Burns", key: "kenburns", intensity: 0.25, label: "Gentle drift" },
+      { name: "Vignette", key: "vignette", intensity: 0.15, label: "Very subtle" },
+      { name: "Color Grade", key: "color_grade", intensity: 0.30, preset: "neutral_warm", label: "Neutral warm tones" },
+    ],
+    inactiveEffects: ["VHS", "Glitch", "Scanlines", "Film Grain", "Light Flicker"],
+    colorPreset: "neutral_warm",
+    mood: "Clean, punchy, conversational tension",
+  },
+
+  one_rule_one_power: {
+    label: "One Rule One Power",
+    description: "Moody contemplative — deep tones, subtle movement for thought experiments",
+    activeEffects: [
+      { name: "Ken Burns", key: "kenburns", intensity: 0.35, label: "Slow contemplative zoom" },
+      { name: "Vignette", key: "vignette", intensity: 0.40, label: "Moderate vignette" },
+      { name: "Color Grade", key: "color_grade", intensity: 0.60, preset: "deep_blue_amber", label: "Deep blue-amber tones" },
+      { name: "Film Grain", key: "film_grain", intensity: 0.10, label: "Barely-there grain" },
+    ],
+    inactiveEffects: ["VHS", "Glitch", "Scanlines", "Light Flicker"],
+    colorPreset: "deep_blue_amber",
+    mood: "Contemplative, surreal, mysterious",
+  },
+
+  two_doors: {
+    label: "Two Doors",
+    description: "High-contrast cinematic — bold colors for binary choice framing",
+    activeEffects: [
+      { name: "Ken Burns", key: "kenburns", intensity: 0.40, label: "Moderate dramatic zoom" },
+      { name: "Vignette", key: "vignette", intensity: 0.35, label: "Focus vignette" },
+      { name: "Color Grade", key: "color_grade", intensity: 0.65, preset: "bold_contrast", label: "Bold high-contrast tones" },
+      { name: "Film Grain", key: "film_grain", intensity: 0.08, label: "Minimal texture" },
+    ],
+    inactiveEffects: ["VHS", "Glitch", "Scanlines", "Light Flicker"],
+    colorPreset: "bold_contrast",
+    mood: "Cinematic, dramatic, decisive",
+  },
 };
 
 /**
