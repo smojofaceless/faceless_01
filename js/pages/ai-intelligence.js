@@ -1377,35 +1377,36 @@ const AIIntelligence = (() => {
                 .from('v_strategy_performance')
                 .select('*')
                 .eq('brand_id', currentBrandId)
-                .order('avg_engagement', { ascending: false });
+                .order('avg_perf_score', { ascending: false });
 
             if (error || !data?.length) {
                 container.innerHTML = '<div class="ai-empty">No strategy data yet. Strategies are assigned automatically during content generation.</div>';
                 return;
             }
 
-            const maxEng = Math.max(...data.map(d => d.avg_engagement || 0), 1);
+            const maxScore = Math.max(...data.map(d => d.avg_perf_score || 0), 1);
 
             let html = '<div class="ai-strategy-grid" style="display:grid; gap:12px;">';
 
             for (const s of data) {
-                const barWidth = Math.round(((s.avg_engagement || 0) / maxEng) * 100);
-                const engColor = barWidth > 70 ? 'var(--success)' : barWidth > 40 ? 'var(--warning)' : 'var(--text-muted)';
-                const platformBadge = s.platform ? `<span class="ai-card__badge" style="font-size:0.7rem;">${s.platform}</span>` : '';
+                const barWidth = Math.round(((s.avg_perf_score || 0) / maxScore) * 100);
+                const engColor = barWidth > 70 ? 'var(--color-success)' : barWidth > 40 ? '#eab308' : 'var(--color-text-tertiary)';
+                const platLabel = PLATFORM_LABELS[s.platform] || s.platform || '';
+                const platformBadge = platLabel ? `<span class="ai-card__badge" style="font-size:0.7rem;">${platLabel}</span>` : '';
 
                 html += `
-                    <div style="background:var(--surface-secondary); border-radius:var(--radius-lg); padding:12px 16px; display:flex; align-items:center; gap:12px;">
+                    <div style="background:var(--color-bg-surface); border-radius:var(--radius-lg); padding:12px 16px; display:flex; align-items:center; gap:12px;">
                         <div style="flex:1;">
-                            <div style="font-weight:600; color:var(--text-primary); font-size:0.9rem;">
+                            <div style="font-weight:600; color:var(--color-text-primary); font-size:0.9rem;">
                                 ${(s.strategy_type || '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
                                 ${platformBadge}
                             </div>
-                            <div style="font-size:0.8rem; color:var(--text-secondary); margin-top:2px;">
-                                ${s.total_uses || 0} uses · Avg Engagement: ${fmt(s.avg_engagement)} · Win Rate: ${s.win_rate ? (s.win_rate * 100).toFixed(0) : 0}%
+                            <div style="font-size:0.8rem; color:var(--color-text-secondary); margin-top:2px;">
+                                ${s.post_count || 0} posts · Avg Views: ${fmt(s.avg_views)} · Score: ${fmt(s.avg_perf_score)}
                             </div>
                         </div>
                         <div style="width:120px;">
-                            <div style="background:var(--surface-tertiary); border-radius:4px; height:16px; overflow:hidden;">
+                            <div style="background:var(--color-bg-elevated); border-radius:4px; height:16px; overflow:hidden;">
                                 <div style="background:${engColor}; height:100%; width:${barWidth}%; border-radius:4px;"></div>
                             </div>
                         </div>
