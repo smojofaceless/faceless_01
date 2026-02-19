@@ -1003,10 +1003,13 @@ function gateRedditTrendingHorror(text: string, lower: string, sentences: string
     failures.push('Missing mundane/everyday detail in opening — needs grounding before horror');
   }
 
-  // Check for dialogue (quoted speech)
-  const dialoguePatterns = /[""].*?[""]|".*?"/;
-  if (!dialoguePatterns.test(text)) {
-    failures.push('No dialogue found — needs at least one brief exchange');
+  // Check for dialogue — quoted speech OR indirect speech patterns
+  // Many Reddit horror stories use indirect speech ("she told me", "he whispered")
+  // so we accept both quoted text and indirect speech verbs
+  const hasQuotedSpeech = /["\u201C\u201D].*?["\u201C\u201D]|".*?"/s.test(text);
+  const hasIndirectSpeech = /\b(said|told|asked|whispered|yelled|screamed|muttered|replied|called out|texted|messaged|shouted|begged|pleaded|warned|insisted|stammered|croaked)\b/i.test(text);
+  if (!hasQuotedSpeech && !hasIndirectSpeech) {
+    failures.push('No dialogue found — needs quoted speech or indirect speech (said/told/whispered etc.)');
   }
 
   return { passed: failures.length === 0, failures };

@@ -82,7 +82,11 @@ export function classifyError(err: Error | unknown, context: Partial<ErrorContex
   }
 
   // === TRANSIENT (can auto-retry) - Network/rate issues ===
-  else if (statusCode === 429) {
+  // Quality gate failures have their own internal retry counter (2 attempts)
+  // — must be classified as transient so the scheduler re-invokes the worker
+  else if (/QUALITY_GATE/i.test(message)) {
+    failureClass = 'transient';
+  } else if (statusCode === 429) {
     failureClass = 'transient';
   } else if (statusCode && [502, 503, 504].includes(statusCode)) {
     // Generic gateway errors (not from known service) = transient
