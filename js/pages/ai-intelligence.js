@@ -1300,15 +1300,34 @@ const AIIntelligence = (() => {
         container.innerHTML = '<div class="ai-loading">Loading platform comparison…</div>';
 
         try {
-            const { data, error } = await supabase
+            const { data: rawData, error } = await supabase
                 .from('v_cross_platform_performance')
                 .select('*')
                 .eq('brand_id', currentBrandId);
 
-            if (error || !data?.length) {
+            if (error || !rawData?.length) {
                 container.innerHTML = '<div class="ai-empty">No cross-platform data yet. Post to multiple platforms to see comparisons.</div>';
                 return;
             }
+
+            // Aggregate per-post rows into per-platform summaries
+            const platformMap = {};
+            for (const row of rawData) {
+                const p = row.platform;
+                if (!platformMap[p]) platformMap[p] = { platform: p, total_posts: 0, sum_views: 0, sum_likes: 0, sum_comments: 0, sum_shares: 0 };
+                platformMap[p].total_posts++;
+                platformMap[p].sum_views += (row.views || 0);
+                platformMap[p].sum_likes += (row.likes || 0);
+                platformMap[p].sum_comments += (row.comments || 0);
+                platformMap[p].sum_shares += (row.shares || 0);
+            }
+            const data = Object.values(platformMap).map(p => ({
+                platform: p.platform,
+                total_posts: p.total_posts,
+                avg_views: Math.round(p.sum_views / p.total_posts),
+                avg_likes: Math.round((p.sum_likes / p.total_posts) * 10) / 10,
+                avg_comments: Math.round((p.sum_comments / p.total_posts) * 10) / 10,
+            }));
 
             // Build comparison table
             const maxViews = Math.max(...data.map(d => d.avg_views || 0), 1);
