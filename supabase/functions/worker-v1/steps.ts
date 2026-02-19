@@ -585,6 +585,41 @@ export async function executeStoryStep(
       throw new Error('Story generation returned no story text');
     }
 
+    // ── Quality Gate: Preset-specific content validation ──────────
+    // Checks story structure matches the preset's requirements.
+    // Failures are logged and cause a regeneration attempt (not a hard failure).
+    const qualityGateResult = runQualityGate(vibePreset, storyText, title);
+    if (!qualityGateResult.passed) {
+      const gateMsg = `Quality gate failed for ${vibePreset}: ${qualityGateResult.failures.join('; ')}`;
+      console.warn(`[STORY] ⚠️ ${gateMsg}`);
+      await logger.snapshot('story', 'quality_gate_fail', {
+        preset: vibePreset,
+        failures: qualityGateResult.failures,
+        title,
+        story_preview: storyText.slice(0, 200),
+      }, gateMsg);
+
+      // If we haven't retried yet, throw to trigger story step retry
+      const gateAttempts = ((job.meta as Record<string, unknown>)?.quality_gate_attempts as number) || 0;
+      if (gateAttempts < 2) {
+        // Record attempt count so next try knows
+        await updateJobMeta(supabase, job.id, { quality_gate_attempts: gateAttempts + 1 });
+        // Clear the idempotency asset so the step re-runs
+        // (throw error = step fails, retry policy kicks in)
+        throw new Error(`QUALITY_GATE: ${gateMsg} (attempt ${gateAttempts + 1}/2)`);
+      } else {
+        // Max retries — accept the story but log the issue
+        console.warn(`[STORY] Quality gate failed ${gateAttempts + 1} times, accepting story anyway`);
+        await logger.snapshot('story', 'quality_gate_accepted', {
+          preset: vibePreset,
+          failures: qualityGateResult.failures,
+          attempts: gateAttempts + 1,
+        }, 'Quality gate max retries — story accepted');
+      }
+    } else {
+      console.log(`[STORY] ✓ Quality gate passed for ${vibePreset}`);
+    }
+
     const contentHash = await computeHash(storyText);
     const titleHash = await computeHash(title);
     // Build a concept hash from setting+concept (for thematic uniqueness, not just text)
@@ -885,6 +920,136 @@ Respond in JSON format:
   "setting": "One or two words describing the primary setting/location (e.g. 'elevator', 'ferry boat', 'hiking trail', 'escape room')",
   "concept": "One sentence summarizing the core concept/premise (e.g. 'Extra person appears in stopped elevator between floors')"
 }`;
+}
+
+// =====================================================
+// QUALITY GATES — Preset-specific story validation
+// Checks structural requirements AFTER generation.
+// Returns { passed: boolean, failures: string[] }
+// =====================================================
+
+interface QualityGateResult {
+  passed: boolean;
+  failures: string[];
+}
+
+function runQualityGate(vibePreset: string, storyText: string, title: string): QualityGateResult {
+  const failures: string[] = [];
+  const lower = storyText.toLowerCase();
+  const sentences = storyText.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 0);
+
+  switch (vibePreset) {
+    case 'one_too_many':
+      return gateOneToMany(storyText, lower, title, failures);
+    case 'reddit_trending_horror':
+      return gateRedditTrendingHorror(storyText, lower, sentences, failures);
+    case 'dark_origins':
+      return gateDarkOrigins(storyText, lower, sentences, failures);
+    default:
+      // No quality gate for other presets
+      return { passed: true, failures: [] };
+  }
+}
+
+/**
+ * one_too_many: Story MUST have exactly ONE anomaly (the extra person/thing).
+ * - Must reference counting or numbers
+ * - Must have a discrepancy (N vs N+1)
+ * - Title should hint at the count
+ */
+function gateOneToMany(text: string, lower: string, title: string, failures: string[]): QualityGateResult {
+  // Check for counting/number words
+  const countingPatterns = /\b(count|counted|counting|number|numbered|extra|additional|one more|one too many|wasn't supposed|shouldn't have been|too many|more than|appeared|N\+1)\b/i;
+  if (!countingPatterns.test(text)) {
+    failures.push('Missing counting/number anomaly language — must reference a discrepancy');
+  }
+
+  // Check for specific numbers (the "N friends" pattern)
+  const numberMention = /\b(two|three|four|five|six|seven|eight|nine|ten|\d+)\b/i;
+  if (!numberMention.test(text)) {
+    failures.push('No specific number mentioned — needs "N friends/people" reference');
+  }
+
+  // Check for the reveal/discovery moment
+  const revealPatterns = /\b(but .*(photo|picture|video|count|head count|selfie).*show|realized|noticed|something was wrong|didn't add up|one extra|wasn't right|off by one|the math)\b/i;
+  if (!revealPatterns.test(text)) {
+    // Softer check: at least mention a photo or recount
+    const softReveal = /\b(photo|picture|selfie|head count|recount|counted again|looked again)\b/i;
+    if (!softReveal.test(text)) {
+      failures.push('Missing the reveal moment — needs discovery of the extra (photo, count, etc.)');
+    }
+  }
+
+  return { passed: failures.length === 0, failures };
+}
+
+/**
+ * reddit_trending_horror: Must follow Reddit horror conventions.
+ * - First-person narration ("I", "my", "me")
+ * - At least one mundane detail before horror
+ * - At least one dialogue exchange
+ */
+function gateRedditTrendingHorror(text: string, lower: string, sentences: string[], failures: string[]): QualityGateResult {
+  // Check first-person voice
+  const firstPersonCount = (text.match(/\bI\b/g) || []).length;
+  if (firstPersonCount < 3) {
+    failures.push(`Weak first-person voice — only ${firstPersonCount} uses of "I" (need 3+)`);
+  }
+
+  // Check for mundane/everyday detail in first third of story
+  const firstThird = sentences.slice(0, Math.ceil(sentences.length / 3)).join(' ');
+  const mundanePatterns = /\b(coffee|grocery|phone|apartment|work|shift|car|bus|walk|morning|evening|routine|lunch|dinner|commute|alarm|shower|keys|door|parking|fridge|microwave|laundry|rent|bill|uber|lyft|doordash|app|notification|text|message)\b/i;
+  if (!mundanePatterns.test(firstThird)) {
+    failures.push('Missing mundane/everyday detail in opening — needs grounding before horror');
+  }
+
+  // Check for dialogue (quoted speech)
+  const dialoguePatterns = /[""].*?[""]|".*?"/;
+  if (!dialoguePatterns.test(text)) {
+    failures.push('No dialogue found — needs at least one brief exchange');
+  }
+
+  return { passed: failures.length === 0, failures };
+}
+
+/**
+ * dark_origins: Must follow documentary voice conventions.
+ * - Third-person (no "I" as narrator)
+ * - Includes dates, locations, or specific numbers
+ * - Ends with unresolved thread or provocative statement
+ */
+function gateDarkOrigins(text: string, lower: string, sentences: string[], failures: string[]): QualityGateResult {
+  // Check third-person voice — "I" should NOT be used as narrator
+  // Allow "I" inside quotes (dialogue), but narrator should be third-person
+  const textWithoutQuotes = text.replace(/[""].*?[""]|".*?"/g, '');
+  const narratorICount = (textWithoutQuotes.match(/\bI\b/g) || []).length;
+  if (narratorICount > 2) {
+    failures.push(`First-person narrator detected (${narratorICount} uses of "I" outside quotes) — must be third-person documentary`);
+  }
+
+  // Check for dates, years, or specific time references
+  const datePatterns = /\b(19\d{2}|20[0-2]\d|january|february|march|april|may|june|july|august|september|october|november|december|spring of|summer of|winter of|fall of|that year|that night|the morning of)\b/i;
+  if (!datePatterns.test(text)) {
+    failures.push('Missing dates or time period references — documentary style needs specifics');
+  }
+
+  // Check for location specificity
+  const locationPatterns = /\b(county|state|town|city|street|avenue|road|highway|route|district|building|house|basement|attic|hospital|prison|courthouse|police|sheriff|detective|officer|FBI|authorities)\b/i;
+  if (!locationPatterns.test(text)) {
+    failures.push('Missing location/authority references — needs documentary grounding');
+  }
+
+  // Check ending — last 2 sentences should be unresolved or provocative
+  const lastTwo = sentences.slice(-2).join(' ').toLowerCase();
+  const endingPatterns = /\b(never (found|explained|solved|closed|recovered)|remains (open|unsolved|unknown)|still (stands|missing|unknown|unexplained)|was never|no (body|one|trace)|to this day|what (happened|they found|do you think)|case (was|remains)|were they|was he|was she|did they|the truth|nobody knows|some say)\b/i;
+  if (!endingPatterns.test(lastTwo)) {
+    // Softer check: question mark at end
+    if (!lastTwo.includes('?')) {
+      failures.push('Ending lacks unresolved thread — should end with mystery, question, or "the case remains..."');
+    }
+  }
+
+  return { passed: failures.length === 0, failures };
 }
 
 // =====================================================

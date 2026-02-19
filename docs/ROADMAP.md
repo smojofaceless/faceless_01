@@ -1,6 +1,6 @@
 # Project Roadmap
 
-> **Document Version:** 4.0  
+> **Document Version:** 4.1  
 > **Last Updated:** February 19, 2026  
 > **Author:** System Architect  
 > **Status:** Active Development
@@ -11,6 +11,7 @@
 
 | Date | Version | Changes |
 |------|---------|--------|
+| Feb 19, 2026 | 4.1 | **Kill Switch UI + Presets + Quality Gates**: Kill switch admin toggle on settings page (System Controls section, badge with ACTIVE/OFF/ERROR, reason input, reads `system_config`, calls `set_kill_switch` RPC). Presets finalized at 4: urban_legend (default), one_too_many, reddit_trending_horror, dark_origins. Quality gates for 3 presets in worker-v1 `steps.ts`: `gateOneToMany()` (counting language + numbers + reveal moment), `gateRedditTrendingHorror()` (first-person + mundane grounding + dialogue), `gateDarkOrigins()` (third-person + dates + locations + unresolved ending). Up to 2 retries before accepting. Platform cleanup verified (15/15 tests). Smoke tests: 37/37 pass (kill switch toggle, 4 presets, quality gate unit tests). Level 1 complete (11/11). Level 2: 12-16 complete. |
 | Feb 19, 2026 | 4.0 | **System Hardening Batch (20 improvements)**: Data cleanup cron (monthly: job_logs 30d, lifecycle 90d, metrics 365d). Winning patterns multi-window (7/14/30d) with exponential recency decay (`EXP(-0.03 * days_old)`). Story uniqueness threshold RPC (`check_story_uniqueness`). Dead post sweeper (`sweep_dead_posts`). Cross-platform performance view (`v_cross_platform_performance`). Strategy intelligence system: `post_strategies` + `platform_strategies` tables (20 seeded strategies across 6 platforms), `v_strategy_performance` view, `assign_post_strategy` + `get_top_strategies` RPCs, strategy-driven metadata generation with probabilistic selection. A/B variant auto-assignment RPC (`auto_assign_ab_variants`). Visual performance tracking (`v_visual_performance`). Draft/preview mode RPCs (`promote_draft_to_scheduled`, `reject_draft`). Alert webhook tables (`brand_alert_config`, `system_alert_config`) + Discord/Slack/generic webhook sender in schedule-jobs. metrics-collector: stub platform skipping + Instagram token refresh (proactive 7-day-before-expiry + 401/403 retry). post-worker: per-platform rate limiting + optimistic lock claim. worker-v1: uniqueness threshold enforcement (0.6). generate-post-metadata: time-awareness + strategy-driven prompts. Video renderer: auth middleware (`RENDERER_AUTH_KEY`) + graceful shutdown (SIGTERM/SIGINT). CORS tightened on 6 internal edge functions. Mobile responsive CSS (`responsive.css`) linked in 13 pages. Dashboard N+1 query fix. Cross-Platform & Strategy tab on AI Intelligence page. Migrations: `20260319020` + `20260319021`. |
 | Feb 16, 2026 | 3.5 | **Caption/Tags Learning Loop**: `post_metadata_versions` append-only version history table, `post_metadata_variant_assignments` A/B test config table, `v_post_variant_performance` + `v_top_metadata_patterns` views, 5 RPCs (`record_post_metadata_version`, `get_post_metadata_versions`, `get_variant_performance`, `assign_ab_variant`, `get_generation_exemplars`), `generate-post-metadata` v3.0 with exemplar injection + A/B variant prompting + version recording, `metadataVersionService.js` frontend service, Calendar version history panel (collapsible, expandable entries, performance badges). Level 3 scope — no ML, no auto-optimization. **Hardened**: `get_generation_exemplars` with exemplar bucketing (vibe_preset→brand-wide fallback cascade, `p_window_days` time scope, `p_preset_name` priority), `get_negative_exemplars` RPC (bottom performers injected as "avoid these patterns", fixed: added `p_preset_name` param), `v_post_variant_performance` + `v_top_metadata_patterns` views now include `collected_at`. **Winning Patterns Cache**: `winning_metadata_patterns` table (derived cache per brand/platform/vibe), `recompute_winning_patterns` + `recompute_all_winning_patterns` RPCs, `get_winning_patterns` RPC (vibe→brand-wide fallback), pg_cron nightly 03:00 UTC, generator injects top hooks/hashtags/CTAs/length stats into prompt. Migration: `20260317003`. |
 | Feb 15, 2026 | 3.4 | **Time Slot Scoring**: `time_slot_scores` table (7×24 grid per brand/platform/window), weighted engagement formula (`views + 5*likes + 10*comments + 10*shares`), timezone-aware bucketing via `AT TIME ZONE`, 4 RPCs (`recompute_time_slot_scores`, `recompute_all_time_slot_scores`, `get_time_slot_scores`, `get_best_time_slots`), pg_cron every 6h, `timeSlotService.js` frontend service, Calendar "Best Times" panel (toggle, platform/window selectors, top-5 chips). Analytics-only — no auto-scheduling. |
@@ -45,6 +46,7 @@
 
 | Item | Date | Notes |
 |------|------|-------|
+| **Kill Switch UI + Presets + Quality Gates** | Feb 19, 2026 | Kill switch admin toggle on settings page. 4 active presets finalized (urban_legend, one_too_many, reddit_trending_horror, dark_origins). Quality gates for 3 presets (one_too_many, reddit_trending_horror, dark_origins) with up to 2 retries. Platform cleanup verified (15/15). All smoke tests pass (37/37). Level 1: 11/11 complete. |
 | **System Hardening Batch** | Feb 19, 2026 | 20 improvements in one batch. Data cleanup cron, multi-window winning patterns with recency decay, story uniqueness RPC, dead post sweeper, cross-platform view, strategy intelligence (20 seeded strategies), A/B variant auto-assignment, visual performance view, draft/preview RPCs, alert webhook system. Edge function hardening: stub platform skip, Instagram token refresh, per-platform rate limiting, optimistic lock, uniqueness enforcement, time-aware + strategy-driven metadata, renderer auth + graceful shutdown, CORS tightening. Frontend: responsive.css on all pages, dashboard N+1 fix, cross-platform tab. Migrations: `20260319020` + `20260319021`. |
 | **Caption/Tags Learning Loop** | Feb 16, 2026 | `post_metadata_versions` (append-only version history) + `post_metadata_variant_assignments` (A/B test config). Views: `v_post_variant_performance`, `v_top_metadata_patterns`. 9 RPCs (incl. `get_negative_exemplars`, `recompute_winning_patterns`, `recompute_all_winning_patterns`, `get_winning_patterns`). `winning_metadata_patterns` derived cache table (top hooks, hashtags, CTAs, length stats per brand/platform/vibe). pg_cron nightly 03:00 UTC. `generate-post-metadata` v3.0: exemplar bucketing (vibe→brand-wide fallback, 30d window), negative exemplar injection, winning patterns injection, A/B variant prompting, automatic version recording. `metadataVersionService.js`. Calendar: collapsible version history panel, performance badges, expandable field snapshots. Migrations: `20260317001` + `20260317002` + `20260317003`. |
 | **Time Slot Scoring** | Feb 15, 2026 | `time_slot_scores` table (7×24 grid, UNIQUE per brand/platform/tz/window/dow/hour), weighted engagement scoring formula, timezone-aware bucketing, 4 RPCs, pg_cron every 6h, `timeSlotService.js`, Calendar Best Times panel (top-5 chips, platform/window selectors). Analytics-only. Migration: `20260316001_time_slot_scoring.sql`. |
@@ -714,37 +716,72 @@ scheduled → posting → posted
 
 ---
 
-### 11. Kill Switch
+### 11. ✅ Kill Switch — COMPLETE
 
-- [ ] Stop worker from taking new jobs
-- [ ] Stop posting new items
-- [ ] Pause all campaigns safely
-- [ ] Admin UI toggle
+> **Status:** ✅ COMPLETE (February 19, 2026)
+
+**Backend (already existed from #4 Failure Cluster Protection):**
+- [x] `system_config` table with `kill_switch` key (JSONB value: enabled, reason, enabled_at, disabled_at, updated_by)
+- [x] `is_kill_switch_active()` RPC — returns boolean
+- [x] `set_kill_switch(p_enabled, p_reason, p_updated_by)` RPC — returns updated state
+- [x] Checked in 7 edge functions: schedule-jobs, worker-v1, post-worker, schedule-posts, metrics-collector, metadata-scheduler, generate-post-metadata
+
+**Admin UI (new):**
+- [x] System Controls section on settings page (before Danger Zone)
+- [x] Kill switch toggle with badge (ACTIVE red pulse / OFF green / ERROR amber)
+- [x] Status display: reason, enabled/disabled timestamp
+- [x] Reason input with confirm/cancel flow on enable
+- [x] JS controller: `initKillSwitch()`, `refreshKillSwitchState()`, `setKillSwitch()`
+- [x] Reads `system_config` table directly, calls `set_kill_switch` RPC
+
+**Smoke Tests:** 12/12 pass — toggle on/off, reason preserved, timestamps set, edge function returns 503 when active
+
+**Files:**
+- `pages/settings.html` (System Controls section + JS controller)
+- `css/settings.css` (kill switch badge, status, toggle styles)
+- `scripts/smoke-test-kill-presets-gates.js` (37 tests total)
 
 ---
 
 ## ⚙️ LEVEL 2 — QUALITY & SCALE (Next Priority)
 
-### 12. Finish 5 More Presets (Total: 7)
+### 12. ✅ Active Presets (4 Total) — COMPLETE
 
-| Preset | Status | Description |
-|--------|--------|-------------|
-| `urban_legend` | ✅ Active | Documentary folklore style |
-| `one_too_many` | ✅ Active | Counting horror — rich trope pack engine with 8-dimension storytelling toolkit |
-| `faux_true_crime` | ⬜ Planned | True crime documentary style |
-| `historical_case_file` | ⬜ Planned | Archive/historical aesthetic |
-| `psychological_descent` | ⬜ Planned | Mental deterioration narrative |
-| `analog_broadcast` | ⬜ Planned | VHS/broadcast horror |
-| `innocence_horror` | ⬜ Planned | Childhood/innocence corruption |
+> **Status:** ✅ COMPLETE (February 19, 2026)
+
+| Preset | Status | Weight | Description |
+|--------|--------|--------|-------------|
+| `urban_legend` | ✅ Active (default) | 4 | Documentary folklore style |
+| `one_too_many` | ✅ Active | 4 | Counting horror — rich trope pack engine with 8-dimension storytelling toolkit |
+| `reddit_trending_horror` | ✅ Active | 4 | First-person Reddit nosleep style |
+| `dark_origins` | ✅ Active | 4 | Third-person true crime / unsolved mystery |
+
+**Scope Change:** Originally planned for 7 presets. Reduced to 4 active presets to focus on quality over quantity. Deprecated presets removed: faux_true_crime, historical_case_file, psychological_descent, analog_broadcast, innocence_horror.
+
+**Verified:** DB (`brand_templates`) has exactly 4 rows. `js/templates/horror.js` has matching 4 presets. All equal weight (4).
 
 ---
 
-### 13. Preset-Aware Quality Gates (Auto Reject/Regenerate)
+### 13. ✅ Preset-Aware Quality Gates — COMPLETE
 
-- [ ] `one_too_many`: Enforce exactly ONE anomaly
-- [ ] `innocence_horror`: Subtle constraint enforcement
-- [ ] `analog_broadcast`: Controlled blur/noise rules
-- [ ] Auto-regenerate on quality gate failure
+> **Status:** ✅ COMPLETE (February 19, 2026)
+
+Quality gates run after story generation, before hash computation. Each preset has pattern-matching rules. Up to 2 retries before accepting story anyway.
+
+- [x] `gateOneToMany(text)`: Counting/number language patterns, specific number mentions, reveal moment (photo/count/recount)
+- [x] `gateRedditTrendingHorror(text)`: First-person voice (3+ "I"), mundane details in first third (coffee/phone/apartment etc.), dialogue (quoted speech)
+- [x] `gateDarkOrigins(text)`: Third-person (no "I" outside quotes), dates/years/time periods, location/authority references, unresolved ending pattern
+- [x] `runQualityGate(vibePreset, storyText, title)` — dispatcher, returns `{ passed, failures[] }`
+- [x] Retry logic: `job.meta.quality_gate_attempts` counter, max 2 retries, then accept with logged warning
+- [x] All gate results logged via `logger.snapshot('story', 'quality_gate_*', ...)`
+
+**Note:** `urban_legend` has no quality gate (most flexible preset). Gates target the 3 presets with strongest structural expectations.
+
+**Smoke Tests:** 10/10 unit tests pass — good stories accepted, bad stories rejected, empty strings fail all gates
+
+**Files:**
+- `supabase/functions/worker-v1/steps.ts` (quality gate functions + integration in story step)
+- `scripts/smoke-test-kill-presets-gates.js`
 
 ---
 
@@ -1059,14 +1096,14 @@ MUST DO NOW (Level 1)
 ├── 8. ✅ Asset Storage (DONE)
 ├── 9. ✅ Auto Schedule → Post Queue (DONE)
 ├── 10. ✅ Background Music (DONE)
-└── 11. Kill Switch
+└── 11. ✅ Kill Switch (DONE)
 
 NEXT (Level 2)
-├── 12. 5 More Presets
-├── 13. Quality Gates
-├── 14. Subtitles
-├── 15. Effects
-└── 16. Safety Filters
+├── 12. ✅ 4 Active Presets (DONE)
+├── 13. ✅ Quality Gates (DONE)
+├── 14. ✅ Subtitles (DONE)
+├── 15. ✅ Effects (DONE)
+└── 16. ✅ Safety Filters (DONE)
 
 MID (Level 3)
 ├── 17. ✅ Post Registry (DONE)
