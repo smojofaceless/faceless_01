@@ -2270,13 +2270,18 @@ serve(async (req: Request) => {
         // to avoid race condition where claim_due_posts could grab a different post
         if (post.locked_by !== workerId && post.status === 'scheduled') {
           const leaseUntil = new Date(Date.now() + DEFAULT_LEASE_SECONDS * 1000).toISOString();
+          const claimNow = new Date().toISOString();
           const { data: claimResult, error: claimError } = await supabase
             .from('posts')
             .update({
               status: 'posting',
               locked_by: workerId,
-              locked_until: leaseUntil,
+              locked_at: claimNow,
+              lease_expires_at: leaseUntil,
               attempt_count: (post.attempt_count || 0) + 1,
+              last_attempt_at: claimNow,
+              posting_started_at: claimNow,
+              updated_at: claimNow,
             })
             .eq('id', postId)
             .eq('status', 'scheduled')  // Optimistic lock: only claim if still scheduled
