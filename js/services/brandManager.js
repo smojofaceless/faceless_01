@@ -364,13 +364,19 @@ class BrandManager {
         }
 
         try {
+            // Query platform_tokens (where OAuth tokens actually live)
+            // and map is_valid → is_connected for the UI
             const { data, error } = await supabaseClient
-                .from('brand_credentials')
-                .select('platform, is_connected, last_verified_at')
+                .from('platform_tokens')
+                .select('platform, is_valid, last_used_at')
                 .eq('brand_id', brandId);
 
             if (error) throw error;
-            return data || [];
+            return (data || []).map(row => ({
+                platform: row.platform,
+                is_connected: row.is_valid,
+                last_verified_at: row.last_used_at,
+            }));
         } catch (e) {
             console.error('Failed to get credentials:', e);
             return [];
