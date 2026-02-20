@@ -4475,6 +4475,10 @@ function buildImagePrompt(
     'cinematic-dark': 'Cinematic dark photography, moody desaturated colors, deep shadows, film grain, A24 horror aesthetic.',
     'analog-horror': 'Analog horror VHS aesthetic, heavy static, glitch artifacts, scanlines, found footage style.',
     'uncanny-illustrated': 'Editorial cartoon illustration, cel-shaded horror, bold black ink outlines, flat colors, uncanny faces.',
+    // DecideThisDaily art styles (non-horror)
+    'editorial-clean': 'Clean modern editorial photography, sharp focus, balanced neutral tones, documentary-style framing, everyday realism.',
+    'surreal-contemplative': 'Surreal contemplative digital art, dreamlike atmospheric compositions, ethereal volumetric light, soft painterly edges.',
+    'cinematic-contrast': 'High-contrast cinematic photography, bold dramatic compositions, vivid split-tone color grading, theatrical lighting.',
   };
   const styleBase = styleTemplates[artStyle] || styleTemplates['cinematic-dark'];
 

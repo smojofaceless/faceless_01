@@ -107,6 +107,32 @@ export const ART_STYLE_CONFIG: Record<string, ArtStyleConfig> = {
     technicalStyle: "editorial cartoon, graphic novel panel, cel shading, bold ink outlines, flat shading, posterized, slight halftone texture, VHS scanlines, chromatic aberration RGB edge split, analog noise, lo-fi horror cartoon, thick black outlines, simplified shapes",
     negativePrompt: "painterly realism, oil painting, watercolor, photorealism, cinematic, DSLR, film still, realistic skin texture, realistic skin pores, professional photography, photograph, camera, bokeh, lens flare, depth of field, studio lighting, natural lighting, smooth gradients, soft blending, airbrushed, hyper-detailed, 4K, high definition, movie screenshot, portrait photography, monochrome, grayscale, desaturated, washed out colors, gray skin, blue skin, green skin, text, words, letters",
   },
+
+  // =====================================================
+  // DECIDE THIS DAILY ART STYLES (non-horror brand)
+  // =====================================================
+
+  "editorial-clean": {
+    name: "Clean Editorial Photography",
+    basePrompt: "Clean modern editorial photography. Sharp focus, balanced neutral tones, documentary-style framing, everyday realism with cinematic composition. Magazine-quality imagery with a hint of tension. Professional commercial photography, warm and readable.",
+    colorOverride: "warm neutrals — cream, khaki, soft gray, muted gold accents, selective amber for tension, clean whites, desaturated but warm",
+    technicalStyle: "editorial photography, documentary style, magazine quality, sharp focus, clean composition, balanced lighting, modern real-world",
+    negativePrompt: "horror, dark, creepy, supernatural, monsters, blood, VHS, film grain, A24 horror, unsettling, dark forest, analog artifacts, text, words, letters",
+  },
+  "surreal-contemplative": {
+    name: "Surreal Contemplative Art",
+    basePrompt: "Surreal contemplative digital art. Dreamlike atmospheric compositions with soft painterly edges meeting sharp focal points. Ethereal and otherworldly but grounded in emotion. Conceptual art photography meets magical realism. Volumetric light and atmospheric haze, premium gallery-quality imagery.",
+    colorOverride: "deep indigo base, warm amber and gold accents, muted purple twilight, teal-to-copper gradients, soft rose highlights, occasional golden sunlight",
+    technicalStyle: "surreal art, contemplative, dreamlike, ethereal, volumetric lighting, magical realism, conceptual photography, gallery quality",
+    negativePrompt: "horror, dark, creepy, monsters, blood, VHS, film grain, A24 horror, unsettling faces, jump scares, dark forest, analog artifacts, text, words, letters",
+  },
+  "cinematic-contrast": {
+    name: "High-Contrast Cinematic Photography",
+    basePrompt: "High-contrast cinematic photography. Bold dramatic compositions, vivid split-tone color grading, sharp depth of field, powerful visual metaphors. Premium editorial quality, architectural symmetry meets human drama, theatrical lighting design.",
+    colorOverride: "bold complementary contrasts — warm gold vs cool sapphire, organic amber vs synthetic steel blue, vivid saturated opposing primaries, split-tone grading",
+    technicalStyle: "cinematic contrast, split-tone, theatrical lighting, bold composition, high contrast, editorial, architectural symmetry, dramatic",
+    negativePrompt: "horror, supernatural, VHS, film grain, monsters, blood, A24 horror, dark forest, desaturated, creepy, unsettling, analog artifacts, text, words, letters",
+  },
 };
 
 // =====================================================
