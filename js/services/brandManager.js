@@ -884,6 +884,196 @@ class BrandManager {
     }
 
     // =================================================================
+    // GAMEPLAY CLIPS (background video for non-image presets)
+    // =================================================================
+
+    /**
+     * Get all gameplay clips for a brand
+     * @param {string} brandId
+     * @returns {Promise<Array>}
+     */
+    async getGameplayClips(brandId) {
+        if (!this.useSupabase) {
+            console.warn('Gameplay clips require Supabase');
+            return [];
+        }
+        const { data, error } = await supabaseClient
+            .from('gameplay_clips')
+            .select('*')
+            .eq('brand_id', brandId)
+            .order('created_at', { ascending: true });
+
+        if (error) {
+            console.error('Failed to load gameplay clips:', error);
+            throw error;
+        }
+        return data || [];
+    }
+
+    /**
+     * Add a gameplay clip record to the DB (file should already be uploaded to storage)
+     * @param {string} brandId
+     * @param {Object} clipData - { id, display_name, file_path, duration_seconds, game, mood, energy, tags, vibe_presets, resolution, orientation, fps, file_size_mb }
+     * @returns {Promise<Object>}
+     */
+    async addGameplayClip(brandId, clipData) {
+        if (!this.useSupabase) throw new Error('Gameplay clips require Supabase');
+
+        const row = {
+            id: clipData.id,
+            brand_id: brandId,
+            display_name: clipData.display_name,
+            file_path: clipData.file_path,
+            duration_seconds: clipData.duration_seconds || 0,
+            game: clipData.game || 'generic',
+            mood: clipData.mood || 'neutral',
+            energy: clipData.energy || 'medium',
+            tags: clipData.tags || [],
+            vibe_presets: clipData.vibe_presets || [],
+            resolution: clipData.resolution || '720p',
+            orientation: clipData.orientation || 'portrait',
+            fps: clipData.fps || 30,
+            file_size_mb: clipData.file_size_mb || 0,
+            is_active: true,
+        };
+
+        const { data, error } = await supabaseClient
+            .from('gameplay_clips')
+            .upsert(row, { onConflict: 'id,brand_id' })
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Failed to add gameplay clip:', error);
+            throw error;
+        }
+        this.emit('gameplayClipChanged', { brandId, clip: data });
+        return data;
+    }
+
+    /**
+     * Toggle a gameplay clip active/inactive (soft delete)
+     * @param {string} brandId
+     * @param {string} clipId
+     * @param {boolean} isActive
+     */
+    async toggleGameplayClip(brandId, clipId, isActive) {
+        if (!this.useSupabase) throw new Error('Gameplay clips require Supabase');
+
+        const { error } = await supabaseClient
+            .from('gameplay_clips')
+            .update({ is_active: isActive, updated_at: new Date().toISOString() })
+            .eq('id', clipId)
+            .eq('brand_id', brandId);
+
+        if (error) {
+            console.error('Failed to toggle gameplay clip:', error);
+            throw error;
+        }
+        this.emit('gameplayClipChanged', { brandId, clipId, isActive });
+    }
+
+    /**
+     * Delete a gameplay clip from DB (does NOT remove storage file)
+     * @param {string} brandId
+     * @param {string} clipId
+     */
+    async deleteGameplayClip(brandId, clipId) {
+        if (!this.useSupabase) throw new Error('Gameplay clips require Supabase');
+
+        const { error } = await supabaseClient
+            .from('gameplay_clips')
+            .delete()
+            .eq('id', clipId)
+            .eq('brand_id', brandId);
+
+        if (error) {
+            console.error('Failed to delete gameplay clip:', error);
+            throw error;
+        }
+        this.emit('gameplayClipChanged', { brandId, clipId, deleted: true });
+    }
+
+    /**
+     * Upload a gameplay video file to Supabase Storage and create/update the DB record
+     * @param {string} brandId
+     * @param {File} file - The video file (MP4)
+     * @param {Object} meta - Additional metadata { display_name, game, mood, energy, duration_seconds, tags, vibe_presets, resolution, orientation }
+     * @returns {Promise<Object>} The created clip record
+     */
+    async uploadGameplayClip(brandId, file, meta = {}) {
+        if (!this.useSupabase) throw new Error('Gameplay clips require Supabase');
+
+        // Generate clip ID from filename (sanitize)
+        const baseName = file.name.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+        const clipId = baseName;
+        const storagePath = `brands/${brandId}/gameplay/${clipId}.mp4`;
+
+        // 1. Upload file to storage
+        const { error: uploadError } = await supabaseClient.storage
+            .from('story-videos')
+            .upload(storagePath, file, {
+                cacheControl: '3600',
+                upsert: true,
+                contentType: file.type || 'video/mp4',
+            });
+
+        if (uploadError) {
+            console.error('Failed to upload gameplay clip:', uploadError);
+            throw new Error(`Upload failed: ${uploadError.message}`);
+        }
+
+        // 2. Create DB record
+        const fileSizeMb = parseFloat((file.size / (1024 * 1024)).toFixed(2));
+        const clipData = {
+            id: clipId,
+            display_name: meta.display_name || baseName.replace(/_/g, ' '),
+            file_path: storagePath,
+            duration_seconds: meta.duration_seconds || 0,
+            game: meta.game || 'generic',
+            mood: meta.mood || 'neutral',
+            energy: meta.energy || 'medium',
+            tags: meta.tags || [],
+            vibe_presets: meta.vibe_presets || [],
+            resolution: meta.resolution || '720p',
+            orientation: meta.orientation || 'portrait',
+            fps: meta.fps || 30,
+            file_size_mb: fileSizeMb,
+        };
+
+        return await this.addGameplayClip(brandId, clipData);
+    }
+
+    /**
+     * Remove a gameplay clip file from Storage
+     * @param {string} brandId
+     * @param {string} clipId
+     */
+    async removeGameplayFile(brandId, clipId) {
+        if (!this.useSupabase) throw new Error('Gameplay clips require Supabase');
+
+        const path = `brands/${brandId}/gameplay/${clipId}.mp4`;
+        const { error } = await supabaseClient.storage
+            .from('story-videos')
+            .remove([path]);
+
+        if (error) {
+            console.error('Failed to remove gameplay file from storage:', error);
+        }
+    }
+
+    /**
+     * Get the public URL for a gameplay clip
+     * @param {string} brandId
+     * @param {string} clipId
+     * @returns {string}
+     */
+    getGameplayClipUrl(brandId, clipId) {
+        const supabaseUrl = typeof CONFIG !== 'undefined' ? CONFIG.SUPABASE_URL : '';
+        return `${supabaseUrl}/storage/v1/object/public/story-videos/brands/${brandId}/gameplay/${clipId}.mp4`;
+    }
+
+    // =================================================================
     // VIBE PRESETS (brand_templates CRUD)
     // =================================================================
 

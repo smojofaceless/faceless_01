@@ -1736,13 +1736,23 @@ app.post('/render', requireAuth, async (req, res) => {
       effects_profile = null, // v3.1: Effects profile with intensity controls (0-1)
       effects_config = null,  // v4.0: Controlled Motion effects config from get_effects_config_for_job()
       subtitle_config = null, // v6.0: Per-brand subtitle styling from get_subtitle_config_for_job()
+      background_video_url = null,  // v7.0: Gameplay/background video URL (replaces images)
+      background_video_offset = 0,  // v7.0: Start offset in seconds for background video trim
     } = req.body;
     
-    if (!images || images.length === 0) {
-      return res.status(400).json({ error: 'No images provided' });
+    const isGameplayMode = !!background_video_url;
+    
+    if (!isGameplayMode && (!images || images.length === 0)) {
+      return res.status(400).json({ error: 'No images or background_video_url provided' });
     }
     
-    console.log(`[${jobId}] New render job: ${images.length} images, audio: ${audio_url ? 'yes' : 'no'}, music: ${music_url ? 'yes' : 'no'}, captions: ${captions.length} words`);
+    if (isGameplayMode) {
+      console.log(`[${jobId}] 🎮 GAMEPLAY MODE: background video @ offset ${background_video_offset}s`);
+      console.log(`[${jobId}]   Video URL: ${background_video_url.slice(0, 100)}...`);
+      console.log(`[${jobId}]   Audio: ${audio_url ? 'yes' : 'no'}, Captions: ${captions.length} words`);
+    } else {
+      console.log(`[${jobId}] New render job: ${images.length} images, audio: ${audio_url ? 'yes' : 'no'}, music: ${music_url ? 'yes' : 'no'}, captions: ${captions.length} words`);
+    }
     console.log(`[${jobId}] Effects:`, effects);
     console.log(`[${jobId}] Mood levels: ${mood_levels.length > 0 ? mood_levels.join(', ') : 'not provided (using defaults)'}`);
     console.log(`[${jobId}] Supabase job: ${supabaseJobId || 'none'}`);
@@ -1841,8 +1851,8 @@ app.post('/render', requireAuth, async (req, res) => {
       status_url: `/status/${jobId}`,
     });
     
-    // Process asynchronously (now with visual_dna, effects_profile, effects_config, music_config, and subtitle_config)
-    processRender(jobId, images, audio_url, durations, captions, effects, webhook_url, supabaseJobId, low_memory, music_url, music_volume, mood_levels, visual_dna, safeEffectsProfile, music_config, safeEffectsConfig, safeSubtitleConfig);
+    // Process asynchronously (now with visual_dna, effects_profile, effects_config, music_config, subtitle_config, and background_video)
+    processRender(jobId, images || [], audio_url, durations || [], captions, effects, webhook_url, supabaseJobId, low_memory, music_url, music_volume, mood_levels, visual_dna, safeEffectsProfile, music_config, safeEffectsConfig, safeSubtitleConfig, background_video_url, background_video_offset);
     
   } catch (error) {
     console.error('[RENDER] Error:', error);
@@ -1864,8 +1874,10 @@ app.post('/render', requireAuth, async (req, res) => {
  * @param musicConfig - Music mixing config: { ducking: { enabled, duck_volume, attack_ms, release_ms }, fade: { in_ms, out_ms } }
  * @param effectsConfig - Controlled motion config from get_effects_config_for_job()
  * @param subtitleConfig - Per-brand subtitle styling from get_subtitle_config_for_job()
+ * @param backgroundVideoUrl - Background video URL for gameplay mode (replaces images)
+ * @param backgroundVideoOffset - Start offset in seconds for background video trim
  */
-async function processRender(jobId, imageUrls, audioUrl, durations, captions, effects, webhookUrl, supabaseJobId, lowMemory, musicUrl = null, musicVolume = 15, moodLevels = [], visualDNA = null, effectsProfile = null, musicConfig = null, effectsConfig = null, subtitleConfig = null) {
+async function processRender(jobId, imageUrls, audioUrl, durations, captions, effects, webhookUrl, supabaseJobId, lowMemory, musicUrl = null, musicVolume = 15, moodLevels = [], visualDNA = null, effectsProfile = null, musicConfig = null, effectsConfig = null, subtitleConfig = null, backgroundVideoUrl = null, backgroundVideoOffset = 0) {
   activeRenders++;
   const jobDir = path.join(TEMP_DIR, jobId);
   await fs.mkdir(jobDir, { recursive: true });
@@ -2034,23 +2046,126 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
   try {
     const job = jobs.get(jobId);
     
-    // Step 1: Download images (handle base64 and URLs)
-    const downloadStart = Date.now();
-    console.log(`[${jobId}] Downloading ${imageUrls.length} images...`);
-    const imagePaths = [];
-    for (let i = 0; i < imageUrls.length; i++) {
-      const ext = imageUrls[i].startsWith('data:image/webp') ? 'webp' : 
-                  imageUrls[i].startsWith('data:image/png') ? 'png' : 'jpg';
-      const imgPath = path.join(jobDir, `image_${i}.${ext}`);
-      await downloadFile(imageUrls[i], imgPath);
-      imagePaths.push(imgPath);
-      job.progress = Math.round((i + 1) / imageUrls.length * 20);
-    }
-    console.log(`[${jobId}] ✓ Images downloaded`);
-    timings.download = Date.now() - downloadStart;
-    job.status = 'processing';
+    // Detect gameplay mode
+    const isGameplayMode = !!backgroundVideoUrl;
+    let rawVideoPath;
     
-    // Step 2: Download audio
+    if (isGameplayMode) {
+      // =====================================================
+      // GAMEPLAY MODE: Download + trim background video
+      // =====================================================
+      const downloadStart = Date.now();
+      console.log(`[${jobId}] 🎮 Downloading gameplay video...`);
+      const gameplayPath = path.join(jobDir, 'gameplay_source.mp4');
+      await downloadFile(backgroundVideoUrl, gameplayPath);
+      job.progress = 15;
+      console.log(`[${jobId}] ✓ Gameplay video downloaded`);
+      timings.download = Date.now() - downloadStart;
+      
+      // Get audio duration for trim length (or use video estimation)
+      let trimDuration = 60; // default
+      if (audioUrl) {
+        // Probe audio duration using ffprobe
+        try {
+          const probeResult = await new Promise((resolve, reject) => {
+            const proc = require('child_process').execFile('ffprobe', [
+              '-v', 'quiet', '-print_format', 'json', '-show_format', gameplayPath
+            ], (err, stdout) => {
+              if (err) return reject(err);
+              try { resolve(JSON.parse(stdout)); } catch(e) { reject(e); }
+            });
+          });
+          const sourceDuration = parseFloat(probeResult?.format?.duration || '0');
+          console.log(`[${jobId}]   Source video duration: ${sourceDuration.toFixed(1)}s`);
+        } catch (probeErr) {
+          console.log(`[${jobId}]   ⚠️ Probe failed (non-fatal): ${probeErr.message}`);
+        }
+        
+        // We'll determine actual trim length after downloading audio
+        // For now, estimate from durations sum or default
+        if (durations && durations.length > 0) {
+          trimDuration = durations.reduce((a, b) => a + b, 0);
+        }
+      }
+      
+      // Trim the gameplay video from offset for trimDuration + 2s buffer
+      const videoStart = Date.now();
+      console.log(`[${jobId}] 🎮 Trimming gameplay: offset=${backgroundVideoOffset}s, duration=${trimDuration}s`);
+      rawVideoPath = path.join(jobDir, 'raw.mp4');
+      
+      const { execFile } = require('child_process');
+      await new Promise((resolve, reject) => {
+        // Use -ss before -i for fast seek, then -t for duration
+        // Scale to 1080x1920 (portrait) if needed, with padding
+        const args = [
+          '-ss', String(backgroundVideoOffset),
+          '-i', gameplayPath,
+          '-t', String(trimDuration + 1), // +1s buffer
+          '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black',
+          '-c:v', 'libx264',
+          '-preset', useLowMemory ? 'ultrafast' : 'fast',
+          '-crf', '23',
+          '-an', // Remove original audio — we'll add narration
+          '-y',
+          rawVideoPath,
+        ];
+        
+        console.log(`[${jobId}]   FFmpeg trim: ffmpeg ${args.join(' ')}`);
+        const proc = execFile('ffmpeg', args, { maxBuffer: 50 * 1024 * 1024 }, (err, stdout, stderr) => {
+          if (err) {
+            console.error(`[${jobId}]   FFmpeg trim error: ${stderr?.slice(-500)}`);
+            return reject(new Error(`Gameplay trim failed: ${err.message}`));
+          }
+          resolve();
+        });
+      });
+      
+      // Clean up source file
+      await fs.unlink(gameplayPath).catch(() => {});
+      timings.createVideo = Date.now() - videoStart;
+      job.progress = 50;
+      console.log(`[${jobId}] ✓ Gameplay trimmed (${Math.round(timings.createVideo/1000)}s)`);
+      
+    } else {
+      // =====================================================
+      // NORMAL MODE: Download images + create video from images
+      // =====================================================
+    
+      // Step 1: Download images (handle base64 and URLs)
+      const downloadStart = Date.now();
+      console.log(`[${jobId}] Downloading ${imageUrls.length} images...`);
+      const imagePaths = [];
+      for (let i = 0; i < imageUrls.length; i++) {
+        const ext = imageUrls[i].startsWith('data:image/webp') ? 'webp' : 
+                    imageUrls[i].startsWith('data:image/png') ? 'png' : 'jpg';
+        const imgPath = path.join(jobDir, `image_${i}.${ext}`);
+        await downloadFile(imageUrls[i], imgPath);
+        imagePaths.push(imgPath);
+        job.progress = Math.round((i + 1) / imageUrls.length * 20);
+      }
+      console.log(`[${jobId}] ✓ Images downloaded`);
+      timings.download = Date.now() - downloadStart;
+      job.status = 'processing';
+      
+      // Step 2b (images): Create video from images  
+      const videoStart = Date.now();
+      const useKenBurns = mergedEffects.kenBurns !== false && !DISABLE_KEN_BURNS;
+      console.log(`[${jobId}] Creating video from images (lowMemory: ${useLowMemory}, kenBurns: ${useKenBurns})...`);
+      rawVideoPath = path.join(jobDir, 'raw.mp4');
+      await createVideoFromImages(jobId, imagePaths, durations, rawVideoPath, {
+        kenBurns: useKenBurns,
+        lowMemory: useLowMemory,
+        moodLevels: moodLevels,
+        motionOverride: dnaMotionOverride,
+        effectsConfig: controlledMotionConfig,
+        seed: supabaseJobId || jobId,
+      });
+      timings.createVideo = Date.now() - videoStart;
+      job.progress = 50;
+      console.log(`[${jobId}] ✓ Base video created (${Math.round(timings.createVideo/1000)}s)`);
+    }
+    
+    // Step 3: Download audio (shared by both modes)
     let audioPath = null;
     if (audioUrl) {
       console.log(`[${jobId}] Downloading audio...`);
@@ -2058,24 +2173,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
       await downloadFile(audioUrl, audioPath);
       console.log(`[${jobId}] ✓ Audio downloaded`);
     }
-    job.progress = 25;
-    
-    // Step 3: Create video from images
-    const videoStart = Date.now();
-    const useKenBurns = mergedEffects.kenBurns !== false && !DISABLE_KEN_BURNS;
-    console.log(`[${jobId}] Creating video from images (lowMemory: ${useLowMemory}, kenBurns: ${useKenBurns})...`);
-    const rawVideoPath = path.join(jobDir, 'raw.mp4');
-    await createVideoFromImages(jobId, imagePaths, durations, rawVideoPath, {
-      kenBurns: useKenBurns,
-      lowMemory: useLowMemory,
-      moodLevels: moodLevels, // Pass mood levels for intelligent Ken Burns
-      motionOverride: dnaMotionOverride, // v3.0: Pass Visual DNA motion override
-      effectsConfig: controlledMotionConfig, // v4.0: Controlled Motion per-scene Ken Burns
-      seed: supabaseJobId || jobId,           // v4.0: Deterministic seed for KB direction
-    });
-    timings.createVideo = Date.now() - videoStart;
-    job.progress = 50;
-    console.log(`[${jobId}] ✓ Base video created (${Math.round(timings.createVideo/1000)}s)`);
+    job.progress = isGameplayMode ? 55 : 25;
     
     // Step 4: Add audio (narration)
     let currentVideo = rawVideoPath;
@@ -2114,7 +2212,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
           console.log(`[${jobId}] Adding background music at ${safeVolume}% volume (ducking=${musicConfig?.ducking?.enabled || false})...`);
           const withMusicPath = path.join(jobDir, 'with_music.mp4');
           // Calculate total video duration for fade-out timing
-          const totalDuration = durations ? durations.reduce((a, b) => a + b, 0) : 0;
+          const totalDuration = (durations && durations.length > 0) ? durations.reduce((a, b) => a + b, 0) : 60;
           await mixBackgroundMusic(currentVideo, musicPath, withMusicPath, safeVolume, musicConfig || null, totalDuration);
           await fs.unlink(currentVideo).catch(() => {});
           await fs.unlink(musicPath).catch(() => {});
@@ -2164,7 +2262,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
         name: 'Visual DNA Grade', 
         category: 'DNA', 
         timeline: 'Full video', 
-        duration: `0:00 - ${formatTime(durations.reduce((s, d) => s + d, 0))}`, 
+        duration: `0:00 - ${formatTime((durations && durations.length > 0) ? durations.reduce((s, d) => s + d, 0) : 0)}`, 
         processTime: dnaTime,
         filters: dnaFilters.slice(0, 5).join(', ') + (dnaFilters.length > 5 ? '...' : ''),
       });
@@ -2172,7 +2270,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     }
     
     // Get total video duration for timeline tracking
-    const totalDuration = durations.reduce((sum, d) => sum + d, 0);
+    const totalDuration = (durations && durations.length > 0) ? durations.reduce((sum, d) => sum + d, 0) : 0;
     
     // Build scene timeline info
     let sceneTimeline = [];
@@ -2189,7 +2287,8 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
       sceneStartTime = sceneEnd;
     }
     
-    // Track Ken Burns if enabled (useKenBurns already declared above)
+    // Track Ken Burns if enabled (not used in gameplay mode)
+    const useKenBurns = !isGameplayMode && mergedEffects.kenBurns !== false && !DISABLE_KEN_BURNS;
     if (useKenBurns) {
       appliedEffects.push({ 
         name: dnaMotionOverride ? `Ken Burns (${dnaMotionOverride.profile})` : 'Ken Burns', 

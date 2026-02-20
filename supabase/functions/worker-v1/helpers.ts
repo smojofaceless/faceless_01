@@ -186,6 +186,14 @@ export function pathForJobMusic(brandId: string, jobId: string): string {
   return `brands/${brandId}/jobs/${jobId}/audio/music.mp3`;
 }
 
+/**
+ * Build storage path for brand-level gameplay clip
+ * @returns Path like "brands/abc/gameplay/minecraft_01.mp4"
+ */
+export function pathForBrandGameplay(brandId: string, clipId: string): string {
+  return `brands/${brandId}/gameplay/${clipId}.mp4`;
+}
+
 // =====================================================
 // TELEMETRY LOGGING
 // Structured logs for debugging and monitoring

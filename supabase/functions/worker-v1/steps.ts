@@ -52,6 +52,7 @@ import {
   pathForFinalVideo,
   pathForBrandMusic,
   pathForJobMusic,
+  pathForBrandGameplay,
 } from "./helpers.ts";
 
 import { StepLogger } from "./stepLogger.ts";
@@ -2928,6 +2929,143 @@ function computeMoodLevel(
   return Math.max(1, Math.min(10, mood));
 }
 
+// =====================================================
+// GAMEPLAY CLIP SELECTION
+// For presets with visual_type=gameplay, we skip AI image generation
+// and instead select a pre-uploaded gameplay clip + random offset.
+// The assemble step will then use this clip as the video background.
+// =====================================================
+
+/** Known gameplay presets — expand as new gameplay brands are added */
+const GAMEPLAY_PRESETS = new Set(['no_good_choice']);
+
+/**
+ * Check if this job should use a gameplay clip instead of AI images.
+ * Returns a StepResult if gameplay mode is active, null otherwise
+ * (so the caller falls through to normal image generation).
+ */
+async function trySelectGameplayClip(
+  supabase: SupabaseClient,
+  job: Job,
+  logger: StepLogger,
+): Promise<StepResult | null> {
+  const vibePreset = job.vibe_preset || (job.meta?.vibe_preset as string) || '';
+
+  // Quick exit: not a gameplay preset
+  if (!GAMEPLAY_PRESETS.has(vibePreset)) {
+    return null;
+  }
+
+  console.log(`[IMAGES] Gameplay preset detected: "${vibePreset}" — checking for gameplay clips`);
+
+  // Already completed? Check idempotency
+  const idempotencyKey = `${job.id}:gameplay_clip_select`;
+  const existingAsset = await getAssetByKey(supabase, job.id, idempotencyKey);
+  if (existingAsset?.meta?.gameplay_clip_url) {
+    console.log(`[IMAGES] Gameplay clip already selected: ${existingAsset.meta.gameplay_clip_url}`);
+    return { success: true, skipped: true, data: { gameplay: true, clip_url: existingAsset.meta.gameplay_clip_url as string } };
+  }
+
+  // Calculate target video duration from audio
+  const audioDurationMs = job.meta?.audio_duration_ms as number | undefined;
+  let videoDuration: number;
+  if (audioDurationMs && audioDurationMs > 0) {
+    videoDuration = Math.ceil(audioDurationMs / 1000);
+  } else {
+    const rawDuration = job.meta?.duration;
+    if (typeof rawDuration === 'number') {
+      videoDuration = rawDuration;
+    } else if (rawDuration && typeof rawDuration === 'object') {
+      const durObj = rawDuration as { minSeconds?: number; maxSeconds?: number };
+      videoDuration = Math.round(((durObj.minSeconds || 60) + (durObj.maxSeconds || 90)) / 2);
+    } else {
+      videoDuration = 60;
+    }
+  }
+
+  // Call RPC to select clip + offset
+  const { data: clipData, error: clipError } = await supabase.rpc('select_gameplay_clip_with_offset', {
+    p_job_id: job.id,
+    p_brand_id: job.brand_id,
+    p_video_duration: videoDuration,
+    p_vibe_preset: vibePreset,
+  });
+
+  if (clipError) {
+    console.warn(`[IMAGES] Gameplay clip RPC error: ${clipError.message} — falling back to AI images`);
+    await logger.snapshot('images', 'gameplay_fallback', { error: clipError.message }, 'No gameplay clips available, using AI images');
+    return null; // Fall through to normal image generation
+  }
+
+  const clips = clipData as Array<{
+    clip_id: string;
+    display_name: string;
+    file_path: string;
+    storage_url: string;
+    duration_seconds: number;
+    start_offset_seconds: number;
+    game: string;
+    clip_count: number;
+  }>;
+
+  if (!clips || clips.length === 0 || clips[0]?.clip_count === 0) {
+    console.log(`[IMAGES] No gameplay clips found for brand=${job.brand_id}, preset=${vibePreset} — falling back to AI images`);
+    await logger.snapshot('images', 'gameplay_fallback', { brand_id: job.brand_id, preset: vibePreset }, 'No gameplay clips uploaded yet, using AI images');
+    return null; // Fall through to normal image generation
+  }
+
+  const selected = clips[0];
+
+  // Build public URL for the clip from storage path
+  const { data: urlData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(selected.file_path);
+  const clipPublicUrl = urlData?.publicUrl || '';
+
+  console.log(`[IMAGES] ✓ Gameplay clip selected: "${selected.display_name}" (${selected.game}), offset=${selected.start_offset_seconds}s, duration=${videoDuration}s, clip_count=${selected.clip_count}`);
+
+  // Store in job meta for the assemble step
+  await updateJobMeta(supabase, job.id, {
+    gameplay_mode: true,
+    gameplay_clip_id: selected.clip_id,
+    gameplay_clip_name: selected.display_name,
+    gameplay_clip_url: clipPublicUrl,
+    gameplay_clip_file_path: selected.file_path,
+    gameplay_clip_offset: selected.start_offset_seconds,
+    gameplay_clip_duration: selected.duration_seconds,
+    gameplay_video_duration: videoDuration,
+    gameplay_clip_game: selected.game,
+  });
+
+  // Store idempotency asset
+  await upsertAsset(supabase, job.id, idempotencyKey, 'gameplay_clip', selected.file_path, clipPublicUrl, {
+    gameplay_clip_url: clipPublicUrl,
+    clip_id: selected.clip_id,
+    display_name: selected.display_name,
+    start_offset: selected.start_offset_seconds,
+    video_duration: videoDuration,
+    game: selected.game,
+    clip_count: selected.clip_count,
+  });
+
+  await logger.snapshot('images', 'gameplay_selected', {
+    clip_id: selected.clip_id,
+    display_name: selected.display_name,
+    file_path: selected.file_path,
+    start_offset: selected.start_offset_seconds,
+    video_duration: videoDuration,
+    game: selected.game,
+  }, `Gameplay clip selected: "${selected.display_name}" @ ${selected.start_offset_seconds}s offset`);
+
+  return {
+    success: true,
+    data: {
+      gameplay: true,
+      clip_id: selected.clip_id,
+      clip_url: clipPublicUrl,
+      offset: selected.start_offset_seconds,
+    },
+  };
+}
+
 export async function executeImagesStep(
   supabase: SupabaseClient,
   job: Job,
@@ -2936,6 +3074,16 @@ export async function executeImagesStep(
   logger: StepLogger,
   functionStartTime?: number
 ): Promise<StepResult> {
+  // =====================================================
+  // GAMEPLAY PRESET CHECK — skip AI images, select gameplay clip
+  // If this brand/preset has gameplay clips uploaded, we use a random
+  // segment of the clip as background video instead of generating images.
+  // =====================================================
+  const gameplayResult = await trySelectGameplayClip(supabase, job, logger);
+  if (gameplayResult) {
+    return gameplayResult;
+  }
+
   // Load scene data
   const sceneAsset = await getAssetByKey(supabase, job.id, `${job.id}:scenes_subtitles`);
   if (!sceneAsset?.meta?.scenes) {
@@ -4793,13 +4941,23 @@ export async function executeAssembleStep(
     return { success: false, error: 'No audio asset found - run voice step first' };
   }
 
-  const imageAssets = await getAssetsByPrefix(supabase, job.id, `${job.id}:image_generate:`);
-  if (imageAssets.length === 0) {
-    return { success: false, error: 'No image assets found - run images step first' };
-  }
+  // =====================================================
+  // GAMEPLAY MODE: Use background video instead of images
+  // =====================================================
+  const isGameplayMode = job.meta?.gameplay_mode === true;
+  let imageUrls: string[] = [];
 
-  const imageUrls = imageAssets
-    .sort((a, b) => {
+  if (isGameplayMode) {
+    console.log(`[ASSEMBLE] 🎮 Gameplay mode: using background video instead of images`);
+    // No image assets needed — the renderer will use background_video_url
+  } else {
+    const imageAssets = await getAssetsByPrefix(supabase, job.id, `${job.id}:image_generate:`);
+    if (imageAssets.length === 0) {
+      return { success: false, error: 'No image assets found - run images step first' };
+    }
+
+    imageUrls = imageAssets
+      .sort((a, b) => {
       // Parse scene_X or scene_X_sub_Y from idempotency key
       // e.g. "jobid:image_generate:scene_3" → sceneIdx=3, subIdx=0
       // e.g. "jobid:image_generate:scene_3_sub_1" → sceneIdx=3, subIdx=1
@@ -4817,6 +4975,7 @@ export async function executeAssembleStep(
     })
     .map(a => a.public_url)
     .filter(Boolean) as string[];
+  }
 
   const audioUrl = audioAsset.public_url;
   
@@ -4916,6 +5075,9 @@ export async function executeAssembleStep(
       // Snapshot the assembly input before rendering
       await logger.snapshot('assemble', 'payload', {
         renderer: 'ffmpeg',
+        gameplay_mode: isGameplayMode,
+        gameplay_clip: isGameplayMode ? job.meta?.gameplay_clip_name : undefined,
+        gameplay_offset: isGameplayMode ? job.meta?.gameplay_clip_offset : undefined,
         image_count: imageUrls.length,
         audio_url: audioUrl.slice(0, 100),
         duration: duration,
@@ -4928,7 +5090,7 @@ export async function executeAssembleStep(
         effects_intensity: effectsConfig?.intensity ?? null,
         subtitle_config_resolved: !!subtitleConfig,
         subtitle_style: subtitleConfig?.style ?? 'bold',
-      }, 'Video assembly input');
+      }, isGameplayMode ? `Gameplay video assembly: ${job.meta?.gameplay_clip_name}` : 'Video assembly input');
 
       videoUrl = await assembleWithRenderer(
         videoRendererUrl,
@@ -5172,20 +5334,28 @@ async function assembleWithRenderer(
   console.log(`[ASSEMBLE] Subtitle config: ${subtitleConfig ? `style=${subtitleConfig.style}, position=${subtitleConfig.position}` : 'null (using renderer defaults)'}`);
 
   // Build the render payload once (used for initial + retry)
+  // Detect gameplay mode from job meta
+  const gameplayMode = meta?.gameplay_mode === true;
+  const gameplayClipUrl = meta?.gameplay_clip_url as string | undefined;
+  const gameplayClipOffset = meta?.gameplay_clip_offset as number | undefined;
+
   const renderPayload = JSON.stringify({
     job_id: jobId,
-    images: imageUrls,
+    images: gameplayMode ? [] : imageUrls,
     audio_url: audioUrl,
-    durations: durations,
+    durations: gameplayMode ? [] : durations,
     captions: captions,
+    // Gameplay: background video instead of images
+    background_video_url: gameplayMode ? gameplayClipUrl : undefined,
+    background_video_offset: gameplayMode ? (gameplayClipOffset || 0) : undefined,
     effects: {
-      kenBurns: true,
-      fadeTransitions: true,
+      kenBurns: !gameplayMode, // No Ken Burns on gameplay video
+      fadeTransitions: !gameplayMode,
       fadeIn: true,
       fadeOut: true,
-      filmGrain: !cmActive,
-      vignette: !cmActive,
-      horrorGrade: !cmActive,
+      filmGrain: !cmActive && !gameplayMode,
+      vignette: !cmActive && !gameplayMode,
+      horrorGrade: !cmActive && !gameplayMode,
       captionStyle: (subtitleConfig as Record<string, unknown>)?.style as string || 'bold',
     },
     // v4.0: Controlled Motion effects config (overrides legacy effects when present)
