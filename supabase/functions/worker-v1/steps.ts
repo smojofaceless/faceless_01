@@ -526,99 +526,124 @@ export async function executeStoryStep(
     // Log prompt snapshot
     await logger.snapshot('story', 'prompt', storyPrompt, `OpenAI prompt for ${vibePreset} story`);
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openaiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: getStorySystemPrompt(vibePreset),
-          },
-          {
-            role: 'user',
-            content: storyPrompt
-          }
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0.9,
-        max_tokens: 2000,
-      }),
-    });
+    // ── Story Generation with Quality Gate Retry Loop ──────────
+    // If the quality gate rejects the story, we regenerate in-place (up to 3 attempts).
+    // Previous implementation threw an error, but the pipeline has no step-level retry,
+    // so the throw was causing a permanent failure instead of a retry.
+    const MAX_GATE_ATTEMPTS = 3;
+    let title = '';
+    let storyText = '';
+    let storySetting = '';
+    let storyConcept = '';
+    let gateAttempt = 0;
+    let gatePassed = false;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
-    }
+    while (gateAttempt < MAX_GATE_ATTEMPTS && !gatePassed) {
+      gateAttempt++;
+      console.log(`[STORY] Generation attempt ${gateAttempt}/${MAX_GATE_ATTEMPTS}`);
 
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+      // Rebuild prompt on retry (picks different scenario/seed for variety)
+      if (gateAttempt > 1) {
+        if (vibePreset === 'reddit_trending_horror') {
+          const recentSettings2 = recentStories?.map(s => s.setting).filter(Boolean) as string[] || [];
+          horrorScenario = pickHorrorScenario(recentSettings2);
+          storyPrompt = buildRedditInspiredPrompt(horrorScenario, wordRange, recentStories);
+        } else if (vibePreset === 'dark_origins') {
+          const recentSettings2 = recentStories?.map(s => s.setting).filter(Boolean) as string[] || [];
+          darkOriginsScenario = pickDarkOriginsScenario(recentSettings2);
+          storyPrompt = buildDarkOriginsPrompt(darkOriginsScenario, wordRange, recentStories);
+        } else {
+          storyPrompt = buildStoryPrompt(vibePreset, wordRange, recentStories);
+        }
+      }
 
-    if (!content) {
-      throw new Error('No content in OpenAI response');
-    }
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openaiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o',
+          messages: [
+            {
+              role: 'system',
+              content: getStorySystemPrompt(vibePreset),
+            },
+            {
+              role: 'user',
+              content: storyPrompt
+            }
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.9 + (gateAttempt - 1) * 0.05, // Slightly increase temp on retry for variety
+          max_tokens: 2000,
+        }),
+      });
 
-    const parsed = JSON.parse(content);
-    const title = parsed.title || 'Untitled Story';
-    let storyText = parsed.story || parsed.content || parsed.text;
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+      }
 
-    // Sanitize dashes from narration text — em-dashes and standalone hyphens
-    // don't render well in subtitles/captions
-    if (storyText) {
-      storyText = storyText
-        .replace(/\s*—\s*/g, ', ')      // em-dash → comma
-        .replace(/\s*–\s*/g, ', ')      // en-dash → comma
-        .replace(/\s+-\s+/g, ', ')      // spaced hyphen → comma
-        .replace(/,\s*,/g, ',')         // clean up double commas
-        .replace(/,\s*\./g, '.')        // clean up comma before period
-        .trim();
-      console.log(`[STORY] Sanitized dashes from narration text`);
-    }
-    // Extract concept metadata for thematic uniqueness (GPT returns these)
-    const storySetting = parsed.setting || '';
-    const storyConcept = parsed.concept || '';
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
 
-    if (!storyText) {
-      throw new Error('Story generation returned no story text');
-    }
+      if (!content) {
+        throw new Error('No content in OpenAI response');
+      }
 
-    // ── Quality Gate: Preset-specific content validation ──────────
-    // Checks story structure matches the preset's requirements.
-    // Failures are logged and cause a regeneration attempt (not a hard failure).
-    const qualityGateResult = runQualityGate(vibePreset, storyText, title);
-    if (!qualityGateResult.passed) {
-      const gateMsg = `Quality gate failed for ${vibePreset}: ${qualityGateResult.failures.join('; ')}`;
-      console.warn(`[STORY] ⚠️ ${gateMsg}`);
-      await logger.snapshot('story', 'quality_gate_fail', {
-        preset: vibePreset,
-        failures: qualityGateResult.failures,
-        title,
-        story_preview: storyText.slice(0, 200),
-      }, gateMsg);
+      const parsed = JSON.parse(content);
+      title = parsed.title || 'Untitled Story';
+      storyText = parsed.story || parsed.content || parsed.text || '';
 
-      // If we haven't retried yet, throw to trigger story step retry
-      const gateAttempts = ((job.meta as Record<string, unknown>)?.quality_gate_attempts as number) || 0;
-      if (gateAttempts < 2) {
-        // Record attempt count so next try knows
-        await updateJobMeta(supabase, job.id, { quality_gate_attempts: gateAttempts + 1 });
-        // Clear the idempotency asset so the step re-runs
-        // (throw error = step fails, retry policy kicks in)
-        throw new Error(`QUALITY_GATE: ${gateMsg} (attempt ${gateAttempts + 1}/2)`);
+      // Sanitize dashes from narration text — em-dashes and standalone hyphens
+      // don't render well in subtitles/captions
+      if (storyText) {
+        storyText = storyText
+          .replace(/\s*—\s*/g, ', ')      // em-dash → comma
+          .replace(/\s*–\s*/g, ', ')      // en-dash → comma
+          .replace(/\s+-\s+/g, ', ')      // spaced hyphen → comma
+          .replace(/,\s*,/g, ',')         // clean up double commas
+          .replace(/,\s*\./g, '.')        // clean up comma before period
+          .trim();
+        console.log(`[STORY] Sanitized dashes from narration text`);
+      }
+
+      storySetting = parsed.setting || '';
+      storyConcept = parsed.concept || '';
+
+      if (!storyText) {
+        throw new Error('Story generation returned no story text');
+      }
+
+      // ── Quality Gate: Preset-specific content validation ──────────
+      const qualityGateResult = runQualityGate(vibePreset, storyText, title);
+      if (qualityGateResult.passed) {
+        console.log(`[STORY] ✓ Quality gate passed for ${vibePreset} (attempt ${gateAttempt})`);
+        gatePassed = true;
       } else {
-        // Max retries — accept the story but log the issue
-        console.warn(`[STORY] Quality gate failed ${gateAttempts + 1} times, accepting story anyway`);
-        await logger.snapshot('story', 'quality_gate_accepted', {
+        const gateMsg = `Quality gate failed for ${vibePreset}: ${qualityGateResult.failures.join('; ')}`;
+        console.warn(`[STORY] ⚠️ ${gateMsg} (attempt ${gateAttempt}/${MAX_GATE_ATTEMPTS})`);
+        await logger.snapshot('story', 'quality_gate_fail', {
           preset: vibePreset,
           failures: qualityGateResult.failures,
-          attempts: gateAttempts + 1,
-        }, 'Quality gate max retries — story accepted');
+          title,
+          story_preview: storyText.slice(0, 200),
+          attempt: gateAttempt,
+        }, gateMsg);
+
+        if (gateAttempt >= MAX_GATE_ATTEMPTS) {
+          // Max retries — accept the story but log the issue
+          console.warn(`[STORY] Quality gate failed ${gateAttempt} times, accepting story anyway`);
+          await logger.snapshot('story', 'quality_gate_accepted', {
+            preset: vibePreset,
+            failures: qualityGateResult.failures,
+            attempts: gateAttempt,
+          }, 'Quality gate max retries — story accepted');
+          gatePassed = true; // Accept anyway
+        }
       }
-    } else {
-      console.log(`[STORY] ✓ Quality gate passed for ${vibePreset}`);
     }
 
     const contentHash = await computeHash(storyText);
