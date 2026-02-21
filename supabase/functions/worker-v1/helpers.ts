@@ -459,18 +459,21 @@ export async function verifyJobReadyForComplete(
     missing.push('voice_audio_quality_bad');
   }
 
-  // 2. Check scene images
-  const sceneAsset = await getAssetByKey(supabase, jobId, `${jobId}:scenes_subtitles`);
-  const expectedSceneCount = (sceneAsset?.meta?.scene_count as number) || 0;
-  
-  if (expectedSceneCount === 0) {
-    missing.push('scenes_data');
-  } else {
-    const imageAssets = await getAssetsByPrefix(supabase, jobId, `${jobId}:image_generate:`);
-    const goodImages = imageAssets.filter(a => a.public_url && a.meta?.quality_ok !== false);
+  // 2. Check scene images (skip for gameplay mode — uses background video instead)
+  const isGameplayMode = job.meta?.gameplay_mode === true;
+  if (!isGameplayMode) {
+    const sceneAsset = await getAssetByKey(supabase, jobId, `${jobId}:scenes_subtitles`);
+    const expectedSceneCount = (sceneAsset?.meta?.scene_count as number) || 0;
     
-    if (goodImages.length < expectedSceneCount) {
-      missing.push(`images_incomplete:${goodImages.length}/${expectedSceneCount}`);
+    if (expectedSceneCount === 0) {
+      missing.push('scenes_data');
+    } else {
+      const imageAssets = await getAssetsByPrefix(supabase, jobId, `${jobId}:image_generate:`);
+      const goodImages = imageAssets.filter(a => a.public_url && a.meta?.quality_ok !== false);
+      
+      if (goodImages.length < expectedSceneCount) {
+        missing.push(`images_incomplete:${goodImages.length}/${expectedSceneCount}`);
+      }
     }
   }
 
