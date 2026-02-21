@@ -784,8 +784,10 @@
                             </div>
                         </div>
                         <div id="gameplay-upload-progress" style="display:none;margin-top:8px;">
-                            <div class="music-upload-progress__bar"></div>
-                            <span class="text-sm text-gray-400">Uploading <span id="gameplay-upload-filename"></span>...</span>
+                            <div style="background:#333;border-radius:4px;height:8px;overflow:hidden;margin-bottom:4px;">
+                                <div id="gameplay-progress-bar" style="background:var(--color-primary,#6366f1);height:100%;width:0%;transition:width 0.3s;"></div>
+                            </div>
+                            <span class="text-sm text-gray-400">Uploading <span id="gameplay-upload-filename"></span> — <span id="gameplay-progress-pct">0</span>%</span>
                         </div>
                     </div>
                 </div>
@@ -1579,6 +1581,8 @@
 
     <!-- Supabase SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- TUS resumable upload client (for large gameplay videos) -->
+    <script src="https://cdn.jsdelivr.net/npm/tus-js-client@4/dist/tus.min.js"></script>
     
     <!-- Scripts -->
     <script src="../js/config.js"></script>
@@ -2796,8 +2800,17 @@
 
             const progressEl = document.getElementById('gameplay-upload-progress');
             const filenameEl = document.getElementById('gameplay-upload-filename');
+            const progressBar = document.getElementById('gameplay-progress-bar');
+            const progressPct = document.getElementById('gameplay-progress-pct');
             progressEl.style.display = 'block';
             filenameEl.textContent = pendingGameplayFile.name;
+            progressBar.style.width = '0%';
+            progressPct.textContent = '0';
+
+            const onProgress = (pct) => {
+                progressBar.style.width = pct + '%';
+                progressPct.textContent = pct;
+            };
 
             try {
                 await brandManager.uploadGameplayClip(gameplayBrandId, pendingGameplayFile, {
@@ -2807,7 +2820,7 @@
                     mood,
                     energy,
                     orientation,
-                });
+                }, onProgress);
                 toast.success(`Uploaded "${displayName}"`);
                 pendingGameplayFile = null;
                 document.getElementById('gameplay-upload-form').style.display = 'none';

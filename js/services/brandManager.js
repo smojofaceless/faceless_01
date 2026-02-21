@@ -995,13 +995,15 @@ class BrandManager {
     }
 
     /**
-     * Upload a gameplay video file to Supabase Storage and create/update the DB record
+     * Upload a gameplay video file to Supabase Storage and create/update the DB record.
+     * Uses TUS resumable upload for files > 20 MB, standard upload for smaller files.
      * @param {string} brandId
      * @param {File} file - The video file (MP4)
      * @param {Object} meta - Additional metadata { display_name, game, mood, energy, duration_seconds, tags, vibe_presets, resolution, orientation }
+     * @param {Function} [onProgress] - Optional callback (percent 0-100)
      * @returns {Promise<Object>} The created clip record
      */
-    async uploadGameplayClip(brandId, file, meta = {}) {
+    async uploadGameplayClip(brandId, file, meta = {}, onProgress) {
         if (!this.useSupabase) throw new Error('Gameplay clips require Supabase');
 
         // Generate clip ID from filename (sanitize)
@@ -1009,18 +1011,26 @@ class BrandManager {
         const clipId = baseName;
         const storagePath = `brands/${brandId}/gameplay/${clipId}.mp4`;
 
-        // 1. Upload file to storage
-        const { error: uploadError } = await supabaseClient.storage
-            .from('story-videos')
-            .upload(storagePath, file, {
-                cacheControl: '3600',
-                upsert: true,
-                contentType: file.type || 'video/mp4',
-            });
+        const TWENTY_MB = 20 * 1024 * 1024;
 
-        if (uploadError) {
-            console.error('Failed to upload gameplay clip:', uploadError);
-            throw new Error(`Upload failed: ${uploadError.message}`);
+        if (typeof tus !== 'undefined' && file.size > TWENTY_MB) {
+            // ── TUS resumable upload (for large gameplay videos) ──
+            await this._tusUpload(storagePath, file, onProgress);
+        } else {
+            // ── Standard upload for small files ──
+            const { error: uploadError } = await supabaseClient.storage
+                .from('story-videos')
+                .upload(storagePath, file, {
+                    cacheControl: '3600',
+                    upsert: true,
+                    contentType: file.type || 'video/mp4',
+                });
+
+            if (uploadError) {
+                console.error('Failed to upload gameplay clip:', uploadError);
+                throw new Error(`Upload failed: ${uploadError.message}`);
+            }
+            if (onProgress) onProgress(100);
         }
 
         // 2. Create DB record
@@ -1042,6 +1052,58 @@ class BrandManager {
         };
 
         return await this.addGameplayClip(brandId, clipData);
+    }
+
+    /**
+     * TUS resumable upload — sends the file in 6 MB chunks to Supabase Storage.
+     * @param {string} storagePath - e.g. "brands/{id}/gameplay/{clip}.mp4"
+     * @param {File} file
+     * @param {Function} [onProgress] - callback(percent 0-100)
+     * @returns {Promise<void>}
+     */
+    _tusUpload(storagePath, file, onProgress) {
+        return new Promise((resolve, reject) => {
+            const bucketName = 'story-videos';
+            const supabaseUrl = CONFIG.SUPABASE_URL;
+            const anonKey = CONFIG.SUPABASE_ANON_KEY;
+
+            const upload = new tus.Upload(file, {
+                endpoint: `${supabaseUrl}/storage/v1/upload/resumable`,
+                retryDelays: [0, 3000, 5000, 10000, 20000],
+                chunkSize: 6 * 1024 * 1024, // 6 MB
+                headers: {
+                    authorization: `Bearer ${anonKey}`,
+                    'x-upsert': 'true',
+                },
+                uploadDataDuringCreation: true,
+                removeFingerprintOnSuccess: true,
+                metadata: {
+                    bucketName,
+                    objectName: storagePath,
+                    contentType: file.type || 'video/mp4',
+                    cacheControl: '3600',
+                },
+                onError(err) {
+                    console.error('TUS upload error:', err);
+                    reject(new Error(`Upload failed: ${err.message || err}`));
+                },
+                onProgress(bytesUploaded, bytesTotal) {
+                    const pct = Math.round((bytesUploaded / bytesTotal) * 100);
+                    if (onProgress) onProgress(pct);
+                },
+                onSuccess() {
+                    console.log('✅ TUS upload complete:', storagePath);
+                    if (onProgress) onProgress(100);
+                    resolve();
+                },
+            });
+
+            // Check for previous partial uploads to resume
+            upload.findPreviousUploads().then((prev) => {
+                if (prev.length) upload.resumeFromPreviousUpload(prev[0]);
+                upload.start();
+            });
+        });
     }
 
     /**
