@@ -141,17 +141,27 @@ async function downloadFile(url, outputPath) {
     return;
   }
   
-  // Handle HTTP URLs
+  // Handle HTTP URLs — stream to disk to avoid OOM on large gameplay clips
   console.log(`  → Downloading: ${url.substring(0, 80)}...`);
   const response = await axios({
     method: 'GET',
     url: url,
-    responseType: 'arraybuffer',
-    timeout: 120000, // 2 minute timeout for large files
-    maxContentLength: 100 * 1024 * 1024, // 100MB max
+    responseType: 'stream',
+    timeout: 300000, // 5 minute timeout for large gameplay videos
   });
   
-  await fs.writeFile(outputPath, response.data);
+  const writer = require('fs').createWriteStream(outputPath);
+  await new Promise((resolve, reject) => {
+    response.data.pipe(writer);
+    let bytes = 0;
+    response.data.on('data', (chunk) => { bytes += chunk.length; });
+    writer.on('finish', () => {
+      console.log(`  → Downloaded ${(bytes / 1024 / 1024).toFixed(1)}MB to ${path.basename(outputPath)}`);
+      resolve();
+    });
+    writer.on('error', reject);
+    response.data.on('error', reject);
+  });
 }
 
 /**

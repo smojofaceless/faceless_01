@@ -4847,7 +4847,7 @@ export async function executeAssembleStep(
   // The renderer uses its own UUID (not our job.id), so we store it in meta
   const pendingRenderJobId = job.meta?.pending_render_job_id as string | undefined;
   const renderContinuationCount = (job.meta?.render_continuation_count as number) || 0;
-  const MAX_RENDER_CONTINUATIONS = 10; // Fail after this many continuation loops (~30min total)
+  const MAX_RENDER_CONTINUATIONS = 20; // Fail after this many continuation loops (~60min total)
   console.log(`[ASSEMBLE] Render resume check: pending_render_job_id=${pendingRenderJobId || 'NOT_SET'}, video_url=${job.video_url || 'NOT_SET'}, continuations=${renderContinuationCount}/${MAX_RENDER_CONTINUATIONS}`);
 
   // Fail-safe: prevent infinite continuation loops when renderer is stuck
