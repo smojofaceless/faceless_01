@@ -4846,7 +4846,16 @@ export async function executeAssembleStep(
   // Check if there's a pending render job from a previous continuation
   // The renderer uses its own UUID (not our job.id), so we store it in meta
   const pendingRenderJobId = job.meta?.pending_render_job_id as string | undefined;
-  console.log(`[ASSEMBLE] Render resume check: pending_render_job_id=${pendingRenderJobId || 'NOT_SET'}, video_url=${job.video_url || 'NOT_SET'}`);
+  const renderContinuationCount = (job.meta?.render_continuation_count as number) || 0;
+  const MAX_RENDER_CONTINUATIONS = 10; // Fail after this many continuation loops (~30min total)
+  console.log(`[ASSEMBLE] Render resume check: pending_render_job_id=${pendingRenderJobId || 'NOT_SET'}, video_url=${job.video_url || 'NOT_SET'}, continuations=${renderContinuationCount}/${MAX_RENDER_CONTINUATIONS}`);
+
+  // Fail-safe: prevent infinite continuation loops when renderer is stuck
+  if (renderContinuationCount >= MAX_RENDER_CONTINUATIONS) {
+    console.error(`[ASSEMBLE] ❌ Max render continuations (${MAX_RENDER_CONTINUATIONS}) exceeded — render is stuck. Failing job.`);
+    await updateJobMeta(supabase, job.id, { pending_render_job_id: null, render_continuation_count: 0 });
+    return { success: false, error: `Render stuck: exceeded ${MAX_RENDER_CONTINUATIONS} continuation attempts (~${MAX_RENDER_CONTINUATIONS * 3}min). Possible renderer hang.` };
+  }
 
   // Log diagnostic snapshot for resume tracking
   await logger.snapshot('assemble', 'payload', {
@@ -4868,8 +4877,8 @@ export async function executeAssembleStep(
           if (videoUrl) {
             console.log(`[ASSEMBLE] ✓ Render completed from previous invocation: ${videoUrl}`);
             
-            // Clear pending render from meta
-            await updateJobMeta(supabase, job.id, { pending_render_job_id: null });
+            // Clear pending render from meta + reset continuation counter
+            await updateJobMeta(supabase, job.id, { pending_render_job_id: null, render_continuation_count: 0 });
             
             // Store asset
             await upsertAsset(supabase, job.id, idempotencyKey, 'final_mp4', '', videoUrl, {
@@ -4909,7 +4918,7 @@ export async function executeAssembleStep(
                 const videoUrl = pollData.supabase_url || (pollData.url ? `${videoRendererUrl}${pollData.url}` : null);
                 if (videoUrl) {
                   console.log(`[ASSEMBLE] ✓ Render completed: ${videoUrl}`);
-                  await updateJobMeta(supabase, job.id, { pending_render_job_id: null });
+                  await updateJobMeta(supabase, job.id, { pending_render_job_id: null, render_continuation_count: 0 });
                   await upsertAsset(supabase, job.id, idempotencyKey, 'final_mp4', '', videoUrl, {
                     source: 'resumed_render_job',
                     image_count: 0,
@@ -4929,8 +4938,9 @@ export async function executeAssembleStep(
           
           // If not completed and not failed, fire continuation again (keep same render ID)
           if (!renderCompleted) {
-            console.log(`[ASSEMBLE] ⏰ Render ${pendingRenderJobId} still in progress — re-firing continuation`);
-            // pending_render_job_id is already stored in meta, no need to update
+            console.log(`[ASSEMBLE] ⏰ Render ${pendingRenderJobId} still in progress — re-firing continuation (attempt ${renderContinuationCount + 1}/${MAX_RENDER_CONTINUATIONS})`);
+            // Increment continuation counter to prevent infinite loops
+            await updateJobMeta(supabase, job.id, { render_continuation_count: renderContinuationCount + 1 });
             return {
               success: true,
               continuation_needed: true,
@@ -5166,10 +5176,13 @@ export async function executeAssembleStep(
       // Handle continuation signal — render still in progress, need re-invocation
       if (videoUrl.startsWith('__CONTINUATION__:')) {
         const renderJobId = videoUrl.split(':')[1];
-        console.log(`[ASSEMBLE] Render in progress (${renderJobId}), storing in meta for resume`);
+        console.log(`[ASSEMBLE] Render in progress (${renderJobId}), storing in meta for resume (attempt ${renderContinuationCount + 1}/${MAX_RENDER_CONTINUATIONS})`);
         
-        // Store the renderer's job ID so the next invocation can resume polling
-        await updateJobMeta(supabase, job.id, { pending_render_job_id: renderJobId });
+        // Store the renderer's job ID + increment continuation counter
+        await updateJobMeta(supabase, job.id, {
+          pending_render_job_id: renderJobId,
+          render_continuation_count: renderContinuationCount + 1,
+        });
         
         await costHelper.releaseSlot(rendererService, 'assemble');
         return {
@@ -5401,6 +5414,7 @@ async function assembleWithRenderer(
     images: gameplayMode ? [] : imageUrls,
     audio_url: audioUrl,
     durations: gameplayMode ? [] : durations,
+    audio_duration: duration, // Total audio duration in seconds — used by renderer for gameplay trim
     captions: captions,
     // Gameplay: background video instead of images
     background_video_url: gameplayMode ? gameplayClipUrl : undefined,

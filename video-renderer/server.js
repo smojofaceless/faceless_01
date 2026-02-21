@@ -1726,6 +1726,7 @@ app.post('/render', requireAuth, async (req, res) => {
       music_volume = 15, // Music volume (0-100, default 15%)
       music_config = null, // Background Music V1: { ducking: { enabled, duck_volume, attack_ms, release_ms }, fade: { in_ms, out_ms } }
       durations,        // Duration for each image in seconds
+      audio_duration = 0, // v7.1: Total audio duration in seconds (used for gameplay trim)
       captions = [],    // Word-by-word captions: [{ word, start, end }, ...]
       effects = {},     // { kenBurns, vignette, horrorGrade, filmGrain, fadeTransitions, captionStyle, highlightScary }
       mood_levels = [], // Per-scene mood intensity (1-10) for intelligent Ken Burns selection
@@ -1852,7 +1853,7 @@ app.post('/render', requireAuth, async (req, res) => {
     });
     
     // Process asynchronously (now with visual_dna, effects_profile, effects_config, music_config, subtitle_config, and background_video)
-    processRender(jobId, images || [], audio_url, durations || [], captions, effects, webhook_url, supabaseJobId, low_memory, music_url, music_volume, mood_levels, visual_dna, safeEffectsProfile, music_config, safeEffectsConfig, safeSubtitleConfig, background_video_url, background_video_offset);
+    processRender(jobId, images || [], audio_url, durations || [], captions, effects, webhook_url, supabaseJobId, low_memory, music_url, music_volume, mood_levels, visual_dna, safeEffectsProfile, music_config, safeEffectsConfig, safeSubtitleConfig, background_video_url, background_video_offset, audio_duration);
     
   } catch (error) {
     console.error('[RENDER] Error:', error);
@@ -1877,7 +1878,7 @@ app.post('/render', requireAuth, async (req, res) => {
  * @param backgroundVideoUrl - Background video URL for gameplay mode (replaces images)
  * @param backgroundVideoOffset - Start offset in seconds for background video trim
  */
-async function processRender(jobId, imageUrls, audioUrl, durations, captions, effects, webhookUrl, supabaseJobId, lowMemory, musicUrl = null, musicVolume = 15, moodLevels = [], visualDNA = null, effectsProfile = null, musicConfig = null, effectsConfig = null, subtitleConfig = null, backgroundVideoUrl = null, backgroundVideoOffset = 0) {
+async function processRender(jobId, imageUrls, audioUrl, durations, captions, effects, webhookUrl, supabaseJobId, lowMemory, musicUrl = null, musicVolume = 15, moodLevels = [], visualDNA = null, effectsProfile = null, musicConfig = null, effectsConfig = null, subtitleConfig = null, backgroundVideoUrl = null, backgroundVideoOffset = 0, audioDuration = 0) {
   activeRenders++;
   const jobDir = path.join(TEMP_DIR, jobId);
   await fs.mkdir(jobDir, { recursive: true });
@@ -2064,8 +2065,18 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
       
       // Get audio duration for trim length (or use video estimation)
       let trimDuration = 60; // default
+      if (audioDuration > 0) {
+        // v7.1: Prefer explicit audio_duration from worker (most accurate)
+        trimDuration = audioDuration;
+        console.log(`[${jobId}]   Using explicit audio_duration: ${trimDuration}s`);
+      } else if (durations && durations.length > 0) {
+        trimDuration = durations.reduce((a, b) => a + b, 0);
+        console.log(`[${jobId}]   Using durations sum: ${trimDuration}s`);
+      } else {
+        console.log(`[${jobId}]   ⚠️ No audio_duration or durations — using default ${trimDuration}s`);
+      }
       if (audioUrl) {
-        // Probe audio duration using ffprobe
+        // Probe source video duration (informational only)
         try {
           const probeResult = await new Promise((resolve, reject) => {
             const proc = require('child_process').execFile('ffprobe', [
@@ -2080,12 +2091,6 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
         } catch (probeErr) {
           console.log(`[${jobId}]   ⚠️ Probe failed (non-fatal): ${probeErr.message}`);
         }
-        
-        // We'll determine actual trim length after downloading audio
-        // For now, estimate from durations sum or default
-        if (durations && durations.length > 0) {
-          trimDuration = durations.reduce((a, b) => a + b, 0);
-        }
       }
       
       // Trim the gameplay video from offset for trimDuration + 2s buffer
@@ -2094,7 +2099,9 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
       rawVideoPath = path.join(jobDir, 'raw.mp4');
       
       const { execFile } = require('child_process');
+      const GAMEPLAY_TRIM_TIMEOUT_MS = 5 * 60 * 1000; // 5 min timeout (matches other FFmpeg calls)
       await new Promise((resolve, reject) => {
+        let timedOut = false;
         // Use -ss before -i for fast seek, then -t for duration
         // Scale to 1080x1920 (portrait) if needed, with padding
         const args = [
@@ -2112,12 +2119,20 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
         
         console.log(`[${jobId}]   FFmpeg trim: ffmpeg ${args.join(' ')}`);
         const proc = execFile('ffmpeg', args, { maxBuffer: 50 * 1024 * 1024 }, (err, stdout, stderr) => {
+          clearTimeout(timeoutHandle);
+          if (timedOut) return; // Already rejected by timeout
           if (err) {
             console.error(`[${jobId}]   FFmpeg trim error: ${stderr?.slice(-500)}`);
             return reject(new Error(`Gameplay trim failed: ${err.message}`));
           }
           resolve();
         });
+        const timeoutHandle = setTimeout(() => {
+          timedOut = true;
+          console.error(`[${jobId}] ⚠️ Gameplay trim timed out after 5 minutes, killing FFmpeg`);
+          proc.kill('SIGKILL');
+          reject(new Error('Gameplay trim timed out after 5 minutes'));
+        }, GAMEPLAY_TRIM_TIMEOUT_MS);
       });
       
       // Clean up source file
