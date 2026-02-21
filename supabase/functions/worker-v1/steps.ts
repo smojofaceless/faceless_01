@@ -1431,26 +1431,36 @@ export async function executeScenesStep(
 
   // Handle duration - can be a number or { minSeconds, maxSeconds } object
   const rawDuration = job.meta?.duration;
-  let duration: number;
+  let presetDuration: number;
   if (typeof rawDuration === 'number') {
-    duration = rawDuration;
-    console.log(`[SCENES] Duration from number: ${duration}s`);
+    presetDuration = rawDuration;
+    console.log(`[SCENES] Duration from number: ${presetDuration}s`);
   } else if (rawDuration && typeof rawDuration === 'object') {
     // Use average of min/max, or min, or max, or default to 60
     const durObj = rawDuration as { minSeconds?: number; maxSeconds?: number; min?: number; max?: number };
     const minSec = durObj.minSeconds ?? durObj.min ?? 60;
     const maxSec = durObj.maxSeconds ?? durObj.max ?? 90;
-    duration = Math.round((minSec + maxSec) / 2);
-    console.log(`[SCENES] Duration from object: min=${minSec}, max=${maxSec}, avg=${duration}s`);
+    presetDuration = Math.round((minSec + maxSec) / 2);
+    console.log(`[SCENES] Duration from object: min=${minSec}, max=${maxSec}, avg=${presetDuration}s`);
   } else {
-    duration = 60;
-    console.log(`[SCENES] Duration defaulted to: ${duration}s`);
+    presetDuration = 60;
+    console.log(`[SCENES] Duration defaulted to: ${presetDuration}s`);
   }
+
+  // Estimate actual audio duration from word count.
+  // TTS narrates at ~2.0-2.5 words/sec; we use 2.0 (conservative) + 3s buffer.
+  // This prevents scene timing spanning 75s when audio is only 38s.
+  const wordCount = job.story_text.split(/\s+/).filter((w: string) => w.length > 0).length;
+  const estimatedAudioDuration = Math.ceil(wordCount / 2.0) + 3;
+  // Use the LOWER of preset target and estimated audio — scene timing should
+  // approximate narration length; the images step will voice-align precisely later.
+  const duration = Math.min(presetDuration, estimatedAudioDuration);
+  console.log(`[SCENES] Duration: preset=${presetDuration}s, estimatedAudio=${estimatedAudioDuration}s (${wordCount} words), using=${duration}s`);
   
   // scene_count from UI (create page calculates via PACE_PRESETS + platform clamps)
-  // Fallback: balanced pace ~2.5s per scene, clamped [12, 30] for social media
-  const fallbackSceneCount = Math.max(12, Math.min(24, Math.round(duration / 2.5)));
-  const sceneCount = (job.meta?.scene_count as number) || fallbackSceneCount;
+  // Fallback: balanced pace ~3s per scene, clamped [6, 24] for social media
+  const fallbackSceneCount = Math.max(6, Math.min(24, Math.round(duration / 3)));
+  let sceneCount = (job.meta?.scene_count as number) || fallbackSceneCount;
   console.log(`[SCENES] sceneCount=${sceneCount} for duration=${duration}s (source: ${job.meta?.scene_count ? 'job.meta' : 'fallback'})`);
 
   console.log(`[SCENES] Generating ${sceneCount} scenes for ${duration}s video`);
@@ -1480,6 +1490,14 @@ export async function executeScenesStep(
         }
       }
       textChunks = expanded;
+    }
+
+    // CRITICAL: Cap scene count to available text chunks to prevent duplication.
+    // When sceneCount > textChunks.length, fractional chunksPerScene causes
+    // adjacent scenes to grab the same text chunk (e.g. "Two paths... Two paths...").
+    if (textChunks.length < sceneCount) {
+      console.log(`[SCENES] Capping sceneCount from ${sceneCount} to ${textChunks.length} (not enough text chunks for more scenes)`);
+      sceneCount = textChunks.length;
     }
 
     // Distribute text chunks across scenes evenly
@@ -1576,8 +1594,10 @@ export async function executeScenesStep(
     console.log(`[SCENES] Final timing: ${scenes.map(s => `S${s.index}=${(s.endTime - s.startTime).toFixed(1)}s`).join(', ')}`);
 
     // Generate subtitle cues (word-level timing approximation)
-    const wordCount = job.story_text.split(/\s+/).length;
-    const wordsPerSecond = wordCount / duration;
+    // Note: These are a rough fallback — the subtitles step prefers
+    // precise audio_timestamps from the voice step (Whisper alignment).
+    const subWordCount = job.story_text.split(/\s+/).length;
+    const wordsPerSecond = subWordCount / duration;
     const words = job.story_text.split(/\s+/);
     
     const subtitleCues: Array<{ start: number; end: number; text: string }> = [];
@@ -1599,7 +1619,7 @@ export async function executeScenesStep(
       subtitle_cues: subtitleCues,
       scene_count: scenes.length,
       duration: duration,
-      word_count: wordCount,
+      word_count: subWordCount,
     });
 
     // Log scene breakdown snapshot
@@ -1614,8 +1634,8 @@ export async function executeScenesStep(
     // === PIPELINE HASH: Compute once for entire job config ===
     // This makes debugging "why did this re-render?" trivial
     const storyHash = await computeHash(job.story_text);
-    const artStyle = (job.meta?.art_style as string) || 'cinematic-dark';
-    const visualPreset = job.visual_preset || (job.meta?.visual_preset as string) || 'forest';
+    const artStyle = (job.meta?.art_style as string) || 'cinematic';
+    const visualPreset = job.visual_preset || (job.meta?.visual_preset as string) || 'default';
     const musicTrackId = (job.meta?.music_track_id as string) || 'ambient_dark_01';
     const vibePreset = job.vibe_preset || (job.meta?.vibe_preset as string) || 'urban_legend';
     
@@ -3182,7 +3202,7 @@ export async function executeImagesStep(
   }
 
   // Fallback to legacy hardcoded values if DB config unavailable
-  const artStyle = imagePromptConfig?.art_style || (job.meta?.art_style as string) || 'cinematic-dark';
+  const artStyle = imagePromptConfig?.art_style || (job.meta?.art_style as string) || 'cinematic';
 
   console.log(`[IMAGES] Generating ${scenes.length} images (model: ${imageModel}, style: ${artStyle}, config: ${imagePromptConfig ? 'DB' : 'legacy'})`);
 
@@ -3890,13 +3910,22 @@ async function createStoryAnchor(
   vibePreset: string,
   config: ImagePromptConfig | null,
 ): Promise<StoryAnchor | null> {
-  const stylePrompt = config?.style_prompt || 'Cinematic dark photography, horror aesthetic';
+  const stylePrompt = config?.style_prompt || 'Cinematic photography, dramatic compositions, high production value';
   const envHint = config?.environment || '';
+  const moodHint = config?.mood || '';
+
+  // Determine genre context — only request horror-specific fields for horror presets
+  const HORROR_PRESETS = new Set(['urban_legend', 'counting_horror', 'cosmic_dread', 'folklore', 'body_horror', 'analog_horror']);
+  const isHorrorPreset = HORROR_PRESETS.has(vibePreset);
+  const genreField = isHorrorPreset
+    ? '4. horrorTone: Type of horror (psychological, supernatural, counting, cosmic, folklore, body)'
+    : '4. genreTone: The emotional tone/genre (philosophical, dramatic, contemplative, suspenseful, whimsical, etc.)';
   
   const prompt = `You are a visual director. Analyze this story and extract a consistent visual identity for generating images.
 
 ART STYLE: ${stylePrompt}
 ${envHint ? `ENVIRONMENT GUIDE: ${envHint}` : ''}
+${moodHint ? `MOOD: ${moodHint}` : ''}
 GENRE/VIBE: ${vibePreset}
 
 STORY:
@@ -3906,7 +3935,7 @@ Extract:
 1. environment: The PRIMARY setting — be specific (not just "forest" but "dense pine forest with twisted roots at dusk")
 2. characterDescription: If ANY humans appear, describe them in detail (age, clothing, hair, distinguishing features). null if no humans.
 3. recurringMotifs: Visual elements to repeat (specific objects, atmospheric details, textures mentioned in story)
-4. horrorTone: Type of horror (psychological, supernatural, counting, cosmic, folklore, body)
+${genreField}
 5. timeOfDay: Specific lighting/time
 6. isGroupStory: true if story involves multiple characters together
 7. groupCount: The EXPECTED number of people (what the group SHOULD be). For "one too many" stories where the group discovers an extra person, return the NORMAL count BEFORE the extra person is noticed — NOT the total with the stranger included.
@@ -4652,8 +4681,10 @@ function buildImagePrompt(
     'editorial-clean': 'Clean modern editorial photography, sharp focus, balanced neutral tones, documentary-style framing, everyday realism.',
     'surreal-contemplative': 'Surreal contemplative digital art, dreamlike atmospheric compositions, ethereal volumetric light, soft painterly edges.',
     'cinematic-contrast': 'High-contrast cinematic photography, bold dramatic compositions, vivid split-tone color grading, theatrical lighting.',
+    // Neutral fallback (used when DB config unavailable)
+    'cinematic': 'Cinematic photography, dramatic compositions, balanced lighting, film-quality aesthetic.',
   };
-  const styleBase = styleTemplates[artStyle] || styleTemplates['cinematic-dark'];
+  const styleBase = styleTemplates[artStyle] || styleTemplates['cinematic'];
 
   // Use visual cue description if available, else raw text
   const sceneDescription = visualCue?.description || sceneText.substring(0, 200);
@@ -4664,9 +4695,10 @@ function buildImagePrompt(
     'hallway': 'abandoned corridor, peeling walls',
     'attic': 'dusty attic, cobwebs, old furniture',
     'urban': 'empty city streets at night',
+    'default': 'dramatic atmospheric environment',
   };
-  const visualPreset = 'forest'; // legacy default
-  const envHint = envHints[visualPreset] || envHints['forest'];
+  const visualPreset = 'default'; // legacy default — DB config provides specific environments
+  const envHint = envHints[visualPreset] || envHints['default'];
 
   const keywordStr = keywords.slice(0, 3).join(', ');
   return `${styleBase} Scene: ${sceneDescription}.${cameraHint} Environment: ${envHint}. Keywords: ${keywordStr}. Portrait orientation 9:16. No text, no words, no letters.`;
