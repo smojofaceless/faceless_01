@@ -1260,9 +1260,11 @@ class FacebookReelsAdapter implements PlatformAdapter {
         return { success: false, error_class: 'misconfig', error_message: 'Facebook token is invalid. Please reconnect in Settings.' };
       }
 
-      // Build description with hashtags (like Instagram)
-      const captionText = description || title || '';
-      const hashtags = tags || [];
+      // Build description with hashtags — keep FB captions SHORT
+      // Facebook Reels penalizes long text — cap caption to 300 chars
+      const rawCaption = description || title || '';
+      const captionText = rawCaption.length > 300 ? rawCaption.slice(0, 297) + '...' : rawCaption;
+      const hashtags = (tags || []).slice(0, 6); // FB max 6 hashtags
       const postDescription = hashtags.length > 0
         ? `${captionText}\n\n${hashtags.map(h => h.startsWith('#') ? h : `#${h}`).join(' ')}`
         : captionText;
@@ -2040,7 +2042,8 @@ async function processPost(
     );
     
     if (result.success) {
-      // Mark as posted
+      // Mark as posted — include metadata_source for audit trail
+      const adapterVersion = ['youtube', 'instagram_reels', 'facebook_reels', 'threads'].includes(adapter.name) ? 'real_1.0' : 'stub_1.0';
       const { data, error } = await supabase.rpc('mark_post_posted', {
         p_post_id: post.post_id,
         p_worker_id: workerId,
@@ -2049,9 +2052,33 @@ async function processPost(
         p_meta: {
           posted_by: workerId,
           adapter: adapter.name,
-          adapter_version: ['youtube', 'instagram_reels', 'facebook_reels', 'threads'].includes(adapter.name) ? 'real_1.0' : 'stub_1.0',
+          adapter_version: adapterVersion,
+          metadata_source: (postMeta as Record<string, unknown>).metadata_source || 'fallback',
         },
       });
+
+      // Write-back: update posts table with the ACTUAL title/desc/tags sent to the platform
+      // This ensures the DB reflects what was really posted, not just the raw story data
+      try {
+        await supabase
+          .from('posts')
+          .update({
+            title: postTitle,
+            description: postDescription,
+            tags: postTags,
+            platform_content: {
+              metadata_source: (postMeta as Record<string, unknown>).metadata_source || 'fallback',
+              posted_title: postTitle,
+              posted_description: postDescription?.slice(0, 500),
+              posted_tags: postTags,
+              adapter_version: adapterVersion,
+            },
+          })
+          .eq('id', post.post_id);
+      } catch (wbErr) {
+        // Non-fatal: post succeeded, just audit trail missing
+        console.warn(`[POST-WORKER] Write-back failed for ${post.post_id}:`, wbErr);
+      }
       
       if (error) {
         console.error(`[POST-WORKER] mark_post_posted error: ${error.message}`);

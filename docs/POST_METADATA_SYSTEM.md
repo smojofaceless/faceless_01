@@ -1,8 +1,8 @@
 # Post Metadata System — Technical Design Spec
 
-> **Version:** 2.0  
-> **Date:** February 19, 2026  
-> **Status:** ✅ Production (Strategy + Time-Aware)
+> **Version:** 2.1  
+> **Date:** February 23, 2026  
+> **Status:** ✅ Production (Strategy + Time-Aware + Per-Platform Optimization)
 
 ---
 
@@ -15,6 +15,13 @@ AI-generated, platform-specific metadata (title, description, tags, hashtags, et
 - **Time-Awareness**: Parses `scheduled_at` to inject day-of-week and time-of-day context. Morning posts get energetic/fresh tone, evening gets atmospheric/reflective, night gets dark/intimate.
 - **Strategy Intelligence**: Fetches top-performing strategies via `get_top_strategies` RPC. Probabilistic weighted selection by avg_engagement. 10 strategy types each inject specific prompt guidance (hook_first, emotional_arc, question_hook, list_format, controversy, fomo, storytelling, community, authority, trend_ride).
 - **Strategy Binding**: Strategy type and time context sections added to the base prompt template before GPT generation.
+
+### v2.1 — Facebook Reels Optimization (Feb 23, 2026)
+
+- **Facebook caption tightened**: `PLATFORM_CONFIGS.facebook_reels` caption max reduced from 300 → 125 characters. Prompt now says "Think Twitter energy — punchy, raw, done" with 1 emoji max and 5 hashtags max.
+- **Post-worker FB hard cap**: `FacebookReelsAdapter` now caps `rawCaption` to 300 characters (slices with `…`) before posting, and limits hashtags to 6 max. Prevents story descriptions (600-1000 chars) from leaking through as captions.
+- **Root cause**: When AI metadata had no `caption` field (only `title` + `description`), the post-worker fell through to `post.description` — the full story text. The tighter prompt + hard cap both defend against this.
+- **Exemplar learning is per-platform**: The `get_winning_patterns` and `get_exemplar_metadata` RPCs filter by `p_platform`, so each platform's AI prompt learns only from that platform's top performers. Facebook was in a chicken-and-egg trap (0 engagement → no exemplars → no learning).
 
 ---
 
@@ -223,6 +230,24 @@ const { title, description, tags, hashtags, ... } = metadata.final_metadata;
   "caption": "Six strangers. One store. Seven headcounts.\n\nThey counted again. And again. The number never changed.\n\nWho is the seventh?\n\n#horror #creepy #countinghorror #scarystory #paranormal",
   "hashtags": ["horror", "creepy", "countinghorror", "scarystory", "paranormal"],
   "alt_text": "Dark convenience store interior with shadowy figures during a storm"
+}
+```
+
+### Facebook Reels
+```json
+{
+  "caption": "Six strangers. Seven shadows.\nWho was the extra one? 😰",
+  "hashtags": ["horror", "creepy", "countinghorror", "scarystory", "paranormal"],
+  "title": "The Seventh Shopper"
+}
+```
+> **Limits:** Caption ≤ 125 chars (prompt enforced), description hard-capped at 300 chars (post-worker enforced), max 5 hashtags in prompt / 6 in post-worker.
+
+### Threads
+```json
+{
+  "caption": "They counted six. The number came back seven. Every. Single. Time. 😰",
+  "hashtags": ["horror", "creepy", "shortstory"]
 }
 ```
 

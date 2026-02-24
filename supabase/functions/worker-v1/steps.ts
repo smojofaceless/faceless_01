@@ -1512,10 +1512,42 @@ export async function executeScenesStep(
       const actualEnd = Math.max(endIdx, startIdx + 1);
       const sceneText = textChunks.slice(startIdx, actualEnd).join(' ').trim();
 
-      // Extract basic keywords (nouns/adjectives)
+      // Extract meaningful keywords (nouns/adjectives), filtering stopwords
+      const STOPWORDS = new Set([
+        'about', 'above', 'after', 'again', 'along', 'already', 'always', 'among',
+        'around', 'based', 'because', 'been', 'before', 'being', 'below', 'between',
+        'both', 'could', 'didn', 'does', 'doing', 'during', 'each', 'either',
+        'enough', 'every', 'everything', 'first', 'found', 'from', 'going', 'gotten',
+        'hadn', 'hasn', 'have', 'having', 'here', 'however', 'inside', 'into',
+        'just', 'know', 'known', 'large', 'later', 'like', 'little', 'long',
+        'make', 'many', 'might', 'more', 'most', 'much', 'must', 'never',
+        'next', 'none', 'nothing', 'only', 'other', 'over', 'part', 'people',
+        'place', 'point', 'really', 'right', 'said', 'same', 'seemed', 'should',
+        'since', 'small', 'some', 'someone', 'something', 'sometimes', 'still',
+        'such', 'take', 'than', 'that', 'their', 'them', 'then', 'there', 'these',
+        'they', 'thing', 'things', 'think', 'this', 'those', 'though', 'through',
+        'time', 'until', 'upon', 'very', 'want', 'wasn', 'well', 'were', 'what',
+        'when', 'where', 'which', 'while', 'with', 'within', 'without', 'would',
+        'your', 'began', 'called', 'came', 'come', 'even', 'ever', 'felt',
+        'gave', 'give', 'given', 'goes', 'gone', 'good', 'great', 'hand',
+        'hands', 'head', 'heard', 'help', 'high', 'home', 'house', 'idea',
+        'kept', 'kind', 'knew', 'last', 'left', 'let', 'life', 'line',
+        'look', 'looked', 'looking', 'made', 'making', 'matter', 'mind',
+        'moment', 'move', 'moved', 'need', 'number', 'once', 'open', 'opened',
+        'order', 'own', 'pass', 'passed', 'perhaps', 'quite', 'rather',
+        'read', 'room', 'round', 'seem', 'seems', 'seen', 'several',
+        'shall', 'show', 'side', 'simply', 'soon', 'sort', 'start',
+        'started', 'state', 'story', 'sure', 'taken', 'talk', 'tell',
+        'that', 'them', 'themselves', 'three', 'told', 'took', 'turn',
+        'turned', 'under', 'used', 'using', 'voice', 'walk', 'want',
+        'watch', 'water', 'will', 'word', 'words', 'work', 'world',
+        'years', 'young',
+      ]);
       const words = sceneText.toLowerCase().split(/\s+/).filter(w => w.length > 0);
       const keywords = words
-        .filter(w => w.length > 4)
+        .map(w => w.replace(/[^a-z]/g, ''))  // strip punctuation
+        .filter(w => w.length > 4 && !STOPWORDS.has(w))
+        .filter((w, idx, arr) => arr.indexOf(w) === idx) // dedupe
         .slice(0, 5);
 
       rawScenes.push({
@@ -3301,6 +3333,7 @@ export async function executeImagesStep(
 
   let generatedCount = 0;
   let skippedCount = 0;
+  let moderationFailCount = 0;
   const scenesCompleted: number[] = [];
 
   // ======================================================================
@@ -3439,6 +3472,7 @@ export async function executeImagesStep(
         : baseVisualCue;
       
       const scenePrompt = buildImagePrompt(scene.text, scene.keywords, artStyle, i, scenes.length, imagePromptConfig, effectiveCue, storyAnchor);
+      entry.prompt = scenePrompt; // Persist for auditability in image_sequence manifest
       
       // === PROMPT SIMILARITY GUARD (v4.0) ===
       // Detect if this prompt is too similar to the previous one (within same scene's sub-images).
@@ -3549,23 +3583,11 @@ export async function executeImagesStep(
         const MAX_IMAGE_RETRIES = 3;
         let imageGenerated = false;
         
-        // === CONTENT SAFETY PRE-FILTER (Roadmap #16) ===
-        // Proactive sanitization BEFORE first API attempt — prevents moderation blocks
-        // Uses DB-driven rules when available, falls back to hardcoded patterns
-        const safetyResult = applyContentSafetyFilter(scenePrompt, safetyRules);
-        if (safetyResult.changeCount > 0) {
-          console.log(`[SAFETY] Scene ${i}${entry.subIndex > 0 ? `_sub_${entry.subIndex}` : ''}: ` +
-            `pre-filtered ${safetyResult.changeCount} categories (${safetyResult.categories.join(', ')})`);
-          await logger.snapshot('images', 'safety_filter', {
-            scene_index: i,
-            sub_index: entry.subIndex,
-            categories_filtered: safetyResult.categories,
-            change_count: safetyResult.changeCount,
-            original_length: scenePrompt.length,
-            filtered_length: safetyResult.filtered.length,
-          }, `Safety filter: ${safetyResult.changeCount} categories filtered in scene ${i}${entry.subIndex > 0 ? `_sub_${entry.subIndex}` : ''}`);
-        }
-        let currentPrompt = safetyResult.filtered;
+        // v6.0: Send the FULL creative prompt on first attempt (no pre-filter).
+        // Safety filter only kicks in as a RETRY strategy after a moderation rejection.
+        // This preserves horror vocabulary (sinister, dread, terrifying) that gpt-image-1
+        // handles fine, resulting in richer, more atmospheric images.
+        let currentPrompt = scenePrompt;
         
         for (let attempt = 1; attempt <= MAX_IMAGE_RETRIES; attempt++) {
           const response = await fetch(
@@ -3592,10 +3614,28 @@ export async function executeImagesStep(
             console.error(`[IMAGES] gpt-image-1 scene ${i} attempt ${attempt}/${MAX_IMAGE_RETRIES}: ${response.status} - ${errorBody.substring(0, 300)}`);
             
             // === MODERATION / CONTENT POLICY (400) — sanitize and retry ===
+            // v6.0: Attempt 1 sends the full creative prompt. On first rejection,
+            // apply the content safety filter. On second rejection, strip to bare atmosphere.
             if (response.status === 400 && (errorBody.includes('moderation') || errorBody.includes('safety') || errorBody.includes('content_policy'))) {
               console.log(`[IMAGES] ⚠️ Moderation block on scene ${i}, attempt ${attempt}. Sanitizing prompt...`);
               if (attempt < MAX_IMAGE_RETRIES) {
-                currentPrompt = sanitizeImagePrompt(currentPrompt, attempt);
+                if (attempt === 1) {
+                  // First rejection: apply content safety filter (DB rules or hardcoded)
+                  const safetyResult = applyContentSafetyFilter(currentPrompt, safetyRules);
+                  currentPrompt = safetyResult.filtered;
+                  if (safetyResult.changeCount > 0) {
+                    console.log(`[SAFETY] Scene ${i}: safety filter applied ${safetyResult.changeCount} categories on retry (${safetyResult.categories.join(', ')})`);
+                    await logger.snapshot('images', 'safety_filter', {
+                      scene_index: i, sub_index: entry.subIndex,
+                      categories_filtered: safetyResult.categories,
+                      change_count: safetyResult.changeCount,
+                      trigger: 'moderation_rejection',
+                    }, `Safety filter (retry): ${safetyResult.changeCount} categories in scene ${i}`);
+                  }
+                } else {
+                  // Second rejection: strip to bare atmospheric skeleton
+                  currentPrompt = sanitizeImagePrompt(currentPrompt, attempt);
+                }
                 await new Promise(r => setTimeout(r, 2000));
                 continue;
               }
@@ -3610,6 +3650,17 @@ export async function executeImagesStep(
             }
             
             // Out of retries or non-retryable error
+            // v6.0: For moderation blocks, skip this scene instead of killing the entire step.
+            // Other errors (500, network) still throw to preserve existing retry behavior.
+            if (response.status === 400 && (errorBody.includes('moderation') || errorBody.includes('safety') || errorBody.includes('content_policy'))) {
+              console.error(`[IMAGES] ⚠️ Scene ${i} permanently blocked by moderation after ${attempt} attempts. Skipping scene (will use adjacent image as fallback).`);
+              moderationFailCount++;
+              await logger.snapshot('images', 'moderation_skip', {
+                scene_index: i, sub_index: entry.subIndex,
+                attempts: attempt, prompt_length: currentPrompt.length,
+              }, `Scene ${i} skipped: moderation block after ${attempt} attempts`);
+              break; // Exit retry loop, imageGenerated stays false
+            }
             throw new Error(`gpt-image-1 scene ${i} failed: ${response.status} ${response.statusText} - ${errorBody.substring(0, 300)}`);
           }
 
@@ -3634,7 +3685,11 @@ export async function executeImagesStep(
         }
         
         if (!imageGenerated) {
-          throw new Error(`gpt-image-1 scene ${i} failed after ${MAX_IMAGE_RETRIES} attempts (moderation block)`);
+          // v6.0: Don't kill the entire step — skip this scene.
+          // The assemble step will use the previous scene's image as a fallback.
+          console.warn(`[IMAGES] Scene ${i} has no image (moderation or empty response). Continuing with remaining scenes.`);
+          scenesCompleted.push(seqIdx); // Mark as "completed" so continuation doesn't retry
+          continue;
         }
       } else if (imageModel === 'dall-e-2') {
         // === DALL-E 2 IMAGE GENERATION (Cheaper) ===
@@ -3755,6 +3810,8 @@ export async function executeImagesStep(
       resolvedSequence.push({
         ...entry,
         url: asset?.public_url || undefined,
+        // Resolve prompt: prefer in-memory (freshly generated) → asset meta (prior continuation) → undefined
+        prompt: entry.prompt || (asset?.meta as Record<string, unknown>)?.prompt as string || undefined,
       });
     }
 
@@ -3767,16 +3824,17 @@ export async function executeImagesStep(
       image_sequence: resolvedSequence,
     });
 
-    console.log(`[IMAGES] ✓ Complete: ${generatedCount} generated, ${skippedCount} skipped, ${resolvedSequence.length} total images in sequence`);
+    console.log(`[IMAGES] ✓ Complete: ${generatedCount} generated, ${skippedCount} skipped${moderationFailCount > 0 ? `, ${moderationFailCount} moderation-skipped` : ''}, ${resolvedSequence.length} total images in sequence`);
     await logger.snapshot('images', 'sequence', {
       total_images: resolvedSequence.length,
       scenes: scenes.length,
       durations: resolvedSequence.map(e => e.duration),
       mood_levels: resolvedSequence.map(e => e.moodLevel),
       multi_image_scenes: resolvedSequence.filter(e => e.subIndex > 0).length,
-    }, `Image sequence: ${resolvedSequence.length} images, ${resolvedSequence.filter(e => e.subIndex > 0).length} sub-images`);
+      moderation_skipped: moderationFailCount,
+    }, `Image sequence: ${resolvedSequence.length} images, ${resolvedSequence.filter(e => e.subIndex > 0).length} sub-images${moderationFailCount > 0 ? `, ${moderationFailCount} moderation-skipped` : ''}`);
 
-    return { success: true, data: { generated: generatedCount, skipped: skippedCount, total: resolvedSequence.length } };
+    return { success: true, data: { generated: generatedCount, skipped: skippedCount, moderation_skipped: moderationFailCount, total: resolvedSequence.length } };
 
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
@@ -3883,6 +3941,7 @@ interface ImageSequenceEntry {
   moodLevel: number;      // Ken Burns mood intensity (1-10)
   assetKey: string;       // Asset idempotency key for lookup
   url?: string;           // Resolved public URL (populated at end of images step)
+  prompt?: string;        // The final assembled DALL-E prompt (populated at resolution for auditability)
 }
 
 /**
@@ -3929,7 +3988,7 @@ ${moodHint ? `MOOD: ${moodHint}` : ''}
 GENRE/VIBE: ${vibePreset}
 
 STORY:
-"${storyText.substring(0, 1500)}"
+"${storyText.substring(0, 3500)}"
 
 Extract:
 1. environment: The PRIMARY setting — be specific (not just "forest" but "dense pine forest with twisted roots at dusk")
@@ -3937,8 +3996,8 @@ Extract:
 3. recurringMotifs: Visual elements to repeat (specific objects, atmospheric details, textures mentioned in story)
 ${genreField}
 5. timeOfDay: Specific lighting/time
-6. isGroupStory: true if story involves multiple characters together
-7. groupCount: The EXPECTED number of people (what the group SHOULD be). For "one too many" stories where the group discovers an extra person, return the NORMAL count BEFORE the extra person is noticed — NOT the total with the stranger included.
+6. isGroupStory: true ONLY if multiple characters physically APPEAR TOGETHER in scenes (interacting, present in the same location at the same time). Characters who are merely MENTIONED (missing persons, historical figures, victims) but never appear on-screen do NOT count. A solo protagonist investigating multiple disappearances is NOT a group story.
+7. groupCount: The EXPECTED number of people who are PHYSICALLY PRESENT TOGETHER in scenes. null if not a group story. For "one too many" stories where the group discovers an extra person, return the NORMAL count BEFORE the extra person is noticed — NOT the total with the stranger included.
 
 Return JSON: { "environment": "...", "characterDescription": "..." or null, "recurringMotifs": "...", "horrorTone": "...", "timeOfDay": "...", "isGroupStory": true/false, "groupCount": N or null }`;
 
@@ -3971,6 +4030,24 @@ Return JSON: { "environment": "...", "characterDescription": "..." or null, "rec
     if (!content) return null;
 
     const parsed = JSON.parse(content);
+
+    // v6.0: Cross-validate isGroupStory — GPT sometimes misclassifies stories
+    // where multiple people are MENTIONED (e.g. "four missing women") but never
+    // physically appear together. Check if the story text actually has dialogue
+    // or action between multiple present characters.
+    if (parsed.isGroupStory && parsed.characterDescription === null) {
+      // No character descriptions but claims group story — likely misclassification.
+      // A true group story would have describable characters who appear on screen.
+      console.log(`[STORY_ANCHOR] ⚠️ Overriding isGroupStory=false: no characterDescription but isGroupStory was true (likely mentioned-not-present misclassification)`);
+      parsed.isGroupStory = false;
+      parsed.groupCount = null;
+    } else if (parsed.isGroupStory && parsed.groupCount && parsed.groupCount > 8) {
+      // Unreasonable group count — cap or override
+      console.log(`[STORY_ANCHOR] ⚠️ Capping groupCount from ${parsed.groupCount} to null (unreasonable count)`);
+      parsed.isGroupStory = false;
+      parsed.groupCount = null;
+    }
+
     console.log(`[STORY_ANCHOR] Created: env="${(parsed.environment || '').substring(0, 60)}...", group=${parsed.isGroupStory}, count=${parsed.groupCount}`);
     return parsed as StoryAnchor;
   } catch (err) {
@@ -4526,9 +4603,26 @@ function buildImagePrompt(
 ): string {
   // === DB-driven prompt (new path) ===
   if (config) {
-    const tensionLevel = config.tension_escalation
-      ? Math.min(10, Math.floor((sceneIndex / totalScenes) * 10) + 3)
-      : 5;
+    // v6.0: Narrative-aware tension — combines positional escalation with scene content signals.
+    // Uses moodLevel (which considers sceneType, camera, isClimax) instead of purely linear ramp.
+    // Base positional: 3→10 across video. Boosted by isClimax (+3) and dampened for calm scene types.
+    let tensionLevel: number;
+    if (config.tension_escalation) {
+      const positionalBase = Math.floor((sceneIndex / totalScenes) * 10) + 3;
+      // Blend in visual cue signals
+      if (visualCue?.isClimax) {
+        tensionLevel = Math.min(10, positionalBase + 3);
+      } else if (visualCue?.sceneType === 'establishing' || visualCue?.sceneType === 'object') {
+        // Calm scene types: reduce tension even if positioned late
+        tensionLevel = Math.min(10, Math.max(3, positionalBase - 2));
+      } else if (visualCue?.sceneType === 'atmosphere') {
+        tensionLevel = Math.min(10, positionalBase + 1);
+      } else {
+        tensionLevel = Math.min(10, positionalBase);
+      }
+    } else {
+      tensionLevel = 5;
+    }
 
     // Thumbnail optimization: first scene image should work as a standalone thumbnail
     const thumbnailBoost = sceneIndex === 0

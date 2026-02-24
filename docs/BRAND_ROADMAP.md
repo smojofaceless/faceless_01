@@ -1,9 +1,10 @@
 # BRAND_ROADMAP.md
 
-> **Document Version:** 1.0  
+> **Document Version:** 2.0  
 > **Created:** February 19, 2026  
+> **Updated:** February 21, 2026  
 > **Author:** System Architect  
-> **Status:** Active Planning  
+> **Status:** Active — Phase 1 In Progress  
 > **Depends On:** PRESET_SOURCE_OF_TRUTH.md, CAMPAIGN_SYSTEM.md, COST_CONTROLS.md
 
 ---
@@ -12,10 +13,13 @@
 
 1. [Overview](#1-overview)
 2. [Brand Catalog](#2-brand-catalog)
-3. [Launch Phases](#3-launch-phases)
-4. [Platform Strategy Summary](#4-platform-strategy-summary)
-5. [Expansion Rules](#5-expansion-rules)
-6. [Future Extensions](#6-future-extensions)
+3. [Pipeline Modes](#3-pipeline-modes)
+4. [Launch Phases](#4-launch-phases)
+5. [Platform Strategy Summary](#5-platform-strategy-summary)
+6. [Expansion Rules](#6-expansion-rules)
+7. [Technical Risks & Lessons Learned](#7-technical-risks--lessons-learned)
+8. [Future Extensions](#8-future-extensions)
+9. [Changelog](#9-changelog)
 
 ---
 
@@ -53,18 +57,41 @@ Each brand plugs into this infrastructure via a single `brands` row, its `brand_
 
 Each phase must achieve its learning goal before the next phase unlocks. This prevents wasted spend on brands that depend on infrastructure not yet validated.
 
+### Current Status (as of February 21, 2026)
+
+| Brand | DB Status | Pipeline Mode | Presets Verified | Notes |
+|-------|-----------|---------------|-----------------|-------|
+| Stories That Stalk | ✅ Live | Image-based | `urban_legend`, `reddit_trending_horror`, `dark_origins` | Flagship brand. Full pipeline operational. |
+| Decide This Daily | ✅ Live | Gameplay | `two_doors`, `one_rule_one_power`, `no_good_choice` | All 3 presets verified end-to-end. Gameplay pipeline required 5 bug fixes (see §7). |
+| Confessions & Choices | ⏳ Planned | Gameplay | — | Overlaps significantly with Decide This Daily (see §2.1 note). |
+| Would You Rather | ⏳ Planned | TBD | — | Not yet created in database. |
+| All others | ⏳ Planned | Image-based | — | Phases 2-3. Blocked on Phase 1 exit criteria. |
+
+> **Key finding:** The `brand_templates` table currently has 0 rows. Presets are determined by `vibe_preset` on the `jobs` table and the template JS files in `js/templates/`. This diverges from the roadmap's assumption that `brand_templates` is the single source of truth. Either populate `brand_templates` or update dependent systems to use the actual source.
+
+### Assumptions
+
+1. **Brand count is fixed at 10 for planning purposes.** The system supports unlimited brands, but this roadmap scopes the first 10 (9 original + Decide This Daily).
+2. **TikTok and X/Twitter API access is currently unavailable.** Phase 1 brands targeting these platforms will post to available platforms first and add TikTok/X when API access is granted.
+3. **Restoration Time Lapse is the highest-risk brand.** Multi-image consistency is an unsolved problem in the current pipeline. Phase 3 placement allows time for research.
+4. **Cost estimates are based on current OpenAI and ElevenLabs pricing** and validated against production data from Decide This Daily and Stories That Stalk.
+5. **Gameplay-mode brands require sourced/licensed gameplay footage.** Clips are stored externally; the pipeline downloads and trims them at render time. Clips can exceed 100MB — streaming download is required (see §7).
+6. **All brands share the same Supabase project and edge functions.** No per-brand infrastructure separation is planned.
+
 ---
 
 ## 2. Brand Catalog
 
 ### 2.1 Confessions & Choices
 
+> **⚠️ Overlap Note:** This brand concept overlaps significantly with **Decide This Daily** (§2.10), which is already live in production with 3 verified presets. Both use gameplay-background footage with moral dilemma narration. Before launching Confessions & Choices, decide whether to: (a) merge its presets into Decide This Daily, (b) differentiate by making Confessions confession-only (no dilemma voting mechanic), or (c) proceed as separate brands targeting different audience segments.
+
 | Attribute | Value |
 |-----------|-------|
 | **Concept** | Gameplay-background confessions and moral dilemma narration. Viewer watches satisfying gameplay footage while listening to anonymous confessions or "what would you do" scenarios. |
 | **Primary Platforms** | TikTok, YouTube Shorts, Instagram Reels |
 | **Core Engagement Mechanic** | 💬 Replies + ⏱ Retention (confession hooks drive comments; gameplay holds attention) |
-| **Content Generation** | Text narration over sourced/licensed gameplay footage. No AI image generation required. |
+| **Content Generation** | Text narration over sourced/licensed gameplay footage. No AI image generation required. Uses **gameplay pipeline mode** (see §3). |
 
 **Presets:**
 
@@ -222,29 +249,123 @@ Each phase must achieve its learning goal before the next phase unlocks. This pr
 
 ---
 
-## 3. Launch Phases
+### 2.10 Decide This Daily
+
+> **Status:** ✅ LIVE — All presets verified in production (February 21, 2026)
+
+| Attribute | Value |
+|-----------|-------|
+| **Brand ID** | `45c229a5-e647-49d2-8912-d5fa24f66fda` |
+| **Concept** | Moral dilemma and ethical choice narration over gameplay footage. Presents impossible decisions, impossible rules, or binary choices with no good answer. Viewer engagement driven by voting/commenting on choices. |
+| **Primary Platforms** | TikTok, YouTube Shorts, Instagram Reels |
+| **Core Engagement Mechanic** | 💬 Replies + ⏱ Retention (dilemma hooks drive debate; gameplay holds attention through narration) |
+| **Content Generation** | Text narration + voice (ElevenLabs) + background music (Suno) + gameplay footage (sourced/trimmed). Uses **gameplay pipeline mode** (see §3). No AI image generation. |
+
+**Presets (All Verified ✅):**
+
+- `two_doors` — Binary choice dilemma. "Door A or Door B?" Visual preset: `ai_images_contrast` / cinematic-contrast. Presents two options with hidden consequences.
+- `one_rule_one_power` — Rule/power tradeoff. "You get one power, but there's one rule." Visual preset: `ai_images_moody` / surreal-contemplative. Escalating stakes.
+- `no_good_choice` — Moral dilemma with no good answer. "What would you do?" Visual preset: `forest` / editorial-clean. Uses gameplay mode (`gameplay_mode=true` in job meta). Minecraft clips verified working.
+
+**Production Metrics (from verified test runs):**
+
+| Metric | Value |
+|--------|-------|
+| Avg. audio duration | ~25s |
+| Avg. word count | ~60 words |
+| Gameplay clip source | Minecraft (configurable) |
+| Pipeline steps | story → voice → music → subtitles → assemble (skips scenes + images) |
+| Avg. cost per post | ~$0.15-0.25 (voice + music + render, no image generation) |
+
+---
+
+## 3. Pipeline Modes
+
+The engine supports two distinct rendering pipelines. Each brand uses one mode exclusively — the mode is determined by the preset configuration and stored as `gameplay_mode` in `job.meta`.
+
+### 3.1 Image-Based Pipeline (Default)
+
+**Used by:** Stories That Stalk, Lego History, Lego Bible Verses, Lego Bible Stories, Restoration Time Lapse, Space Facts, Forgotten Things
+
+**Steps:** `story → uniqueness → scenes → voice → music → images → subtitles → assemble → upload → schedule`
+
+- AI generates scene descriptions, then `gpt-image-1` renders each scene as an image
+- Images are composited into a video with voice, music, subtitles, and effects
+- Cost driven primarily by image generation ($0.10-1.50 per post depending on image count)
+- Finalization verifies all images are present before marking complete
+
+### 3.2 Gameplay Pipeline
+
+**Used by:** Decide This Daily, Confessions & Choices (planned), Would You Rather (planned)
+
+**Steps:** `story → voice → music → subtitles → assemble → upload → schedule`
+
+- Skips `uniqueness`, `scenes`, and `images` steps entirely
+- Background video is sourced gameplay footage (e.g., Minecraft parkour), downloaded and trimmed to match audio duration
+- Voice narration + subtitles overlay the gameplay footage
+- Cost driven by voice + music generation only (~$0.15-0.25 per post)
+
+**Key Technical Differences:**
+
+| Aspect | Image-Based | Gameplay |
+|--------|-------------|----------|
+| `job.meta.gameplay_mode` | `false` / absent | `true` |
+| Image generation | Required (gpt-image-1) | Skipped |
+| Background video | Composited from images | Downloaded gameplay clip |
+| Download size | Small (individual images) | Large (100MB+ video files) |
+| Download method | Standard HTTP | Streaming (`pipe()` to disk) |
+| Finalization check | Verifies all images present | Skips image check |
+| FFmpeg trim | N/A | Trims gameplay to `audio_duration` with 5-min timeout |
+| Render duration | ~1-3 min | ~2-5 min (larger files) |
+| Continuation risk | Low | Higher (large file processing) |
+
+**Gameplay Pipeline Safeguards (added February 2026):**
+
+1. **FFmpeg trim timeout** — 5-minute SIGKILL timeout prevents FFmpeg hangs during gameplay clip trimming
+2. **Explicit audio duration** — Worker sends `audio_duration` in render payload; renderer trims gameplay to match instead of defaulting to 60s
+3. **Continuation limit** — Max 20 render continuation attempts (~60 min); job fails gracefully if exceeded
+4. **Streaming download** — Gameplay clips downloaded via streaming (`responseType: 'stream'`) instead of in-memory buffer, avoiding OOM on large files
+5. **Finalization bypass** — `verifyJobReadyForComplete()` skips image completeness check when `gameplay_mode=true`
+
+---
+
+## 4. Launch Phases
 
 ### Phase 1 — Foundation (Weeks 1-4)
+
+> **Current Status:** 🟡 In Progress — 2 of 4 brands live. Pipeline validated for both image-based and gameplay modes.
 
 **Goal:** Validate the full production pipeline end-to-end across multiple brands. Prove that scheduling, posting, metrics collection, and the learning loop work reliably at scale before adding complexity.
 
 **Brands:**
 
-| Brand | Reason |
-|-------|--------|
-| **Stories That Stalk** | Already live. Full pipeline proven. Serves as the control brand for all system comparisons. |
-| **Confessions & Choices** | Low cost (text-only, no AI images). High volume possible. Reply-driven — tests comment-based learning signals. |
-| **Would You Rather** | Lowest production cost. Pure text generation. Reply-farming mechanic tests engagement-driven metadata optimization fastest. |
+| Brand | Status | Reason |
+|-------|--------|--------|
+| **Stories That Stalk** | ✅ Live | Already live. Full image-based pipeline proven. Serves as the control brand for all system comparisons. |
+| **Decide This Daily** | ✅ Live | Gameplay pipeline validated. All 3 presets verified. Tests gameplay mode, reply-driven engagement, and dilemma-format retention. |
+| **Confessions & Choices** | ⏳ Pending | Low cost (gameplay, no AI images). High volume possible. Reply-driven — tests confession-based learning signals. May merge into Decide This Daily (see §2.1 note). |
+| **Would You Rather** | ⏳ Pending | Lowest production cost. Pure text generation. Reply-farming mechanic tests engagement-driven metadata optimization fastest. |
 
 **Why these brands first:**
 
 1. **Stories That Stalk** is already operational — zero additional setup cost. It continues generating data for the learning loop.
-2. **Confessions & Choices** and **Would You Rather** require only text generation + sourced video backgrounds. No image pipeline dependency. This means near-zero incremental API cost per video.
-3. All three brands target different engagement mechanics (retention, replies, shares), so the strategy system and metadata learning loop get diverse training signals from day one.
+2. **Decide This Daily** proved the gameplay pipeline viable and exposed 5 critical bugs that were fixed before any other gameplay brand can launch (see §7).
+3. **Confessions & Choices** and **Would You Rather** require only text generation + sourced video backgrounds. No image pipeline dependency. Near-zero incremental API cost per video.
+4. All four brands target different engagement mechanics (retention, replies, shares), so the strategy system and metadata learning loop get diverse training signals from day one.
+
+**Target Posting Cadence:**
+
+| Brand | Phase 1 Target | Scale Target | Notes |
+|-------|---------------|-------------|-------|
+| Stories That Stalk | 1/day | 2-3/day | Limited by image generation cost |
+| Decide This Daily | 1/day | 2-3/day | Limited by gameplay clip variety |
+| Confessions & Choices | 1-2/day | 3-4/day | Low cost enables higher volume |
+| Would You Rather | 2-3/day | 4-6/day | Lowest cost; volume-first strategy |
 
 **System Learns:**
 
-- Multi-brand scheduling reliability (3 brands, different cadences)
+- Multi-brand scheduling reliability (4 brands, different cadences)
+- Gameplay vs. image-based pipeline cost comparison
 - Cross-brand cost tracking accuracy
 - Reply-driven vs. retention-driven posting time optimization
 - Strategy selection with real A/B data across engagement types
@@ -252,7 +373,9 @@ Each phase must achieve its learning goal before the next phase unlocks. This pr
 
 **Exit Criteria:**
 
-- [ ] All 3 brands posting on schedule for 7+ consecutive days
+- [x] Image-based pipeline validated end-to-end (Stories That Stalk)
+- [x] Gameplay pipeline validated end-to-end (Decide This Daily)
+- [ ] All 4 brands posting on schedule for 7+ consecutive days
 - [ ] Metrics collection running for all brands (even if some platforms return stubs)
 - [ ] `winning_metadata_patterns` populated for at least 2 brands
 - [ ] `time_slot_scores` have ≥20 samples per brand/platform
@@ -332,12 +455,13 @@ Each phase must achieve its learning goal before the next phase unlocks. This pr
 
 ---
 
-## 4. Platform Strategy Summary
+## 5. Platform Strategy Summary
 
 ### Platform Prioritization by Brand
 
 | Brand | YouTube Shorts | Instagram Reels | TikTok | Facebook Reels | Threads | X |
 |-------|:-:|:-:|:-:|:-:|:-:|:-:|
+| **Decide This Daily** | ● | ● | ★ | ○ | ○ | ○ |
 | Confessions & Choices | ● | ● | ★ | ○ | ○ | ○ |
 | Would You Rather | ○ | ● | ★ | ○ | ● | ○ |
 | Stories That Stalk | ★ | ● | ● | ● | ● | ○ |
@@ -352,7 +476,7 @@ Each phase must achieve its learning goal before the next phase unlocks. This pr
 
 ### Why Some Brands Prioritize Different Platforms
 
-**TikTok-first brands** (Confessions, Would You Rather, Space Facts):
+**TikTok-first brands** (Decide This Daily, Confessions, Would You Rather, Space Facts):
 - Reply-driven and share-driven mechanics align with TikTok's algorithm, which rewards comment velocity and shares.
 - Short text-overlay format is native to TikTok's content style.
 - TikTok's "scroll stop" strategy maps directly to these brands' hook-first content.
@@ -377,7 +501,7 @@ Each phase must achieve its learning goal before the next phase unlocks. This pr
 | **Strategy types** | `reply_farming`, `stitch_bait`, `conversation_starter` | `retention_hook`, `curiosity_gap`, `save_bait` |
 | **Metadata style** | Provocative, polarizing, question-based | Atmospheric, curiosity-driven, cliffhanger |
 | **Learning signal** | Comment count + reply depth | Average view duration + save rate |
-| **Brands** | Confessions, Would You Rather, Space Facts | Stories That Stalk, Lego History, Lego Bible Stories, Restoration |
+| **Brands** | Decide This Daily, Confessions, Would You Rather, Space Facts | Stories That Stalk, Lego History, Lego Bible Stories, Restoration |
 | **Hybrid** | Forgotten Things (nostalgia replies + save-worthy content) | — |
 
 ### How Learning Improves Over Time
@@ -408,7 +532,7 @@ Week 13+:  Full learning loop operational
 
 ---
 
-## 5. Expansion Rules
+## 6. Expansion Rules
 
 ### When to Add a New Preset
 
@@ -461,18 +585,80 @@ Brands requiring AI image generation (gpt-image-1) are gated by:
 3. **Image pipeline stability** — Worker-v1 image generation step must have ≤2% failure rate over the last 50 jobs.
 4. **Previous phase exit criteria met** — All checkboxes from the preceding phase must be checked.
 
-**Cost tiers:**
+**Cost tiers (updated with production data):**
 
-| Tier | Cost Profile | Brands |
-|------|-------------|--------|
-| **Tier 1: Text-only** | ~$0.01-0.03 per post | Confessions & Choices, Would You Rather |
-| **Tier 2: Text + Images** | ~$0.10-0.30 per post | Lego History, Lego Bible Verses, Space Facts, Forgotten Things |
-| **Tier 3: Full Pipeline** | ~$0.30-0.80 per post | Stories That Stalk, Lego Bible Stories |
-| **Tier 4: Multi-Image Sequence** | ~$0.50-1.50 per post | Restoration Time Lapse |
+| Tier | Cost Profile | Brands | Notes |
+|------|-------------|--------|-------|
+| **Tier 1: Text + Gameplay** | ~$0.15-0.25 per post | Decide This Daily, Confessions & Choices, Would You Rather | Voice (ElevenLabs) + music (Suno) + render. No image generation. Original estimate of $0.01-0.03 was text-only and did not account for voice/music. |
+| **Tier 2: Text + Images** | ~$0.10-0.30 per post | Lego History, Lego Bible Verses, Space Facts, Forgotten Things | Image generation is primary variable cost. |
+| **Tier 3: Full Pipeline** | ~$0.30-0.80 per post | Stories That Stalk, Lego Bible Stories | Voice + music + multi-image + effects. |
+| **Tier 4: Multi-Image Sequence** | ~$0.50-1.50 per post | Restoration Time Lapse | 4-6 images with consistency requirements. Highest cost tier. |
 
 ---
 
-## 6. Future Extensions
+## 7. Technical Risks & Lessons Learned
+
+### Known Infrastructure Risks
+
+| Risk | Severity | Affected Brands | Mitigation |
+|------|----------|-----------------|------------|
+| **Renderer in-memory job storage** | P1 | All brands | Render.com restarts lose all in-flight render jobs. Jobs stuck mid-render will fail on continuation timeout. **Mitigation:** Continuation limit (20 attempts) catches this. **Future fix:** Persist render job state to Redis or Supabase. |
+| **Free-tier RAM limits** | P2 | Gameplay brands | Render.com free tier has 512MB RAM. Large gameplay clips (700s+ video) may cause OOM during FFmpeg processing. **Mitigation:** Streaming download avoids loading full file into memory. **Future fix:** Upgrade to paid Render tier or add clip length validation. |
+| **Gameplay clip sourcing** | P2 | Decide This Daily, Confessions & Choices | Currently using a small set of Minecraft clips. Repeated clips across videos will be noticed by audiences. **Future fix:** Build clip library with variety (multiple games, perspectives). |
+| **Image consistency across frames** | P1 | Restoration Time Lapse | AI cannot reliably generate the same object at different restoration stages. This is an unsolved problem. **Mitigation:** Phase 3 placement allows time for research. |
+| **ElevenLabs rate limits** | P2 | All voiced brands | High-volume posting may hit ElevenLabs API rate limits. **Mitigation:** Retry logic in worker. **Future fix:** Voice caching for re-renders. |
+| **Supabase Edge Function timeout** | P2 | All brands | Edge functions have a 150s execution limit. Complex pipeline steps use continuation patterns to work around this. **Mitigation:** Continuation tracking with max attempts. |
+
+### Lessons Learned from Production (February 2026)
+
+These bugs were discovered and fixed during Decide This Daily gameplay pipeline validation:
+
+| # | Bug | Root Cause | Fix | Commit | Files Modified |
+|---|-----|-----------|-----|--------|----------------|
+| 1 | FFmpeg gameplay trim hung forever | No timeout on FFmpeg `spawn()` for gameplay clip trimming | Added 5-minute SIGKILL timeout pattern | `e4d10bf` | `video-renderer/server.js` |
+| 2 | Gameplay trimmed to 60s instead of audio length | Worker sent `durations: []` for gameplay; renderer defaulted to 60s | Added explicit `audio_duration` field to render payload | `e4d10bf` | `steps.ts`, `server.js` |
+| 3 | Infinite continuation loop | No max continuation attempts on render polling | Added `render_continuation_count` in `job.meta` with MAX=20 | `e4d10bf` | `steps.ts` |
+| 4 | Gameplay download OOM / size rejection | `downloadFile()` used `arraybuffer` with 100MB `maxContentLength` | Rewrote to streaming download (`pipe()` to `createWriteStream`) | `be86228` | `server.js` |
+| 5 | Finalization rejected completed gameplay jobs | `verifyJobReadyForComplete()` required images even for gameplay mode | Added `gameplay_mode` check to skip image verification | `398adab` | `helpers.ts` |
+
+**Pattern:** Bugs 1-3 were timeout/loop issues (no safety nets). Bugs 4-5 were mode-awareness issues (code assumed image-based pipeline). New pipeline modes should be tested with the same rigor before production use.
+
+### Operational Runbook
+
+**When a job gets stuck:**
+
+1. Check job status: `GET /rest/v1/jobs?id=eq.<job_id>&select=status,current_step,error,updated_at`
+2. If `updated_at` is >30 min old and `status=processing`, the job is stuck
+3. Mark as failed: `PATCH /rest/v1/jobs?id=eq.<job_id>` with `{"status":"failed"}`
+4. To retry: `PATCH` with `{"status":"queued","current_step":"<last_good_step>"}`, then invoke `POST /functions/v1/schedule-jobs` with `{"source":"manual"}`
+
+**When the renderer is unresponsive:**
+
+1. Check health: `GET https://faceless-renderer.onrender.com/health`
+2. If no response, the free-tier instance has spun down — any request will cold-start it (~30s)
+3. If health returns but jobs fail, check Render.com dashboard for OOM or crash logs
+4. To force redeploy: `git push` to the repo (Render.com auto-deploys on push)
+
+**When deploying changes:**
+
+| Target | Command |
+|--------|---------|
+| Worker (Supabase Edge Function) | `npx -y supabase functions deploy worker-v1 --no-verify-jwt --project-ref ustmetegzisztqqcjigt` |
+| DB migrations | `npx -y supabase db push --linked -p "<db_password>" --include-all --yes` |
+| Video renderer | `git push` (auto-deploys on Render.com) |
+
+### Failure Recovery Plan
+
+| Scenario | Response |
+|----------|----------|
+| Brand failure rate >50% for 24h | Pause brand campaigns. Investigate last successful job vs. first failing job. Check for API key expiry, rate limits, or renderer issues. |
+| Cost exceeds daily budget | Automatic throttle via cost controls system. If global budget exceeded, all campaigns pause. Investigate which brand/preset is over-spending. |
+| Phase exit criteria unachievable | Extend phase timeline by 2 weeks. If still blocked after extension, evaluate whether the blocking criterion is realistic and adjust threshold. |
+| Renderer crash loop | Switch to backup renderer URL if available. Otherwise, all assemble steps will fail gracefully via continuation timeout. Jobs can be retried after renderer recovery. |
+
+---
+
+## 8. Future Extensions
 
 ### Analytics Integration
 
@@ -503,264 +689,13 @@ As the system matures, the roadmap supports:
 
 These are future capabilities. The current roadmap is a manual planning document that structures the data needed to automate these decisions later.
 
----
----
-
-# Visual Roadmap Page Specification
-
-> **Page:** `/pages/brand-roadmap.html`  
-> **CSS:** `/css/brand-roadmap.css`  
-> **JS:** `/js/pages/brand-roadmap.js`  
-> **Status:** Specification Only (no implementation)
+> **Note:** The Visual Roadmap Page UI specification has been moved to a separate document: `docs/BRAND_ROADMAP_UI_SPEC.md`. It contains the full page layout, component specs, interaction design, data requirements, and `brand_roadmap_config` table schema.
 
 ---
 
-## Page Purpose
+## 9. Changelog
 
-A single admin dashboard page that visualizes brand progression, launch status, and system learning across all phases. Replaces the need to read this markdown document for day-to-day operational decisions.
-
-**Primary user:** System operator (you). Not a marketing dashboard — an engineering control surface.
-
----
-
-## Layout Sections
-
-### Section 1: Phase Timeline (Top)
-
-A horizontal three-column layout showing Phase 1 → Phase 2 → Phase 3.
-
-```
-┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
-│   PHASE 1        │  │   PHASE 2        │  │   PHASE 3        │
-│   Foundation     │  │   Expansion      │  │   Scale          │
-│                  │  │                  │  │                  │
-│  Weeks 1-4       │  │  Weeks 5-10      │  │  Weeks 11-16     │
-│  ██████████ 100% │  │  ████░░░░░░  40% │  │  ░░░░░░░░░░   0% │
-│                  │  │                  │  │                  │
-│  3 brands        │  │  4 brands        │  │  2 brands        │
-│  ✅ All live     │  │  🔄 2 launching  │  │  ⏳ Pending      │
-└──────────────────┘  └──────────────────┘  └──────────────────┘
-```
-
-**Each phase column shows:**
-
-- Phase name and subtitle
-- Date range (configurable)
-- Progress bar (% of exit criteria met)
-- Brand count
-- Status summary (all live / launching / pending)
-
-**Interaction:** Hover a phase → tooltip shows:
-- Goals (bullet list)
-- Exit criteria with ✅/❌ status
-- Learning focus
-
----
-
-### Section 2: Brand Cards (Main Content)
-
-A responsive grid of brand cards, organized by phase. Each card is a compact summary.
-
-```
-┌─────────────────────────────────────────┐
-│  📜 Stories That Stalk          ACTIVE  │
-│  ─────────────────────────────────────  │
-│  Horror short stories                   │
-│                                         │
-│  Presets: 4 active, 2 planned           │
-│  Platforms: YT IG FB TH                 │
-│  Posts: 127  │  Engagement: ↑ 12%       │
-│                                         │
-│  Health: ████████░░  82%                │
-│  ⏱ Retention-driven  │  💾 Save-driven │
-└─────────────────────────────────────────┘
-```
-
-**Card fields:**
-
-| Field | Source | Description |
-|-------|--------|-------------|
-| Brand name + icon | `brands` table | Display name |
-| Status badge | `brand_roadmap_config` or derived | `planned` / `active` / `scaling` / `paused` |
-| Core concept | Static config | One-line description |
-| Preset count | `brand_templates` count | "N active, M planned" |
-| Platforms | `platform_tokens` + `posts` | Icons for each connected platform |
-| Post count | `COUNT(posts)` | Total posts to date |
-| Engagement trend | `v_post_metrics_latest` 7-day delta | ↑/↓/→ with percentage |
-| Health indicator | Composite score | Based on: failure rate, metric collection rate, winning pattern population, cost efficiency |
-| Engagement type icons | Static config | 💬 replies, ⏱ retention, 💾 saves, 🔄 shares |
-
-**Card colors by status:**
-
-| Status | Color | Opacity |
-|--------|-------|---------|
-| Active | Green border-left | 100% |
-| Scaling | Blue border-left | 100% |
-| Planned | Gray border-left | 60% |
-| Paused | Orange border-left | 80% |
-
----
-
-### Section 3: Brand Detail Panel (Right Sidebar / Modal)
-
-Clicking a brand card opens a detail panel showing:
-
-**Presets sub-section:**
-
-```
-Presets (4 active)
-├── urban_legend      ██████████ 60%  (weight)  │ 45 posts │ ↑ perf
-├── one_too_many      ████░░░░░░ 20%            │ 28 posts │ → perf
-├── reddit_trending   ███░░░░░░░ 15%            │ 31 posts │ ↑ perf
-└── dark_origins      █░░░░░░░░░  5%            │ 23 posts │ ↓ perf
-```
-
-**Strategy types sub-section:**
-
-```
-Top Strategies (last 30 days)
-1. retention_hook     avg_perf: 847    posts: 12
-2. curiosity_gap      avg_perf: 723    posts: 8
-3. save_bait          avg_perf: 691    posts: 15
-```
-
-**Learning status sub-section:**
-
-```
-Learning Loop Status
-├── Winning Patterns:  ✅ Populated (last: 2h ago)
-├── Time Slot Scores:  ✅ 47 samples
-├── Strategy Data:     ✅ 35 posts with strategy assignments
-├── Exemplars:         ✅ 8 positive, 3 negative
-└── A/B Variants:      🔄 2 active tests
-```
-
----
-
-### Section 4: Learning Focus (Bottom)
-
-A compact per-phase summary of what the system is currently learning.
-
-```
-Phase 1 Learning                    Phase 2 Learning
-├── Multi-brand scheduling: ✅     ├── Image cost tracking: 🔄
-├── Reply vs retention: 🔄        ├── Cross-genre presets: ⏳
-├── Cross-brand cost: ✅           ├── Humor calibration: ⏳
-└── Strategy baseline: 🔄         └── 6-brand scheduling: ⏳
-```
-
----
-
-### Section 5: Dependencies (Collapsible)
-
-A collapsible section showing what must be true before each brand/phase unlocks.
-
-```
-Phase 2 Dependencies
-├── ✅ Cost tracking ≤5% variance (14 days)
-├── ✅ Budget headroom ≥40%
-├── 🔄 Image pipeline ≤2% failure rate (need 12 more jobs)
-└── ❌ Phase 1 exit criteria not all met (time_slot_scores < 20)
-```
-
----
-
-## Interactions
-
-| Action | Result |
-|--------|--------|
-| Click brand card | Opens detail panel (presets, strategies, learning status) |
-| Hover phase column | Tooltip with goals, exit criteria, learning focus |
-| Filter by platform | Shows only brands active on selected platform. Dropdown: All / YouTube / Instagram / TikTok / Facebook / Threads / X |
-| Filter by engagement type | Shows only brands matching: 💬 Replies / ⏱ Retention / 💾 Saves / 🔄 Shares |
-| Filter by status | Shows only: All / Active / Scaling / Planned / Paused |
-| Click "Dependencies" | Expands collapsible dependency checklist per phase |
-| Click preset row | Navigates to AI Intelligence page filtered to that preset |
-| Click engagement trend | Navigates to brand's post metrics page |
-
----
-
-## Visual Style Notes
-
-### Design Language
-
-- **Aesthetic:** System-oriented, engineering dashboard. Inspired by Linear, Vercel, and Notion's project views.
-- **Typography:** Monospace for data values (counts, percentages, dates). Sans-serif for labels and descriptions.
-- **Density:** High information density. No hero images, no decorative elements. Every pixel conveys data.
-- **Color palette:** Dark background (`--bg-primary`), muted borders, color used only for status and engagement type indicators.
-
-### Color Coding
-
-| Element | Color Token | Usage |
-|---------|------------|-------|
-| Phase 1 | `--phase-1: #3b82f6` (blue) | Phase column bg tint, brand card phase indicator |
-| Phase 2 | `--phase-2: #8b5cf6` (purple) | Phase column bg tint |
-| Phase 3 | `--phase-3: #f59e0b` (amber) | Phase column bg tint |
-| Active | `--status-active: #22c55e` (green) | Status badge, health bar fill |
-| Scaling | `--status-scaling: #3b82f6` (blue) | Status badge |
-| Planned | `--status-planned: #6b7280` (gray) | Status badge, reduced opacity |
-| Paused | `--status-paused: #f97316` (orange) | Status badge |
-
-### Engagement Type Icons
-
-| Mechanic | Icon | Color |
-|----------|------|-------|
-| Replies | 💬 | `--engagement-replies: #60a5fa` |
-| Retention | ⏱ | `--engagement-retention: #a78bfa` |
-| Saves | 💾 | `--engagement-saves: #34d399` |
-| Shares | 🔄 | `--engagement-shares: #fbbf24` |
-
-### Responsive Behavior
-
-| Breakpoint | Layout |
-|-----------|--------|
-| ≥1200px | 3-column phase timeline + 3-column brand grid + right sidebar detail |
-| 768-1199px | 3-column phase timeline (compressed) + 2-column brand grid + modal detail |
-| <768px | Stacked phases + single-column brand cards + full-screen modal detail |
-
----
-
-## Data Requirements
-
-All data for this page is available from existing tables and views:
-
-| Data Point | Source |
-|-----------|--------|
-| Brand list | `brands` table |
-| Preset count per brand | `brand_templates` table |
-| Platform connections | `platform_tokens` table |
-| Post counts | `posts` table (GROUP BY brand_id) |
-| Engagement metrics | `v_post_metrics_latest` view |
-| Winning patterns status | `winning_metadata_patterns` table |
-| Time slot sample count | `time_slot_scores` table (COUNT) |
-| Strategy performance | `v_strategy_performance` view |
-| Exemplar count | `get_generation_exemplars` RPC |
-| Cost data | `api_usage` table |
-| Phase config | New: `brand_roadmap_config` table (lightweight — phase assignment, target dates, dependencies) |
-
-**New table required:** `brand_roadmap_config` — a simple configuration table mapping brands to phases with metadata. ~10 rows, no complex logic.
-
-```sql
-CREATE TABLE brand_roadmap_config (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  brand_id UUID REFERENCES brands(id),
-  phase INTEGER NOT NULL CHECK (phase IN (1, 2, 3)),
-  target_launch_date DATE,
-  status TEXT DEFAULT 'planned' CHECK (status IN ('planned', 'active', 'scaling', 'paused')),
-  dependencies JSONB DEFAULT '[]',
-  notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
----
-
-## Assumptions
-
-1. **Brand count is fixed at 9 for planning purposes.** The system supports unlimited brands, but this roadmap scopes the first 9.
-2. **TikTok and X/Twitter API access is currently unavailable.** Phase 1 brands targeting these platforms will post to available platforms first and add TikTok/X when API access is granted.
-3. **Restoration Time Lapse is the highest-risk brand.** Multi-image consistency is an unsolved problem in the current pipeline. Phase 3 placement allows time for research.
-4. **Cost estimates are based on current OpenAI and ElevenLabs pricing.** Actual costs will be validated during Phase 1 and may shift brand phase assignments.
-5. **"Confessions & Choices" and "Would You Rather" assume access to licensed/sourced gameplay footage or simple visual overlays.** The AI engine generates text; video backgrounds are sourced separately.
-6. **All brands share the same Supabase project and edge functions.** No per-brand infrastructure separation is planned.
+| Version | Date | Changes |
+|---------|------|---------|
+| 2.0 | 2026-02-21 | Added Decide This Daily (brand 2.10) as live production brand. Added Pipeline Modes section (§3) documenting image-based vs. gameplay pipelines. Updated Phase 1 with live status, DTD inclusion, posting cadence targets. Updated cost tiers with production data. Added Technical Risks & Lessons Learned (§7) with 5 bug fixes, operational runbook, and failure recovery plan. Added Assumptions and Current Status to Overview. Annotated Confessions & Choices with DTD overlap note. Moved UI spec to separate file. |
+| 1.0 | 2026-02-19 | Initial version. 9 brands across 3 phases. Platform strategy, expansion rules, future extensions, and visual roadmap page specification. |

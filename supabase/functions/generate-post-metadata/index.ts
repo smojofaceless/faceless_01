@@ -156,16 +156,16 @@ const PLATFORM_CONFIGS: Record<string, PlatformPromptConfig> = {
   facebook_reels: {
     platform: "Facebook Reels",
     systemSuffix:
-      "Optimize for Facebook Reels engagement. Facebook Reels have NO separate title field — the caption IS the entire text. Watch time, replays, and caption hook are the primary signals. Hashtags are secondary.",
+      "Optimize for Facebook Reels engagement. Facebook Reels have NO separate title field — the caption IS the entire text. CRITICAL: Facebook Reels SEVERELY penalizes long captions. Keep it UNDER 125 characters. Watch time, replays, and caption hook are the only signals that matter. Hashtags are secondary.",
     outputSchema: {
       caption:
-        "string — max 300 chars. 1-2 short punchy hook lines at the top (before 'See more' cutoff). Optional engagement question. Emojis OK sparingly. Do NOT stuff keywords — natural curiosity gap wins.",
+        "string — MUST be under 125 chars. 1-2 SHORT punchy lines only. Curiosity gap or question. Facebook truncates aggressively — the ENTIRE caption must be visible without 'See more'. Do NOT write a description, story summary, or paragraph.",
       hashtags:
-        "string[] — 3-6 hashtags max. Broad + niche mix. No # prefix. These get appended to the caption by the system.",
+        "string[] — 3-5 hashtags max. Broad + niche mix. No # prefix. These get appended to the caption by the system. NEVER more than 5.",
     },
     example: {
       caption:
-        "Six strangers hid from the storm.\nBut every time they counted, there was an extra person.\n\nWho was the seventh?",
+        "Six strangers. Seven shadows.\nWho was the extra one? 😰",
       hashtags: [
         "horror",
         "creepystory",
@@ -175,12 +175,79 @@ const PLATFORM_CONFIGS: Record<string, PlatformPromptConfig> = {
     },
     guidance: `
 - Facebook Reels have NO title field — the caption is everything
-- First 1-2 lines must hook BEFORE the "See more" cutoff — this is the #1 engagement signal
-- Keep it short: 2-4 lines max. Story hook or curiosity gap, then optional question
+- KEEP CAPTION UNDER 125 CHARACTERS — this is non-negotiable
+- The ENTIRE caption must be visible WITHOUT tapping "See more" — anything hidden is wasted
+- 1-2 lines MAXIMUM. One hook line + one question or cliffhanger. That's it.
+- DO NOT write descriptions, story summaries, context, or multi-paragraph text
 - DO NOT keyword-stuff or write SEO-style — Facebook is engagement-first, not search-first
-- Hashtags: 3-6 MAX. Overuse hurts reach. Put broad ones first (horror) then niche
+- Hashtags: 3-5 MAX. Overuse hurts reach. Put broad ones first (horror) then niche
 - Facebook audience skews slightly older — tone can be more narrative/direct
-- Emojis are OK but use sparingly (1-2 max)
+- Emojis: 1 max, at the end
+- NEVER include slurs, explicit gore, or self-harm references
+- Think Twitter energy: if it wouldn't fit in a tweet, it's too long for FB Reels
+`,
+  },
+
+  threads: {
+    platform: "Threads",
+    systemSuffix:
+      "Optimize for Meta Threads (text-first, conversation-driven). Threads rewards brevity, personality, and engagement bait. Posts that feel conversational and opinion-provoking perform best. Video posts show the caption above the video.",
+    outputSchema: {
+      caption:
+        "string — max 300 chars. Short, punchy, conversational. Should feel like a thought or observation, not an ad. Hook in the first line. Can be a question, hot take, or mysterious statement. Emojis OK.",
+      hashtags:
+        "string[] — 3-5 hashtags. Threads supports hashtags but they're secondary — keep minimal. No # prefix in array.",
+    },
+    example: {
+      caption:
+        "Six people hid in a store during the storm.\nEvery time they counted, there were seven.\n\nWho do you think the extra one was?",
+      hashtags: [
+        "horror",
+        "creepystory",
+        "threads",
+        "scary",
+      ],
+    },
+    guidance: `
+- Threads is META's text-first platform — treat it like micro-blogging
+- Caption should feel like a THOUGHT you'd share with friends, not a YouTube description
+- First line is everything — Threads truncates early in feed
+- Questions and open-ended hooks drive replies (which boost distribution)
+- Keep hashtags minimal (3-5 max) — Threads is still building hashtag infrastructure
+- Tone: conversational, slightly provocative, personal
+- Emojis OK but don't overdo it (2-3 max)
+- DO NOT write long descriptions or SEO-style text
+- NEVER include slurs, explicit gore, or self-harm references
+`,
+  },
+
+  twitter: {
+    platform: "Twitter/X",
+    systemSuffix:
+      "Optimize for Twitter/X engagement. Tweets are capped at 280 chars. Thread-starters, hot takes, and curiosity gaps drive impressions. Video tweets show the text above the player — the text IS the hook.",
+    outputSchema: {
+      tweet_text:
+        "string — max 240 chars (leave room for link/hashtags). Short, punchy, scroll-stopping. Can be a question, hot take, cliffhanger, or mysterious observation. Emojis OK sparingly.",
+      hashtags:
+        "string[] — 2-4 hashtags max. Mix broad + niche. No # prefix in array. Twitter penalizes over-hashtagging.",
+    },
+    example: {
+      tweet_text:
+        "They counted six people hiding from the storm.\nBut every time they checked, there were seven.\n\nWho was the extra one?",
+      hashtags: [
+        "horror",
+        "creepystory",
+        "scary",
+      ],
+    },
+    guidance: `
+- Twitter/X is ultra-short format — every character counts
+- First line must hook IMMEDIATELY — users scroll fast
+- Hot takes, mystery, and unanswered questions drive engagement
+- Max 240 chars for tweet_text (system appends hashtags)
+- Hashtags: 2-4 MAX. Twitter actively suppresses tweet reach for hashtag spam
+- Emojis OK but sparingly (1-2 max)
+- DO NOT write descriptions or long-form text
 - NEVER include slurs, explicit gore, or self-harm references
 `,
   },
@@ -229,8 +296,13 @@ function classifyMetadataError(err: unknown): {
     return { class: "dependency", message };
   }
 
+  // Quota exhausted → dependency (requires billing fix, not a simple retry)
+  if (/insufficient.?quota|quota.?exceeded|billing/i.test(message)) {
+    return { class: "dependency", message };
+  }
+
   // Rate limits → transient
-  if (/429|rate.?limit|too many requests|quota exceeded/i.test(message)) {
+  if (/429|rate.?limit|too many requests/i.test(message)) {
     return { class: "transient", message };
   }
 
@@ -789,6 +861,20 @@ async function generateForPost(
   workerId: string,
   generatedBy: string = 'scheduler'
 ): Promise<GenerationResult> {
+  // Resolve legacy platform aliases FIRST — before any DB queries or RPCs
+  const PLATFORM_ALIASES: Record<string, string> = {
+    shorts: "youtube_shorts",
+    youtube: "youtube_shorts",
+    reels: "instagram_reels",
+    instagram: "instagram_reels",
+    facebook: "facebook_reels",
+  };
+  const originalPlatform = platform;
+  platform = PLATFORM_ALIASES[platform] || platform;
+  if (platform !== originalPlatform) {
+    console.log(`[METADATA] Platform alias: ${originalPlatform} → ${platform}`);
+  }
+
   const result: GenerationResult = {
     post_id: postId,
     platform,
