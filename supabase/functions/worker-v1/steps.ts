@@ -502,6 +502,49 @@ export async function executeStoryStep(
       // Non-fatal
     }
 
+    // ── Fetch audience retention data for pacing guidance ──────────
+    let retentionContext = '';
+    try {
+      const { data: retentionData } = await supabase
+        .from('v_visual_performance')
+        .select('vibe_preset, avg_view_duration_seconds, perf_score')
+        .eq('brand_id', job.brand_id)
+        .not('avg_view_duration_seconds', 'is', null)
+        .gt('avg_view_duration_seconds', 0);
+
+      if (retentionData && retentionData.length > 0) {
+        // Prefer preset-specific data, fall back to brand-wide average
+        const presetRows = retentionData.filter(r => r.vibe_preset === vibePreset);
+        const rows = presetRows.length >= 3 ? presetRows : retentionData;
+        const totalPosts = rows.length;
+        const avgRetention = rows.reduce((sum: number, r: Record<string, number>) => sum + (r.avg_view_duration_seconds || 0), 0) / totalPosts;
+        const bestRetention = Math.max(...rows.map((r: Record<string, number>) => r.avg_view_duration_seconds || 0));
+        const avgPerf = rows.reduce((sum: number, r: Record<string, number>) => sum + (r.perf_score || 0), 0) / totalPosts;
+
+        if (avgRetention > 0) {
+          const midPoint = Math.floor(avgRetention * 0.4);
+          const climaxPoint = Math.floor(avgRetention * 0.75);
+          const tailSeconds = Math.floor(avgRetention * 0.25);
+
+          retentionContext = `
+
+AUDIENCE RETENTION DATA (from ${totalPosts} previous posts):
+- Average watch time: ${avgRetention.toFixed(1)} seconds
+- Best watch time: ${bestRetention.toFixed(1)} seconds
+- Avg performance score: ${avgPerf.toFixed(0)}
+PACING GUIDANCE based on real audience data:
+  • HOOK must hit in the first 3 seconds — this is when most viewers decide to stay or scroll
+  • Place a TENSION ESCALATION or MINI-REVEAL at ~${midPoint} seconds to retain mid-point viewers
+  • The CLIMAX or major TWIST should land at ~${climaxPoint} seconds (75% mark) — engaged viewers get their payoff here
+  • Reserve the final ~${tailSeconds} seconds for a cliffhanger, unanswered question, or comment-bait that drives engagement
+  • Stories that FRONT-LOAD intrigue and maintain escalating tension past the ${midPoint}-second mark consistently outperform`;
+          console.log(`[STORY] Retention context: avg=${avgRetention.toFixed(1)}s, best=${bestRetention.toFixed(1)}s from ${totalPosts} posts (${presetRows.length >= 3 ? 'preset-specific' : 'brand-wide'})`);
+        }
+      }
+    } catch (e) {
+      console.warn(`[STORY] Could not fetch retention data (non-fatal): ${e}`);
+    }
+
     // Build story prompt based on vibe preset
     // For reddit_trending_horror, pick a curated horror scenario and build a Reddit-inspired prompt
     // For dark_origins, pick a documentary dark biography scenario
@@ -521,6 +564,11 @@ export async function executeStoryStep(
       storyPrompt = buildDarkOriginsPrompt(darkOriginsScenario, wordRange, recentStories);
     } else {
       storyPrompt = buildStoryPrompt(vibePreset, wordRange, recentStories);
+    }
+
+    // Append retention pacing guidance to the prompt (if available)
+    if (retentionContext) {
+      storyPrompt += retentionContext;
     }
 
     // Log prompt snapshot
@@ -554,6 +602,10 @@ export async function executeStoryStep(
           storyPrompt = buildDarkOriginsPrompt(darkOriginsScenario, wordRange, recentStories);
         } else {
           storyPrompt = buildStoryPrompt(vibePreset, wordRange, recentStories);
+        }
+        // Re-append retention context on retry
+        if (retentionContext) {
+          storyPrompt += retentionContext;
         }
       }
 
