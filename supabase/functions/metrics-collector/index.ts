@@ -439,7 +439,7 @@ class InstagramMetricsAdapter implements MetricsAdapter {
       let insightsData: Record<string, unknown> | null = null;
       try {
         const insightsResponse = await fetch(
-          `${this.API_BASE}/${platformPostId}/insights?metric=views,likes,comments,saved,shares,reach&access_token=${accessToken}`
+          `${this.API_BASE}/${platformPostId}/insights?metric=views,likes,comments,saved,shares,reach,ig_reels_avg_watch_time,ig_reels_video_view_total_time&access_token=${accessToken}`
         );
         if (insightsResponse.ok) {
           insightsData = await insightsResponse.json();
@@ -464,6 +464,8 @@ class InstagramMetricsAdapter implements MetricsAdapter {
       let views = 0;
       let insightLikes = -1; // -1 = not from insights (use media endpoint value)
       let insightComments = -1;
+      let avgWatchTimeMs = 0;  // ig_reels_avg_watch_time (milliseconds)
+      let totalWatchTimeMs = 0; // ig_reels_video_view_total_time (milliseconds)
       if (insightsData && (insightsData as { data?: Array<{ name: string; values: Array<{ value: number }> }> }).data) {
         const insights = (insightsData as { data: Array<{ name: string; values: Array<{ value: number }> }> }).data;
         for (const insight of insights) {
@@ -476,6 +478,8 @@ class InstagramMetricsAdapter implements MetricsAdapter {
             case 'likes': insightLikes = value; break;
             case 'comments': insightComments = value; break;
             case 'reach': break; // stored in raw but not primary
+            case 'ig_reels_avg_watch_time': avgWatchTimeMs = value; break;
+            case 'ig_reels_video_view_total_time': totalWatchTimeMs = value; break;
           }
         }
       }
@@ -483,6 +487,10 @@ class InstagramMetricsAdapter implements MetricsAdapter {
       // Use insights likes/comments if available (more accurate), otherwise fall back to media endpoint
       const finalLikes = insightLikes >= 0 ? insightLikes : ((mediaData as { like_count?: number }).like_count || 0);
       const finalComments = insightComments >= 0 ? insightComments : ((mediaData as { comments_count?: number }).comments_count || 0);
+
+      // Calculate retention metrics from Reels data
+      const avgWatchTimeSec = avgWatchTimeMs > 0 ? Math.round(avgWatchTimeMs / 1000 * 100) / 100 : undefined;
+      const totalWatchTimeSec = totalWatchTimeMs > 0 ? Math.round(totalWatchTimeMs / 1000) : undefined;
 
       return {
         success: true,
@@ -492,6 +500,8 @@ class InstagramMetricsAdapter implements MetricsAdapter {
           comments: finalComments,
           shares: shares,
           saves: saves,
+          watch_time_seconds: totalWatchTimeSec,
+          avg_view_duration_seconds: avgWatchTimeSec,
         },
         raw: { media: mediaData, insights: insightsData },
       };
@@ -513,7 +523,7 @@ class InstagramMetricsAdapter implements MetricsAdapter {
     let insightsData: Record<string, unknown> | null = null;
     try {
       const insightsResponse = await fetch(
-        `${this.API_BASE}/${platformPostId}/insights?metric=views,likes,comments,saved,shares,reach&access_token=${accessToken}`
+        `${this.API_BASE}/${platformPostId}/insights?metric=views,likes,comments,saved,shares,reach,ig_reels_avg_watch_time,ig_reels_video_view_total_time&access_token=${accessToken}`
       );
       if (insightsResponse.ok) {
         insightsData = await insightsResponse.json();
@@ -521,6 +531,7 @@ class InstagramMetricsAdapter implements MetricsAdapter {
     } catch { /* non-fatal */ }
 
     let saves = 0, shares = 0, views = 0, insightLikes = -1, insightComments = -1;
+    let avgWatchTimeMs = 0, totalWatchTimeMs = 0;
     if (insightsData && (insightsData as { data?: Array<{ name: string; values: Array<{ value: number }> }> }).data) {
       const insights = (insightsData as { data: Array<{ name: string; values: Array<{ value: number }> }> }).data;
       for (const insight of insights) {
@@ -532,6 +543,8 @@ class InstagramMetricsAdapter implements MetricsAdapter {
           case 'impressions': views = value; break;
           case 'likes': insightLikes = value; break;
           case 'comments': insightComments = value; break;
+          case 'ig_reels_avg_watch_time': avgWatchTimeMs = value; break;
+          case 'ig_reels_video_view_total_time': totalWatchTimeMs = value; break;
         }
       }
     }
@@ -539,9 +552,16 @@ class InstagramMetricsAdapter implements MetricsAdapter {
     const finalLikes = insightLikes >= 0 ? insightLikes : ((mediaData as { like_count?: number }).like_count || 0);
     const finalComments = insightComments >= 0 ? insightComments : ((mediaData as { comments_count?: number }).comments_count || 0);
 
+    const avgWatchTimeSec = avgWatchTimeMs > 0 ? Math.round(avgWatchTimeMs / 1000 * 100) / 100 : undefined;
+    const totalWatchTimeSec = totalWatchTimeMs > 0 ? Math.round(totalWatchTimeMs / 1000) : undefined;
+
     return {
       success: true,
-      metrics: { views, likes: finalLikes, comments: finalComments, shares, saves },
+      metrics: {
+        views, likes: finalLikes, comments: finalComments, shares, saves,
+        watch_time_seconds: totalWatchTimeSec,
+        avg_view_duration_seconds: avgWatchTimeSec,
+      },
       raw: { media: mediaData, insights: insightsData },
     };
   }
