@@ -2,8 +2,9 @@
 
 **Faceless Growth Engine — Platform-Aware Optimization**
 
-> **Last Updated:** February 19, 2026  
-> **Status:** Level 3.5 COMPLETE, Level 4 partial
+> **Last Updated:** March 26, 2026  
+> **Status:** Level 3.5 COMPLETE, Level 4 partial  
+> **Note:** `v_strategy_performance` now uses `compute_perf_score()` for retention-weighted scoring (migration `20260326002`)
 
 ---
 
@@ -69,7 +70,8 @@
 **Delivered:**
 
 - [x] View: `v_strategy_performance`
-- [x] Aggregates: avg views, avg likes, avg comments, avg shares, avg saves, perf_score
+- [x] Aggregates: avg views, avg likes, avg comments, avg shares, avg saves, perf_score (retention-weighted via `compute_perf_score()`, updated Mar 2026)
+- [x] Includes `avg_retention_seconds` column for watch time analysis
 - [x] Grouped by: platform, strategy_type, caption_style, hook_type, brand_id
 - [x] Cross-Platform & Strategy tab on AI Intelligence page
 

@@ -136,7 +136,9 @@ interface MetricsAdapter {
 | Platform | Status | API | Notes |
 |----------|--------|-----|-------|
 | YouTube Shorts | **Real** | YouTube Data API v3 `/videos?part=statistics` | Uses OAuth from `platform_tokens` |
+| YouTube Shorts | **Real** | YouTube Analytics API v2 `/reports` | Fetches `averageViewDuration`, `averageViewPercentage`, watch time. Best-effort, non-fatal. Added Mar 26, 2026. |
 | Instagram Reels | **Real** | Graph API `/media?fields=like_count,comments_count` + `/insights` | Uses long-lived token from `platform_tokens` |
+| Instagram Reels | **Real** | Graph API `/insights` (retention) | Fetches `ig_reels_avg_watch_time` + `ig_reels_video_view_total_time`. Added Mar 26, 2026. |
 | Facebook Reels | **Real** | Graph API `/video_insights` | Uses page token from `platform_tokens` |
 | Threads | **Real** | Threads API `/insights` | Wired up Feb 2026 (platform cleanup) |
 | TikTok | **Disabled** | N/A | Scheduling disabled; metrics adapter returns zeros |
@@ -213,22 +215,68 @@ The `cleanup_old_post_metrics` RPC is provided but defaults to 365 days and is n
 
 ---
 
-## Future: How #19 and #20 Build on This
+## How #19 and #20 Build on This (Both Complete)
 
-### #19 Time Slot Scoring
+### #19 Time Slot Scoring ✅
 
 - Queries `post_metrics` joined with `posts.posted_at` (hour/day-of-week)
 - Groups by `(platform, posted_hour, posted_day_of_week)`
-- Computes avg views/likes per time slot
+- Computes `compute_perf_score()` per post (retention-weighted engagement, updated Mar 2026)
 - Stores results in `time_slot_scores` table
 - `v_post_metrics_latest` provides the data source
 
-### #20 Caption/Tags Learning Loop
+### #20 Caption/Tags Learning Loop ✅
 
 - Queries `post_metrics` joined with `posts.ai_metadata` (titles, descriptions, tags)
 - Correlates caption variants with engagement metrics
 - Biases future metadata generation toward high performers
 - `v_post_metrics_summary` provides per-post performance metrics
+- `winning_metadata_patterns` caches derived top patterns per brand/platform/vibe
+
+---
+
+## Retention Intelligence (Added Mar 26, 2026)
+
+### `compute_perf_score()` SQL Function
+
+Unified scoring function used across all performance calculations:
+
+```sql
+compute_perf_score(p_views, p_likes, p_comments, p_shares, p_avg_dur)
+```
+
+**Formula:**
+```
+base = views + 5×likes + 10×comments + 10×shares
+retention_bonus = MIN(avg_view_duration_seconds × 20, base × 0.5)
+result = base + retention_bonus
+```
+
+**Used by:**
+- `v_post_metrics_latest` (view)
+- `v_strategy_performance` (view) 
+- `v_visual_performance` (view)
+- `recompute_time_slot_scores` (function)
+- `recompute_preset_weights` (function)
+
+### Retention-Aware Story Generation
+
+Worker-v1 `executeStoryStep()` queries `v_visual_performance` for the brand's avg watch time per vibe_preset, then injects pacing guidance into story prompts:
+- **Hook at 3 seconds** — grab attention immediately
+- **Escalation at ~40% mark** — based on average view duration
+- **Climax at ~75% mark** — capitalize on viewer attention window
+
+### Auto-Adaptive Preset Weights
+
+`recompute_preset_weights(brand_id, window_days)` reads `v_visual_performance`, computes proportional weights from `perf_score`. Minimum weight = 10 ensures exploration. Migration `20260326004`.
+
+### Backfill Script
+
+```bash
+node scripts/backfill-retention-metrics.js --rounds 3 --delay-ms 5000
+```
+
+Invokes the metrics-collector edge function to re-collect retention data for existing posts.
 
 ---
 

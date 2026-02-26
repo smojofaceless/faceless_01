@@ -1,7 +1,7 @@
 # Project Roadmap
 
-> **Document Version:** 4.3  
-> **Last Updated:** February 22, 2026  
+> **Document Version:** 4.5  
+> **Last Updated:** March 26, 2026  
 > **Author:** System Architect  
 > **Status:** Active Development
 
@@ -11,6 +11,7 @@
 
 | Date | Version | Changes |
 |------|---------|--------|
+| Mar 26, 2026 | 4.5 | **Retention Intelligence & Auto-Adaptive Learning**: (1) `compute_perf_score()` SQL function — unified retention-weighted performance scoring. Formula: `base + retention_bonus` where `base = views + 5×likes + 10×comments + 10×shares`, `retention_bonus = MIN(avg_dur × 20, base × 0.5)`. Replaces raw weighted formula across all views and functions. Migration `20260326002`. (2) YouTube Analytics API integration in metrics-collector — fetches `averageViewDuration`, `averageViewPercentage`, watch time from `youtubeanalytics.googleapis.com/v2/reports`. Best-effort, non-fatal. (3) Instagram retention metrics — fetches `ig_reels_avg_watch_time` + `ig_reels_video_view_total_time` via Insights API. (4) Retention-aware story generation — worker-v1 queries `v_visual_performance` for top/bottom presets by avg watch time, injects pacing guidance: hook at 3s, escalation at ~40%, climax at ~75%. Applied to both initial and retry story prompts. (5) `recompute_preset_weights(brand_id, window_days)` auto-adaptive function — reads `v_visual_performance`, computes proportional weights from `perf_score`, minimum weight=10 for exploration. Migration `20260326004`. Current weights: dark_origins=29, reddit_trending_horror=25, one_too_many=24, urban_legend=22. (6) Time slot scoring upgraded to use `compute_perf_score()` instead of inline formula. Migration `20260326003`. (7) Backfill script `scripts/backfill-retention-metrics.js` for re-collecting metrics with retention data. (8) Deep audit v2: 51 PASS, 0 FAIL, 1 WARN across 6 sections (SQL Functions, Views, Data Integrity, Edge Functions, Learning Pipeline, Data Freshness). |
 | Feb 23, 2026 | 4.4 | **AI Intelligence Page Enhancement + Facebook Optimization**: AI Learning Growth tab fully built on AI Intelligence page with 8 data sections: IQ Score ring + 9-dimension breakdown bars, Learning Acceleration (age-normalized — only compares posts >7 days old to avoid metrics recency bias, per-platform acceleration breakdown), Intelligence Projection (8-week forecast using linear regression, IQ projection cards), What's Lacking — Gaps & Actions (auto-detected gaps sorted by HIGH/MEDIUM/LOW severity with icons, descriptions, and concrete fixes), Vibe Performance Breakdown (ranked presets by avg perf), Enhanced Weekly Performance chart, Tag Intelligence (top tags with winning-pattern match indicators), Platform Knowledge Depth (avg perf score + AI confidence level per platform), What Your AI Currently Knows brain section (hooks, CTAs, empty fallback). **Facebook Reels optimization**: Analyzed FB underperformance (1 avg view/post vs 139 YT, 90 IG) — root cause: long story descriptions (600-1000 chars) leaking through as FB captions. Fixed: `generate-post-metadata` FB prompt tightened to 125-char max caption (was 300), example shortened, max 5 hashtags. `post-worker` FB adapter: hard caps description at 300 chars, limits hashtags to 6. Both edge functions redeployed. **Tag analysis fix**: Deep dive tag analysis now merges all AI-generated per-platform tags (from `post_metadata.final_metadata`) instead of only checking the empty post-level `tags` column. Fixed false "No tags at all" message. **Age-bias fix**: Learning Acceleration now filters to posts >7 days old (`MATURITY_DAYS = 7`) before comparing first-half vs second-half, preventing false decline signals from posts with incomplete metrics. Shows "Not enough mature data" notice when <6 mature posts exist. |
 | Feb 22, 2026 | 4.3 | **Campaign Templates (#25) + Dashboard Enhancement (#27)**: `campaign_templates` table with RLS, `increment_template_usage` RPC, 3 seeded system templates (Daily Horror 7-Day, Weekend Blitz, Month-Long Drip). `campaignTemplateService.js` (CRUD + usage tracking). Template bar on campaign page (load/save/delete templates). Clone Campaign button on campaign-detail page (stores config in sessionStorage → prefills create form). Dashboard: 3 new cards — Cost Overview (7-day bar chart from `mv_daily_usage`), Preset Performance (jobs + metrics aggregated by vibe_preset), Best Posting Times (hour-bucketed from posts or `get_best_time_slots` RPC with fallback). New CSS for template cards, cost bars, preset bars, time chips. Smoke test: 20/20 pass. |
 | Feb 19, 2026 | 4.2 | **Brand Profiles Fully Automated (#24)**: Voice config modal on brands page (9 OpenAI voices, custom instructions, speed slider) with brand-level override in `config_overrides.voice` — worker reads from DB with preset fallback. Schedule windows modal (posting hours, active days, max posts/day, min gap, blackout hours) stored in `config_overrides.schedule`. Music advanced settings (enable/disable toggle, ducking volume/attack/release, fade in/out durations) surfaced in collapsible panel. brandManager service: `getVoiceConfig/saveVoiceConfig`, `getScheduleConfig/saveScheduleConfig`. worker-v1 `getPresetVoiceConfig()` now accepts brand override. Smoke tests: 32/32 pass. |
@@ -49,6 +50,13 @@
 
 | Item | Date | Notes |
 |------|------|-------|
+| **Retention Intelligence System** | Mar 26, 2026 | `compute_perf_score()` unified retention-weighted scoring function. Formula: `base + retention_bonus` (capped at 50% of base). All views (`v_post_metrics_latest`, `v_strategy_performance`, `v_visual_performance`) and scoring functions now use it. Migration `20260326002`. |
+| **YouTube Analytics API** | Mar 26, 2026 | metrics-collector fetches `averageViewDuration`, `averageViewPercentage`, watch time from YouTube Analytics API v2. Stored in `post_metrics.avg_view_duration_seconds`, `avg_view_percentage`, `watch_time_seconds`. Best-effort: failures don't block standard metrics. |
+| **Instagram Retention Metrics** | Mar 26, 2026 | metrics-collector fetches `ig_reels_avg_watch_time` + `ig_reels_video_view_total_time` from IG Insights API. Stored in same retention columns as YouTube. |
+| **Retention-Aware Story Generation** | Mar 26, 2026 | worker-v1 `executeStoryStep()` queries `v_visual_performance` for brand's retention data per vibe_preset. Injects pacing guidance into story prompts: hook at 3s, escalation at ~40% mark, climax at ~75% mark. Applied to both initial and retry story generation. |
+| **Auto-Adaptive Preset Weights** | Mar 26, 2026 | `recompute_preset_weights(brand_id, window_days)` SQL function. Reads `v_visual_performance`, computes proportional weights from `perf_score`. Minimum weight=10 ensures exploration. Migration `20260326004`. Current weights: dark_origins=29, reddit_trending_horror=25, one_too_many=24, urban_legend=22. |
+| **Time Slot Scoring Upgrade** | Mar 26, 2026 | `recompute_time_slot_scores` now calls `compute_perf_score()` instead of inline `views + 5×likes + 10×comments + 10×shares`. Retention data automatically factors into best times. Migration `20260326003`. |
+| **Backfill Retention Script** | Mar 26, 2026 | `scripts/backfill-retention-metrics.js` — invokes metrics-collector edge function to re-collect retention data for existing posts. Usage: `node scripts/backfill-retention-metrics.js --rounds 3 --delay-ms 5000` |
 | **AI Intelligence Page Enhancement** | Feb 23, 2026 | Full AI Learning Growth tab: IQ Score + 9-dimension breakdown, age-normalized Learning Acceleration (mature posts only, per-platform breakdown), 8-week Intelligence Projection (linear regression), Gaps & Actions (auto-detected, severity-sorted), Vibe Performance, enhanced Weekly Chart, Tag Intelligence, Platform Knowledge Depth, Brain section. Tag analysis fixed to merge per-platform AI tags. Age-bias fix prevents false decline signals. |
 | **Facebook Reels Caption Optimization** | Feb 23, 2026 | `generate-post-metadata` FB prompt: caption max tightened 300→125 chars, max 5 hashtags, Twitter-energy guidance. `post-worker` FB adapter: description hard-capped at 300 chars, hashtags capped at 6. Root cause: story descriptions (600-1000 chars) were leaking as FB captions. Both edge functions redeployed. |
 | **Campaign Templates + Dashboard Enhancement** | Feb 22, 2026 | `campaign_templates` table (3 system seeds), template bar on campaign page, Clone Campaign button on campaign-detail, 3 new dashboard cards (Cost Overview, Preset Performance, Best Posting Times). `campaignTemplateService.js`. 20/20 smoke tests pass. |
@@ -892,6 +900,8 @@ Quality gates run after story generation, before hash computation. Each preset h
 - [x] Decay-based collection schedule — 30min (fresh) → 2h → 6h → 12h → 24h → 7d (90d cap)
 - [x] `metrics-collector` Edge Function — cron every 30 min, kill switch, batch processing
 - [x] Platform adapters: YouTube (real API via Data API v3), Instagram (Graph API), Facebook (Graph API), TikTok (stub)
+- [x] **YouTube Analytics API** (Mar 26, 2026) — fetches `averageViewDuration`, `averageViewPercentage`, watch time from `youtubeanalytics.googleapis.com/v2/reports`. Best-effort, non-fatal.
+- [x] **Instagram Retention Metrics** (Mar 26, 2026) — fetches `ig_reels_avg_watch_time` + `ig_reels_video_view_total_time` from IG Insights API
 - [x] Token refresh handling — reuses `platform_tokens` OAuth pattern from post-worker
 - [x] Error classification: transient/dependency/misconfig/permanent (permanent → `metrics_terminal` flag)
 - [x] `find_metrics_eligible_posts` RPC — decay schedule, skips terminal/retired posts
@@ -943,17 +953,21 @@ Quality gates run after story generation, before hash computation. Each preset h
 - [x] Calendar "Best Times" panel — toggle button, platform/window selectors, top-5 chips
 - [x] Brand timezone support via `brands.settings.timezone` JSONB
 
-**Scoring Formula:**
+**Scoring Formula (updated Mar 26, 2026):**
 ```
-performance_value = views + 5×likes + 10×comments + 10×shares
+performance_value = compute_perf_score(views, likes, comments, shares, avg_view_duration_seconds)
+  base = views + 5×likes + 10×comments + 10×shares
+  retention_bonus = MIN(avg_dur × 20, base × 0.5)
+  result = base + retention_bonus
 score = AVG(performance_value) per (brand, platform, tz, dow, hour)
 ```
+Upgrade: Now uses `compute_perf_score()` function (migration `20260326003`) instead of inline formula. Retention data automatically factors into time slot recommendations.
 
 **Database Objects:**
 - Table: `time_slot_scores`
 - RPCs: `recompute_time_slot_scores`, `recompute_all_time_slot_scores`, `get_time_slot_scores`, `get_best_time_slots`
 - Cron: `recompute-time-slot-scores` (every 6h)
-- Migration: `20260316001_time_slot_scoring.sql`
+- Migrations: `20260316001_time_slot_scoring.sql`, `20260326003_time_slots_retention_score.sql`
 
 **Reference:** [TIME_SLOT_SCORING.md](TIME_SLOT_SCORING.md)
 
@@ -1100,8 +1114,8 @@ All brand configuration is now in `brand_templates.config_overrides` JSONB with 
 - [x] AI Learning Growth tab — IQ Score, 9-dimension breakdown, Learning Acceleration (age-normalized), 8-week Projection, Gaps & Actions, Vibe Performance, Tag Intelligence, Platform Knowledge Depth
 - [x] Per-platform metadata optimization — Facebook Reels caption tightened to 125 chars, hashtags capped
 - [x] Per-platform acceleration tracking — compares mature posts (>7d) per-platform to detect true trends
-- [ ] Preset weights adapt by performance
-- [ ] Schedule adapts by performance
+- [x] Preset weights adapt by performance — `recompute_preset_weights()` auto-proportional weights from `v_visual_performance` perf_score, min weight=10 for exploration
+- [x] Schedule adapts by performance — `recompute_time_slot_scores` uses `compute_perf_score()` (retention-weighted), `get_best_time_slots` feeds auto-scheduling
 - [ ] ML-driven recommendations
 
 ---
@@ -1181,7 +1195,7 @@ LATER (Level 4)
 └── 25. ✅ Campaign Templates (DONE)
 
 FINAL (Level 5)
-├── 26. 🟡 Optimization Engine (Foundation)
+├── 26. 🟡 Optimization Engine (Foundation + Adaptive Weights ✅)
 ├── 27. ✅ Dashboard (DONE)
 └── 28. ✅ Alerts (DONE)
 ```
@@ -1201,3 +1215,5 @@ FINAL (Level 5)
 - [POST_ANALYTICS_SYSTEM.md](POST_ANALYTICS_SYSTEM.md) — Metrics collection
 - [FAILURE_PROTECTION_DLQ.md](FAILURE_PROTECTION_DLQ.md) — Failure protection & DLQ
 - [POST_METADATA_SYSTEM.md](POST_METADATA_SYSTEM.md) — AI metadata generation
+- [TIME_SLOT_SCORING.md](TIME_SLOT_SCORING.md) — Time slot scoring system
+- [CAPTION_TAGS_LEARNING.md](CAPTION_TAGS_LEARNING.md) — Caption/tags learning loop

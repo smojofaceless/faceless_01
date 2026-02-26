@@ -3,6 +3,7 @@
 > **Phase:** Roadmap #20  
 > **Status:** Implemented  
 > **Date:** 2026-02-16  
+> **Updated:** 2026-03-26 — All scoring now uses `compute_perf_score()` (retention-weighted)  
 > **Migrations:** `20260317001_caption_tags_learning.sql`, `20260317002_caption_tags_hardening.sql`, `20260317003_winning_patterns_cache.sql`
 
 ---

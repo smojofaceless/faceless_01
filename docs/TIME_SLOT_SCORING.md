@@ -1,14 +1,16 @@
 # Time Slot Scoring — Design Document
 
-> Roadmap #19 · Level 3 Analytics · February 2026
+> Roadmap #19 · Level 3 Analytics · February 2026  
+> **Updated:** March 26, 2026 — Retention-weighted scoring via `compute_perf_score()`
 
 ## Overview
 
 Time Slot Scoring answers:  
 **"Which hours and days of the week perform best for each platform and brand?"**
 
-It is **analytics-only** — scores are computed, stored, and displayed but never
-automatically alter scheduling or presets. That line is drawn at Level 4.
+Scores are computed, stored, displayed, and **fed into auto-scheduling** via
+`get_best_time_slots()` — the campaign system's `_fetchSmartTimeSlots()` uses
+AI-learned best times to schedule posts at optimal hours.
 
 ## Architecture
 
@@ -50,13 +52,18 @@ automatically alter scheduling or presets. That line is drawn at Level 4.
 
 ### Performance Value
 
-We use a **weighted engagement** formula:
+> **Updated March 26, 2026:** Scoring now uses the unified `compute_perf_score()` SQL function
+> (migration `20260326003`), which adds a retention bonus on top of the base engagement formula.
+
+We use `compute_perf_score()` — a **retention-weighted engagement** formula:
 
 ```
-performance_value = views + (5 × likes) + (10 × comments) + (10 × shares)
+base = views + (5 × likes) + (10 × comments) + (10 × shares)
+retention_bonus = MIN(avg_view_duration_seconds × 20, base × 0.5)
+performance_value = base + retention_bonus
 ```
 
-**Rationale:**
+**Base Engagement Rationale:**
 
 | Signal    | Weight | Why                                              |
 | --------- | ------ | ------------------------------------------------ |
@@ -65,15 +72,11 @@ performance_value = views + (5 × likes) + (10 × comments) + (10 × shares)
 | Comments  | 10     | High-effort signal, strong engagement indicator  |
 | Shares    | 10     | Best virality proxy, drives new reach            |
 
-Alternatives considered:
-
-- **Engagement rate** (`(likes+comments+shares)/views × log(views+1)`) — penalizes
-  high-view low-engagement posts, but unstable for small view counts. Better for
-  Level 4 when we have more data.
-- **Raw views** — too noisy, ignores engagement quality.
-
-The weighted sum is simple, monotonic, and degrades gracefully when some metrics
-are zero (e.g., YouTube doesn't expose shares via Data API).
+**Retention Bonus:**
+- `avg_view_duration_seconds × 20` rewards posts that hold viewer attention
+- Capped at 50% of the base score to prevent retention from dominating
+- Gracefully degrades to 0 when retention data is unavailable (NULL → 0)
+- Retention data sourced from YouTube Analytics API and Instagram Insights API
 
 ### Maturity Threshold
 
