@@ -59,6 +59,8 @@ GRANT EXECUTE ON FUNCTION compute_perf_score TO authenticated;
 
 
 -- 2. Update v_cross_platform_performance
+-- Must DROP first because we're adding new columns
+DROP VIEW IF EXISTS v_cross_platform_performance;
 CREATE OR REPLACE VIEW v_cross_platform_performance AS
 SELECT
   p.job_id,
@@ -85,6 +87,7 @@ GRANT SELECT ON v_cross_platform_performance TO authenticated;
 
 
 -- 3. Update v_strategy_performance
+DROP VIEW IF EXISTS v_strategy_performance;
 CREATE OR REPLACE VIEW v_strategy_performance AS
 SELECT
   ps.platform,
@@ -113,6 +116,7 @@ GRANT SELECT ON v_strategy_performance TO authenticated;
 
 
 -- 4. Update v_visual_performance
+DROP VIEW IF EXISTS v_visual_performance;
 CREATE OR REPLACE VIEW v_visual_performance AS
 SELECT
   p.brand_id,
