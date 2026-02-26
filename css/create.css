@@ -2238,3 +2238,99 @@
 .effects-slider__value--high {
     color: #f97316;
 }
+
+/* ==========================================================================
+   Prompt Editor Modal
+   ========================================================================== */
+
+.prompt-editor-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+}
+
+.prompt-editor-modal {
+    background: var(--color-bg-surface, #1a1a2e);
+    border: 1px solid var(--color-border-subtle, #2a2a3e);
+    border-radius: var(--radius-xl, 16px);
+    width: 90%;
+    max-width: 720px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.prompt-editor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-4, 16px) var(--space-5, 20px);
+    border-bottom: 1px solid var(--color-border-subtle, #2a2a3e);
+}
+
+.prompt-editor-header h3 {
+    margin: 0;
+    font-size: var(--text-lg, 18px);
+    color: var(--color-text-primary, #e2e8f0);
+}
+
+.prompt-editor-close {
+    background: none;
+    border: none;
+    color: var(--color-text-tertiary, #64748b);
+    font-size: 24px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm, 4px);
+    transition: color 0.2s ease, background 0.2s ease;
+}
+
+.prompt-editor-close:hover {
+    color: var(--color-text-primary, #e2e8f0);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.prompt-editor-textarea {
+    flex: 1;
+    margin: var(--space-4, 16px) var(--space-5, 20px);
+    padding: var(--space-3, 12px);
+    background: var(--color-bg-dark, #0f0f1a);
+    border: 1px solid var(--color-border-subtle, #2a2a3e);
+    border-radius: var(--radius-md, 8px);
+    color: var(--color-text-primary, #e2e8f0);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: var(--text-sm, 14px);
+    line-height: 1.6;
+    resize: vertical;
+    min-height: 200px;
+}
+
+.prompt-editor-textarea:focus {
+    outline: none;
+    border-color: var(--brand-primary, #8b5cf6);
+    box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+}
+
+.prompt-editor-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-3, 12px) var(--space-5, 20px);
+    border-top: 1px solid var(--color-border-subtle, #2a2a3e);
+}
+
+.prompt-editor-hint {
+    font-size: var(--text-xs, 12px);
+    color: var(--color-text-tertiary, #64748b);
+}
+
+.prompt-editor-actions {
+    display: flex;
+    gap: var(--space-2, 8px);
+}

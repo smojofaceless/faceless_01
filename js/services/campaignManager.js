@@ -511,15 +511,18 @@ class CampaignManager {
                 let windowHour, windowMin;
 
                 // Use smart time slots if available for this day
+                let timeSource = 'default';
                 if (daySmartSlots.length > 0) {
                     // Pick the Nth best slot for this window (1st window = best time, 2nd = second best, etc.)
                     const slotIdx = Math.min(windowIdx, daySmartSlots.length - 1);
                     windowHour = daySmartSlots[slotIdx].hour;
                     windowMin = 0; // Smart slots are hourly
+                    timeSource = 'ai';
                 } else {
                     // Fallback to fixed window times
                     windowHour = windowId === 'A' ? windowAHour : windowBHour;
                     windowMin = windowId === 'A' ? windowAMin : windowBMin;
+                    timeSource = 'default';
                 }
 
                 // Apply jitter
@@ -566,7 +569,8 @@ class CampaignManager {
                     platform_times: platformTimes,
                     platform_offsets: appliedOffsets,
                     vibe_preset: vibePreset,
-                    preset_selection_method: 'weighted_random'
+                    preset_selection_method: 'weighted_random',
+                    time_source: timeSource
                 });
 
                 videoIndex++;

@@ -746,6 +746,134 @@ class CampaignPage {
 
             saveRow.querySelector('#save-weights-to-brand').addEventListener('click', () => this.saveWeightsToBrand());
         }
+
+        // ─── AI Suggestion Row ─────────────────────────────
+        if (this.isAdvancedMode && presets.length > 1 && this.currentBrand?.id) {
+            const aiRow = document.createElement('div');
+            aiRow.className = 'preset-weight-ai-row';
+            aiRow.innerHTML = `
+                <button class="btn btn--sm btn--outline preset-weight-ai-btn" id="suggest-ai-weights">
+                    <span class="ai-icon">🧠</span> Suggest from AI
+                </button>
+                <span class="preset-weight-ai-hint" id="ai-weights-hint">
+                    Uses performance data from posted content
+                </span>
+            `;
+            container.appendChild(aiRow);
+            aiRow.querySelector('#suggest-ai-weights').addEventListener('click', () => this.applyAISuggestedWeights());
+        }
+    }
+
+    /**
+     * Fetch per-vibe-preset performance from winning_metadata_patterns
+     * Returns { presetName: avgPerformance, ... }
+     */
+    async fetchPresetPerformance() {
+        const sb = getSupabaseClient();
+        if (!sb || !this.currentBrand?.id) return null;
+
+        const { data, error } = await sb
+            .from('winning_metadata_patterns')
+            .select('vibe_preset, avg_performance, sample_count')
+            .eq('brand_id', this.currentBrand.id)
+            .not('vibe_preset', 'is', null)
+            .gt('sample_count', 0);
+
+        if (error || !data?.length) return null;
+
+        // Aggregate avg_performance across platforms for each vibe_preset
+        const perfMap = {};
+        for (const row of data) {
+            if (!perfMap[row.vibe_preset]) {
+                perfMap[row.vibe_preset] = { totalPerf: 0, totalSamples: 0 };
+            }
+            perfMap[row.vibe_preset].totalPerf += (row.avg_performance || 0) * (row.sample_count || 0);
+            perfMap[row.vibe_preset].totalSamples += row.sample_count || 0;
+        }
+
+        // Weighted average per preset
+        const result = {};
+        for (const [preset, agg] of Object.entries(perfMap)) {
+            result[preset] = agg.totalSamples > 0 ? agg.totalPerf / agg.totalSamples : 0;
+        }
+        return result;
+    }
+
+    /**
+     * Fetch AI performance data and apply as suggested preset weights
+     */
+    async applyAISuggestedWeights() {
+        const btn = document.getElementById('suggest-ai-weights');
+        const hint = document.getElementById('ai-weights-hint');
+
+        try {
+            if (btn) { btn.disabled = true; btn.innerHTML = '<span class="ai-icon">🧠</span> Analyzing...'; }
+
+            const perfData = await this.fetchPresetPerformance();
+            if (!perfData || Object.keys(perfData).length === 0) {
+                if (hint) hint.textContent = 'Not enough performance data yet';
+                if (btn) { btn.disabled = false; btn.innerHTML = '<span class="ai-icon">🧠</span> Suggest from AI'; }
+                return;
+            }
+
+            // Map performance scores to current preset keys
+            const currentPresets = Object.keys(this.presetWeights);
+            const scores = {};
+            let hasMatch = false;
+
+            for (const preset of currentPresets) {
+                if (perfData[preset] !== undefined && perfData[preset] > 0) {
+                    scores[preset] = perfData[preset];
+                    hasMatch = true;
+                } else {
+                    // Assign a small baseline so untracked presets still get some weight
+                    scores[preset] = 0.1;
+                }
+            }
+
+            if (!hasMatch) {
+                if (hint) hint.textContent = 'No matching preset performance data found';
+                if (btn) { btn.disabled = false; btn.innerHTML = '<span class="ai-icon">🧠</span> Suggest from AI'; }
+                return;
+            }
+
+            // Convert scores to percentage weights (proportional)
+            const totalScore = Object.values(scores).reduce((a, b) => a + b, 0);
+            const suggestedWeights = {};
+            let assigned = 0;
+            const sortedPresets = Object.keys(scores).sort((a, b) => scores[b] - scores[a]);
+
+            for (let i = 0; i < sortedPresets.length; i++) {
+                const p = sortedPresets[i];
+                if (i === sortedPresets.length - 1) {
+                    // Last one gets remainder to ensure sum = 100
+                    suggestedWeights[p] = 100 - assigned;
+                } else {
+                    suggestedWeights[p] = Math.round((scores[p] / totalScore) * 100);
+                    assigned += suggestedWeights[p];
+                }
+            }
+
+            // Apply suggested weights
+            this.presetWeights = suggestedWeights;
+            this.presetWeightsDirty = true;
+            this.renderPresetWeights();
+            this.onFormChange();
+
+            // Show success hint (re-query the new hint element after re-render)
+            const newHint = document.getElementById('ai-weights-hint');
+            if (newHint) {
+                const topPreset = sortedPresets[0];
+                newHint.textContent = `✅ Applied — ${this.formatPresetName(topPreset)} leads at ${suggestedWeights[topPreset]}%`;
+                newHint.classList.add('preset-weight-ai-hint--success');
+            }
+
+            if (typeof toast !== 'undefined') toast.success('AI-suggested weights applied');
+        } catch (e) {
+            console.error('Failed to fetch AI suggestions:', e);
+            if (hint) hint.textContent = 'Failed to load AI data';
+            if (btn) { btn.disabled = false; btn.innerHTML = '<span class="ai-icon">🧠</span> Suggest from AI'; }
+        }
     }
 
     /**
@@ -893,6 +1021,10 @@ class CampaignPage {
                 this.schedulePreview = this.generateSimplePreview(config);
             }
             
+            // Detect if any items used AI time slots
+            this._scheduleUsesAI = this.schedulePreview.some(item => item.time_source === 'ai');
+            this._scheduleAICount = this.schedulePreview.filter(item => item.time_source === 'ai').length;
+            
             this.renderSchedulePreview();
         } catch (error) {
             console.error('Failed to generate schedule preview:', error);
@@ -991,7 +1123,18 @@ class CampaignPage {
             grouped[dateKey].push(item);
         });
         
-        let html = '';
+        // Show AI vs default indicator
+        const aiCount = this._scheduleAICount || 0;
+        const totalCount = this.schedulePreview.length;
+        const usesAI = this._scheduleUsesAI || false;
+        
+        let html = `<div class="schedule-time-source">${
+            usesAI 
+                ? `<span class="schedule-time-source__badge schedule-time-source__badge--ai">🧠 AI-Optimized Times</span>
+                   <span class="schedule-time-source__detail">${aiCount}/${totalCount} slots using learned best times</span>`
+                : `<span class="schedule-time-source__badge schedule-time-source__badge--default">📐 Default Windows</span>
+                   <span class="schedule-time-source__detail">Not enough time slot data yet — using fixed windows</span>`
+        }</div>`;
         
         Object.entries(grouped).forEach(([dateKey, items]) => {
             // Support both scheduledAt and scheduled_post_at
@@ -1040,10 +1183,14 @@ class CampaignPage {
                 
                 // Support both preset and vibe_preset property names
                 const presetName = item.preset || item.vibe_preset;
+                const isAI = item.time_source === 'ai';
+                const timeSourceBadge = isAI 
+                    ? '<span class="schedule-item__ai-badge" title="Time chosen by AI learning">🧠</span>'
+                    : '';
                 
                 html += `
-                    <div class="schedule-item">
-                        <span class="schedule-item__time">${time}</span>
+                    <div class="schedule-item${isAI ? ' schedule-item--ai' : ''}">
+                        <span class="schedule-item__time">${time}${timeSourceBadge}</span>
                         <span class="schedule-item__preset">${this.formatPresetName(presetName)}</span>
                         <span class="schedule-item__platforms">${platformsHtml}</span>
                     </div>

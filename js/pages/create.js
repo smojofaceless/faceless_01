@@ -2984,9 +2984,67 @@ class CreatePageController {
     }
     
     async regenerateStory() {
-        this.addConsoleLog('🔄 Regenerating story...', 'info');
-        // TODO: Call story regeneration with same settings
-        this.showError('Story regeneration coming soon!');
+        if (!this.jobId) {
+            this.showError('No job found — please start a new content creation first.');
+            return;
+        }
+
+        // Confirm before regenerating
+        if (!confirm('This will generate a completely new story. Your current story text will be replaced. Continue?')) {
+            return;
+        }
+
+        this.addConsoleLog('🔄 Regenerating story with same settings...', 'info');
+        const stepContent = document.getElementById('step-content');
+
+        try {
+            // Show loading state
+            this.showStepLoading(stepContent, 'Regenerating story...');
+
+            // Re-run preview mode on the same job — server generates a fresh story
+            const startTime = performance.now();
+            const previewResponse = await runPreviewMode(this.jobId);
+            const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+
+            // Update stored data with new story
+            this.formData.title = previewResponse.title || this.formData.title;
+            this.formData.content = previewResponse.story_text || '';
+            this.formData.sceneCount = previewResponse.scenes?.length || this.formData.sceneCount;
+            this.formData.generationDetails = previewResponse.generation_details || this.formData.generationDetails;
+
+            // Update visual DNA if returned
+            if (previewResponse.generation_details?.visual_dna) {
+                this.visualDNA = previewResponse.generation_details.visual_dna;
+            }
+
+            // Rebuild scene list
+            if (previewResponse.scenes && previewResponse.scenes.length > 0) {
+                this.sceneBuilder.scenes = previewResponse.scenes.map((scene, i) => ({
+                    id: i + 1,
+                    text: scene.text || scene,
+                    mood: scene.mood || 'neutral',
+                    wordCount: (scene.text || scene).split(' ').length,
+                    imagePrompt: scene.image_prompt || null,
+                    imageUrl: null  // Clear old images — they belong to old story
+                }));
+            }
+
+            // Unlock story for further editing
+            this.storyLocked = false;
+            this.formData.storyApproved = false;
+
+            this.addConsoleLog(`✅ Story regenerated in ${elapsed}s — ${this.sceneBuilder.scenes.length} scenes`, 'success');
+            if (typeof toast !== 'undefined') toast.success('Story regenerated successfully');
+
+            // Re-render the story step
+            if (stepContent) this.renderStoryStep(stepContent);
+        } catch (error) {
+            console.error('Story regeneration failed:', error);
+            this.addConsoleLog(`❌ Regeneration failed: ${error.message}`, 'error');
+            this.showError(`Story regeneration failed: ${error.message}`);
+            // Re-render to recover from loading state
+            if (stepContent) this.renderStoryStep(stepContent);
+        }
     }
     
     approveStory() {
@@ -2998,8 +3056,47 @@ class CreatePageController {
     }
     
     showPromptEditor() {
-        // TODO: Show modal with editable prompt
-        this.showError('Prompt editor coming soon!');
+        const genDetails = this.formData.generationDetails || {};
+        const currentPrompt = genDetails.story_prompt || 'No prompt available';
+
+        // Create a simple modal overlay for editing the prompt
+        const overlay = document.createElement('div');
+        overlay.className = 'prompt-editor-overlay';
+        overlay.innerHTML = `
+            <div class="prompt-editor-modal">
+                <div class="prompt-editor-header">
+                    <h3>Story Generation Prompt</h3>
+                    <button class="prompt-editor-close" id="close-prompt-editor">&times;</button>
+                </div>
+                <textarea class="prompt-editor-textarea" id="prompt-editor-text" rows="18">${this.escapeHtml(currentPrompt)}</textarea>
+                <div class="prompt-editor-footer">
+                    <span class="prompt-editor-hint">Edit the prompt, then regenerate the story to use it.</span>
+                    <div class="prompt-editor-actions">
+                        <button class="btn btn--sm btn--secondary" id="prompt-editor-cancel">Cancel</button>
+                        <button class="btn btn--sm btn--primary" id="prompt-editor-save">Save Prompt</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        // Close handler
+        const close = () => overlay.remove();
+        overlay.querySelector('#close-prompt-editor').addEventListener('click', close);
+        overlay.querySelector('#prompt-editor-cancel').addEventListener('click', close);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+        // Save handler
+        overlay.querySelector('#prompt-editor-save').addEventListener('click', () => {
+            const newPrompt = document.getElementById('prompt-editor-text').value.trim();
+            if (newPrompt) {
+                if (!this.formData.generationDetails) this.formData.generationDetails = {};
+                this.formData.generationDetails.story_prompt = newPrompt;
+                this.addConsoleLog('✏️ Prompt updated — regenerate story to apply changes', 'info');
+                if (typeof toast !== 'undefined') toast.success('Prompt saved');
+            }
+            close();
+        });
     }
 
     /**
@@ -3335,9 +3432,70 @@ class CreatePageController {
     }
     
     async regenerateSceneImage(sceneId) {
+        if (!this.jobId) {
+            this.showError('No job found — please start content creation first.');
+            return;
+        }
+
+        const scene = this.sceneBuilder.scenes.find(s => s.id === sceneId);
+        if (!scene) {
+            this.showError(`Scene ${sceneId} not found`);
+            return;
+        }
+
+        if (scene.locked) {
+            this.showError('Scene is locked — unlock it first to regenerate.');
+            return;
+        }
+
         this.addConsoleLog(`🔄 Regenerating image for scene ${sceneId}...`, 'info');
-        // TODO: Call single image regeneration
-        this.showError('Single image regeneration coming soon!');
+
+        // Show loading state on this scene's image card
+        const imgEl = document.getElementById(`scene-image-${sceneId}`);
+        if (imgEl) {
+            imgEl.style.opacity = '0.4';
+            imgEl.style.filter = 'blur(2px)';
+        }
+
+        try {
+            // Re-run the full images phase — backend generates all pending images
+            // We clear just this scene's URL so the backend treats it as needing generation
+            scene.imageUrl = null;
+
+            const imageResponse = await runJobPhase(this.jobId, 'images');
+            this.addConsoleLog(`🎨 Image generation triggered for scene ${sceneId}`, 'info');
+
+            // Poll briefly for the updated image
+            let attempts = 0;
+            const maxAttempts = 30;
+            while (attempts < maxAttempts) {
+                await new Promise(r => setTimeout(r, 3000));
+                const status = await checkJob(this.jobId);
+
+                if (status?.scenes) {
+                    const updatedScene = status.scenes.find(s => (s.scene_number || s.id) === sceneId);
+                    if (updatedScene?.image_url) {
+                        scene.imageUrl = updatedScene.image_url;
+                        this.addConsoleLog(`✅ Scene ${sceneId} image regenerated`, 'success');
+                        if (typeof toast !== 'undefined') toast.success(`Scene ${sceneId} image updated`);
+                        break;
+                    }
+                }
+                attempts++;
+            }
+
+            if (!scene.imageUrl) {
+                this.addConsoleLog(`⚠️ Scene ${sceneId} image not yet ready — check back shortly`, 'warning');
+            }
+
+            this.renderCurrentStep();
+        } catch (error) {
+            console.error(`Scene ${sceneId} image regeneration failed:`, error);
+            this.addConsoleLog(`❌ Scene ${sceneId} image failed: ${error.message}`, 'error');
+            this.showError(`Image regeneration failed: ${error.message}`);
+            // Restore visual
+            if (imgEl) { imgEl.style.opacity = '1'; imgEl.style.filter = 'none'; }
+        }
     }
     
     toggleSceneLock(sceneId) {
@@ -3663,16 +3821,52 @@ class CreatePageController {
     }
     
     async forceRegenerateDNA() {
+        if (!this.jobId) {
+            this.showError('No job found — please start content creation first.');
+            return;
+        }
+
+        if (!confirm('This will regenerate the Visual DNA from scratch. Your current DNA tweaks will be lost. Continue?')) {
+            return;
+        }
+
         this.addConsoleLog('🔄 Forcing complete DNA regeneration...', 'info');
-        
+
         // Clear current DNA to force server to regenerate
         this.visualDNA = null;
         this.dnaLocked = false;
-        
-        // TODO: When backend supports it, call regeneration endpoint
-        // For now, show that DNA has been cleared
-        this.addConsoleLog('🧬 DNA cleared - will regenerate on next image generation', 'success');
-        this.renderCurrentStep();
+
+        const stepContent = document.getElementById('step-content');
+
+        try {
+            this.showStepLoading(stepContent, 'Regenerating Visual DNA...');
+
+            // Re-run preview mode — server will generate fresh Visual DNA
+            const startTime = performance.now();
+            const previewResponse = await runPreviewMode(this.jobId);
+            const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+
+            // Extract the new Visual DNA
+            if (previewResponse.generation_details?.visual_dna) {
+                this.visualDNA = previewResponse.generation_details.visual_dna;
+                this.formData.generationDetails = previewResponse.generation_details;
+                this.addConsoleLog(`✅ Visual DNA regenerated in ${elapsed}s`, 'success');
+
+                const vdna = this.visualDNA;
+                this.addConsoleLog(`🧬 New DNA: ${vdna.visual_style} / ${vdna.color_palette} / ${vdna.motion_profile}`, 'info');
+
+                if (typeof toast !== 'undefined') toast.success('Visual DNA regenerated');
+            } else {
+                this.addConsoleLog('⚠️ Server did not return new Visual DNA', 'warning');
+            }
+
+            this.renderCurrentStep();
+        } catch (error) {
+            console.error('DNA regeneration failed:', error);
+            this.addConsoleLog(`❌ DNA regeneration failed: ${error.message}`, 'error');
+            this.showError(`DNA regeneration failed: ${error.message}`);
+            this.renderCurrentStep();
+        }
     }
     
     /**
