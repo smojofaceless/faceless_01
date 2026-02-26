@@ -164,7 +164,22 @@ class YouTubeMetricsAdapter implements MetricsAdapter {
             };
           }
           const retryData = await retryResponse.json();
-          return this.parseResponse(retryData, platformPostId);
+          const retryResult = this.parseResponse(retryData, platformPostId);
+          // Enrich with Analytics API after token refresh
+          if (retryResult.success && retryResult.metrics) {
+            try {
+              const analyticsData = await this.fetchAnalytics(videoId, accessToken);
+              if (analyticsData) {
+                retryResult.metrics.watch_time_seconds = analyticsData.watchTimeSeconds;
+                retryResult.metrics.avg_view_duration_seconds = analyticsData.avgViewDuration;
+                retryResult.metrics.avg_view_percentage = analyticsData.avgViewPercentage;
+                retryResult.metrics.shares = analyticsData.shares || retryResult.metrics.shares;
+                retryResult.metrics.subscribers_gained = analyticsData.subscribersGained || 0;
+                retryResult.metrics.subscribers_lost = analyticsData.subscribersLost || 0;
+              }
+            } catch { /* Analytics is best-effort */ }
+          }
+          return retryResult;
         } catch {
           return {
             success: false,
@@ -200,7 +215,28 @@ class YouTubeMetricsAdapter implements MetricsAdapter {
       }
 
       const data = await response.json();
-      return this.parseResponse(data, platformPostId);
+      const result = this.parseResponse(data, platformPostId);
+
+      // Enrich with YouTube Analytics API (watch time / retention)
+      if (result.success && result.metrics) {
+        try {
+          const analyticsData = await this.fetchAnalytics(videoId, accessToken);
+          if (analyticsData) {
+            result.metrics.watch_time_seconds = analyticsData.watchTimeSeconds;
+            result.metrics.avg_view_duration_seconds = analyticsData.avgViewDuration;
+            result.metrics.avg_view_percentage = analyticsData.avgViewPercentage;
+            result.metrics.shares = analyticsData.shares || result.metrics.shares;
+            result.metrics.subscribers_gained = analyticsData.subscribersGained || 0;
+            result.metrics.subscribers_lost = analyticsData.subscribersLost || 0;
+            console.log(`[YouTube Metrics] Analytics enrichment: avgDur=${analyticsData.avgViewDuration}s, avgPct=${analyticsData.avgViewPercentage}%, watchTime=${analyticsData.watchTimeSeconds}s`);
+          }
+        } catch (analyticsErr) {
+          // Analytics is best-effort — don't fail the whole metric collection
+          console.warn(`[YouTube Metrics] Analytics enrichment failed (non-fatal): ${analyticsErr instanceof Error ? analyticsErr.message : String(analyticsErr)}`);
+        }
+      }
+
+      return result;
     } catch (e) {
       return {
         success: false,
@@ -208,6 +244,83 @@ class YouTubeMetricsAdapter implements MetricsAdapter {
         error_message: `Network error: ${e instanceof Error ? e.message : String(e)}`,
       };
     }
+  }
+
+  /**
+   * Fetch YouTube Analytics API data for a video (watch time, retention, shares)
+   * Requires yt-analytics.readonly scope
+   */
+  private async fetchAnalytics(
+    videoId: string,
+    accessToken: string
+  ): Promise<{
+    watchTimeSeconds: number;
+    avgViewDuration: number;
+    avgViewPercentage: number;
+    shares: number;
+    subscribersGained: number;
+    subscribersLost: number;
+  } | null> {
+    // Use wide date range to capture lifetime stats for this video
+    const endDate = new Date().toISOString().split('T')[0];
+    const startDate = '2020-01-01'; // far enough back to capture any video
+
+    const metrics = [
+      'views',
+      'estimatedMinutesWatched',
+      'averageViewDuration',
+      'averageViewPercentage',
+      'shares',
+      'subscribersGained',
+      'subscribersLost',
+    ].join(',');
+
+    const url =
+      `https://youtubeanalytics.googleapis.com/v2/reports?` +
+      `ids=channel==MINE` +
+      `&startDate=${startDate}` +
+      `&endDate=${endDate}` +
+      `&metrics=${metrics}` +
+      `&dimensions=video` +
+      `&filters=video==${videoId}`;
+
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.warn(`[YouTube Analytics] API error ${response.status}: ${errText.slice(0, 200)}`);
+      return null;
+    }
+
+    const data = await response.json();
+    if (!data.rows || data.rows.length === 0) {
+      console.log(`[YouTube Analytics] No analytics data yet for video ${videoId}`);
+      return null;
+    }
+
+    const row = data.rows[0];
+    const columnHeaders = (data.columnHeaders || []).map(
+      (h: { name: string }) => h.name
+    );
+
+    const getValue = (name: string): number => {
+      const idx = columnHeaders.indexOf(name);
+      return idx >= 0 ? (row[idx] as number) : 0;
+    };
+
+    return {
+      watchTimeSeconds: Math.round(getValue('estimatedMinutesWatched') * 60),
+      avgViewDuration: Math.round(getValue('averageViewDuration')),
+      avgViewPercentage: Math.round(getValue('averageViewPercentage') * 10) / 10,
+      shares: getValue('shares'),
+      subscribersGained: getValue('subscribersGained'),
+      subscribersLost: getValue('subscribersLost'),
+    };
   }
 
   private parseResponse(data: Record<string, unknown>, platformPostId: string): MetricsResult {
