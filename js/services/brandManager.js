@@ -1449,17 +1449,24 @@ class BrandManager {
     /**
      * Load only the brand-level image_prompt overrides (raw, not merged).
      * @param {string} brandId
+     * @param {string} [vibePreset] - optional preset to check (falls back to default template)
      * @returns {Promise<Object|null>}
      */
-    async getImagePromptConfigRaw(brandId) {
+    async getImagePromptConfigRaw(brandId, vibePreset) {
         if (!this.useSupabase) return null;
-        const { data, error } = await supabaseClient
+
+        let query = supabaseClient
             .from('brand_templates')
             .select('id, template_type, config_overrides, is_default')
-            .eq('brand_id', brandId)
-            .eq('is_default', true)
-            .limit(1)
-            .single();
+            .eq('brand_id', brandId);
+
+        if (vibePreset) {
+            query = query.eq('template_type', vibePreset);
+        } else {
+            query = query.eq('is_default', true);
+        }
+
+        const { data, error } = await query.limit(1).single();
         if (error) {
             if (error.code === 'PGRST116') return null;
             console.error('Failed to load image prompt config:', error);
@@ -1477,37 +1484,48 @@ class BrandManager {
     async saveImagePromptConfig(brandId, imagePromptConfig) {
         if (!this.useSupabase) throw new Error('Image prompt config requires Supabase');
 
-        const { data: template, error: fetchErr } = await supabaseClient
+        // Fetch ALL templates for this brand (not just default)
+        // so image_prompt settings like video_mode propagate to every preset
+        const { data: templates, error: fetchErr } = await supabaseClient
             .from('brand_templates')
-            .select('id, config_overrides')
-            .eq('brand_id', brandId)
-            .eq('is_default', true)
-            .limit(1)
-            .single();
+            .select('id, template_type, config_overrides')
+            .eq('brand_id', brandId);
 
         if (fetchErr) {
-            console.error('Failed to find default template:', fetchErr);
+            console.error('Failed to find brand templates:', fetchErr);
             throw fetchErr;
         }
 
-        const overrides = template.config_overrides || {};
-
-        if (imagePromptConfig === null) {
-            delete overrides.image_prompt;
-        } else {
-            overrides.image_prompt = imagePromptConfig;
+        if (!templates || templates.length === 0) {
+            throw new Error('No templates found for this brand');
         }
 
-        const { error: updateErr } = await supabaseClient
-            .from('brand_templates')
-            .update({ config_overrides: overrides })
-            .eq('id', template.id);
+        // Update each template's config_overrides.image_prompt
+        const errors = [];
+        for (const template of templates) {
+            const overrides = template.config_overrides || {};
 
-        if (updateErr) {
-            console.error('Failed to save image prompt config:', updateErr);
-            throw updateErr;
+            if (imagePromptConfig === null) {
+                delete overrides.image_prompt;
+            } else {
+                overrides.image_prompt = imagePromptConfig;
+            }
+
+            const { error: updateErr } = await supabaseClient
+                .from('brand_templates')
+                .update({ config_overrides: overrides })
+                .eq('id', template.id);
+
+            if (updateErr) {
+                console.error(`Failed to save image prompt config for template ${template.template_type}:`, updateErr);
+                errors.push(`${template.template_type}: ${updateErr.message}`);
+            }
         }
-        console.log('🎨 Image prompt config saved for brand:', brandId);
+
+        if (errors.length > 0) {
+            throw new Error(`Failed to save to ${errors.length} template(s): ${errors.join('; ')}`);
+        }
+        console.log(`🎨 Image prompt config saved to ${templates.length} template(s) for brand:`, brandId);
     }
 
     // =================================================
@@ -1711,6 +1729,239 @@ class BrandManager {
             .eq('id', template.id);
         if (updateErr) throw updateErr;
         console.log('📅 Schedule config saved for brand:', brandId);
+    }
+
+    // =================================================================
+    // GENERIC PER-PRESET CONFIG (read/write any section by template_type)
+    // =================================================================
+
+    /**
+     * Load a specific config section from a specific preset (template_type).
+     * @param {string} brandId
+     * @param {string} templateType - e.g. 'urban_legend', 'one_too_many'
+     * @param {string} [section] - e.g. 'effects', 'subtitles', 'image_prompt', 'music', 'voice'
+     *                             If omitted, returns the entire config_overrides object.
+     * @returns {Promise<Object|null>}
+     */
+    async getPresetConfigSection(brandId, templateType, section) {
+        if (!this.useSupabase) return null;
+        const { data, error } = await supabaseClient
+            .from('brand_templates')
+            .select('id, template_type, config_overrides, is_default')
+            .eq('brand_id', brandId)
+            .eq('template_type', templateType)
+            .limit(1)
+            .single();
+
+        if (error) {
+            if (error.code === 'PGRST116') return null;
+            throw error;
+        }
+        if (!section) return data?.config_overrides || null;
+        return data?.config_overrides?.[section] || null;
+    }
+
+    /**
+     * Save a specific config section to a specific preset (template_type).
+     * Merges into config_overrides[section] on the matching template row.
+     * @param {string} brandId
+     * @param {string} templateType - e.g. 'urban_legend'
+     * @param {string} section - e.g. 'effects', 'subtitles', 'image_prompt'
+     * @param {Object|null} data - config data, or null to remove the section
+     * @returns {Promise<void>}
+     */
+    async savePresetConfigSection(brandId, templateType, section, data) {
+        if (!this.useSupabase) throw new Error('Config requires Supabase');
+
+        const { data: template, error: fetchErr } = await supabaseClient
+            .from('brand_templates')
+            .select('id, config_overrides')
+            .eq('brand_id', brandId)
+            .eq('template_type', templateType)
+            .limit(1)
+            .single();
+
+        if (fetchErr && fetchErr.code !== 'PGRST116') {
+            console.error(`Failed to find template ${templateType}:`, fetchErr);
+            throw fetchErr;
+        }
+
+        if (!template) {
+            // No template row exists for this preset — create one
+            const newOverrides = data === null ? {} : { [section]: data };
+            const { error: insertErr } = await supabaseClient
+                .from('brand_templates')
+                .insert({
+                    brand_id: brandId,
+                    template_type: templateType,
+                    config_overrides: newOverrides,
+                    is_default: false,
+                });
+            if (insertErr) {
+                console.error(`Failed to create template ${templateType}:`, insertErr);
+                throw insertErr;
+            }
+            console.log(`✅ Created new template row for ${templateType}, saved ${section} config (brand: ${brandId})`);
+            return;
+        }
+
+        const overrides = template.config_overrides || {};
+        if (data === null) {
+            delete overrides[section];
+        } else {
+            overrides[section] = data;
+        }
+
+        const { error: updateErr } = await supabaseClient
+            .from('brand_templates')
+            .update({ config_overrides: overrides })
+            .eq('id', template.id);
+
+        if (updateErr) {
+            console.error(`Failed to save ${section} for ${templateType}:`, updateErr);
+            throw updateErr;
+        }
+        console.log(`✅ ${section} config saved for preset ${templateType} (brand: ${brandId})`);
+    }
+
+    // =================================================================
+    // VIDEO OVERLAY (per-preset overlay video upload/config)
+    // =================================================================
+
+    /**
+     * Upload an overlay video file to Supabase Storage for a specific preset.
+     * Stores at: brands/{brandId}/overlays/{presetName}.mp4
+     * @param {string} brandId
+     * @param {string} presetName - e.g. 'analog_horror', 'dark_origins'
+     * @param {File} file - The video file (MP4/WebM with black background)
+     * @param {Object} [meta] - { opacity, display_name }
+     * @returns {Promise<Object>} The overlay config object
+     */
+    async uploadOverlayVideo(brandId, presetName, file, meta = {}) {
+        if (!this.useSupabase) throw new Error('Overlay upload requires Supabase');
+
+        const ext = file.name.endsWith('.webm') ? 'webm' : 'mp4';
+        const storagePath = `brands/${brandId}/overlays/${presetName}.${ext}`;
+
+        // Upload file to storage (upsert to allow overwriting)
+        const { error: uploadError } = await supabaseClient.storage
+            .from('story-videos')
+            .upload(storagePath, file, {
+                cacheControl: '3600',
+                upsert: true,
+                contentType: file.type || 'video/mp4',
+            });
+
+        if (uploadError) {
+            console.error('Failed to upload overlay video:', uploadError);
+            throw new Error(`Upload failed: ${uploadError.message}`);
+        }
+
+        // Build the overlay config
+        const overlayConfig = {
+            enabled: true,
+            file_path: storagePath,
+            url: this.getOverlayVideoUrl(brandId, presetName, ext),
+            opacity: meta.opacity || 0.4,
+            blend_mode: 'screen',
+            display_name: meta.display_name || file.name,
+        };
+
+        // Save overlay config to the preset's config_overrides.overlay_video
+        await this.savePresetConfigSection(brandId, presetName, 'overlay_video', overlayConfig);
+
+        console.log(`🎞️ Overlay video uploaded for preset ${presetName}: ${storagePath}`);
+        this.emit('overlayChanged', { brandId, presetName, overlayConfig });
+        return overlayConfig;
+    }
+
+    /**
+     * Remove an overlay video from Storage and clear the config.
+     * @param {string} brandId
+     * @param {string} presetName
+     * @param {string} [ext='mp4']
+     */
+    async removeOverlayVideo(brandId, presetName, ext = 'mp4') {
+        if (!this.useSupabase) throw new Error('Overlay removal requires Supabase');
+
+        // Try removing both mp4 and webm
+        for (const fileExt of ['mp4', 'webm']) {
+            const filePath = `brands/${brandId}/overlays/${presetName}.${fileExt}`;
+            await supabaseClient.storage
+                .from('story-videos')
+                .remove([filePath])
+                .catch(() => {}); // Ignore errors (file may not exist in that format)
+        }
+
+        // Clear the config
+        await this.savePresetConfigSection(brandId, presetName, 'overlay_video', null);
+
+        console.log(`🎞️ Overlay video removed for preset ${presetName}`);
+        this.emit('overlayChanged', { brandId, presetName, overlayConfig: null });
+    }
+
+    /**
+     * Get the overlay config for a specific preset.
+     * @param {string} brandId
+     * @param {string} presetName
+     * @returns {Promise<Object|null>} The overlay_video config or null
+     */
+    async getOverlayConfig(brandId, presetName) {
+        return this.getPresetConfigSection(brandId, presetName, 'overlay_video');
+    }
+
+    /**
+     * Update overlay opacity without re-uploading.
+     * @param {string} brandId
+     * @param {string} presetName
+     * @param {number} opacity - 0-1
+     */
+    async updateOverlayOpacity(brandId, presetName, opacity) {
+        const config = await this.getOverlayConfig(brandId, presetName);
+        if (!config) throw new Error('No overlay configured for this preset');
+        config.opacity = Math.max(0.05, Math.min(1.0, opacity));
+        await this.savePresetConfigSection(brandId, presetName, 'overlay_video', config);
+        console.log(`🎞️ Overlay opacity updated to ${config.opacity} for preset ${presetName}`);
+    }
+
+    /**
+     * Get the public URL for an overlay video.
+     * @param {string} brandId
+     * @param {string} presetName
+     * @param {string} [ext='mp4']
+     * @returns {string}
+     */
+    getOverlayVideoUrl(brandId, presetName, ext = 'mp4') {
+        const supabaseUrl = typeof CONFIG !== 'undefined' ? CONFIG.SUPABASE_URL : '';
+        return `${supabaseUrl}/storage/v1/object/public/story-videos/brands/${brandId}/overlays/${presetName}.${ext}`;
+    }
+
+    /**
+     * Get overlay configs for ALL presets of a brand.
+     * Returns a map: { presetName: overlayConfig }
+     * @param {string} brandId
+     * @returns {Promise<Object>}
+     */
+    async getAllOverlayConfigs(brandId) {
+        if (!this.useSupabase) return {};
+        const { data, error } = await supabaseClient
+            .from('brand_templates')
+            .select('template_type, config_overrides')
+            .eq('brand_id', brandId);
+
+        if (error) {
+            console.error('Failed to load overlay configs:', error);
+            return {};
+        }
+
+        const result = {};
+        for (const row of (data || [])) {
+            const overlay = row.config_overrides?.overlay_video;
+            if (overlay && overlay.enabled) {
+                result[row.template_type] = overlay;
+            }
+        }
+        return result;
     }
 }
 

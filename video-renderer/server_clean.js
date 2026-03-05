@@ -1534,24 +1534,56 @@ function toASSTime(seconds) {
 
 /**
  * Create ASS subtitle file from captions
- * Word-by-word display with scary word highlighting
+ * v6.0: Full chunked subtitle system with per-brand styling
+ *   - words_per_chunk groups N words together (default 3)
+ *   - Active word highlighted in different color + scaled up
+ *   - Configurable position (top/center/bottom), emphasis scale, colors
+ *   - Falls back gracefully when no subtitleConfig provided
  */
 async function createASSSubtitles(captions, outputPath, options = {}) {
   const {
     captionStyle = 'bold',
     highlightScary = true,
+    wordsPerChunk = 3,       // 2-4 words per chunk feels best
+    subtitleConfig = null,   // v6.0: Full subtitle config from get_subtitle_config_for_job()
   } = options;
+
+  // v6.0: If subtitleConfig is provided, it takes precedence over individual options
+  const resolvedStyle = subtitleConfig?.style || captionStyle;
+  const resolvedHighlightScary = subtitleConfig?.highlight_scary ?? highlightScary;
+  const resolvedWordsPerChunk = subtitleConfig?.words_per_chunk ?? wordsPerChunk;
+  const resolvedEmphasisScale = subtitleConfig?.emphasis_scale ?? 110;
+  const resolvedPosition = subtitleConfig?.position || 'bottom';
   
-  const style = CAPTION_STYLES[captionStyle] || CAPTION_STYLES.bold;
+  const style = CAPTION_STYLES[resolvedStyle] || CAPTION_STYLES.bold;
   
-  // Get style colors (with defaults for backward compatibility)
-  const primaryColor = style.primaryColor || '&H00FFFFFF';
-  const outlineColor = style.outlineColor || '&H00000000';
+  // Get style colors — subtitle_config can override font_size
+  const fontSize = subtitleConfig?.font_size || style.fontSize;
+  const primaryColor = style.primaryColor || '&H00FFFFFF';   // White (default text)
+  const outlineColor = style.outlineColor || '&H00000000';   // Black outline
   const outlineWidth = style.outline || 4;
   const isItalic = style.italic ? 1 : 0;
+  const fontBold = style.fontWeight === 'bold' ? 1 : 0;
   
-  // ASS header with style definitions
-  // PlayResY/PlayResX set the virtual resolution for positioning
+  // Highlight color for active word — configurable via subtitle_config
+  const highlightColor = subtitleConfig?.highlight_color || '&H0000FFFF';  // Yellow (BGR)
+  // Scary word color — configurable via subtitle_config
+  const scaryColor = subtitleConfig?.scary_color || '&H001D1DFF';      // Bright red (BGR)
+
+  // Position: convert position name to MarginV value
+  // bottom=400 (original), center=700, top=1100
+  const marginV = resolvedPosition === 'top' ? 1100
+    : resolvedPosition === 'center' ? 700
+    : 400; // bottom (default)
+  
+  // Alignment: 2=bottom-center, 5=center, 8=top-center
+  const alignment = resolvedPosition === 'top' ? 8
+    : resolvedPosition === 'center' ? 5
+    : 2; // bottom (default)
+
+  console.log(`  📝 Subtitle config: style=${resolvedStyle}, fontSize=${fontSize}, position=${resolvedPosition}(marginV=${marginV}), scary=${resolvedHighlightScary}, words/chunk=${resolvedWordsPerChunk}, emphasisScale=${resolvedEmphasisScale}`);
+  
+  // ASS header
   const header = `[Script Info]
 Title: Horror Story Captions
 ScriptType: v4.00+
@@ -1561,37 +1593,77 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${style.fontName},${style.fontSize},${primaryColor},&H000000FF,${outlineColor},&H80000000,${style.fontWeight === 'bold' ? 1 : 0},${isItalic},0,0,100,100,0,0,1,${outlineWidth},2,2,30,30,400,1
-Style: Scary,${style.fontName},${Math.round(style.fontSize * 1.1)},&H000000FF,&H000000FF,${outlineColor},&H80000000,1,0,0,0,100,100,0,0,1,${outlineWidth},2,2,30,30,400,1
+Style: Default,${style.fontName},${fontSize},${primaryColor},&H000000FF,${outlineColor},&H80000000,${fontBold},${isItalic},0,0,100,100,0,0,1,${outlineWidth},2,${alignment},30,30,${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `;
   
+  // === Build chunks ===
+  const chunks = [];
+  for (let i = 0; i < captions.length; i += resolvedWordsPerChunk) {
+    const chunkWords = captions.slice(i, i + resolvedWordsPerChunk);
+    if (chunkWords.length === 0) continue;
+    
+    // Chunk timing: first word start → last word end
+    const chunkStart = chunkWords[0].start;
+    const chunkEnd = chunkWords[chunkWords.length - 1].end;
+    
+    chunks.push({
+      words: chunkWords,
+      start: chunkStart,
+      end: chunkEnd,
+    });
+  }
+  
   const events = [];
   
-  for (const caption of captions) {
-    const word = caption.word || '';
-    const cleanWord = word.toLowerCase().replace(/[^a-z]/g, '');
-    const isScary = highlightScary && SCARY_WORDS.has(cleanWord);
+  for (const chunk of chunks) {
+    const chunkStartASS = toASSTime(chunk.start);
+    const chunkEndASS = toASSTime(chunk.end);
     
-    // Add small buffer to prevent gaps
-    const startTime = toASSTime(caption.start);
-    const endTime = toASSTime(caption.end + 0.05);
-    const styleName = isScary ? 'Scary' : 'Default';
-    
-    // Escape special ASS characters and add pop animation
-    const escapedWord = word.replace(/\\/g, '\\\\').replace(/\{/g, '\\{').replace(/\}/g, '\\}');
-    
-    // Use transform for pop-in effect
-    const animatedText = `{\\fscx80\\fscy80\\t(0,80,\\fscx100\\fscy100)}${escapedWord}`;
-    
-    events.push(`Dialogue: 0,${startTime},${endTime},${styleName},,0,0,0,,${animatedText}`);
+    // For each word in the chunk, create a dialogue line that shows
+    // the FULL chunk text, but with the active word highlighted.
+    // Each word gets its own time slice within the chunk's total duration.
+    for (let wIdx = 0; wIdx < chunk.words.length; wIdx++) {
+      const wordCap = chunk.words[wIdx];
+      const wordStart = toASSTime(wordCap.start);
+      // Word end: use next word's start if available, else chunk end
+      const wordEnd = wIdx < chunk.words.length - 1 
+        ? toASSTime(chunk.words[wIdx + 1].start)
+        : chunkEndASS;
+      
+      // Build the full chunk text with the active word highlighted
+      const textParts = [];
+      for (let j = 0; j < chunk.words.length; j++) {
+        const w = chunk.words[j].word || '';
+        const escapedWord = w.replace(/\\/g, '\\\\').replace(/\{/g, '\\{').replace(/\}/g, '\\}');
+        const cleanWord = w.toLowerCase().replace(/[^a-z]/g, '');
+        
+        if (j === wIdx) {
+          // === ACTIVE WORD: highlighted + slight scale up ===
+          const isScary = resolvedHighlightScary && SCARY_WORDS.has(cleanWord);
+          const activeColor = isScary ? scaryColor : highlightColor;
+          textParts.push(`{\\c${activeColor}\\fscx${resolvedEmphasisScale}\\fscy${resolvedEmphasisScale}}${escapedWord}{\\c${primaryColor}\\fscx100\\fscy100}`);
+        } else {
+          // Inactive word: default color
+          const isScary = resolvedHighlightScary && SCARY_WORDS.has(cleanWord);
+          if (isScary) {
+            textParts.push(`{\\c${scaryColor}}${escapedWord}{\\c${primaryColor}}`);
+          } else {
+            textParts.push(escapedWord);
+          }
+        }
+      }
+      
+      const fullText = textParts.join(' ');
+      events.push(`Dialogue: 0,${wordStart},${wordEnd},Default,,0,0,0,,${fullText}`);
+    }
   }
   
   const assContent = header + events.join('\n');
   await fs.writeFile(outputPath, assContent, 'utf8');
-  console.log(`  ✓ Created ASS subtitle file with ${events.length} words`);
+  console.log(`  ✓ Created ASS subtitle file: ${chunks.length} chunks, ${events.length} events (${captions.length} words, ${resolvedWordsPerChunk}/chunk, style=${resolvedStyle})`);
   
   return outputPath;
 }
@@ -1674,6 +1746,7 @@ app.post('/render', async (req, res) => {
       img2vid_clips = null,   // Phase 2: img2vid video clips per scene { "0": { url, duration }, ... }
       overlay_video_url = null, // v4.1: URL to a black-background overlay video (screen blend)
       overlay_video_opacity = 0.4, // v4.1: Opacity for overlay video (0-1)
+      subtitle_config = null, // v6.0: Per-brand subtitle styling from get_subtitle_config_for_job()
     } = req.body;
     
     if (!images || images.length === 0) {
@@ -1745,6 +1818,13 @@ app.post('/render', async (req, res) => {
       console.log(`[${jobId}] 🎞️ Video overlay configured: opacity=${resolvedOverlayOpacity}, url=${resolvedOverlayUrl.slice(0, 80)}...`);
     }
     
+    // v6.0: Validate subtitle config if provided
+    let safeSubtitleConfig = null;
+    if (subtitle_config && typeof subtitle_config === 'object') {
+      safeSubtitleConfig = subtitle_config;
+      console.log(`[${jobId}] 📝 Subtitle Config: style=${subtitle_config.style || 'bold'}, fontSize=${subtitle_config.font_size || 'default'}, position=${subtitle_config.position || 'bottom'}, wpc=${subtitle_config.words_per_chunk || 'default'}, scary=${subtitle_config.highlight_scary ?? true}`);
+    }
+
     // Initialize job
     jobs.set(jobId, {
       id: jobId,
@@ -1763,8 +1843,8 @@ app.post('/render', async (req, res) => {
       status_url: `/status/${jobId}`,
     });
     
-    // Process asynchronously (now with visual_dna, effects_profile, and overlay)
-    processRender(jobId, images, audio_url, durations, captions, effects, webhook_url, supabaseJobId, low_memory, music_url, music_volume, mood_levels, visual_dna, safeEffectsProfile, img2vid_clips, resolvedOverlayUrl, resolvedOverlayOpacity);
+    // Process asynchronously (now with visual_dna, effects_profile, overlay, and subtitle_config)
+    processRender(jobId, images, audio_url, durations, captions, effects, webhook_url, supabaseJobId, low_memory, music_url, music_volume, mood_levels, visual_dna, safeEffectsProfile, img2vid_clips, resolvedOverlayUrl, resolvedOverlayOpacity, safeSubtitleConfig);
     
   } catch (error) {
     console.error('[RENDER] Error:', error);
@@ -1783,8 +1863,9 @@ app.post('/render', async (req, res) => {
  * @param effectsProfile - Effects profile with intensity controls (0-1 scale)
  * @param overlayVideoUrl - URL to a black-background overlay video for screen blend
  * @param overlayOpacity - Overlay opacity 0-1 (default 0.4)
+ * @param subtitleConfig - Per-brand subtitle styling from get_subtitle_config_for_job()
  */
-async function processRender(jobId, imageUrls, audioUrl, durations, captions, effects, webhookUrl, supabaseJobId, lowMemory, musicUrl = null, musicVolume = 15, moodLevels = [], visualDNA = null, effectsProfile = null, img2vidClips = null, overlayVideoUrl = null, overlayOpacity = 0.4) {
+async function processRender(jobId, imageUrls, audioUrl, durations, captions, effects, webhookUrl, supabaseJobId, lowMemory, musicUrl = null, musicVolume = 15, moodLevels = [], visualDNA = null, effectsProfile = null, img2vidClips = null, overlayVideoUrl = null, overlayOpacity = 0.4, subtitleConfig = null) {
   activeRenders++;
   const jobDir = path.join(TEMP_DIR, jobId);
   await fs.mkdir(jobDir, { recursive: true });
@@ -1973,6 +2054,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
       await createASSSubtitles(captions, assPath, {
         captionStyle: mergedEffects.captionStyle || 'bold',
         highlightScary: mergedEffects.highlightScary !== false,
+        subtitleConfig: subtitleConfig,  // v6.0: Pass full subtitle config
       });
       
       const withCaptionsPath = path.join(jobDir, 'with_captions.mp4');

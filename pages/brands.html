@@ -40,6 +40,199 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         }
         
+        /* ─── Settings Hub ─── */
+        .settings-hub {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+            gap: 10px;
+            padding: 4px 0;
+        }
+        .settings-hub__tile {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            padding: 20px 12px 16px;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            text-align: center;
+        }
+        .settings-hub__tile:hover {
+            background: rgba(139, 92, 246, 0.08);
+            border-color: rgba(139, 92, 246, 0.25);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.25), 0 0 20px rgba(139,92,246,0.08);
+        }
+        .settings-hub__icon { font-size: 28px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); }
+        .settings-hub__label {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-primary);
+            letter-spacing: -0.01em;
+        }
+        .settings-hub__desc {
+            font-size: 11px;
+            color: var(--text-muted);
+            line-height: 1.3;
+        }
+
+        /* ─── Brand Card: cleaner actions row ─── */
+        .brand-card__actions-row {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            padding: var(--space-3) var(--space-4);
+        }
+        .brand-card__actions-row .btn--primary {
+            flex: 0 0 auto;
+        }
+        .brand-card__actions-row .brand-card__actions {
+            margin-left: auto;
+        }
+
+        /* ═══════════════════════════════════════════════════
+           CONFIG MODAL — REDESIGNED NAV / BODY / FOOTER
+           ═══════════════════════════════════════════════════ */
+
+        /* ─── Nav Header ─── */
+        .modal__nav {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 24px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            background: linear-gradient(180deg, rgba(139,92,246,0.06) 0%, transparent 100%);
+            flex-shrink: 0;
+        }
+        .modal__back {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 6px 12px 6px 8px;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.04);
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .modal__back:hover {
+            background: rgba(139, 92, 246, 0.12);
+            border-color: rgba(139, 92, 246, 0.3);
+            color: #a78bfa;
+            transform: translateX(-2px);
+        }
+        .modal__nav-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-primary);
+            flex: 1;
+            letter-spacing: -0.01em;
+        }
+        .modal__nav-close {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.03);
+            color: var(--text-secondary);
+            font-size: 16px;
+            font-weight: 300;
+            font-family: system-ui, sans-serif;
+            line-height: 1;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .modal__nav-close:hover {
+            background: rgba(239,68,68,0.12);
+            border-color: rgba(239,68,68,0.25);
+            color: #f87171;
+        }
+
+        /* ─── Modal Body Override ─── */
+        .modal__content--config .modal__body {
+            padding: 20px 24px;
+            background: var(--color-bg-base, #141420);
+        }
+
+        /* ─── Footer ─── */
+        .modal__footer--config {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 10px;
+            padding: 14px 24px;
+            border-top: 1px solid rgba(255,255,255,0.06);
+            background: linear-gradient(0deg, rgba(139,92,246,0.04) 0%, transparent 100%);
+            flex-shrink: 0;
+        }
+        .modal__footer--config .modal__footer-status {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-right: auto;
+            font-weight: 500;
+        }
+
+        /* ─── Preset Tab Bar ─── */
+        .preset-tab-bar {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 10px 24px;
+            background: rgba(0,0,0,0.2);
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            flex-wrap: wrap;
+            flex-shrink: 0;
+        }
+        .preset-tab {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 16px;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+        }
+        .preset-tab:hover {
+            background: rgba(255,255,255,0.06);
+            color: var(--text-primary);
+        }
+        .preset-tab--active {
+            background: rgba(139, 92, 246, 0.15);
+            border-color: rgba(139, 92, 246, 0.35);
+            color: #c4b5fd;
+            box-shadow: 0 0 12px rgba(139,92,246,0.1);
+        }
+        .preset-tab__star {
+            color: #34d399;
+            font-size: 10px;
+        }
+        .preset-tab-bar__label {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            padding: 7px 10px 7px 0;
+            display: flex;
+            align-items: center;
+            white-space: nowrap;
+        }
+
         /* Niche select styling */
         #brand-niche optgroup {
             font-weight: bold;
@@ -61,14 +254,15 @@
             font-size: 13px;
             font-weight: 700;
             color: var(--text-primary);
-            margin-bottom: 6px;
+            margin-bottom: 8px;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.6px;
         }
         .vibe-section__hint {
             font-size: 11px;
             color: var(--text-secondary);
             margin-bottom: 10px;
+            opacity: 0.7;
         }
         .vibe-loading {
             text-align: center;
@@ -96,14 +290,15 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 10px 12px;
-            background: var(--surface-secondary);
-            border: 1px solid var(--border-subtle);
-            border-radius: 8px;
-            transition: border-color 0.2s;
+            padding: 12px 14px;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 10px;
+            transition: border-color 0.2s, background 0.2s;
         }
         .vibe-catalog-item:hover {
-            border-color: var(--border-active);
+            border-color: rgba(139,92,246,0.25);
+            background: rgba(255,255,255,0.04);
         }
         .vibe-catalog-item--added {
             opacity: 0.6;
@@ -138,10 +333,10 @@
             gap: 10px;
         }
         .vibe-active-item {
-            background: var(--surface-secondary);
-            border: 1px solid var(--border-subtle);
-            border-radius: 8px;
-            padding: 10px 12px;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 10px;
+            padding: 12px 14px;
         }
         .vibe-active-item__header {
             display: flex;
@@ -200,9 +395,9 @@
             flex: 1;
             -webkit-appearance: none;
             appearance: none;
-            height: 6px;
+            height: 5px;
             border-radius: 3px;
-            background: var(--surface-tertiary);
+            background: rgba(255,255,255,0.08);
             outline: none;
             cursor: pointer;
         }
@@ -214,11 +409,13 @@
             border-radius: 50%;
             background: var(--slider-color, #8B5CF6);
             cursor: pointer;
-            border: 2px solid rgba(255,255,255,0.2);
-            transition: transform 0.15s;
+            border: 2px solid rgba(255,255,255,0.15);
+            box-shadow: 0 0 8px rgba(139,92,246,0.3);
+            transition: transform 0.15s, box-shadow 0.15s;
         }
         .vibe-weight-slider::-webkit-slider-thumb:hover {
             transform: scale(1.2);
+            box-shadow: 0 0 12px rgba(139,92,246,0.5);
         }
         .vibe-active-item__weight-val {
             font-size: 11px;
@@ -388,21 +585,6 @@
 
             <!-- Brands Content -->
             <div class="content">
-                <!-- Info Card -->
-                <div class="info-card">
-                    <div class="info-card__icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="10"/>
-                            <line x1="12" y1="16" x2="12" y2="12"/>
-                            <line x1="12" y1="8" x2="12.01" y2="8"/>
-                        </svg>
-                    </div>
-                    <div class="info-card__content">
-                        <h3>What are Brands?</h3>
-                        <p>Each brand represents a separate faceless social media channel. Create brands for different niches like horror stories, food recipes, science facts, car content, or anything else. Each brand has its own theme colors, platform connections, and content library - completely isolated from your other brands.</p>
-                    </div>
-                </div>
-
                 <!-- Summary Stats Bar -->
                 <div class="brands-summary" id="brands-summary"></div>
 
@@ -550,10 +732,14 @@
     <!-- Music Tracks Modal -->
     <div class="modal" id="music-modal">
         <div class="modal__overlay"></div>
-        <div class="modal__content modal__content--lg">
-            <div class="modal__header">
-                <h3 class="modal__title">🎵 Music Library — <span id="music-brand-name"></span></h3>
-                <button class="modal__close" onclick="closeMusicModal()">&times;</button>
+        <div class="modal__content modal__content--lg modal__content--config">
+            <div class="modal__nav">
+                <button class="modal__back" onclick="backToHub('music')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="15 18 9 12 15 6"/></svg>
+                    Back
+                </button>
+                <span class="modal__nav-title">Music Library</span>
+                <button class="modal__nav-close" onclick="closeMusicModal()">&times;</button>
             </div>
             <div class="modal__body">
 
@@ -698,8 +884,9 @@
                 </details>
 
             </div>
-            <div class="modal__footer">
-                <button class="btn btn--secondary" onclick="closeMusicModal()">Close</button>
+            <div class="modal__footer--config">
+                <span class="modal__footer-status" id="music-status"></span>
+                <button class="btn btn--secondary btn--sm" onclick="closeMusicModal()">Close</button>
             </div>
         </div>
     </div>
@@ -707,20 +894,22 @@
     <!-- Gameplay Clips Modal -->
     <div class="modal" id="gameplay-modal">
         <div class="modal__overlay"></div>
-        <div class="modal__content modal__content--lg">
-            <div class="modal__header">
-                <h3 class="modal__title">🎮 Gameplay Clips — <span id="gameplay-brand-name"></span></h3>
-                <button class="modal__close" onclick="closeGameplayModal()">&times;</button>
+        <div class="modal__content modal__content--lg modal__content--config">
+            <div class="modal__nav">
+                <button class="modal__back" onclick="backToHub('gameplay')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="15 18 9 12 15 6"/></svg>
+                    Back
+                </button>
+                <span class="modal__nav-title">Gameplay Clips</span>
+                <button class="modal__nav-close" onclick="closeGameplayModal()">&times;</button>
             </div>
             <div class="modal__body">
 
                 <!-- Upload bar -->
-                <div class="music-topbar">
-                    <div class="music-topbar__volume">
-                        <span class="music-topbar__label" style="font-size:12px;color:var(--gray-400)">Background videos for gameplay/decision presets. Upload long (10-30 min) MP4s — a random segment is used each video.</span>
-                    </div>
-                    <div class="music-topbar__upload">
-                        <label for="gameplay-file-input" class="btn btn--primary btn--sm music-topbar__upload-btn">
+                <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px;">
+                    <p style="font-size:12px;color:var(--text-secondary);line-height:1.5;margin:0;">Background videos for gameplay/decision presets. Upload long (10-30 min) MP4s — a random segment is used each video.</p>
+                    <div>
+                        <label for="gameplay-file-input" class="btn btn--primary btn--sm" style="display:inline-flex;align-items:center;gap:6px;">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                             Upload MP4
                         </label>
@@ -813,8 +1002,9 @@
                 </div>
 
             </div>
-            <div class="modal__footer">
-                <button class="btn btn--secondary" onclick="closeGameplayModal()">Close</button>
+            <div class="modal__footer--config">
+                <span class="modal__footer-status" id="gameplay-status"></span>
+                <button class="btn btn--secondary btn--sm" onclick="closeGameplayModal()">Close</button>
             </div>
         </div>
     </div>
@@ -822,11 +1012,16 @@
     <!-- Effects Config Modal -->
     <div class="modal" id="effects-modal">
         <div class="modal__overlay" onclick="closeEffectsModal()"></div>
-        <div class="modal__content modal__content--lg">
-            <div class="modal__header">
-                <h3 class="modal__title">🎛️ Effects Config — <span id="effects-brand-name"></span></h3>
-                <button class="modal__close" onclick="closeEffectsModal()">&times;</button>
+        <div class="modal__content modal__content--lg modal__content--config">
+            <div class="modal__nav">
+                <button class="modal__back" onclick="backToHub('effects')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="15 18 9 12 15 6"/></svg>
+                    Back
+                </button>
+                <span class="modal__nav-title">Effects</span>
+                <button class="modal__nav-close" onclick="closeEffectsModal()">&times;</button>
             </div>
+            <div class="preset-tab-bar" id="fx-preset-tabs"></div>
             <div class="modal__body" id="effects-modal-body">
 
                 <!-- Master Controls -->
@@ -998,13 +1193,10 @@
                 </div>
 
             </div>
-            <div class="modal__footer">
-                <div class="fx-footer-info" id="fx-status"></div>
-                <div class="fx-footer-actions">
-                    <button class="btn btn--secondary btn--sm" id="fx-reset-btn">Reset to Default</button>
-                    <button class="btn btn--secondary" onclick="closeEffectsModal()">Cancel</button>
-                    <button class="btn btn--primary" id="fx-save-btn">Save Effects</button>
-                </div>
+            <div class="modal__footer--config">
+                <span class="modal__footer-status" id="fx-status"></span>
+                <button class="btn btn--ghost btn--sm" id="fx-reset-btn">Reset</button>
+                <button class="btn btn--primary btn--sm" id="fx-save-btn">Save Effects</button>
             </div>
         </div>
     </div>
@@ -1012,11 +1204,16 @@
     <!-- Subtitle Config Modal (Roadmap #14) -->
     <div class="modal" id="subtitle-modal">
         <div class="modal__overlay" onclick="closeSubtitleModal()"></div>
-        <div class="modal__content modal__content--lg">
-            <div class="modal__header">
-                <h3 class="modal__title">📝 Subtitle Config — <span id="sub-brand-name"></span></h3>
-                <button class="modal__close" onclick="closeSubtitleModal()">&times;</button>
+        <div class="modal__content modal__content--lg modal__content--config">
+            <div class="modal__nav">
+                <button class="modal__back" onclick="backToHub('subtitles')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="15 18 9 12 15 6"/></svg>
+                    Back
+                </button>
+                <span class="modal__nav-title">Subtitles</span>
+                <button class="modal__nav-close" onclick="closeSubtitleModal()">&times;</button>
             </div>
+            <div class="preset-tab-bar" id="sub-preset-tabs"></div>
             <div class="modal__body" id="subtitle-modal-body">
 
                 <!-- Caption Style -->
@@ -1089,26 +1286,23 @@
                     </div>
                 </div>
 
-                <!-- Preview (static) -->
+                <!-- Preview (live) -->
                 <div class="fx-section">
                     <div class="fx-section__header">
                         <span class="fx-toggle__label" style="font-weight:600;">Preview</span>
                     </div>
                     <div id="sub-preview" class="subtitle-preview">
-                        <div class="subtitle-preview__screen">
-                            <span class="subtitle-preview__text" id="sub-preview-text">The <span class="sub-active">shadow</span> crept closer</span>
+                        <div class="subtitle-preview__screen" id="sub-preview-screen">
+                            <span class="subtitle-preview__text" id="sub-preview-text"></span>
                         </div>
                     </div>
                 </div>
 
             </div>
-            <div class="modal__footer">
-                <div class="fx-footer-info" id="sub-status"></div>
-                <div class="fx-footer-actions">
-                    <button class="btn btn--secondary btn--sm" id="sub-reset-btn">Reset to Default</button>
-                    <button class="btn btn--secondary" onclick="closeSubtitleModal()">Cancel</button>
-                    <button class="btn btn--primary" id="sub-save-btn">Save Subtitles</button>
-                </div>
+            <div class="modal__footer--config">
+                <span class="modal__footer-status" id="sub-status"></span>
+                <button class="btn btn--ghost btn--sm" id="sub-reset-btn">Reset</button>
+                <button class="btn btn--primary btn--sm" id="sub-save-btn">Save Subtitles</button>
             </div>
         </div>
     </div>
@@ -1116,15 +1310,169 @@
     <!-- Image Prompt Config Modal -->
     <div class="modal" id="imgprompt-modal">
         <div class="modal__overlay" onclick="closeImagePromptModal()"></div>
-        <div class="modal__content modal__content--lg">
-            <div class="modal__header">
-                <h3 class="modal__title">🎨 Image Prompt Config — <span id="ip-brand-name"></span></h3>
-                <button class="modal__close" onclick="closeImagePromptModal()">&times;</button>
+        <div class="modal__content modal__content--lg modal__content--config">
+            <div class="modal__nav">
+                <button class="modal__back" onclick="backToHub('images')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="15 18 9 12 15 6"/></svg>
+                    Back
+                </button>
+                <span class="modal__nav-title">Image & Video</span>
+                <button class="modal__nav-close" onclick="closeImagePromptModal()">&times;</button>
             </div>
+            <div class="preset-tab-bar" id="ip-preset-tabs"></div>
             <div class="modal__body" id="imgprompt-modal-body">
 
-                <!-- Preset Selector -->
+                <!-- Image Model -->
                 <div class="fx-section">
+                    <div class="fx-section__header">
+                        <span class="fx-toggle__label" style="font-weight:600;">Image Model</span>
+                    </div>
+                    <div class="fx-select-row">
+                        <select class="form-control form-control--sm" id="ip-image-model" style="max-width:280px" onchange="toggleComfyUISettings()">
+                            <option value="gpt-image-1">GPT Image 1 (Cloud — Default)</option>
+                            <option value="dall-e-3">DALL·E 3 (Cloud)</option>
+                            <option value="comfyui">ComfyUI (Local GPU)</option>
+                        </select>
+                    </div>
+                    <p class="fx-hint" style="margin-top:4px; font-size:12px; color:var(--text-muted)">
+                        Select which image generation model to use for this brand. ComfyUI requires a local GPU server running.
+                    </p>
+                </div>
+
+                <!-- ComfyUI Settings (shown only when ComfyUI is selected) -->
+                <div id="comfyui-settings" style="display:none; margin-left:12px; border-left:3px solid rgba(139,92,246,0.3); padding-left:16px;">
+                    <!-- Workflow Template -->
+                    <div class="fx-section">
+                        <div class="fx-section__header">
+                            <span class="fx-toggle__label" style="font-weight:600;">🔧 Workflow Template</span>
+                        </div>
+                        <div class="fx-select-row">
+                            <select class="form-control form-control--sm" id="ip-comfyui-workflow" style="max-width:280px">
+                                <option value="txt2img_sdxl">SDXL (Stable Diffusion XL)</option>
+                                <option value="txt2img_flux">FLUX.1-dev</option>
+                            </select>
+                        </div>
+                        <p class="fx-hint" style="margin-top:4px; font-size:12px; color:var(--text-muted)">
+                            SDXL — versatile, great for cinematic/horror. FLUX — higher detail, better prompt adherence but slower.
+                        </p>
+                    </div>
+
+                    <!-- Checkpoint Model -->
+                    <div class="fx-section">
+                        <div class="fx-section__header">
+                            <span class="fx-toggle__label" style="font-weight:600;">🧠 Checkpoint Model</span>
+                        </div>
+                        <input type="text" class="form-control" id="ip-comfyui-checkpoint" style="font-size:13px; max-width:400px"
+                               placeholder="e.g. epicrealismxl.safetensors (blank = ComfyUI default)">
+                        <p class="fx-hint" style="margin-top:4px; font-size:12px; color:var(--text-muted)">
+                            The .safetensors model file in your ComfyUI/models/checkpoints/ folder. Leave blank to use ComfyUI's default.
+                        </p>
+                    </div>
+
+                    <!-- Sampling Settings -->
+                    <div class="fx-section">
+                        <div class="fx-section__header">
+                            <span class="fx-toggle__label" style="font-weight:600;">⚙️ Sampling Settings</span>
+                        </div>
+                        <div style="display:flex; gap:16px; flex-wrap:wrap;">
+                            <div>
+                                <label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:2px">Steps</label>
+                                <input type="number" class="form-control form-control--sm" id="ip-comfyui-steps" style="width:80px" min="10" max="80" value="28" placeholder="28">
+                            </div>
+                            <div>
+                                <label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:2px">CFG Scale</label>
+                                <input type="number" class="form-control form-control--sm" id="ip-comfyui-cfg" style="width:80px" min="1" max="20" step="0.5" value="5.5" placeholder="5.5">
+                            </div>
+                        </div>
+                        <p class="fx-hint" style="margin-top:4px; font-size:12px; color:var(--text-muted)">
+                            More steps = higher quality but slower. CFG = how strictly to follow the prompt (higher = more literal, lower = more creative).
+                        </p>
+                    </div>
+
+                    <!-- ComfyUI Health Status (live) -->
+                    <div class="fx-section" style="background:rgba(139,92,246,0.06); border:1px solid rgba(139,92,246,0.15); border-radius:8px; padding:10px 14px;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span id="comfyui-health-dot" style="width:10px;height:10px;border-radius:50%;background:#6b7280;display:inline-block;"></span>
+                            <span style="font-weight:600;font-size:13px;">ComfyUI Status</span>
+                            <button class="btn btn--secondary btn--sm" onclick="checkComfyUIHealth()" style="margin-left:auto;font-size:11px;">Check Now</button>
+                        </div>
+                        <div id="comfyui-health-info" style="font-size:12px; color:var(--text-muted); margin-top:6px;">
+                            Click "Check Now" to test connection
+                        </div>
+                    </div>
+
+                    <!-- ── img2vid (image-to-video) Settings ── -->
+                    <div class="fx-section" style="margin-top:14px;">
+                        <div class="fx-section__header">
+                            <span class="fx-toggle__label" style="font-weight:600;">🎬 Video Mode</span>
+                        </div>
+                        <div class="fx-select-row">
+                            <select class="form-control form-control--sm" id="ip-video-mode" style="max-width:280px" onchange="toggleImg2VidSettings()">
+                                <option value="static">Static (Ken Burns pan/zoom)</option>
+                                <option value="img2vid">img2vid (AI animated scenes)</option>
+                            </select>
+                        </div>
+                        <p class="fx-hint" style="margin-top:4px; font-size:12px; color:var(--text-muted)">
+                            Static uses Ken Burns pan/zoom on still images. img2vid generates short animated clips from each scene image using AnimateDiff or SVD.
+                        </p>
+                    </div>
+
+                    <div id="img2vid-settings" style="display:none; margin-left:12px; border-left:3px solid rgba(59,130,246,0.3); padding-left:16px;">
+                        <!-- img2vid Workflow -->
+                        <div class="fx-section">
+                            <div class="fx-section__header">
+                                <span class="fx-toggle__label" style="font-weight:600;">🎞️ img2vid Workflow</span>
+                            </div>
+                            <div class="fx-select-row">
+                                <select class="form-control form-control--sm" id="ip-img2vid-workflow" style="max-width:280px">
+                                    <option value="animatediff_ipa">AnimateDiff + IP-Adapter (prompted)</option>
+                                    <option value="animatediff">AnimateDiff (Motion LoRA)</option>
+                                    <option value="svd">SVD-XT 1.1 (Stable Video Diffusion)</option>
+                                    <option value="cogvideox">CogVideoX-5B (requires 24GB+ VRAM)</option>
+                                </select>
+                            </div>
+                            <p class="fx-hint" style="margin-top:4px; font-size:12px; color:var(--text-muted)">
+                                CogVideoX — best head/body motion with T5-XXL text encoder. SVD-XT — cinematic, natural motion. AnimateDiff — prompt-guided. IP-Adapter — image-guided + prompted.
+                            </p>
+                        </div>
+
+                        <!-- Motion Strength -->
+                        <div class="fx-section">
+                            <div class="fx-section__header">
+                                <span class="fx-toggle__label" style="font-weight:600;">💫 Motion Strength</span>
+                                <span class="fx-hint" id="ip-img2vid-motion-label">0.5</span>
+                            </div>
+                            <input type="range" class="form-control" id="ip-img2vid-motion" min="0" max="1" step="0.05" value="0.5"
+                                   style="max-width:280px" oninput="document.getElementById('ip-img2vid-motion-label').textContent = this.value">
+                            <p class="fx-hint" style="margin-top:4px; font-size:12px; color:var(--text-muted)">
+                                Lower = subtle motion, higher = dramatic animation. 0.3-0.5 recommended for horror/cinematic.
+                            </p>
+                        </div>
+
+                        <!-- FPS & Frames -->
+                        <div class="fx-section">
+                            <div class="fx-section__header">
+                                <span class="fx-toggle__label" style="font-weight:600;">⚙️ Video Parameters</span>
+                            </div>
+                            <div style="display:flex; gap:16px; flex-wrap:wrap;">
+                                <div>
+                                    <label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:2px">FPS</label>
+                                    <input type="number" class="form-control form-control--sm" id="ip-img2vid-fps" style="width:80px" min="4" max="30" value="8" placeholder="8">
+                                </div>
+                                <div>
+                                    <label style="font-size:12px; color:var(--text-muted); display:block; margin-bottom:2px">Frames</label>
+                                    <input type="number" class="form-control form-control--sm" id="ip-img2vid-frames" style="width:80px" min="8" max="100" value="25" placeholder="25">
+                                </div>
+                            </div>
+                            <p class="fx-hint" style="margin-top:4px; font-size:12px; color:var(--text-muted)">
+                                SVD-XT defaults: 8 fps, 25 frames (~3s clip). AnimateDiff: 8 fps, 16 frames (~2s clip). Clips are looped/trimmed to match scene duration.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Preset Selector (hidden — replaced by tab bar above) -->
+                <div class="fx-section" style="display:none;">
                     <div class="fx-section__header">
                         <span class="fx-toggle__label" style="font-weight:600;">Vibe Preset</span>
                     </div>
@@ -1142,14 +1490,17 @@
                         <span class="fx-toggle__label" style="font-weight:600;">Art Style</span>
                     </div>
                     <div class="fx-select-row">
-                        <select class="form-control form-control--sm" id="ip-art-style" style="max-width:280px">
+                        <select class="form-control form-control--sm" id="ip-art-style" style="max-width:280px" onchange="onArtStyleChanged()">
                             <option value="cinematic-dark">🎬 Cinematic Dark</option>
                             <option value="analog-horror">📼 Analog Horror / VHS</option>
+                            <option value="vhs-horror">📺 VHS Horror (Documentary)</option>
                             <option value="uncanny-illustrated">📰 Uncanny Illustrated</option>
                             <option value="horror-anime">🎌 Dark Anime</option>
+                            <option value="manga-horror">📖 Manga Horror (Junji Ito)</option>
                             <option value="oil-painting">🖼️ Oil Painting</option>
                             <option value="found-footage">📹 Found Footage</option>
                             <option value="surreal-nightmare">🌀 Surreal Nightmare</option>
+                            <option value="rnmort">🧪 RnMort (Cartoon Horror)</option>
                         </select>
                     </div>
                 </div>
@@ -1241,6 +1592,12 @@
                     </div>
                     <pre id="ip-preview" style="font-size:12px;color:var(--text-secondary);white-space:pre-wrap;margin:0;max-height:200px;overflow-y:auto"></pre>
                 </div>
+
+                <!-- Dev Tools (collapsed by default) -->
+                <details style="margin-top:12px">
+                    <summary style="font-size:12px;font-weight:600;color:var(--text-muted);cursor:pointer;user-select:none;padding:8px 0">
+                        🛠️ Dev Tools — Test Generation, DNA & Uniqueness
+                    </summary>
 
                 <!-- Test Image Generation -->
                 <div class="fx-section" style="background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.2);border-radius:8px;padding:12px;margin-top:8px">
@@ -1383,13 +1740,72 @@
                     </div>
                 </div>
 
+                </details><!-- /Dev Tools -->
+
             </div>
-            <div class="modal__footer">
-                <div class="fx-footer-info" id="ip-status"></div>
-                <div class="fx-footer-actions">
-                    <button class="btn btn--secondary btn--sm" id="ip-reset-btn">Reset to Preset Defaults</button>
-                    <button class="btn btn--secondary" onclick="closeImagePromptModal()">Cancel</button>
-                    <button class="btn btn--primary" id="ip-save-btn">Save Image Config</button>
+            <div class="modal__footer--config">
+                <span class="modal__footer-status" id="ip-status"></span>
+                <button class="btn btn--ghost btn--sm" id="ip-reset-btn">Reset</button>
+                <button class="btn btn--primary btn--sm" id="ip-save-btn">Save Image Config</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Hub Modal -->
+    <div class="modal" id="settings-hub-modal">
+        <div class="modal__overlay" onclick="closeSettingsHub()"></div>
+        <div class="modal__content modal__content--md">
+            <div class="modal__header">
+                <h3 class="modal__title">⚙️ <span id="settings-hub-brand-name"></span></h3>
+                <button class="modal__close" onclick="closeSettingsHub()">&times;</button>
+            </div>
+            <div class="modal__body">
+                <div class="settings-hub">
+                    <button class="settings-hub__tile" data-action="images">
+                        <span class="settings-hub__icon">🎨</span>
+                        <span class="settings-hub__label">Images</span>
+                        <span class="settings-hub__desc">Art style, prompts & generation</span>
+                    </button>
+                    <button class="settings-hub__tile" data-action="effects">
+                        <span class="settings-hub__icon">🎛️</span>
+                        <span class="settings-hub__label">Effects</span>
+                        <span class="settings-hub__desc">Grain, motion, color grade</span>
+                    </button>
+                    <button class="settings-hub__tile" data-action="subtitles">
+                        <span class="settings-hub__icon">📝</span>
+                        <span class="settings-hub__label">Subtitles</span>
+                        <span class="settings-hub__desc">Caption style & position</span>
+                    </button>
+                    <button class="settings-hub__tile" data-action="voice">
+                        <span class="settings-hub__icon">🎙️</span>
+                        <span class="settings-hub__label">Voice</span>
+                        <span class="settings-hub__desc">Narration voice & speed</span>
+                    </button>
+                    <button class="settings-hub__tile" data-action="music">
+                        <span class="settings-hub__icon">🎵</span>
+                        <span class="settings-hub__label">Music</span>
+                        <span class="settings-hub__desc">Background tracks & volume</span>
+                    </button>
+                    <button class="settings-hub__tile" data-action="gameplay">
+                        <span class="settings-hub__icon">🎮</span>
+                        <span class="settings-hub__label">Clips</span>
+                        <span class="settings-hub__desc">Gameplay background videos</span>
+                    </button>
+                    <button class="settings-hub__tile" data-action="schedule">
+                        <span class="settings-hub__icon">📅</span>
+                        <span class="settings-hub__label">Schedule</span>
+                        <span class="settings-hub__desc">Posting windows & limits</span>
+                    </button>
+                    <button class="settings-hub__tile" data-action="presets">
+                        <span class="settings-hub__icon">🎭</span>
+                        <span class="settings-hub__label">Presets</span>
+                        <span class="settings-hub__desc">Template weights & selection</span>
+                    </button>
+                    <button class="settings-hub__tile" data-action="overlay">
+                        <span class="settings-hub__icon">🎞️</span>
+                        <span class="settings-hub__label">Overlay</span>
+                        <span class="settings-hub__desc">Video overlay per preset</span>
+                    </button>
                 </div>
             </div>
         </div>
@@ -1398,10 +1814,14 @@
     <!-- Vibe Presets Modal -->
     <div class="modal" id="vibes-modal">
         <div class="modal__overlay" onclick="closeVibePresetsModal()"></div>
-        <div class="modal__content modal__content--lg">
-            <div class="modal__header">
-                <h3 class="modal__title">🎭 Vibe Presets — <span id="vibes-brand-name"></span></h3>
-                <button class="modal__close" onclick="closeVibePresetsModal()">&times;</button>
+        <div class="modal__content modal__content--lg modal__content--config">
+            <div class="modal__nav">
+                <button class="modal__back" onclick="backToHub('presets')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="15 18 9 12 15 6"/></svg>
+                    Back
+                </button>
+                <span class="modal__nav-title">Vibe Presets</span>
+                <button class="modal__nav-close" onclick="closeVibePresetsModal()">&times;</button>
             </div>
             <div class="modal__body">
                 <!-- Available Preset Catalog -->
@@ -1427,12 +1847,9 @@
                     <div class="vibe-distribution" id="vibe-distribution"></div>
                 </div>
             </div>
-            <div class="modal__footer">
-                <div class="fx-footer-info" id="vibes-status"></div>
-                <div class="fx-footer-actions">
-                    <button class="btn btn--secondary" onclick="closeVibePresetsModal()">Cancel</button>
-                    <button class="btn btn--primary" id="vibes-save-btn">Save Weights</button>
-                </div>
+            <div class="modal__footer--config">
+                <span class="modal__footer-status" id="vibes-status"></span>
+                <button class="btn btn--primary btn--sm" id="vibes-save-btn">Save Weights</button>
             </div>
         </div>
     </div>
@@ -1440,11 +1857,16 @@
     <!-- Voice Config Modal -->
     <div class="modal" id="voice-modal">
         <div class="modal__overlay"></div>
-        <div class="modal__content modal__content--md">
-            <div class="modal__header">
-                <h3 class="modal__title">🎙️ Voice & Narration — <span id="voice-brand-name"></span></h3>
-                <button class="modal__close" onclick="closeVoiceModal()">&times;</button>
+        <div class="modal__content modal__content--md modal__content--config">
+            <div class="modal__nav">
+                <button class="modal__back" onclick="backToHub('voice')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="15 18 9 12 15 6"/></svg>
+                    Back
+                </button>
+                <span class="modal__nav-title">Voice & Narration</span>
+                <button class="modal__nav-close" onclick="closeVoiceModal()">&times;</button>
             </div>
+            <div class="preset-tab-bar" id="voice-preset-tabs"></div>
             <div class="modal__body">
                 <p class="form-hint" style="margin-bottom:16px">Configure the TTS voice used for video narration. Leave on "Preset Default" to use per-preset voices automatically.</p>
 
@@ -1486,12 +1908,82 @@
                     </div>
                 </div>
             </div>
-            <div class="modal__footer">
-                <div class="fx-footer-actions">
-                    <button class="btn btn--secondary" onclick="closeVoiceModal()">Cancel</button>
-                    <button class="btn btn--ghost" id="voice-reset-btn">Reset to Default</button>
-                    <button class="btn btn--primary" id="voice-save-btn">Save Voice Config</button>
+            <div class="modal__footer--config">
+                <span class="modal__footer-status" id="voice-status"></span>
+                <button class="btn btn--ghost btn--sm" id="voice-reset-btn">Reset</button>
+                <button class="btn btn--primary btn--sm" id="voice-save-btn">Save Voice</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Video Overlay Modal -->
+    <div class="modal" id="overlay-modal">
+        <div class="modal__overlay"></div>
+        <div class="modal__content modal__content--md modal__content--config">
+            <div class="modal__nav">
+                <button class="modal__back" onclick="backToHub('overlay')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="15 18 9 12 15 6"/></svg>
+                    Back
+                </button>
+                <span class="modal__nav-title">Video Overlay</span>
+                <button class="modal__nav-close" onclick="closeOverlayModal()">&times;</button>
+            </div>
+            <div class="modal__body">
+                <p class="form-hint" style="margin-bottom:16px">Upload a black-background video (VHS distortion, film scratches, etc.) to composite over rendered videos using screen blend mode. Configure per preset.</p>
+
+                <!-- Preset selector -->
+                <div class="form-group">
+                    <label class="form-label">Preset</label>
+                    <select class="form-control" id="overlay-preset-select" onchange="loadOverlayForPreset()">
+                        <option value="">Select a preset...</option>
+                    </select>
+                    <span class="form-hint">Each preset can have its own overlay video</span>
                 </div>
+
+                <!-- Current overlay status -->
+                <div id="overlay-current-status" style="display:none;margin-bottom:16px;">
+                    <div style="display:flex;align-items:center;gap:8px;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);border-radius:8px;padding:10px 14px;">
+                        <span style="color:#22c55e;">✓</span>
+                        <span style="flex:1;font-size:13px;color:#86efac;" id="overlay-current-filename">overlay.mp4</span>
+                        <button class="btn btn--sm" style="background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);font-size:11px;padding:4px 10px;" onclick="removeCurrentOverlay()">Remove</button>
+                    </div>
+                </div>
+
+                <!-- Upload / Drag-and-Drop area -->
+                <div class="form-group" id="overlay-upload-area">
+                    <label class="form-label">Upload Overlay Video</label>
+                    <div class="music-upload-dropzone music-upload-dropzone--compact" id="overlay-dropzone" style="cursor:pointer;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="28" height="28">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        <p>Drop MP4 / WebM here or click to browse</p>
+                        <span class="form-hint" style="margin:0;">Black-background video for screen-blend overlay</span>
+                    </div>
+                    <input type="file" id="overlay-file-input" accept="video/mp4,video/webm,.mp4,.webm" hidden onchange="handleOverlayFileSelect(event)">
+                </div>
+
+                <!-- Upload progress -->
+                <div id="overlay-upload-progress" style="display:none;margin-bottom:16px;">
+                    <div style="background:#333;border-radius:4px;height:8px;overflow:hidden;margin-bottom:4px;">
+                        <div id="overlay-progress-bar" style="background:var(--color-primary,#6366f1);height:100%;width:0%;transition:width 0.3s;"></div>
+                    </div>
+                    <span class="form-hint">Uploading... <span id="overlay-progress-pct">0</span>%</span>
+                </div>
+
+                <!-- Opacity slider -->
+                <div id="overlay-opacity-section" style="display:none;">
+                    <div class="form-group">
+                        <label class="form-label">Opacity</label>
+                        <div style="display:flex;align-items:center;gap:12px;">
+                            <input type="range" id="overlay-opacity-slider" min="5" max="100" value="40" style="flex:1;accent-color:var(--color-primary,#6366f1);" oninput="onOverlayOpacityChange()">
+                            <span id="overlay-opacity-value" style="font-size:13px;color:var(--text-secondary);min-width:36px;text-align:right;">40%</span>
+                        </div>
+                        <span class="form-hint">How visible the overlay effect is (lower = subtler)</span>
+                    </div>
+                </div>
+
             </div>
         </div>
     </div>
@@ -1499,10 +1991,14 @@
     <!-- Schedule Windows Modal -->
     <div class="modal" id="schedule-modal">
         <div class="modal__overlay"></div>
-        <div class="modal__content modal__content--md">
-            <div class="modal__header">
-                <h3 class="modal__title">📅 Schedule Windows — <span id="schedule-brand-name"></span></h3>
-                <button class="modal__close" onclick="closeScheduleModal()">&times;</button>
+        <div class="modal__content modal__content--md modal__content--config">
+            <div class="modal__nav">
+                <button class="modal__back" onclick="backToHub('schedule')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="15 18 9 12 15 6"/></svg>
+                    Back
+                </button>
+                <span class="modal__nav-title">Schedule</span>
+                <button class="modal__nav-close" onclick="closeScheduleModal()">&times;</button>
             </div>
             <div class="modal__body">
                 <p class="form-hint" style="margin-bottom:16px">Define when posts can be published for this brand. The scheduler will only create posts within these windows.</p>
@@ -1584,12 +2080,10 @@
                     <span class="schedule-summary__text" id="schedule-summary-text">Posts any day, any time</span>
                 </div>
             </div>
-            <div class="modal__footer">
-                <div class="fx-footer-actions">
-                    <button class="btn btn--secondary" onclick="closeScheduleModal()">Cancel</button>
-                    <button class="btn btn--ghost" id="schedule-reset-btn">Reset to Default</button>
-                    <button class="btn btn--primary" id="schedule-save-btn">Save Schedule</button>
-                </div>
+            <div class="modal__footer--config">
+                <span class="modal__footer-status" id="schedule-status"></span>
+                <button class="btn btn--ghost btn--sm" id="schedule-reset-btn">Reset</button>
+                <button class="btn btn--primary btn--sm" id="schedule-save-btn">Save Schedule</button>
             </div>
         </div>
     </div>
@@ -1794,59 +2288,10 @@
                 });
             });
 
-            container.querySelectorAll('.brand-card__action--vibes').forEach(btn => {
+            container.querySelectorAll('.brand-card__action--configure').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    openVibePresetsModal(btn.dataset.id);
-                });
-            });
-
-            container.querySelectorAll('.brand-card__action--music').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    openMusicModal(btn.dataset.id);
-                });
-            });
-
-            container.querySelectorAll('.brand-card__action--gameplay').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    openGameplayModal(btn.dataset.id);
-                });
-            });
-
-            container.querySelectorAll('.brand-card__action--effects').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    openEffectsModal(btn.dataset.id);
-                });
-            });
-
-            container.querySelectorAll('.brand-card__action--subtitles').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    openSubtitleModal(btn.dataset.id);
-                });
-            });
-
-            container.querySelectorAll('.brand-card__action--imgprompt').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    openImagePromptModal(btn.dataset.id);
-                });
-            });
-
-            container.querySelectorAll('.brand-card__action--voice').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    openVoiceModal(btn.dataset.id);
-                });
-            });
-
-            container.querySelectorAll('.brand-card__action--schedule').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    openScheduleModal(btn.dataset.id);
+                    openSettingsHub(btn.dataset.id);
                 });
             });
         }
@@ -1961,7 +2406,6 @@
                         ${brand.description ? `<p class="brand-card__desc">${escapeHtml(brand.description)}</p>` : ''}
 
                         <div class="brand-card__platforms">
-                            <span class="brand-card__platforms-label">Platforms</span>
                             ${platformBadges}
                             <a href="connections.html" class="platform-badge platform-badge--add" title="Manage connections">+</a>
                         </div>
@@ -1977,90 +2421,25 @@
                             </div>
                             <div class="brand-stat">
                                 <span class="brand-stat__value">${connectedCount}</span>
-                                <span class="brand-stat__label">Platforms</span>
+                                <span class="brand-stat__label">Connected</span>
                             </div>
                             <div class="brand-stat">
                                 <span class="brand-stat__value">${musicCount}</span>
-                                <span class="brand-stat__label">🎵 Tracks</span>
+                                <span class="brand-stat__label">Tracks</span>
                             </div>
-                        </div>
-
-                        <div class="brand-card__theme">
-                            <span class="brand-card__theme-label">Theme</span>
-                            <span class="theme-swatch" style="background: ${brand.theme.primaryColor}" title="Primary"></span>
-                            <span class="theme-swatch" style="background: ${brand.theme.secondaryColor}" title="Secondary"></span>
-                            <span class="theme-swatch" style="background: ${brand.theme.accentColor}" title="Accent"></span>
                         </div>
                     </div>
                     <div class="brand-card__footer">
-                        <div class="brand-card__config-row">
-                            <button class="brand-config-btn brand-card__action--vibes" data-id="${brand.id}" title="Vibe Presets">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
-                                    <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-                                    <path d="M2 17l10 5 10-5"/>
-                                    <path d="M2 12l10 5 10-5"/>
-                                </svg>
-                                Presets
-                            </button>
-                            <button class="brand-config-btn brand-card__action--music" data-id="${brand.id}" title="Music Tracks">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
-                                    <path d="M9 18V5l12-2v13"/>
-                                    <circle cx="6" cy="18" r="3"/>
-                                    <circle cx="18" cy="16" r="3"/>
-                                </svg>
-                                Music
-                            </button>
-                            <button class="brand-config-btn brand-card__action--gameplay" data-id="${brand.id}" title="Gameplay Clips">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
-                                    <rect x="2" y="6" width="20" height="12" rx="2"/>
-                                    <polygon points="10 9 10 15 15 12"/>
-                                </svg>
-                                Gameplay
-                            </button>
-                            <button class="brand-config-btn brand-card__action--imgprompt" data-id="${brand.id}" title="Image Prompt Config">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
-                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                                    <circle cx="8.5" cy="8.5" r="1.5"/>
-                                    <polyline points="21 15 16 10 5 21"/>
-                                </svg>
-                                Images
-                            </button>
-                            <button class="brand-config-btn brand-card__action--effects" data-id="${brand.id}" title="Effects Config">
+                        <div class="brand-card__actions-row">
+                            <button class="btn btn--primary btn--sm brand-card__action--configure" data-id="${brand.id}">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
                                     <circle cx="12" cy="12" r="3"/>
                                     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
                                 </svg>
-                                Effects
+                                Configure
                             </button>
-                            <button class="brand-config-btn brand-card__action--subtitles" data-id="${brand.id}" title="Subtitle Config">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
-                                    <rect x="2" y="4" width="20" height="16" rx="2" ry="2"/>
-                                    <path d="M7 15h4M13 15h4M7 11h10"/>
-                                </svg>
-                                Subs
-                            </button>
-                            <button class="brand-config-btn brand-card__action--voice" data-id="${brand.id}" title="Voice & Narration">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
-                                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                                    <line x1="12" y1="19" x2="12" y2="23"/>
-                                    <line x1="8" y1="23" x2="16" y2="23"/>
-                                </svg>
-                                Voice
-                            </button>
-                            <button class="brand-config-btn brand-card__action--schedule" data-id="${brand.id}" title="Schedule Windows">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
-                                    <circle cx="12" cy="12" r="10"/>
-                                    <polyline points="12 6 12 12 16 14"/>
-                                </svg>
-                                Schedule
-                            </button>
-                        </div>
-                        <div class="brand-card__meta-row">
                             ${!isActive ? `
-                                <button class="btn btn--sm btn--secondary brand-card__action--activate" data-id="${brand.id}">
-                                    Set Active
-                                </button>
+                                <button class="btn btn--sm btn--ghost brand-card__action--activate" data-id="${brand.id}">Set Active</button>
                             ` : '<span class="brand-card__active-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg> Active</span>'}
                             <div class="brand-card__actions">
                                 <button class="btn btn--icon btn--sm brand-card__action--edit" data-id="${brand.id}" title="Edit Brand">
@@ -2284,8 +2663,6 @@
 
         function openMusicModal(brandId) {
             musicBrandId = brandId;
-            const brand = brandManager.get(brandId);
-            document.getElementById('music-brand-name').textContent = brand?.name || brandId;
             document.getElementById('music-modal').classList.add('active');
             document.getElementById('music-upload-form').style.display = 'none';
             pendingMusicFile = null;
@@ -2721,8 +3098,6 @@
 
         function openGameplayModal(brandId) {
             gameplayBrandId = brandId;
-            const brand = brandManager.get(brandId);
-            document.getElementById('gameplay-brand-name').textContent = brand?.name || brandId;
             document.getElementById('gameplay-modal').classList.add('active');
             document.getElementById('gameplay-upload-form').style.display = 'none';
             pendingGameplayFile = null;
@@ -2949,33 +3324,81 @@
         // =====================================================
         // EFFECTS CONFIG MODAL
         // =====================================================
+        // SHARED: Build Preset Tab Bar for config modals
+        // =====================================================
+        async function buildPresetTabBar(containerId, brandId, onSelect) {
+            const container = document.getElementById(containerId);
+            if (!container) return null;
+            const presets = await brandManager.getVibePresets(brandId);
+            container.innerHTML = '<span class="preset-tab-bar__label">Preset:</span>';
+            let defaultType = null;
+            (presets || []).forEach(p => {
+                const tab = document.createElement('button');
+                tab.className = 'preset-tab' + (p.is_default ? ' preset-tab--active' : '');
+                tab.dataset.type = p.template_type;
+                tab.innerHTML = (p.is_default ? '<span class="preset-tab__star">★</span> ' : '') + escapeHtml(p.name);
+                tab.addEventListener('click', () => {
+                    container.querySelectorAll('.preset-tab').forEach(t => t.classList.remove('preset-tab--active'));
+                    tab.classList.add('preset-tab--active');
+                    onSelect(p.template_type);
+                });
+                container.appendChild(tab);
+                if (p.is_default) defaultType = p.template_type;
+            });
+            if (!defaultType && presets?.length) defaultType = presets[0].template_type;
+            return defaultType;
+        }
+
+        function getActivePresetType(containerId) {
+            const container = document.getElementById(containerId);
+            if (!container) return null;
+            const active = container.querySelector('.preset-tab--active');
+            return active?.dataset?.type || null;
+        }
+
+        // =====================================================
+        // EFFECTS CONFIG MODAL (per-preset)
+        // =====================================================
 
         let effectsBrandId = null;
         let effectsOriginal = null; // snapshot for dirty-check
+        let effectsPresetType = null;
 
         async function openEffectsModal(brandId) {
             effectsBrandId = brandId;
-            const brand = brandManager.get(brandId);
-            document.getElementById('effects-brand-name').textContent = brand?.name || brandId;
             document.getElementById('effects-modal').classList.add('active');
-            document.getElementById('fx-status').textContent = 'Loading...';
+            document.getElementById('fx-status').textContent = 'Loading presets...';
 
+            // Build preset tabs
+            const defaultType = await buildPresetTabBar('fx-preset-tabs', brandId, async (templateType) => {
+                effectsPresetType = templateType;
+                await loadEffectsForPreset(brandId, templateType);
+            });
+            effectsPresetType = defaultType;
+            await loadEffectsForPreset(brandId, defaultType);
+            setupEffectsListeners();
+        }
+
+        async function loadEffectsForPreset(brandId, templateType) {
+            document.getElementById('fx-status').textContent = 'Loading...';
             try {
-                const cfg = await brandManager.getEffectsConfig(brandId);
+                const cfg = await brandManager.getPresetConfigSection(brandId, templateType, 'effects');
                 populateEffectsForm(cfg);
                 effectsOriginal = JSON.stringify(cfg);
-                document.getElementById('fx-status').textContent = cfg ? 'Loaded from DB' : 'No config set — using system defaults';
+                document.getElementById('fx-status').textContent = cfg
+                    ? 'Editing: ' + templateType
+                    : 'No effects config for ' + templateType + ' — using defaults';
             } catch (e) {
                 document.getElementById('fx-status').textContent = 'Failed to load config';
                 console.error(e);
             }
-            setupEffectsListeners();
         }
 
         function closeEffectsModal() {
             document.getElementById('effects-modal').classList.remove('active');
             effectsBrandId = null;
             effectsOriginal = null;
+            effectsPresetType = null;
         }
 
         function populateEffectsForm(cfg) {
@@ -3149,10 +3572,10 @@
             const resetClone = resetBtn.cloneNode(true);
             resetBtn.parentNode.replaceChild(resetClone, resetBtn);
             resetClone.addEventListener('click', async () => {
-                if (!confirm('Remove all effects config for this brand? It will use system defaults.')) return;
+                if (!confirm('Remove effects config for "' + effectsPresetType + '"? It will use system defaults.')) return;
                 try {
-                    await brandManager.saveEffectsConfig(effectsBrandId, null);
-                    toast.success('Effects config removed — using system defaults');
+                    await brandManager.savePresetConfigSection(effectsBrandId, effectsPresetType, 'effects', null);
+                    toast.success('Effects config removed for ' + effectsPresetType);
                     closeEffectsModal();
                 } catch (e) {
                     toast.error('Failed to reset effects config');
@@ -3224,8 +3647,8 @@
             
             try {
                 if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
-                await brandManager.saveEffectsConfig(effectsBrandId, cfg);
-                toast.success('Effects config saved');
+                await brandManager.savePresetConfigSection(effectsBrandId, effectsPresetType, 'effects', cfg);
+                toast.success('Effects saved for ' + effectsPresetType);
                 closeEffectsModal();
             } catch (e) {
                 toast.error('Failed to save effects config: ' + e.message);
@@ -3255,30 +3678,43 @@
 
         let subtitleBrandId = null;
         let subtitleOriginal = null;
+        let subtitlePresetType = null;
 
         async function openSubtitleModal(brandId) {
             subtitleBrandId = brandId;
-            const brand = brandManager.get(brandId);
-            document.getElementById('sub-brand-name').textContent = brand?.name || brandId;
             document.getElementById('subtitle-modal').classList.add('active');
-            document.getElementById('sub-status').textContent = 'Loading...';
+            document.getElementById('sub-status').textContent = 'Loading presets...';
 
+            // Build preset tabs
+            const defaultType = await buildPresetTabBar('sub-preset-tabs', brandId, async (templateType) => {
+                subtitlePresetType = templateType;
+                await loadSubtitleForPreset(brandId, templateType);
+            });
+            subtitlePresetType = defaultType;
+            await loadSubtitleForPreset(brandId, defaultType);
+            setupSubtitleListeners();
+        }
+
+        async function loadSubtitleForPreset(brandId, templateType) {
+            document.getElementById('sub-status').textContent = 'Loading...';
             try {
-                const cfg = await brandManager.getSubtitleConfig(brandId);
+                const cfg = await brandManager.getPresetConfigSection(brandId, templateType, 'subtitles');
                 populateSubtitleForm(cfg);
                 subtitleOriginal = JSON.stringify(cfg);
-                document.getElementById('sub-status').textContent = cfg ? 'Loaded from DB' : 'No config set — using preset defaults';
+                document.getElementById('sub-status').textContent = cfg
+                    ? 'Editing: ' + templateType
+                    : 'No subtitle config for ' + templateType + ' — using defaults';
             } catch (e) {
                 document.getElementById('sub-status').textContent = 'Failed to load config';
                 console.error(e);
             }
-            setupSubtitleListeners();
         }
 
         function closeSubtitleModal() {
             document.getElementById('subtitle-modal').classList.remove('active');
             subtitleBrandId = null;
             subtitleOriginal = null;
+            subtitlePresetType = null;
         }
 
         function populateSubtitleForm(cfg) {
@@ -3310,22 +3746,47 @@
             const style = document.getElementById('sub-style').value;
             const fontSize = Number(document.getElementById('sub-font-size').value);
             const highlightScary = document.getElementById('sub-highlight-scary').checked;
+            const wordsPerChunk = Number(document.getElementById('sub-words-per-chunk').value);
+            const emphasisScale = Number(document.getElementById('sub-emphasis-scale').value);
+            const position = document.getElementById('sub-position').value;
             const info = CAPTION_STYLE_INFO[style] || CAPTION_STYLE_INFO.bold;
 
+            // Build sample words — pick a chunk that matches wordsPerChunk
+            const sampleWords = ['The', 'shadow', 'crept', 'closer', 'in', 'the', 'darkness', 'tonight'];
+            const scarySet = new Set(['shadow', 'darkness', 'blood', 'death', 'scream']);
+            const chunk = sampleWords.slice(0, Math.min(wordsPerChunk, sampleWords.length));
+            const activeIdx = Math.min(1, chunk.length - 1); // highlight 2nd word (or 1st if only 1)
+
             const previewText = document.getElementById('sub-preview-text');
-            if (previewText) {
-                // Scale font size relative to preview container
-                const scaledSize = Math.max(12, Math.round(fontSize / 5));
-                previewText.style.fontFamily = `"${info.font}", sans-serif`;
-                previewText.style.fontSize = scaledSize + 'px';
-                previewText.style.color = info.color;
-                previewText.style.textShadow = `2px 2px 4px ${info.bg}, -1px -1px 2px ${info.bg}`;
-                
-                // Update scary word coloring
-                const scarySpan = previewText.querySelector('.sub-active');
-                if (scarySpan) {
-                    scarySpan.style.color = highlightScary ? '#FF1D1D' : '#FFFF00';
-                }
+            const previewScreen = document.getElementById('sub-preview-screen');
+            if (!previewText || !previewScreen) return;
+
+            // Scale font size relative to preview container
+            const scaledSize = Math.max(12, Math.round(fontSize / 5));
+            previewText.style.fontFamily = `"${info.font}", sans-serif`;
+            previewText.style.fontSize = scaledSize + 'px';
+            previewText.style.color = info.color;
+            previewText.style.textShadow = `2px 2px 4px ${info.bg}, -1px -1px 2px ${info.bg}`;
+
+            // Build chunk HTML with active word highlighted
+            const parts = chunk.map((word, idx) => {
+                const isActive = idx === activeIdx;
+                const isScary = highlightScary && scarySet.has(word.toLowerCase());
+                const scale = isActive ? (emphasisScale / 100) : 1;
+                const color = isActive
+                    ? (isScary ? '#FF1D1D' : '#FFFF00')
+                    : (isScary ? '#FF1D1D' : info.color);
+                return `<span style="color:${color};display:inline-block;transform:scale(${scale});transform-origin:center bottom;">${word}</span>`;
+            });
+            previewText.innerHTML = parts.join(' ');
+
+            // Position: align text in the preview screen
+            if (position === 'top') {
+                previewScreen.style.alignItems = 'flex-start';
+            } else if (position === 'center') {
+                previewScreen.style.alignItems = 'center';
+            } else {
+                previewScreen.style.alignItems = 'flex-end';
             }
         }
 
@@ -3358,10 +3819,11 @@
             scaryEl.parentNode.replaceChild(scaryClone, scaryEl);
             scaryClone.addEventListener('change', updateSubtitlePreview);
 
-            // Position dropdown (no preview update needed)
+            // Position dropdown → update preview
             const posEl = document.getElementById('sub-position');
             const posClone = posEl.cloneNode(true);
             posEl.parentNode.replaceChild(posClone, posEl);
+            posClone.addEventListener('change', updateSubtitlePreview);
 
             // Save button
             const saveBtn = document.getElementById('sub-save-btn');
@@ -3374,10 +3836,10 @@
             const resetClone = resetBtn.cloneNode(true);
             resetBtn.parentNode.replaceChild(resetClone, resetBtn);
             resetClone.addEventListener('click', async () => {
-                if (!confirm('Remove all subtitle config for this brand? It will use preset defaults.')) return;
+                if (!confirm('Remove subtitle config for "' + subtitlePresetType + '"? It will use preset defaults.')) return;
                 try {
-                    await brandManager.saveSubtitleConfig(subtitleBrandId, null);
-                    toast.success('Subtitle config removed — using preset defaults');
+                    await brandManager.savePresetConfigSection(subtitleBrandId, subtitlePresetType, 'subtitles', null);
+                    toast.success('Subtitle config removed for ' + subtitlePresetType);
                     closeSubtitleModal();
                 } catch (e) {
                     toast.error('Failed to reset subtitle config');
@@ -3402,8 +3864,8 @@
             
             try {
                 if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
-                await brandManager.saveSubtitleConfig(subtitleBrandId, cfg);
-                toast.success('Subtitle config saved');
+                await brandManager.savePresetConfigSection(subtitleBrandId, subtitlePresetType, 'subtitles', cfg);
+                toast.success('Subtitles saved for ' + subtitlePresetType);
                 closeSubtitleModal();
             } catch (e) {
                 toast.error('Failed to save subtitle config: ' + e.message);
@@ -3414,10 +3876,11 @@
         }
 
         // =========================================================
-        // IMAGE PROMPT CONFIG MODAL
+        // IMAGE PROMPT CONFIG MODAL (per-preset)
         // =========================================================
         let ipBrandId = null;
         let ipCurrentConfig = null;
+        let ipPresetType = null;
 
         async function openImagePromptModal(brandId) {
             ipBrandId = brandId;
@@ -3425,16 +3888,22 @@
             if (modal.parentElement !== document.body) document.body.appendChild(modal);
 
             // Find brand name
-            const allBrands = brandManager.getAll();
-            const brand = allBrands.find(b => b.id === brandId);
-            document.getElementById('ip-brand-name').textContent = brand?.name || brandId;
+            // Build preset tabs (replaces old vibe dropdown)
+            const defaultType = await buildPresetTabBar('ip-preset-tabs', brandId, async (templateType) => {
+                ipPresetType = templateType;
+                // Also sync the old vibe dropdown (kept for "Load Preset Defaults" button)
+                const vibeSelect = document.getElementById('ip-vibe-preset');
+                if (vibeSelect) vibeSelect.value = templateType;
+                await loadImagePromptConfig(brandId, templateType);
+            });
+            ipPresetType = defaultType;
 
-            // Populate vibe preset dropdown from brand's DB presets
+            // Also populate the old dropdown (in case it's still visible) and sync
             const vibeSelect = document.getElementById('ip-vibe-preset');
             await populateVibeDropdown(vibeSelect, brandId);
+            if (vibeSelect && defaultType) vibeSelect.value = defaultType;
 
-            const vibe = vibeSelect.value || 'urban_legend';
-            await loadImagePromptConfig(brandId, vibe);
+            await loadImagePromptConfig(brandId, defaultType);
 
             modal.classList.add('active');
             document.body.style.overflow = 'hidden';
@@ -3481,20 +3950,19 @@
             modal.classList.remove('active');
             document.body.style.overflow = '';
             ipBrandId = null;
+            ipPresetType = null;
         }
 
         async function loadImagePromptConfig(brandId, vibePreset) {
             try {
                 document.getElementById('ip-status').textContent = 'Loading...';
-                const cfg = await brandManager.getImagePromptConfig(brandId, vibePreset);
-                ipCurrentConfig = cfg;
-                populateImagePromptForm(cfg);
-
-                // Check if brand has overrides
-                const raw = await brandManager.getImagePromptConfigRaw(brandId);
+                // Load this preset's raw config_overrides.image_prompt
+                const raw = await brandManager.getPresetConfigSection(brandId, vibePreset, 'image_prompt');
+                ipCurrentConfig = raw;
+                populateImagePromptForm(raw);
                 document.getElementById('ip-status').textContent = raw
-                    ? 'Brand overrides active'
-                    : 'Using preset defaults (no brand overrides)';
+                    ? 'Editing: ' + vibePreset
+                    : 'No image prompt config for ' + vibePreset + ' — using defaults';
             } catch (e) {
                 document.getElementById('ip-status').textContent = 'Failed to load config';
                 console.error(e);
@@ -3503,6 +3971,21 @@
 
         function populateImagePromptForm(cfg) {
             if (!cfg) return;
+            document.getElementById('ip-image-model').value = cfg.image_model || 'gpt-image-1';
+            // ComfyUI-specific fields
+            document.getElementById('ip-comfyui-workflow').value = cfg.comfyui_workflow || 'txt2img_sdxl';
+            document.getElementById('ip-comfyui-checkpoint').value = cfg.comfyui_checkpoint || '';
+            document.getElementById('ip-comfyui-steps').value = cfg.comfyui_steps || 28;
+            document.getElementById('ip-comfyui-cfg').value = cfg.comfyui_cfg || 5.5;
+            // img2vid fields
+            document.getElementById('ip-video-mode').value = cfg.video_mode || 'static';
+            document.getElementById('ip-img2vid-workflow').value = cfg.img2vid_workflow || 'animatediff_ipa';
+            document.getElementById('ip-img2vid-motion').value = cfg.img2vid_motion ?? 0.5;
+            document.getElementById('ip-img2vid-motion-label').textContent = cfg.img2vid_motion ?? 0.5;
+            document.getElementById('ip-img2vid-fps').value = cfg.img2vid_fps || 8;
+            document.getElementById('ip-img2vid-frames').value = cfg.img2vid_frames || 25;
+            toggleComfyUISettings();
+            toggleImg2VidSettings();
             document.getElementById('ip-art-style').value = cfg.art_style || 'cinematic-dark';
             document.getElementById('ip-style-prompt').value = cfg.style_prompt || '';
             document.getElementById('ip-environment').value = cfg.environment || '';
@@ -3516,8 +3999,175 @@
             updateImagePromptPreview();
         }
 
+        // ── Art Style Change Handler ──
+        // When the art style dropdown changes, auto-populate the style_prompt
+        // and color palette from the built-in style definition if the fields
+        // are empty or still match the previous style's defaults.
+        const ART_STYLE_DEFAULTS = {
+            'cinematic-dark': {
+                style_prompt: 'Cinematic dark photography. Moody desaturated colors, deep shadows, film grain, A24 horror film aesthetic. Realistic but atmospheric, shallow depth of field, dramatic lighting.',
+                color_palette: 'muted colors, deep shadows, film grain, desaturated with selective color',
+                lighting: 'low-key, harsh directional shadows, rim lighting',
+                mood: 'dread, tension, atmospheric unease',
+            },
+            'analog-horror': {
+                style_prompt: 'Dark analog horror image with heavy VHS static, glitch artifacts, scanlines, and digital noise. Low exposure, eerie dim lighting, muted washed-out colors. Found-footage style.',
+                color_palette: 'washed out colors, VHS grain, digital artifacts, scanlines, muted greens and grays',
+                lighting: 'low exposure, flickering, dim ambient glow',
+                mood: 'eerie, unsettling, creeping dread',
+            },
+            'uncanny-illustrated': {
+                style_prompt: 'Editorial cartoon illustration in graphic novel style. Cel-shaded horror scene with bold black ink outlines. Flat shading with varied color palette. Posterized tones like a vintage comic panel. Uncanny faces with smiles too wide, eyes too white.',
+                color_palette: 'warm natural skin tones, varied clothing colors, rich environment colors, VHS chromatic aberration',
+                lighting: 'flat cartoon lighting with dramatic shadows',
+                mood: 'uncanny, disturbing, lo-fi horror cartoon',
+            },
+            'horror-anime': {
+                style_prompt: 'Dark anime horror illustration. Detailed manga-style linework with heavy cross-hatching for shadows. Dramatic poses, expressive characters. Style of Junji Ito or Berserk manga. High contrast with color accents.',
+                color_palette: 'high contrast, dramatic blacks, selective color accents, manga shading',
+                lighting: 'dramatic anime lighting, stark contrasts',
+                mood: 'intense, visceral, psychological horror',
+            },
+            'oil-painting': {
+                style_prompt: 'Classic oil painting horror art. Renaissance masters meets dark romanticism. Rich textures, dramatic chiaroscuro lighting, painterly brushstrokes. Style of Caravaggio, Goya\'s Black Paintings.',
+                color_palette: 'rich deep colors, warm shadows, golden highlights, classical palette',
+                lighting: 'chiaroscuro, baroque candlelight, dramatic',
+                mood: 'timeless, dark romantic, ominous grandeur',
+            },
+            'found-footage': {
+                style_prompt: 'Found footage horror aesthetic. Grainy VHS quality, security camera look, analog distortion. Night vision green or washed out colors. Blair Witch Project aesthetic.',
+                color_palette: 'washed out colors, VHS grain, night vision green, analog artifacts',
+                lighting: 'surveillance camera, night vision, harsh flash',
+                mood: 'paranoia, voyeuristic dread, accidental capture',
+            },
+            'surreal-nightmare': {
+                style_prompt: 'Surrealist nightmare horror. Impossible geometry, melting forms, dream logic. Style of Zdzisław Beksiński, H.R. Giger, or Salvador Dali. Organic meets mechanical.',
+                color_palette: 'muted earth tones, sepia, burnt oranges, biomechanical grays',
+                lighting: 'otherworldly glow, no natural light source',
+                mood: 'subconscious terror, fever dream, existential dread',
+            },
+            'rnmort': {
+                style_prompt: 'Adult animated cartoon illustration in the style of Rick and Morty. Bold thick black outlines on every character and object. Flat cel-shaded coloring with vibrant saturated hues. Exaggerated character proportions — large expressive heads, dot-like pupils, wide mouths. Dark horror atmosphere but rendered in colorful cartoon style. Fluid organic shapes, slightly wobbly linework for hand-drawn feel.',
+                color_palette: 'vibrant saturated cartoon colors, neon greens and purples, warm skin tones, deep moody backgrounds with bright character colors',
+                lighting: 'flat cartoon lighting with dramatic color contrast, neon accent glows',
+                mood: 'darkly humorous, unsettling cartoon horror, absurd dread',
+            },
+            'manga-horror': {
+                style_prompt: 'Dark horror manga illustration in the style of Junji Ito. Heavy black ink linework, obsessive cross-hatching, extreme detail on faces and hands showing dread. High contrast monochrome with selective blood-red accents. Panel-like compositions, dramatic foreshortening, spiral and repetitive motifs suggesting counting obsession. Thick bold outlines, deep pure blacks, white negative space used for horror emphasis.',
+                color_palette: 'monochrome with selective blood-red accents, pure deep blacks, stark whites, ink wash greys, no warm tones except blood',
+                lighting: 'harsh directional manga lighting, pure black shadows with no gradient, single dramatic light source, spotlight isolation on faces, rim lighting for silhouettes',
+                mood: 'obsessive counting dread, something extra that should not be there, Junji Ito spiral madness, uncanny wrongness in numbers and faces',
+            },
+            'vhs-horror': {
+                style_prompt: 'Eerie horror photography with VHS tape degradation, warped distorted realism, analog video artifacts, grainy surveillance quality, chromatic aberration, found-footage documentary aesthetic.',
+                color_palette: 'washed-out sickly green and yellow undertones, VHS color bleeding, crushed blacks, sodium vapor orange, desaturated flesh tones',
+                lighting: 'harsh overhead fluorescent, security camera angles, single-source interrogation lighting, flickering CRT glow',
+                mood: 'documentary unease, archival dread, something wrong in old footage',
+            },
+        };
+
+        function onArtStyleChanged() {
+            const style = document.getElementById('ip-art-style').value;
+            const defaults = ART_STYLE_DEFAULTS[style];
+            if (!defaults) return;
+
+            // Check if current style_prompt is empty or matches any known default
+            const currentPrompt = document.getElementById('ip-style-prompt').value.trim();
+            const isDefaultPrompt = !currentPrompt || Object.values(ART_STYLE_DEFAULTS).some(d => 
+                currentPrompt === d.style_prompt || currentPrompt.startsWith(d.style_prompt.substring(0, 40))
+            );
+
+            if (isDefaultPrompt) {
+                document.getElementById('ip-style-prompt').value = defaults.style_prompt;
+            }
+
+            // Same for color palette
+            const currentPalette = document.getElementById('ip-color-palette').value.trim();
+            const isDefaultPalette = !currentPalette || Object.values(ART_STYLE_DEFAULTS).some(d =>
+                currentPalette === d.color_palette || currentPalette.startsWith(d.color_palette.substring(0, 30))
+            );
+            if (isDefaultPalette) {
+                document.getElementById('ip-color-palette').value = defaults.color_palette;
+            }
+
+            // Same for lighting
+            const currentLighting = document.getElementById('ip-lighting').value.trim();
+            const isDefaultLighting = !currentLighting || Object.values(ART_STYLE_DEFAULTS).some(d =>
+                currentLighting === d.lighting || currentLighting.startsWith(d.lighting.substring(0, 20))
+            );
+            if (isDefaultLighting) {
+                document.getElementById('ip-lighting').value = defaults.lighting;
+            }
+
+            // Same for mood
+            const currentMood = document.getElementById('ip-mood').value.trim();
+            const isDefaultMood = !currentMood || Object.values(ART_STYLE_DEFAULTS).some(d =>
+                currentMood === d.mood || currentMood.startsWith(d.mood.substring(0, 20))
+            );
+            if (isDefaultMood) {
+                document.getElementById('ip-mood').value = defaults.mood;
+            }
+
+            updateImagePromptPreview();
+        }
+
+        // ── ComfyUI Settings Toggle ──
+        function toggleComfyUISettings() {
+            const model = document.getElementById('ip-image-model').value;
+            const panel = document.getElementById('comfyui-settings');
+            if (panel) {
+                panel.style.display = model === 'comfyui' ? 'block' : 'none';
+            }
+            // Also toggle img2vid visibility since it depends on ComfyUI
+            toggleImg2VidSettings();
+        }
+
+        // ── img2vid Settings Toggle ──
+        function toggleImg2VidSettings() {
+            const videoMode = document.getElementById('ip-video-mode')?.value;
+            const panel = document.getElementById('img2vid-settings');
+            if (panel) {
+                panel.style.display = videoMode === 'img2vid' ? 'block' : 'none';
+            }
+        }
+
+        // ── ComfyUI Health Check ──
+        async function checkComfyUIHealth() {
+            const dot = document.getElementById('comfyui-health-dot');
+            const info = document.getElementById('comfyui-health-info');
+            if (!dot || !info) return;
+
+            dot.style.background = '#d29922'; // yellow = checking
+            info.textContent = 'Checking...';
+
+            try {
+                // Try video-renderer's comfyui-health endpoint
+                const rendererUrl = window.appConfig?.VIDEO_RENDERER_URL
+                    || window.appConfig?.FFMPEG_RENDERER_URL
+                    || 'http://localhost:3001';
+                const res = await fetch(`${rendererUrl}/comfyui-health`, { signal: AbortSignal.timeout(5000) });
+
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+
+                if (data.available) {
+                    dot.style.background = '#3fb950'; // green
+                    info.innerHTML = `<strong style="color:#3fb950">✓ Online</strong> — ${data.gpu || 'GPU'} | VRAM: ${data.gpu_vram_free_mb || '?'}MB free / ${data.gpu_vram_total_mb || '?'}MB | Queue: ${data.queue_size ?? '?'}/${data.queue_limit ?? '?'}`;
+                } else {
+                    dot.style.background = '#d29922'; // yellow
+                    const reason = data.fallback_reason || 'unavailable';
+                    info.innerHTML = `<strong style="color:#d29922">⚠ ${reason}</strong> — ${data.gpu || 'GPU'} | VRAM: ${data.gpu_vram_free_mb || '?'}MB free | Queue: ${data.queue_size ?? '?'}/${data.queue_limit ?? '?'}`;
+                }
+            } catch (err) {
+                dot.style.background = '#f85149'; // red
+                info.innerHTML = `<strong style="color:#f85149">✗ Offline</strong> — Could not reach video renderer. Make sure <code>server_clean.js</code> and ComfyUI are running.`;
+            }
+        }
+
         function buildImagePromptConfigFromForm() {
-            return {
+            const imageModel = document.getElementById('ip-image-model').value;
+            const cfg = {
+                image_model: imageModel,
                 art_style: document.getElementById('ip-art-style').value,
                 style_prompt: document.getElementById('ip-style-prompt').value.trim(),
                 environment: document.getElementById('ip-environment').value.trim(),
@@ -3529,6 +4179,22 @@
                 negative_prompt: document.getElementById('ip-negative').value.trim(),
                 suffix: document.getElementById('ip-suffix').value.trim(),
             };
+            // Include ComfyUI settings only when ComfyUI is selected
+            if (imageModel === 'comfyui') {
+                cfg.comfyui_workflow = document.getElementById('ip-comfyui-workflow').value;
+                cfg.comfyui_checkpoint = document.getElementById('ip-comfyui-checkpoint').value.trim() || null;
+                cfg.comfyui_steps = parseInt(document.getElementById('ip-comfyui-steps').value) || 28;
+                cfg.comfyui_cfg = parseFloat(document.getElementById('ip-comfyui-cfg').value) || 5.5;
+                // img2vid settings
+                cfg.video_mode = document.getElementById('ip-video-mode').value || 'static';
+                if (cfg.video_mode === 'img2vid') {
+                    cfg.img2vid_workflow = document.getElementById('ip-img2vid-workflow').value || 'animatediff_ipa';
+                    cfg.img2vid_motion = parseFloat(document.getElementById('ip-img2vid-motion').value) ?? 0.5;
+                    cfg.img2vid_fps = parseInt(document.getElementById('ip-img2vid-fps').value) || 8;
+                    cfg.img2vid_frames = parseInt(document.getElementById('ip-img2vid-frames').value) || 25;
+                }
+            }
+            return cfg;
         }
 
         function updateImagePromptPreview() {
@@ -3553,24 +4219,33 @@
 
         // Wire up live preview on all inputs
         document.addEventListener('DOMContentLoaded', () => {
-            const ipFields = ['ip-art-style', 'ip-style-prompt', 'ip-environment', 'ip-color-palette',
+            const ipFields = ['ip-image-model', 'ip-art-style', 'ip-style-prompt', 'ip-environment', 'ip-color-palette',
                               'ip-lighting', 'ip-mood', 'ip-camera-angles', 'ip-tension',
-                              'ip-negative', 'ip-suffix'];
+                              'ip-negative', 'ip-suffix',
+                              'ip-comfyui-workflow', 'ip-comfyui-checkpoint', 'ip-comfyui-steps', 'ip-comfyui-cfg'];
             ipFields.forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.addEventListener('input', updateImagePromptPreview);
                 if (el) el.addEventListener('change', updateImagePromptPreview);
             });
 
-            // Load Preset Defaults button
+            // Load Preset Defaults button (reloads current preset's config)
             document.getElementById('ip-load-preset').addEventListener('click', async () => {
-                const vibe = document.getElementById('ip-vibe-preset').value;
+                const vibe = ipPresetType || document.getElementById('ip-vibe-preset').value;
                 if (ipBrandId) await loadImagePromptConfig(ipBrandId, vibe);
             });
 
-            // Vibe preset change also reloads
+            // Vibe preset dropdown change syncs with tabs
             document.getElementById('ip-vibe-preset').addEventListener('change', async () => {
                 const vibe = document.getElementById('ip-vibe-preset').value;
+                ipPresetType = vibe;
+                // Sync tab bar highlight
+                const tabBar = document.getElementById('ip-preset-tabs');
+                if (tabBar) {
+                    tabBar.querySelectorAll('.preset-tab').forEach(t => {
+                        t.classList.toggle('preset-tab--active', t.dataset.type === vibe);
+                    });
+                }
                 if (ipBrandId) await loadImagePromptConfig(ipBrandId, vibe);
             });
 
@@ -3580,12 +4255,12 @@
 
             // Reset button
             document.getElementById('ip-reset-btn').addEventListener('click', async () => {
-                if (!confirm('Remove all image prompt overrides for this brand? It will use preset defaults.')) return;
+                const presetType = ipPresetType || getActivePresetType('ip-preset-tabs');
+                if (!confirm('Remove image prompt config for "' + presetType + '"? It will use system defaults.')) return;
                 try {
-                    await brandManager.saveImagePromptConfig(ipBrandId, null);
-                    toast.success('Image prompt config reset to preset defaults');
-                    const vibe = document.getElementById('ip-vibe-preset').value;
-                    await loadImagePromptConfig(ipBrandId, vibe);
+                    await brandManager.savePresetConfigSection(ipBrandId, presetType, 'image_prompt', null);
+                    toast.success('Image config reset for ' + presetType);
+                    await loadImagePromptConfig(ipBrandId, presetType);
                 } catch (e) {
                     toast.error('Failed to reset: ' + e.message);
                 }
@@ -4533,6 +5208,66 @@ Respond in JSON:
         }
 
         // =====================================================
+        // =====================================================
+        // SETTINGS HUB MODAL
+        // =====================================================
+
+        let settingsHubBrandId = null;
+
+        function openSettingsHub(brandId) {
+            settingsHubBrandId = brandId;
+            const brand = brandManager.get(brandId);
+            document.getElementById('settings-hub-brand-name').textContent = brand?.name || 'Brand Settings';
+            const modal = document.getElementById('settings-hub-modal');
+            modal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeSettingsHub() {
+            document.getElementById('settings-hub-modal').classList.remove('active');
+            document.body.style.overflow = '';
+            settingsHubBrandId = null;
+        }
+
+        // Hub tile click → open corresponding config modal
+        document.getElementById('settings-hub-modal').addEventListener('click', (e) => {
+            const tile = e.target.closest('.settings-hub__tile');
+            if (!tile || !settingsHubBrandId) return;
+            const action = tile.dataset.action;
+            const brandId = settingsHubBrandId;
+            closeSettingsHub();
+            switch (action) {
+                case 'images':    openImagePromptModal(brandId); break;
+                case 'effects':   openEffectsModal(brandId); break;
+                case 'subtitles': openSubtitleModal(brandId); break;
+                case 'voice':     openVoiceModal(brandId); break;
+                case 'music':     openMusicModal(brandId); break;
+                case 'gameplay':  openGameplayModal(brandId); break;
+                case 'schedule':  openScheduleModal(brandId); break;
+                case 'presets':   openVibePresetsModal(brandId); break;
+                case 'overlay':   openOverlayModal(brandId); break;
+            }
+        });
+
+        // Navigate back to Settings Hub from any config modal
+        function backToHub(from) {
+            let brandId;
+            switch (from) {
+                case 'music':     brandId = musicBrandId; closeMusicModal(); break;
+                case 'gameplay':  brandId = gameplayBrandId; closeGameplayModal(); break;
+                case 'effects':   brandId = effectsBrandId; closeEffectsModal(); break;
+                case 'subtitles': brandId = subtitleBrandId; closeSubtitleModal(); break;
+                case 'images':    brandId = ipBrandId; closeImagePromptModal(); break;
+                case 'voice':     brandId = voiceBrandId; closeVoiceModal(); break;
+                case 'schedule':  brandId = scheduleBrandId; closeScheduleModal(); break;
+                case 'presets':   brandId = vibesBrandId; closeVibePresetsModal(); break;
+                case 'overlay':   brandId = overlayBrandId; closeOverlayModal(); break;
+            }
+            if (brandId) openSettingsHub(brandId);
+        }
+
+
+        // =====================================================
         // VIBE PRESETS MODAL
         // =====================================================
 
@@ -4568,8 +5303,6 @@ Respond in JSON:
         async function openVibePresetsModal(brandId) {
             vibesBrandId = brandId;
             vibesModifiedWeights = {};
-            const brand = brandManager.get(brandId);
-            document.getElementById('vibes-brand-name').textContent = brand?.name || brandId;
 
             const modal = document.getElementById('vibes-modal');
             if (modal.parentElement !== document.body) document.body.appendChild(modal);
@@ -4826,10 +5559,11 @@ Respond in JSON:
         async function saveImagePromptConfig() {
             const cfg = buildImagePromptConfigFromForm();
             const btn = document.getElementById('ip-save-btn');
+            const presetType = ipPresetType || getActivePresetType('ip-preset-tabs');
             try {
                 if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
-                await brandManager.saveImagePromptConfig(ipBrandId, cfg);
-                toast.success('Image prompt config saved');
+                await brandManager.savePresetConfigSection(ipBrandId, presetType, 'image_prompt', cfg);
+                toast.success('Image config saved for ' + presetType);
                 closeImagePromptModal();
             } catch (e) {
                 toast.error('Failed to save: ' + e.message);
@@ -4840,33 +5574,42 @@ Respond in JSON:
         }
 
         // =====================================================
-        // VOICE CONFIG MODAL
+        // VOICE CONFIG MODAL (per-preset)
         // =====================================================
 
         let voiceBrandId = null;
+        let voicePresetType = null;
 
         async function openVoiceModal(brandId) {
             voiceBrandId = brandId;
-            const brand = brandManager.get(brandId);
-            document.getElementById('voice-brand-name').textContent = brand?.name || brandId;
             document.getElementById('voice-modal').classList.add('active');
 
-            // Load existing config
-            try {
-                const cfg = await brandManager.getVoiceConfig(brandId);
-                populateVoiceForm(cfg);
-            } catch (e) {
-                console.error('Failed to load voice config:', e);
-                populateVoiceForm(null);
-            }
+            // Build preset tabs
+            const defaultType = await buildPresetTabBar('voice-preset-tabs', brandId, async (templateType) => {
+                voicePresetType = templateType;
+                await loadVoiceForPreset(brandId, templateType);
+            });
+            voicePresetType = defaultType;
+            await loadVoiceForPreset(brandId, defaultType);
 
             // Bind events (clone to remove old listeners)
             bindVoiceEvents();
         }
 
+        async function loadVoiceForPreset(brandId, templateType) {
+            try {
+                const cfg = await brandManager.getPresetConfigSection(brandId, templateType, 'voice');
+                populateVoiceForm(cfg);
+            } catch (e) {
+                console.error('Failed to load voice config:', e);
+                populateVoiceForm(null);
+            }
+        }
+
         function closeVoiceModal() {
             document.getElementById('voice-modal').classList.remove('active');
             voiceBrandId = null;
+            voicePresetType = null;
         }
 
         function populateVoiceForm(cfg) {
@@ -4909,8 +5652,8 @@ Respond in JSON:
             resetBtn.parentNode.replaceChild(resetClone, resetBtn);
             resetClone.addEventListener('click', async () => {
                 try {
-                    await brandManager.saveVoiceConfig(voiceBrandId, null);
-                    toast.success('Voice config reset to defaults');
+                    await brandManager.savePresetConfigSection(voiceBrandId, voicePresetType, 'voice', null);
+                    toast.success('Voice config reset for ' + voicePresetType);
                     closeVoiceModal();
                 } catch (e) {
                     toast.error('Failed to reset: ' + e.message);
@@ -4929,11 +5672,12 @@ Respond in JSON:
             if (instructions) cfg.instructions = instructions;
             if (speed !== 1.0) cfg.speed = speed;
 
+            const finalCfg = Object.keys(cfg).length > 0 ? cfg : null;
             const btn = document.getElementById('voice-save-btn');
             try {
                 if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
-                await brandManager.saveVoiceConfig(voiceBrandId, Object.keys(cfg).length > 0 ? cfg : null);
-                toast.success('Voice config saved');
+                await brandManager.savePresetConfigSection(voiceBrandId, voicePresetType, 'voice', finalCfg);
+                toast.success('Voice saved for ' + voicePresetType);
                 closeVoiceModal();
             } catch (e) {
                 toast.error('Failed to save: ' + e.message);
@@ -4944,6 +5688,203 @@ Respond in JSON:
         }
 
         // =====================================================
+        // VIDEO OVERLAY MODAL
+        // =====================================================
+
+        let overlayBrandId = null;
+        let overlayCurrentConfig = null;
+        let overlayCurrentPreset = null;
+
+        function setupOverlayDropzone() {
+            const dropzone = document.getElementById('overlay-dropzone');
+            const fileInput = document.getElementById('overlay-file-input');
+            const modal = document.getElementById('overlay-modal');
+            if (!dropzone || !fileInput || !modal) return;
+
+            // Show active state when dragging over the entire modal
+            modal.addEventListener('dragenter', (e) => {
+                e.preventDefault();
+                dropzone.classList.add('dragover');
+            });
+
+            dropzone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropzone.classList.add('dragover');
+            });
+            dropzone.addEventListener('dragleave', () => {
+                dropzone.classList.remove('dragover');
+            });
+            dropzone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropzone.classList.remove('dragover');
+                const file = e.dataTransfer.files[0];
+                if (file && (file.type === 'video/mp4' || file.type === 'video/webm')) {
+                    handleOverlayFileSelect({ target: { files: [file] } });
+                } else {
+                    if (typeof toast !== 'undefined') toast.error('Please drop an MP4 or WebM video file');
+                    else alert('Please drop an MP4 or WebM video file');
+                }
+            });
+
+            // Click dropzone to open file picker
+            dropzone.addEventListener('click', () => fileInput.click());
+        }
+
+        // Init dropzone once DOM is ready
+        setupOverlayDropzone();
+
+        async function openOverlayModal(brandId) {
+            overlayBrandId = brandId;
+            overlayCurrentConfig = null;
+            overlayCurrentPreset = null;
+            document.getElementById('overlay-modal').classList.add('active');
+            document.getElementById('overlay-current-status').style.display = 'none';
+            document.getElementById('overlay-opacity-section').style.display = 'none';
+            document.getElementById('overlay-upload-progress').style.display = 'none';
+
+            // Populate preset selector
+            const select = document.getElementById('overlay-preset-select');
+            select.innerHTML = '<option value="">Select a preset...</option>';
+            try {
+                const presets = await brandManager.getVibePresets(brandId);
+                for (const p of presets) {
+                    const opt = document.createElement('option');
+                    opt.value = p.template_type;
+                    opt.textContent = p.name || p.template_type;
+                    select.appendChild(opt);
+                }
+            } catch (err) {
+                console.error('Failed to load presets for overlay modal:', err);
+            }
+        }
+
+        function closeOverlayModal() {
+            document.getElementById('overlay-modal').classList.remove('active');
+            overlayBrandId = null;
+            overlayCurrentConfig = null;
+            overlayCurrentPreset = null;
+        }
+
+        async function loadOverlayForPreset() {
+            const select = document.getElementById('overlay-preset-select');
+            const presetName = select?.value;
+            if (!presetName || !overlayBrandId) {
+                document.getElementById('overlay-current-status').style.display = 'none';
+                document.getElementById('overlay-opacity-section').style.display = 'none';
+                overlayCurrentPreset = null;
+                overlayCurrentConfig = null;
+                return;
+            }
+            overlayCurrentPreset = presetName;
+            try {
+                const config = await brandManager.getOverlayConfig(overlayBrandId, presetName);
+                overlayCurrentConfig = config;
+                if (config && config.enabled) {
+                    showOverlayActive(config);
+                } else {
+                    document.getElementById('overlay-current-status').style.display = 'none';
+                    document.getElementById('overlay-opacity-section').style.display = 'none';
+                }
+            } catch (err) {
+                console.error('Failed to load overlay config:', err);
+                document.getElementById('overlay-current-status').style.display = 'none';
+                document.getElementById('overlay-opacity-section').style.display = 'none';
+            }
+        }
+
+        function showOverlayActive(config) {
+            document.getElementById('overlay-current-status').style.display = 'block';
+            document.getElementById('overlay-current-filename').textContent = config.display_name || 'overlay.mp4';
+            document.getElementById('overlay-opacity-section').style.display = 'block';
+            const slider = document.getElementById('overlay-opacity-slider');
+            const label = document.getElementById('overlay-opacity-value');
+            slider.value = Math.round((config.opacity || 0.4) * 100);
+            label.textContent = Math.round((config.opacity || 0.4) * 100) + '%';
+        }
+
+        async function handleOverlayFileSelect(event) {
+            const files = event.target?.files || event.dataTransfer?.files;
+            const file = files?.[0];
+            if (!file) return;
+            if (!overlayCurrentPreset) {
+                if (typeof toast !== 'undefined') toast.error('Please select a preset first');
+                else alert('Please select a preset first');
+                if (event.target) event.target.value = '';
+                return;
+            }
+            if (!file.type.startsWith('video/')) {
+                if (typeof toast !== 'undefined') toast.error('Please select a video file (MP4 or WebM)');
+                else alert('Please select a video file (MP4 or WebM)');
+                if (event.target) event.target.value = '';
+                return;
+            }
+
+            const progressEl = document.getElementById('overlay-upload-progress');
+            const bar = document.getElementById('overlay-progress-bar');
+            const pct = document.getElementById('overlay-progress-pct');
+            progressEl.style.display = 'block';
+            bar.style.width = '30%';
+            pct.textContent = '30';
+
+            try {
+                const opacitySlider = document.getElementById('overlay-opacity-slider');
+                const opacity = opacitySlider ? parseInt(opacitySlider.value) / 100 : 0.4;
+
+                const config = await brandManager.uploadOverlayVideo(
+                    overlayBrandId,
+                    overlayCurrentPreset,
+                    file,
+                    { opacity, display_name: file.name }
+                );
+
+                bar.style.width = '100%';
+                pct.textContent = '100';
+                overlayCurrentConfig = config;
+                showOverlayActive(config);
+                if (typeof toast !== 'undefined') toast.success('Overlay uploaded!');
+
+                setTimeout(() => { progressEl.style.display = 'none'; bar.style.width = '0%'; }, 1200);
+            } catch (err) {
+                console.error('Overlay upload failed:', err);
+                alert('Upload failed: ' + err.message);
+                progressEl.style.display = 'none';
+            }
+            if (event.target) event.target.value = '';
+        }
+
+        async function removeCurrentOverlay() {
+            if (!overlayCurrentPreset || !overlayBrandId) return;
+            if (!confirm('Remove overlay video from "' + overlayCurrentPreset + '"?')) return;
+            try {
+                await brandManager.removeOverlayVideo(overlayBrandId, overlayCurrentPreset);
+                overlayCurrentConfig = null;
+                document.getElementById('overlay-current-status').style.display = 'none';
+                document.getElementById('overlay-opacity-section').style.display = 'none';
+                if (typeof toast !== 'undefined') toast.success('Overlay removed');
+            } catch (err) {
+                console.error('Failed to remove overlay:', err);
+                alert('Failed to remove: ' + err.message);
+            }
+        }
+
+        function onOverlayOpacityChange() {
+            const slider = document.getElementById('overlay-opacity-slider');
+            const label = document.getElementById('overlay-opacity-value');
+            if (!slider || !label) return;
+            label.textContent = slider.value + '%';
+
+            clearTimeout(onOverlayOpacityChange._t);
+            onOverlayOpacityChange._t = setTimeout(async () => {
+                if (!overlayCurrentPreset || !overlayBrandId || !overlayCurrentConfig) return;
+                try {
+                    await brandManager.updateOverlayOpacity(overlayBrandId, overlayCurrentPreset, parseInt(slider.value) / 100);
+                } catch (err) {
+                    console.error('Failed to update overlay opacity:', err);
+                }
+            }, 600);
+        }
+
+        // =====================================================
         // SCHEDULE WINDOWS MODAL
         // =====================================================
 
@@ -4951,8 +5892,6 @@ Respond in JSON:
 
         async function openScheduleModal(brandId) {
             scheduleBrandId = brandId;
-            const brand = brandManager.get(brandId);
-            document.getElementById('schedule-brand-name').textContent = brand?.name || brandId;
             document.getElementById('schedule-modal').classList.add('active');
 
             // Load existing config
