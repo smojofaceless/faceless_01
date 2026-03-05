@@ -1816,10 +1816,8 @@ function getAdapter(platform: string): PlatformAdapter {
   const p = platform.toLowerCase();
 
   // ── Disabled platforms ──────────────────────────────────────────────
-  // TikTok: API in review — nothing actually posts
   // Twitter/X: Requires paid API tier
   const DISABLED_PLATFORMS: Record<string, string> = {
-    'tiktok': 'TikTok API is in review — posting disabled until approved',
     'twitter': 'Twitter/X requires paid API tier — posting disabled',
     'x': 'Twitter/X requires paid API tier — posting disabled',
   };
@@ -2173,7 +2171,7 @@ serve(async (req: Request) => {
   try {
     // Initialize Supabase client
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const supabaseKey = Deno.env.get("SVC_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     
     if (!supabaseUrl || !supabaseKey) {
       throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
