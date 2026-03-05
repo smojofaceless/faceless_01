@@ -1179,28 +1179,29 @@ async function addVideoOverlay(inputPath, outputPath, overlayPath, opacity = 0.4
     // Clamp opacity
     const op = Math.max(0.05, Math.min(1.0, opacity));
 
-    // Build the FFmpeg filter graph for screen-blend overlay compositing.
+    // Build the FFmpeg filter graph for overlay compositing.
     //
     // Design:
     //  1. scale2ref: Scale overlay (any resolution) to match main video dimensions
-    //  2. colorchannelmixer rr/gg/bb: Reduce overlay RGB intensity for opacity control
-    //     (NOT alpha — blend filter ignores alpha, operates per-channel independently)
-    //  3. blend=screen: Black → transparent, light scratches/dust → additive glow
+    //  2. colorkey: Remove black background → transparent (similarity threshold)
+    //  3. format=yuva420p: Ensure alpha channel exists for overlay filter
+    //  4. colorchannelmixer aa=: Control overlay opacity via alpha channel
+    //  5. overlay=0:0: Standard alpha compositing (black = transparent)
     //
-    // Why colorchannelmixer on RGB instead of all_opacity on blend:
-    //  - all_opacity was added in FFmpeg 5+ but this system uses FFmpeg 4.x (2020 build)
-    //  - colorchannelmixer=aa= only affects alpha channel which blend ignores
-    //  - Reducing RGB values before screen blend correctly controls effect intensity
+    // Why colorkey+overlay instead of blend=screen:
+    //  - blend operates on raw YUV pixel values; chroma channels (U/V) have
+    //    neutral point at 128, NOT 0. Screen blend treats overlay "black"
+    //    chroma (128) as non-zero, causing severe purple/magenta color shift.
+    //  - colorkey+overlay works in alpha space, avoiding YUV color math entirely.
     //
-    // Why scale2ref instead of scale=iw:ih:
-    //  - Overlay may be different resolution (e.g., 360x640) than main video (1080x1920)
-    //  - scale=iw:ih is a no-op (keeps overlay at original size)
-    //  - blend filter requires identical dimensions — mismatched sizes cause silent failure
-    //  - scale2ref auto-matches overlay to main video dimensions
+    // colorkey params:
+    //  - color=black (0x000000): Key out black pixels
+    //  - similarity=0.15: How close to black counts as "black" (0=exact, 1=all)
+    //  - blend=0.1: Feather/softness at edge of keyed region
     const filterGraph = [
       `[1:v][0:v]scale2ref[ov_scaled][main]`,
-      `[ov_scaled]setpts=PTS-STARTPTS,colorchannelmixer=rr=${op.toFixed(2)}:gg=${op.toFixed(2)}:bb=${op.toFixed(2)}[ov]`,
-      `[main][ov]blend=all_mode=screen:shortest=1[out]`,
+      `[ov_scaled]setpts=PTS-STARTPTS,colorkey=black:0.15:0.1,format=yuva420p,colorchannelmixer=aa=${op.toFixed(2)}[ov]`,
+      `[main][ov]overlay=0:0:shortest=1[out]`,
     ].join(';');
 
     // Use raw ffmpeg args instead of fluent-ffmpeg complexFilter to avoid
