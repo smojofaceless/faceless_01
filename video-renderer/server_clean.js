@@ -1157,21 +1157,23 @@ async function addEdgeDarkeningCreep(inputPath, outputPath, lowMemory = false) {
  * @param {boolean} lowMemory  - Use low-memory encoding settings
  */
 async function addVideoOverlay(inputPath, outputPath, overlayPath, opacity = 0.4, lowMemory = false) {
-  const TIMEOUT_MS = 5 * 60 * 1000; // 5 min timeout
-
   return new Promise(async (resolve, reject) => {
     let timedOut = false;
     let overlayFailed = false; // Track if we fell back to copying original
     const duration = await getVideoDuration(inputPath);
 
+    // Dynamic timeout: 4x video duration, minimum 5 min, max 15 min
+    const TIMEOUT_MS = Math.min(15 * 60 * 1000, Math.max(5 * 60 * 1000, duration * 4 * 1000));
+    console.log(`  → Overlay timeout: ${Math.round(TIMEOUT_MS/1000)}s for ${Math.round(duration)}s video (lowMemory: ${lowMemory})`);
+
     const timeoutHandle = setTimeout(() => {
       timedOut = true;
-      console.error('⚠️ Video overlay timed out after 5 minutes, skipping...');
+      console.error(`⚠️ Video overlay timed out after ${Math.round(TIMEOUT_MS/1000)}s, skipping...`);
       cmd.kill('SIGKILL');
     }, TIMEOUT_MS);
 
     const outputOptions = lowMemory ? [
-      '-c:v', 'libx264', '-preset', 'superfast', '-crf', '24', '-c:a', 'copy', '-threads', '2',
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26', '-c:a', 'copy', '-threads', '2',
     ] : [
       '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-c:a', 'copy', '-threads', '4',
     ];
