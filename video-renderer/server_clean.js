@@ -187,22 +187,24 @@ async function updateJobInSupabase(jobId, supabaseJobId, status, videoUrl = null
   try {
     console.log(`[${jobId}] Updating Supabase job ${supabaseJobId} to ${status}, videoUrl: ${videoUrl ? 'YES' : 'NO'}`);
     
+    // ⚠️ DO NOT set jobs.status here! The worker-v1 pipeline owns status transitions.
+    // Setting status='complete' from the renderer races with the pipeline's heartbeat_job
+    // check (which requires status IN ('generating','assembling','rendering')), causing
+    // the pipeline to think it lost the lease and skip upload/schedule steps entirely.
+    // The renderer only writes video_url so the pipeline's recovery path can find it.
     const updates = {
-      progress: status === 'complete' ? 100 : status === 'failed' ? 0 : 85,
       updated_at: new Date().toISOString(),
     };
     
-    if (status === 'complete') {
-      updates.status = 'complete';
-    } else if (status === 'failed') {
-      updates.status = 'failed';
+    if (videoUrl && status === 'complete') {
+      updates.video_url = videoUrl;
     }
     
     const { error: jobError } = await supabase.from('jobs').update(updates).eq('id', supabaseJobId);
     if (jobError) {
       console.error(`[${jobId}] Jobs table update error:`, jobError);
     } else {
-      console.log(`[${jobId}] ✓ Jobs table updated`);
+      console.log(`[${jobId}] ✓ Jobs table updated (video_url=${videoUrl ? 'SET' : 'unchanged'}, status NOT modified — pipeline owns status)`);
     }
     
     // If we have a video URL, save it to job_assets

@@ -54,6 +54,7 @@ import {
   executeVoiceStep,
   executeMusicStep,
   executeImagesStep,
+  executeImg2VidStep,
   executeSubtitlesStep,
   executeAssembleStep,
   executeUploadStep,
@@ -75,7 +76,7 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-type StepName = 'story' | 'uniqueness' | 'scenes' | 'voice' | 'music' | 'images' | 'subtitles' | 'assemble' | 'upload' | 'schedule';
+type StepName = 'story' | 'uniqueness' | 'scenes' | 'voice' | 'music' | 'images' | 'img2vid' | 'subtitles' | 'assemble' | 'upload' | 'schedule';
 
 const STEP_ORDER: StepName[] = [
   'story',
@@ -84,6 +85,7 @@ const STEP_ORDER: StepName[] = [
   'voice',
   'music',
   'images',
+  // 'img2vid',  // DISABLED — re-enable when 5090 or video API is available
   'subtitles',
   'assemble',
   'upload',
@@ -98,6 +100,7 @@ const STEP_JOB_STATUS: Record<StepName, string> = {
   'voice': 'generating',
   'music': 'generating',
   'images': 'generating',
+  // 'img2vid': 'generating',  // DISABLED
   'subtitles': 'generating',
   'assemble': 'assembling',
   'upload': 'rendering',
@@ -136,13 +139,14 @@ serve(async (req) => {
     
     const env = {
       SUPABASE_URL: Deno.env.get("SUPABASE_URL") || '',
-      SUPABASE_SERVICE_ROLE_KEY: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || '',
+      SUPABASE_SERVICE_ROLE_KEY: Deno.env.get("SVC_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || '',
       OPENAI_API_KEY: Deno.env.get("OPENAI_API_KEY") || '',
       ELEVENLABS_API_KEY: Deno.env.get("ELEVENLABS_API_KEY") || '',
       CREATOMATE_API_KEY: Deno.env.get("CREATOMATE_API_KEY") || '',
       PEXELS_API_KEY: Deno.env.get("PEXELS_API_KEY") || '',
       VIDEO_RENDERER_URL: Deno.env.get("VIDEO_RENDERER_URL") || '',
       FFMPEG_RENDERER_URL: Deno.env.get("FFMPEG_RENDERER_URL") || '',  // Also support FFMPEG_RENDERER_URL (used by run-job)
+      COMFYUI_RENDERER_URL: Deno.env.get("COMFYUI_RENDERER_URL") || '',  // Local ComfyUI proxy (Cloudflare tunnel → localhost:3001)
     };
     
     if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -387,6 +391,11 @@ serve(async (req) => {
         // Release job as 'queued' so next invocation can claim it
         await releaseJob(supabase, jobId, workerId, 'queued', undefined);
         
+        // Reset attempt_count so continuations don't trigger the max-attempts safeguard.
+        // Continuations are expected workflow, not failures — only real failures should increment.
+        await supabase.from('jobs').update({ attempt_count: 0 }).eq('id', jobId);
+        console.log(`[WORKER-V1] Reset attempt_count for continuation`);
+        
         // Self-invoke for continuation — await the HTTP response (not the pipeline)
         // to confirm the new invocation was accepted. Previous fire-and-forget approach
         // silently swallowed failures, leaving jobs stuck on "assemble" indefinitely.
@@ -435,6 +444,21 @@ serve(async (req) => {
         elapsed_ms: elapsedMs
       });
       lastCompletedStep = stepName;
+      
+      // Persist video_url on the jobs row so verifyJobReadyForComplete can find it.
+      // The renderer may also write this, but a race between renderer and pipeline
+      // can leave it unset — explicitly writing it here guarantees consistency.
+      if (stepName === 'assemble' && stepResult.data?.video_url) {
+        const { error: vuErr } = await supabase
+          .from('jobs')
+          .update({ video_url: stepResult.data.video_url })
+          .eq('id', jobId);
+        if (vuErr) {
+          console.warn(`[WORKER-V1] Failed to persist video_url: ${vuErr.message}`);
+        } else {
+          console.log(`[WORKER-V1] ✓ video_url persisted on jobs row`);
+        }
+      }
       
       // Refresh job data if step may have produced new data
       if (stepResult.data) {
@@ -673,6 +697,8 @@ async function executeStep(
       return executeMusicStep(supabase, job, workerId, env, logger);
     case 'images':
       return executeImagesStep(supabase, job, workerId, env, logger, functionStartTime);
+    case 'img2vid':
+      return executeImg2VidStep(supabase, job, workerId, env, logger, functionStartTime);
     case 'subtitles':
       return executeSubtitlesStep(supabase, job, workerId, env, logger);
     case 'assemble':
