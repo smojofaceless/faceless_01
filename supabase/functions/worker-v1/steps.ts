@@ -4341,7 +4341,7 @@ export async function executeImagesStep(
         // === GPT-IMAGE-1 (Cheapest: ~$0.016/image at low quality) ===
         // Has retry loop with prompt sanitization for moderation blocks
         // v8.0+8.1: Character/group scenes use hero portrait; all scenes use scene chain
-        const MAX_IMAGE_RETRIES = 3;
+        const MAX_IMAGE_RETRIES = 4;
         let imageGenerated = false;
         
         if (useImageReference) {
@@ -4493,10 +4493,9 @@ export async function executeImagesStep(
             console.error(`[IMAGES] gpt-image-1 scene ${i} attempt ${attempt}/${MAX_IMAGE_RETRIES}: ${response.status} - ${errorBody.substring(0, 300)}`);
             
             // === MODERATION / CONTENT POLICY (400) — sanitize and retry ===
-            // v6.0: Attempt 1 sends the full creative prompt. On first rejection,
-            // apply the content safety filter. On second rejection, strip to bare atmosphere.
+            // v9.0: 4-attempt escalation: full prompt → safety filter → atmospheric skeleton → ultra-safe
             if (response.status === 400 && (errorBody.includes('moderation') || errorBody.includes('safety') || errorBody.includes('content_policy'))) {
-              console.log(`[IMAGES] ⚠️ Moderation block on scene ${i}, attempt ${attempt}. Sanitizing prompt...`);
+              console.log(`[IMAGES] ⚠️ Moderation block on scene ${i}, attempt ${attempt}/${MAX_IMAGE_RETRIES}. Sanitizing prompt...`);
               if (attempt < MAX_IMAGE_RETRIES) {
                 if (attempt === 1) {
                   // First rejection: apply content safety filter (DB rules or hardcoded)
@@ -4511,8 +4510,11 @@ export async function executeImagesStep(
                       trigger: 'moderation_rejection',
                     }, `Safety filter (retry): ${safetyResult.changeCount} categories in scene ${i}`);
                   }
+                } else if (attempt === 2) {
+                  // Second rejection: strip to atmospheric skeleton (still moody/dark)
+                  currentPrompt = sanitizeImagePrompt(currentPrompt, attempt);
                 } else {
-                  // Second rejection: strip to bare atmospheric skeleton
+                  // Third rejection: ultra-safe — strip ALL dark/horror language
                   currentPrompt = sanitizeImagePrompt(currentPrompt, attempt);
                 }
                 await new Promise(r => setTimeout(r, 2000));
@@ -4737,6 +4739,25 @@ export async function executeImagesStep(
       image_model: imageModel,
       image_sequence: resolvedSequence,
     });
+
+    // =========================================
+    // GUARD: If zero images have URLs, the step should FAIL.
+    // This prevents the assemble step from receiving an empty set
+    // (e.g. when all images are moderation-blocked).
+    // =========================================
+    if (imageUrls.length === 0) {
+      const reason = moderationFailCount > 0
+        ? `All ${moderationFailCount} images were blocked by content moderation (${MAX_IMAGE_RETRIES} sanitization attempts each). The prompts may need further softening.`
+        : `No images were generated or cached. Generated: ${generatedCount}, Skipped: ${skippedCount}.`;
+      console.error(`[IMAGES] ✗ Zero usable images: ${reason}`);
+      await logger.snapshot('images', 'zero_images_failure', {
+        total_planned: imageSequence.length,
+        generated: generatedCount,
+        skipped: skippedCount,
+        moderation_skipped: moderationFailCount,
+      }, `FAIL: ${reason}`);
+      return { success: false, error: reason, data: { generated: generatedCount, skipped: skippedCount, moderation_skipped: moderationFailCount, total: 0, failure_class: 'moderation' } };
+    }
 
     console.log(`[IMAGES] ✓ Complete: ${generatedCount} generated, ${skippedCount} skipped${moderationFailCount > 0 ? `, ${moderationFailCount} moderation-skipped` : ''}, ${resolvedSequence.length} total images in sequence`);
     await logger.snapshot('images', 'sequence', {
@@ -5640,14 +5661,28 @@ function sanitizeImagePrompt(originalPrompt: string, attemptNumber: number): str
   if (attemptNumber >= 2) {
     // Try to extract location and style, discard all narrative
     const locationMatch = sanitized.match(/(?:Environment|Location|Setting):\s*([^\n]+)/i);
-    const location = locationMatch ? locationMatch[1].trim().substring(0, 120) : 'atmospheric dark environment';
+    let location = locationMatch ? locationMatch[1].trim().substring(0, 120) : 'quiet environment';
     const styleMatch = sanitized.match(/Style:\s*([^\n]+)/i);
-    const style = styleMatch ? styleMatch[1].trim().substring(0, 200) : 'Cinematic dark photography, moody lighting';
-    
+    let style = styleMatch ? styleMatch[1].trim().substring(0, 200) : 'Cinematic photography, soft lighting';
+
+    // v9.0: Extra-safe sanitization for attempt 3 — remove ALL horror/dark/scary language
+    // from the extracted location and style too. Previous versions kept "dark", "moody",
+    // "shadows" etc. which still triggered gpt-image-1 moderation for horror brands.
+    if (attemptNumber >= 3) {
+      const safeReplace = (text: string) => text
+        .replace(/\b(dark|darkness|shadowy|shadows?|eerie|creepy|haunted|haunting|sinister|ominous|menacing|foreboding|grim|bleak|macabre|morbid|gloomy|dread|dreary|spooky|horror|scary|frightening|terrifying|unsettling|disturbing|chilling|ghostly|spectral|demonic|supernatural|paranormal|occult|cursed|wicked|malevolent|malicious|vile|grotesque|desolate|abandoned|decayed|decrepit|ruined|derelict|crumbling|overgrown|foggy|misty|murky|dim|tomb|grave|graveyard|cemetery|crypt|dungeon|basement|cellar|attic|asylum|morgue|slaughter|blood|gore)\b/gi, '')
+        .replace(/\b(moody|mysterious|mystery|enigmatic|cryptic|obscure|unknown|hidden|secret|forbidden|deadly|lethal|fatal|mortal|peril|perilous|danger|dangerous|threat|doom|doomed|cursed|hex|ritual|sacrifice)\b/gi, '')
+        .replace(/\s{2,}/g, ' ').trim();
+      location = safeReplace(location) || 'quiet indoor space';
+      style = safeReplace(style) || 'Cinematic photography, natural lighting';
+    }
+
     sanitized = [
-      `Atmospheric scene. ${style}`,
+      attemptNumber >= 3 ? `A calm, serene scene. ${style}` : `Atmospheric scene. ${style}`,
       `Setting: ${location}`,
-      `Moody and mysterious atmosphere, dim lighting, deep shadows.`,
+      attemptNumber >= 3
+        ? `Peaceful atmosphere, natural lighting, gentle colors.`
+        : `Moody and mysterious atmosphere, dim lighting, deep shadows.`,
       `Professional illustration, 9:16 portrait orientation.`,
       `No text, no words, no letters, no watermarks.`,
     ].join('\n');
