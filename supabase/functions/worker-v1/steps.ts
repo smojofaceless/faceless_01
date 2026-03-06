@@ -179,7 +179,7 @@ SETTING: ${scenario.setting_hint}
 REQUIREMENTS:
 - Word count: ${wordRange.min}-${wordRange.max} words (STRICT — controls video timing!)
 - Use the scenario as INSPIRATION only — add your own details, names, locations, specifics
-- FIRST-PERSON narrator — conversational, authentic, like a real Reddit post
+- FIRST-PERSON narrator — conversational, authentic, like someone telling you a story they can't forget
 - The narrator is telling you something that happened to THEM
 - Include enough specific mundane detail to feel real (job, routine, apartment number, time of day)
 
@@ -196,7 +196,7 @@ STRUCTURE (MANDATORY):
 [AFTERMATH] — What happened after. Did they escape? Are they still living with it? The unresolved dread.
 
 STYLE RULES:
-- Write like a real person posting on Reddit at 2 AM, not a professional writer
+- Write like a real person recounting something terrifying, not a professional writer
 - Short paragraphs. Some one-sentence paragraphs for impact.
 - Use line breaks for pacing — let the reader breathe between scares
 - No purple prose. Plain language hits harder: "I looked under the bed. It looked back."
@@ -205,13 +205,15 @@ STYLE RULES:
 - No gore — psychological horror and wrongness only
 - Every sentence must be visually filmable as a dark, realistic illustrated scene
 
-ENGAGEMENT HOOKS (MANDATORY):
-- End with a line that makes viewers want to comment. Examples:
-  • "Has anyone else experienced something like this?"
-  • "I'm posting this from my car. I'm not going back inside."
-  • "If you see [specific detail], do NOT [action]. Trust me."
-  • "That was three weeks ago. Last night, it started again."
-- This drives comments and shares, which boost algorithmic reach.
+ENDING (MANDATORY):
+- End with a haunting final line that lingers. The ending is SPOKEN NARRATION in a video — NOT a Reddit text post.
+- NEVER end with "Has anyone else experienced something like this?" or "I'm posting this from my car" or any line that implies the narrator is typing/posting online. This is a NARRATED VIDEO, not a forum post.
+- Great endings leave the horror UNRESOLVED or reveal one final twist. Examples of TONE (do NOT copy these verbatim — write your own):
+  • A chilling final detail the narrator just noticed
+  • An ominous realization that changes everything they told you
+  • A quiet, dread-filled statement about what happens next
+  • The horror continuing or getting worse, stated matter-of-factly
+- The last line should make the viewer's stomach drop, not ask them to comment.
 
 AUTHENTICITY RULES:
 - Use modern, relatable settings: apartments, offices, rideshares, smart devices, night shifts
@@ -383,13 +385,12 @@ DUAL-TIMELINE TECHNIQUE (MANDATORY):
   • "What happened in [town] between [year] and [year] was verified by [number] witnesses."
 - This single line makes every viewer lean in. It turns fiction into "fact."
 
-COMMENT-BAIT ENDING (MANDATORY):
-- The very last sentence must be a QUESTION or PROVOCATIVE STATEMENT designed to drive comments. Examples:
-  • "Do you think the neighbors really didn't know?"
-  • "The question investigators still ask: who was the second set of footprints for?"
-  • "Was he acting alone? The journal entries suggest otherwise."
-  • "Some say the recordings are still playing. Would you listen?"
-- This is the single most important engagement driver — comments boost algorithmic reach.${avoidanceSection}
+ENDING (MANDATORY):
+- End with a chilling final statement that lingers. This is SPOKEN NARRATION in a video, not a text post.
+- Great documentary endings leave the horror UNRESOLVED — the case is still open, the evidence was never explained, the body was never found.
+- Use matter-of-fact documentary voice for maximum impact: "The basement was sealed with concrete. No one has entered since."
+- OPTIONAL: If the case is rich enough, end with a SERIES HOOK — "But the basement was only the beginning." / "That was the first house. There were two more." This implies a Part 2 and encourages viewers to follow.
+- Do NOT end with a direct question asking the audience to comment. Rhetorical statements are fine: "Some say the recordings are still playing." — but NOT "Would you listen?" or "What do you think?"${avoidanceSection}
 
 Respond in JSON format:
 {
@@ -1825,6 +1826,108 @@ export async function executeVoiceStep(
 }
 
 // =====================================================
+// TTS SPLIT-TEXT RETRY HELPER
+// =====================================================
+// When OpenAI TTS truncates the ending of long text, split the text at a
+// natural sentence boundary and generate two separate audio clips, then
+// concatenate the raw MP3 bytes.  MP3 is frame-based so simple byte
+// concatenation is valid — each frame is self-contained.
+
+/**
+ * Find the best sentence boundary to split text roughly in half.
+ * Prefers splitting at the sentence ending closest to the midpoint.
+ */
+function findSentenceSplitPoint(text: string): number {
+  const midpoint = Math.floor(text.length / 2);
+  // Find all sentence-ending positions (. ! ? followed by space or end)
+  const sentenceEnds: number[] = [];
+  for (let i = 0; i < text.length - 1; i++) {
+    if (/[.!?]/.test(text[i]) && (text[i + 1] === ' ' || text[i + 1] === '\n')) {
+      sentenceEnds.push(i + 1); // include the punctuation
+    }
+  }
+  if (sentenceEnds.length === 0) {
+    // No sentence boundaries — split at last space before midpoint
+    const lastSpace = text.lastIndexOf(' ', midpoint);
+    return lastSpace > 0 ? lastSpace : midpoint;
+  }
+  // Find sentence end closest to midpoint (but at least 20% through the text)
+  const minSplit = Math.floor(text.length * 0.2);
+  const maxSplit = Math.floor(text.length * 0.8);
+  let bestSplit = sentenceEnds[0];
+  let bestDist = Math.abs(sentenceEnds[0] - midpoint);
+  for (const pos of sentenceEnds) {
+    if (pos < minSplit || pos > maxSplit) continue;
+    const dist = Math.abs(pos - midpoint);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestSplit = pos;
+    }
+  }
+  return bestSplit;
+}
+
+/**
+ * Generate TTS for text split into two halves, then concatenate the MP3 bytes.
+ */
+async function generateSplitTTS(
+  openaiKey: string,
+  fullText: string,
+  model: string,
+  voice: string,
+  instructions: string
+): Promise<{ audioBytes: Uint8Array; splitPoint: number }> {
+  const splitPoint = findSentenceSplitPoint(fullText);
+  const part1Text = fullText.slice(0, splitPoint).trim();
+  const part2Text = fullText.slice(splitPoint).trim();
+
+  if (!part1Text || !part2Text) {
+    throw new Error(`Text split produced empty part: part1=${part1Text.length} chars, part2=${part2Text.length} chars`);
+  }
+
+  console.log(`[VOICE] Split-text TTS: part1=${part1Text.length} chars, part2=${part2Text.length} chars (split at char ${splitPoint})`);
+
+  // Generate both halves (sequentially to avoid rate limits)
+  const generatePart = async (text: string, partNum: number): Promise<Uint8Array> => {
+    const resp = await fetch('https://api.openai.com/v1/audio/speech', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openaiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        input: text,
+        voice,
+        instructions,
+        response_format: 'mp3',
+      }),
+    });
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => 'unknown');
+      throw new Error(`TTS part ${partNum} failed (${resp.status}): ${errText.slice(0, 200)}`);
+    }
+    const buf = await resp.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    if (bytes.length < 500) {
+      throw new Error(`TTS part ${partNum} returned suspiciously small audio: ${bytes.length} bytes`);
+    }
+    console.log(`[VOICE] ✓ Part ${partNum}: ${bytes.length} bytes`);
+    return bytes;
+  };
+
+  const part1Audio = await generatePart(part1Text, 1);
+  const part2Audio = await generatePart(part2Text, 2);
+
+  // Concatenate MP3 bytes (MP3 is frame-based, simple concat works)
+  const combined = new Uint8Array(part1Audio.length + part2Audio.length);
+  combined.set(part1Audio, 0);
+  combined.set(part2Audio, part1Audio.length);
+
+  return { audioBytes: combined, splitPoint };
+}
+
+// =====================================================
 // VOICE PROVIDER: OpenAI gpt-4o-mini-tts
 // =====================================================
 
@@ -1922,141 +2025,209 @@ async function executeVoiceStepOpenAI(
       text_preview: job.story_text.slice(0, 200),
     }, 'OpenAI TTS request params');
 
-    // Call OpenAI TTS API
-    const response = await fetchWithError(
-      'https://api.openai.com/v1/audio/speech',
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${openaiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+    // === TTS GENERATION WITH TRUNCATION RETRY ===
+    // Strategy: generate → Whisper align → detect truncation → retry if needed
+    // Retry 1: re-generate with speed=0.95 (gives model more time to finish)
+    // Retry 2: split text at sentence boundary, generate two clips, concatenate
+    const MAX_TTS_ATTEMPTS = 3;
+    const TRUNCATION_THRESHOLD = 3; // min trailing interpolated words to trigger retry
+    const RETRY_SPEED = 0.95;       // slightly slower on first retry
+
+    let audioBytes: Uint8Array = new Uint8Array(0);
+    let timestamps: Array<{ word: string; start: number; end: number }> = [];
+    let timestampsApproximate = true;
+    let estimatedDurationMs = 0;
+    let ttsAttempt = 0;
+    let truncationResolved = false;
+    let ttsRetryStrategy: string | null = null;
+
+    for (ttsAttempt = 1; ttsAttempt <= MAX_TTS_ATTEMPTS; ttsAttempt++) {
+      // Determine TTS parameters for this attempt
+      const isSpeedRetry = ttsAttempt === 2;
+      const isSplitRetry = ttsAttempt === 3;
+      const currentSpeed = isSpeedRetry ? RETRY_SPEED : undefined;
+
+      if (ttsAttempt > 1) {
+        console.log(`[VOICE] TTS attempt ${ttsAttempt}/${MAX_TTS_ATTEMPTS} — strategy: ${isSpeedRetry ? `speed=${RETRY_SPEED}` : 'text-split'}`);
+      }
+
+      // ── Split-text retry: generate two halves and concatenate ──
+      if (isSplitRetry) {
+        try {
+          const splitResult = await generateSplitTTS(
+            openaiKey, job.story_text!, ttsModel, ttsVoice, ttsInstructions
+          );
+          audioBytes = splitResult.audioBytes;
+          ttsRetryStrategy = 'text_split';
+          console.log(`[VOICE] ✓ Split-text TTS: ${splitResult.splitPoint} chars in part 1, combined ${audioBytes.length} bytes`);
+        } catch (splitErr) {
+          console.warn(`[VOICE] Split-text retry failed: ${splitErr instanceof Error ? splitErr.message : splitErr} — using last attempt`);
+          break; // Keep whatever we had from attempt 2
+        }
+      } else {
+        // ── Normal or speed-retry TTS call ──
+        const ttsBody: Record<string, unknown> = {
           model: ttsModel,
           input: job.story_text,
           voice: ttsVoice,
           instructions: ttsInstructions,
           response_format: 'mp3',
-        }),
-      },
-      'OpenAI TTS'
-    );
+        };
+        if (currentSpeed !== undefined) {
+          ttsBody.speed = currentSpeed;
+          ttsRetryStrategy = `speed_${currentSpeed}`;
+        }
 
-    // OpenAI TTS returns raw audio bytes
-    const audioBuffer = await response.arrayBuffer();
-    const audioBytes = new Uint8Array(audioBuffer);
+        const response = await fetchWithError(
+          'https://api.openai.com/v1/audio/speech',
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${openaiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(ttsBody),
+          },
+          'OpenAI TTS'
+        );
 
-    if (audioBytes.length < 1000) {
-      throw new Error(`OpenAI TTS returned suspiciously small audio: ${audioBytes.length} bytes`);
-    }
-
-    // Upload to storage
-    const storagePath = pathForAudio(job.brand_id, job.id);
-    const publicUrl = await uploadToStorage(
-      supabase,
-      STORAGE_BUCKET,
-      storagePath,
-      audioBytes,
-      'audio/mpeg'
-    );
-
-    // Estimate duration from file size (MP3 ~128kbps = ~16KB/s) as fallback
-    let estimatedDurationMs = Math.round((audioBytes.length / 16000) * 1000);
-
-    // === WHISPER ALIGNMENT: Get precise word-level timestamps via transcription ===
-    let timestamps: Array<{ word: string; start: number; end: number }> = [];
-    let timestampsApproximate = true;
-
-    try {
-      console.log(`[VOICE] Running Whisper alignment on ${audioBytes.length} byte audio...`);
-      
-      // Build multipart form data for Whisper API
-      const boundary = '----WhisperBoundary' + Date.now();
-      const formParts: Uint8Array[] = [];
-      const encoder = new TextEncoder();
-      
-      // File field
-      formParts.push(encoder.encode(
-        `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="voice.mp3"\r\nContent-Type: audio/mpeg\r\n\r\n`
-      ));
-      formParts.push(audioBytes);
-      formParts.push(encoder.encode('\r\n'));
-      
-      // Model field
-      formParts.push(encoder.encode(
-        `--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n`
-      ));
-      
-      // Response format field
-      formParts.push(encoder.encode(
-        `--${boundary}\r\nContent-Disposition: form-data; name="response_format"\r\n\r\nverbose_json\r\n`
-      ));
-      
-      // Timestamp granularities field
-      formParts.push(encoder.encode(
-        `--${boundary}\r\nContent-Disposition: form-data; name="timestamp_granularities[]"\r\n\r\nword\r\n`
-      ));
-      
-      // End boundary
-      formParts.push(encoder.encode(`--${boundary}--\r\n`));
-      
-      // Combine parts
-      const totalLength = formParts.reduce((sum, p) => sum + p.length, 0);
-      const formBody = new Uint8Array(totalLength);
-      let offset = 0;
-      for (const part of formParts) {
-        formBody.set(part, offset);
-        offset += part.length;
+        const audioBuffer = await response.arrayBuffer();
+        audioBytes = new Uint8Array(audioBuffer);
       }
-      
-      const whisperResp = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${openaiKey}`,
-          'Content-Type': `multipart/form-data; boundary=${boundary}`,
-        },
-        body: formBody,
-      });
-      
-      if (whisperResp.ok) {
-        const whisperData = await whisperResp.json();
+
+      if (audioBytes.length < 1000) {
+        throw new Error(`OpenAI TTS returned suspiciously small audio: ${audioBytes.length} bytes`);
+      }
+
+      // ── Whisper alignment ──
+      estimatedDurationMs = Math.round((audioBytes.length / 16000) * 1000);
+      timestamps = [];
+      timestampsApproximate = true;
+
+      try {
+        console.log(`[VOICE] Running Whisper alignment on ${audioBytes.length} byte audio (attempt ${ttsAttempt})...`);
         
-        // Extract actual duration from Whisper response
-        if (whisperData.duration) {
-          estimatedDurationMs = Math.round(whisperData.duration * 1000);
+        const boundary = '----WhisperBoundary' + Date.now();
+        const formParts: Uint8Array[] = [];
+        const encoder = new TextEncoder();
+        
+        formParts.push(encoder.encode(
+          `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="voice.mp3"\r\nContent-Type: audio/mpeg\r\n\r\n`
+        ));
+        formParts.push(audioBytes);
+        formParts.push(encoder.encode('\r\n'));
+        formParts.push(encoder.encode(
+          `--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n`
+        ));
+        formParts.push(encoder.encode(
+          `--${boundary}\r\nContent-Disposition: form-data; name="response_format"\r\n\r\nverbose_json\r\n`
+        ));
+        formParts.push(encoder.encode(
+          `--${boundary}\r\nContent-Disposition: form-data; name="timestamp_granularities[]"\r\n\r\nword\r\n`
+        ));
+        formParts.push(encoder.encode(`--${boundary}--\r\n`));
+        
+        const totalLength = formParts.reduce((sum, p) => sum + p.length, 0);
+        const formBody = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const part of formParts) {
+          formBody.set(part, offset);
+          offset += part.length;
         }
         
-        // Extract word-level timestamps from Whisper
-        if (whisperData.words && Array.isArray(whisperData.words) && whisperData.words.length > 0) {
-          const whisperWords = whisperData.words.map((w: { word: string; start: number; end: number }) => ({
-            word: w.word.trim(),
-            start: w.start,
-            end: w.end,
-          })).filter((w: { word: string }) => w.word.length > 0);
+        const whisperResp = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openaiKey}`,
+            'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          },
+          body: formBody,
+        });
+        
+        if (whisperResp.ok) {
+          const whisperData = await whisperResp.json();
           
-          // === FORCED ALIGNMENT: Map Whisper timestamps back onto original story words ===
-          // Whisper may re-transcribe differently ("didn't" → "did not", etc.)
-          // We keep original words but use Whisper's timing
-          const originalWords = job.story_text!.split(/\s+/).filter(w => w.length > 0);
-          timestamps = forceAlignTimestamps(originalWords, whisperWords);
+          if (whisperData.duration) {
+            estimatedDurationMs = Math.round(whisperData.duration * 1000);
+          }
           
-          if (timestamps.length > 0) {
-            timestampsApproximate = false;
-            console.log(`[VOICE] ✓ Forced alignment: ${timestamps.length} words aligned from ${whisperWords.length} Whisper words, duration=${estimatedDurationMs}ms`);
+          if (whisperData.words && Array.isArray(whisperData.words) && whisperData.words.length > 0) {
+            const whisperWords = whisperData.words.map((w: { word: string; start: number; end: number }) => ({
+              word: w.word.trim(),
+              start: w.start,
+              end: w.end,
+            })).filter((w: { word: string }) => w.word.length > 0);
+            
+            const originalWords = job.story_text!.split(/\s+/).filter(w => w.length > 0);
+            timestamps = forceAlignTimestamps(originalWords, whisperWords);
+            
+            if (timestamps.length > 0) {
+              timestampsApproximate = false;
+              console.log(`[VOICE] ✓ Forced alignment: ${timestamps.length} words aligned from ${whisperWords.length} Whisper words, duration=${estimatedDurationMs}ms`);
+
+              // === TTS TRUNCATION DETECTION ===
+              const MIN_WORD_DUR = 0.08;
+              let trailingInterpolated = 0;
+              for (let ti = timestamps.length - 1; ti >= 0; ti--) {
+                const dur = timestamps[ti].end - timestamps[ti].start;
+                if (Math.abs(dur - MIN_WORD_DUR) < 0.005) {
+                  trailingInterpolated++;
+                } else {
+                  break;
+                }
+              }
+
+              if (trailingInterpolated >= TRUNCATION_THRESHOLD) {
+                const truncatedText = timestamps.slice(-trailingInterpolated).map(t => t.word).join(' ');
+                console.warn(`[VOICE] ⚠️ TTS TRUNCATION DETECTED (attempt ${ttsAttempt}): ${trailingInterpolated} trailing words likely not spoken: "${truncatedText}"`);
+                console.warn(`[VOICE]    Whisper matched ${whisperWords.length} words but story has ${originalWords.length} — last ${trailingInterpolated} were interpolated at ${MIN_WORD_DUR}s each`);
+
+                if (ttsAttempt < MAX_TTS_ATTEMPTS) {
+                  console.log(`[VOICE] 🔄 Retrying TTS to recover truncated words...`);
+                  continue; // Retry with next strategy
+                } else {
+                  // Final attempt still truncated — accept it but flag
+                  console.warn(`[VOICE] ⚠️ Truncation persists after ${MAX_TTS_ATTEMPTS} attempts — accepting with flag`);
+                  await updateJobMeta(supabase, job.id, {
+                    tts_truncation_detected: true,
+                    tts_truncated_word_count: trailingInterpolated,
+                    tts_truncated_text: truncatedText,
+                    tts_retry_attempts: ttsAttempt,
+                    tts_retry_strategy: ttsRetryStrategy,
+                    tts_truncation_resolved: false,
+                  });
+                }
+              } else {
+                // No truncation (or below threshold) — success
+                if (ttsAttempt > 1) {
+                  console.log(`[VOICE] ✓ Truncation resolved on attempt ${ttsAttempt} (strategy: ${ttsRetryStrategy})`);
+                  truncationResolved = true;
+                  await updateJobMeta(supabase, job.id, {
+                    tts_truncation_detected: false,
+                    tts_truncation_resolved: true,
+                    tts_retry_attempts: ttsAttempt,
+                    tts_retry_strategy: ttsRetryStrategy,
+                  });
+                }
+              }
+            } else {
+              console.warn(`[VOICE] Forced alignment returned 0 words, falling back to Whisper raw`);
+              timestamps = whisperWords;
+              timestampsApproximate = false;
+            }
           } else {
-            console.warn(`[VOICE] Forced alignment returned 0 words, falling back to Whisper raw`);
-            timestamps = whisperWords;
-            timestampsApproximate = false;
+            console.warn(`[VOICE] Whisper returned no word timestamps, falling back to approximate`);
           }
         } else {
-          console.warn(`[VOICE] Whisper returned no word timestamps, falling back to approximate`);
+          const errText = await whisperResp.text().catch(() => 'unknown');
+          console.warn(`[VOICE] Whisper alignment failed (${whisperResp.status}): ${errText.slice(0, 200)} — falling back to approximate`);
         }
-      } else {
-        const errText = await whisperResp.text().catch(() => 'unknown');
-        console.warn(`[VOICE] Whisper alignment failed (${whisperResp.status}): ${errText.slice(0, 200)} — falling back to approximate`);
+      } catch (whisperErr) {
+        console.warn(`[VOICE] Whisper alignment error: ${whisperErr instanceof Error ? whisperErr.message : whisperErr} — falling back to approximate`);
       }
-    } catch (whisperErr) {
-      console.warn(`[VOICE] Whisper alignment error: ${whisperErr instanceof Error ? whisperErr.message : whisperErr} — falling back to approximate`);
+
+      // If we get here (didn't `continue`), we're done with retry loop
+      break;
     }
     
     // Fallback: approximate timestamps if Whisper didn't work
@@ -2074,6 +2245,16 @@ async function executeVoiceStepOpenAI(
       }
       timestampsApproximate = true;
     }
+
+    // Upload final audio to storage
+    const storagePath = pathForAudio(job.brand_id, job.id);
+    const publicUrl = await uploadToStorage(
+      supabase,
+      STORAGE_BUCKET,
+      storagePath,
+      audioBytes,
+      'audio/mpeg'
+    );
 
     // Store asset
     await upsertAsset(supabase, job.id, idempotencyKey, 'voice_audio', storagePath, publicUrl, {
@@ -2111,12 +2292,13 @@ async function executeVoiceStepOpenAI(
       tts_voice: ttsVoice,
     });
 
-    console.log(`[VOICE] ✓ OpenAI TTS: ${estimatedDurationMs}ms audio (${audioBytes.length} bytes), ${timestamps.length} word timestamps (${timestampsApproximate ? 'approx' : 'precise via Whisper'})`);
+    console.log(`[VOICE] ✓ OpenAI TTS: ${estimatedDurationMs}ms audio (${audioBytes.length} bytes), ${timestamps.length} word timestamps (${timestampsApproximate ? 'approx' : 'precise via Whisper'})${ttsAttempt > 1 ? ` [${ttsAttempt} attempts, strategy: ${ttsRetryStrategy}]` : ''}`);
     
     // === COST CONTROL: Record usage + release slot ===
     const costIdempotencyKey = `job:${job.id}:openai_tts:voice:${storyHash.slice(0, 16)}`;
     // OpenAI TTS pricing: ~$0.015 per 1K chars for gpt-4o-mini-tts
-    const estimatedCostCents = Math.round(charCount * 0.0015);
+    // Multiply by attempt count since each retry is a separate API call
+    const estimatedCostCents = Math.round(charCount * 0.0015 * ttsAttempt);
     await costHelper.recordUsage(
       'openai_tts',
       costIdempotencyKey,
@@ -2141,6 +2323,9 @@ async function executeVoiceStepOpenAI(
       timestamps_approximate: timestampsApproximate,
       audio_bytes: audioBytes.length,
       audio_url: publicUrl,
+      tts_attempts: ttsAttempt,
+      tts_retry_strategy: ttsRetryStrategy,
+      tts_truncation_resolved: truncationResolved,
     }, 'OpenAI TTS result');
 
     return { success: true, data: { audio_url: publicUrl, duration_ms: estimatedDurationMs, tts_provider: 'openai' } };
@@ -2726,8 +2911,11 @@ async function musicFallback(
 // =====================================================
 
 // Image model configuration - can be overridden via job.meta.image_model or env
-type ImageModel = 'gpt-image-1' | 'dall-e-2' | 'dall-e-3';
+type ImageModel = 'gpt-image-1' | 'dall-e-2' | 'dall-e-3' | 'comfyui';
 const DEFAULT_IMAGE_MODEL: ImageModel = 'gpt-image-1'; // Cheapest: ~$0.016/image at low quality
+
+// ComfyUI fallback reason enum — consistent across renderer, edge function, and job_assets
+type FallbackReason = 'offline' | 'queue_full' | 'vram_low' | 'timeout' | 'error';
 
 /**
  * Force-align original story words onto Whisper's word-level timestamps.
@@ -3265,18 +3453,8 @@ export async function executeImagesStep(
     }, `Voice-aligned ${scenes.length} scenes using ${audioTimestamps.length} word timestamps`);
   }
 
-  // Determine which image model to use (job meta > env > default)
-  // v4.0: Validate against known models — reject gpt-4o or other non-image models
-  const VALID_IMAGE_MODELS: ImageModel[] = ['gpt-image-1', 'dall-e-2', 'dall-e-3'];
-  const rawImageModel = (job.meta?.image_model as string) || (env.IMAGE_MODEL as string) || '';
-  const imageModel: ImageModel = VALID_IMAGE_MODELS.includes(rawImageModel as ImageModel)
-    ? (rawImageModel as ImageModel)
-    : DEFAULT_IMAGE_MODEL;
-  if (rawImageModel && rawImageModel !== imageModel) {
-    console.warn(`[IMAGES] ⚠️ Invalid image model "${rawImageModel}" in job meta — falling back to "${imageModel}"`);
-  }
-
   // v1.5: Resolve image prompt config from DB (system → preset → brand → job meta)
+  // Moved BEFORE image model determination so brand-level image_model preference is available
   const vibePreset = job.vibe_preset || (job.meta?.vibe_preset as string) || 'urban_legend';
   let imagePromptConfig: ImagePromptConfig | null = null;
   try {
@@ -3285,10 +3463,54 @@ export async function executeImagesStep(
     console.warn(`[IMAGES] Failed to load image prompt config: ${cfgErr instanceof Error ? cfgErr.message : cfgErr}`);
   }
 
+  // Determine which image model to use (job meta > brand config > env > default)
+  // v4.0: Validate against known models — reject gpt-4o or other non-image models
+  // v5.0: Added 'comfyui' — local ComfyUI generation with auto-fallback to cloud
+  // v5.1: Brand-level image_model from image prompt config (set in Brands UI)
+  const VALID_IMAGE_MODELS: ImageModel[] = ['gpt-image-1', 'dall-e-2', 'dall-e-3', 'comfyui'];
+  const rawImageModel = (job.meta?.image_model as string)
+    || (imagePromptConfig?.image_model as string)
+    || (env.IMAGE_MODEL as string)
+    || '';
+  const imageModel: ImageModel = VALID_IMAGE_MODELS.includes(rawImageModel as ImageModel)
+    ? (rawImageModel as ImageModel)
+    : DEFAULT_IMAGE_MODEL;
+  if (rawImageModel && rawImageModel !== imageModel) {
+    console.warn(`[IMAGES] ⚠️ Invalid image model "${rawImageModel}" in job meta — falling back to "${imageModel}"`);
+  }
+
+  // v5.1: Lock resolved image model into job meta so retries use the same model
+  // This is especially important when the model was resolved from brand config
+  if (!job.meta?.image_model || (job.meta.image_model as string) !== imageModel) {
+    console.log(`[IMAGES] Locking resolved image_model=${imageModel} into job meta (source: ${
+      job.meta?.image_model ? 'job meta' : imagePromptConfig?.image_model ? 'brand config' : env.IMAGE_MODEL ? 'env' : 'default'
+    })`);
+    await updateJobMeta(supabase, job.id, { image_model: imageModel, resolved_image_model: imageModel });
+  }
+
   // Fallback to legacy hardcoded values if DB config unavailable
   const artStyle = imagePromptConfig?.art_style || (job.meta?.art_style as string) || 'cinematic';
 
-  console.log(`[IMAGES] Generating ${scenes.length} images (model: ${imageModel}, style: ${artStyle}, config: ${imagePromptConfig ? 'DB' : 'legacy'})`);
+  // v7.0 — Issue #7: Fetch art style definition from DB registry (single source of truth)
+  let artStyleRow: any = null;
+  try {
+    const { data: styleData } = await supabase
+      .from('art_styles')
+      .select('*')
+      .eq('id', artStyle)
+      .eq('is_active', true)
+      .single();
+    if (styleData) {
+      artStyleRow = styleData;
+      console.log(`[IMAGES] ✅ Loaded art style "${artStyle}" from DB registry`);
+    } else {
+      console.warn(`[IMAGES] ⚠️ Art style "${artStyle}" not found in DB registry — using hardcoded fallback`);
+    }
+  } catch (styleErr) {
+    console.warn(`[IMAGES] ⚠️ Failed to load art style from DB: ${styleErr instanceof Error ? styleErr.message : styleErr}`);
+  }
+
+  console.log(`[IMAGES] Generating ${scenes.length} images (model: ${imageModel}, style: ${artStyle}, config: ${imagePromptConfig ? 'DB' : artStyleRow ? 'art_styles_registry' : 'legacy'})`);
 
   // v5.0: Load content safety rules from DB (Roadmap #16)
   // Pre-filter every image prompt BEFORE sending to API — prevents moderation blocks
@@ -3324,6 +3546,127 @@ export async function executeImagesStep(
     }
   } catch (saErr) {
     console.warn(`[IMAGES] Story anchor creation failed (will proceed without): ${saErr instanceof Error ? saErr.message : saErr}`);
+  }
+
+  // ======================================================================
+  // v8.0: CHARACTER REFERENCE PORTRAIT (Issue #13)
+  // Generate a single "hero character portrait" from the story anchor's
+  // characterDescription. This portrait is then passed as a visual reference
+  // to all character/group scene images via OpenAI's image editing API,
+  // ensuring consistent character appearance across the entire video.
+  // ======================================================================
+  let characterReferenceUrl: string | null = null;
+  let characterReferenceBytes: Uint8Array | null = null;
+  const charRefCacheKey = `${job.id}:character_reference`;
+  
+  if (storyAnchor?.characterDescription && (imageModel === 'gpt-image-1' || imageModel === 'dall-e-3')) {
+    try {
+      // Check cache first
+      const cachedRef = await getAssetByKey(supabase, job.id, charRefCacheKey);
+      if (cachedRef?.public_url) {
+        characterReferenceUrl = cachedRef.public_url;
+        console.log(`[IMAGES] Character reference loaded from cache: ${characterReferenceUrl}`);
+      } else {
+        console.log(`[IMAGES] Generating character reference portrait...`);
+        
+        // Build a focused portrait prompt from the character description + style
+        const stylePrompt = imagePromptConfig?.style_prompt || 'Cinematic photography, dramatic compositions';
+        const charDesc = storyAnchor.characterDescription;
+        const envContext = storyAnchor.environment ? storyAnchor.environment.substring(0, 100) : '';
+        const timeContext = storyAnchor.timeOfDay || '';
+        
+        const portraitPrompt = [
+          `CHARACTER REFERENCE PORTRAIT — This image establishes the definitive look of the main character.`,
+          ``,
+          `Style: ${stylePrompt}`,
+          ``,
+          `CHARACTER (must be rendered EXACTLY as described):`,
+          charDesc,
+          ``,
+          `COMPOSITION: Medium shot from chest up, character facing slightly left (3/4 view).`,
+          `Character fills ~60% of frame. Clean, uncluttered background.`,
+          envContext ? `Background hint: ${envContext}` : `Background: neutral dark gradient`,
+          timeContext ? `Lighting: ${timeContext} lighting conditions` : `Lighting: dramatic side lighting`,
+          ``,
+          `CRITICAL: This is a CHARACTER REFERENCE SHEET. The character's face, hair, clothing,`,
+          `and distinguishing features must be clearly visible and sharply rendered.`,
+          `No dramatic action, no extreme angles. Just a clean, well-lit portrait.`,
+          ``,
+          `Portrait orientation 9:16. No text, no words, no letters.`,
+          imagePromptConfig?.negative_prompt || '',
+        ].filter(Boolean).join('\n');
+
+        // Generate using gpt-image-1 (same as scene images)
+        const portraitResponse = await fetch('https://api.openai.com/v1/images/generations', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openaiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-image-1',
+            prompt: portraitPrompt,
+            n: 1,
+            size: '1024x1536',
+            quality: 'low',
+            output_format: 'webp',
+          }),
+        });
+
+        if (portraitResponse.ok) {
+          const portraitResult = await portraitResponse.json();
+          let portraitImageUrl: string | null = null;
+          
+          if (portraitResult.data?.[0]?.b64_json) {
+            portraitImageUrl = `data:image/webp;base64,${portraitResult.data[0].b64_json}`;
+          } else if (portraitResult.data?.[0]?.url) {
+            portraitImageUrl = portraitResult.data[0].url;
+          }
+
+          if (portraitImageUrl) {
+            // Upload to storage
+            const refStoragePath = `brands/${job.brand_id}/jobs/${job.id}/images/character_reference.webp`;
+            const refPublicUrl = await uploadRemoteToStorage(supabase, STORAGE_BUCKET, refStoragePath, portraitImageUrl);
+            characterReferenceUrl = refPublicUrl;
+
+            // Cache as job asset
+            await upsertAsset(supabase, job.id, charRefCacheKey, 'character_reference', refStoragePath, refPublicUrl, {
+              character_description: charDesc,
+              art_style: artStyle,
+              image_model: imageModel,
+              portrait_prompt: portraitPrompt.substring(0, 500),
+            });
+
+            console.log(`[IMAGES] ✓ Character reference portrait generated and cached: ${refPublicUrl}`);
+            
+            await logger.snapshot('images', 'character_reference', {
+              character_description: charDesc.substring(0, 200),
+              portrait_url: refPublicUrl,
+              art_style: artStyle,
+            }, `Character reference portrait generated for: ${charDesc.substring(0, 80)}`);
+          }
+        } else {
+          const errText = await portraitResponse.text().catch(() => '');
+          console.warn(`[IMAGES] Character reference portrait generation failed: ${portraitResponse.status} ${errText.substring(0, 200)}`);
+          // Non-fatal — we'll proceed without reference (same as before)
+        }
+      }
+
+      // Pre-fetch the reference image bytes for use in image editing API calls
+      if (characterReferenceUrl) {
+        try {
+          const refFetchRes = await fetch(characterReferenceUrl);
+          if (refFetchRes.ok) {
+            characterReferenceBytes = new Uint8Array(await refFetchRes.arrayBuffer());
+            console.log(`[IMAGES] Character reference image prefetched: ${characterReferenceBytes.length} bytes`);
+          }
+        } catch (fetchErr) {
+          console.warn(`[IMAGES] Failed to prefetch character reference: ${fetchErr instanceof Error ? fetchErr.message : fetchErr}`);
+        }
+      }
+    } catch (charRefErr) {
+      console.warn(`[IMAGES] Character reference generation failed (will proceed without): ${charRefErr instanceof Error ? charRefErr.message : charRefErr}`);
+    }
   }
 
   // v2.0: Extract visual cues from scenes (GPT analyzes what images should depict)
@@ -3383,6 +3726,44 @@ export async function executeImagesStep(
     }, `Visual cues extracted: ${visualCues.length} for ${scenes.length} scenes (types: ${JSON.stringify(typeDistribution)})`);
   }
 
+  // ======================================================================
+  // v8.0: CROSS-SCENE CONSISTENCY AUDIT
+  // Reviews all visual cue descriptions together to catch prop/object
+  // contradictions (e.g., smartphone in S11 → landline in S13).
+  // Runs once and gets cached with the visual cues.
+  // Only runs on fresh extraction — cached cues already have fixes applied.
+  // ======================================================================
+  const consistencyCacheKey = `${job.id}:visual_cues_consistency`;
+  const alreadyAudited = await getAssetByKey(supabase, job.id, consistencyCacheKey);
+  if (visualCues.length >= 3 && openaiKey && !alreadyAudited) {
+    try {
+      const auditResult = await auditVisualCueConsistency(visualCues, scenes, openaiKey, storyAnchor);
+      if (auditResult.fixes.length > 0) {
+        visualCues = auditResult.cues;
+        // Update the cached visual cues with patched versions
+        await upsertAsset(supabase, job.id, visualCuesCacheKey, 'visual_cues', '', '', {
+          cues: visualCues,
+          scene_count: scenes.length,
+          vibe_preset: vibePreset,
+          consistency_fixes: auditResult.fixes,
+        });
+        await logger.snapshot('images', 'consistency_audit', {
+          fixes_applied: auditResult.fixes.length,
+          total_scenes: visualCues.length,
+          fixes: auditResult.fixes,
+        }, `🔧 Consistency audit: ${auditResult.fixes.length} contradictions fixed (${auditResult.fixes.map(f => `S${f.scene + 1}: ${f.issue}`).join(', ')})`);
+      }
+      // Mark audit as done so continuations don't re-run it
+      await upsertAsset(supabase, job.id, consistencyCacheKey, 'consistency_audit', '', '', {
+        audited: true,
+        fixes_count: auditResult.fixes.length,
+        fixes: auditResult.fixes,
+      });
+    } catch (auditErr) {
+      console.warn(`[CONSISTENCY] Audit error (non-fatal): ${auditErr instanceof Error ? auditErr.message : auditErr}`);
+    }
+  }
+
   let generatedCount = 0;
   let skippedCount = 0;
   let moderationFailCount = 0;
@@ -3394,8 +3775,8 @@ export async function executeImagesStep(
   // Each image covers ~8s of screen time. This builds the flat image list
   // that the renderer will receive (with per-image durations and mood levels).
   // ======================================================================
-  const LONG_SCENE_THRESHOLD = 12; // Seconds: scenes longer than this get extra images (was 10)
-  const TARGET_IMAGE_DURATION = 10; // Seconds: target on-screen time per image (was 8)
+  const LONG_SCENE_THRESHOLD = 18; // Seconds: scenes longer than this get extra images (was 12, before that 10)
+  const TARGET_IMAGE_DURATION = 14; // Seconds: target on-screen time per image (was 10, before that 8)
   const MAX_SUB_IMAGES = 2; // Max images per long scene (was 3) — 2 is enough for variety
 
   const imageSequence: ImageSequenceEntry[] = [];
@@ -3447,8 +3828,27 @@ export async function executeImagesStep(
 
   console.log(`[IMAGES] Image sequence planned: ${imageSequence.length} images for ${scenes.length} scenes (mood_levels: ${imageSequence.map(e => e.moodLevel).join(',')})`);
 
+  // v7.0: Store planned image_sequence in job meta BEFORE generating images.
+  // This lets the UI show Duration and Mood Level while images are still being generated.
+  // The sequence will be updated with final URLs after all images are done.
+  await updateJobMeta(supabase, job.id, {
+    image_sequence: imageSequence.map(e => ({
+      sceneIndex: e.sceneIndex,
+      subIndex: e.subIndex,
+      duration: e.duration,
+      moodLevel: e.moodLevel,
+      assetKey: e.assetKey,
+    })),
+    image_model: imageModel,
+  });
+
   // v4.0: Track previous prompt fingerprint for similarity detection
   let previousPromptFingerprint: string | null = null;
+
+  // v8.1: Scene chain reference (Issue #13 Phase 2)
+  // Each generated scene's image bytes are captured and passed as a soft reference
+  // to the NEXT scene, creating visual style/palette continuity across the video.
+  let previousSceneImageBytes: Uint8Array | null = null;
 
   try {
     for (let seqIdx = 0; seqIdx < imageSequence.length; seqIdx++) {
@@ -3460,6 +3860,16 @@ export async function executeImagesStep(
       const existingImage = await getAssetByKey(supabase, job.id, idempotencyKey);
       if (existingImage?.public_url) {
         console.log(`[IMAGES] Scene ${entry.sceneIndex}${entry.subIndex > 0 ? `_sub_${entry.subIndex}` : ''} already generated, skipping`);
+        // v8.1: Still capture bytes for scene chain so next scene has a reference
+        if (imageModel === 'gpt-image-1' && !previousSceneImageBytes) {
+          try {
+            const chainFetch = await fetch(existingImage.public_url);
+            if (chainFetch.ok) {
+              previousSceneImageBytes = new Uint8Array(await chainFetch.arrayBuffer());
+              console.log(`[IMAGES] Scene ${entry.sceneIndex}: captured ${previousSceneImageBytes.length} bytes from cached image for scene chain`);
+            }
+          } catch { /* non-fatal */ }
+        }
         skippedCount++;
         scenesCompleted.push(entry.sceneIndex);
         continue;
@@ -3523,7 +3933,7 @@ export async function executeImagesStep(
         ? createSubImageCue(baseVisualCue, entry.subIndex, scene.text)
         : baseVisualCue;
       
-      const scenePrompt = buildImagePrompt(scene.text, scene.keywords, artStyle, i, scenes.length, imagePromptConfig, effectiveCue, storyAnchor);
+      const scenePrompt = buildImagePrompt(scene.text, scene.keywords, artStyle, i, scenes.length, imagePromptConfig, effectiveCue, storyAnchor, artStyleRow);
       entry.prompt = scenePrompt; // Persist for auditability in image_sequence manifest
       
       // === PROMPT SIMILARITY GUARD (v4.0) ===
@@ -3540,11 +3950,15 @@ export async function executeImagesStep(
       
       // === EXTERNAL IDEMPOTENCY: Hash includes model+size+prompt to avoid cross-config collisions ===
       // Note: imageModel is defined at function scope from job.meta or env
-      // gpt-image-1: 1024x1536 portrait, dall-e-3: 1024x1792 portrait, dall-e-2: 1024x1024 square
-      const imageSize = imageModel === 'gpt-image-1' ? '1024x1536' : 
+      // gpt-image-1: 1024x1536 portrait, dall-e-3: 1024x1792 portrait, dall-e-2: 1024x1024 square, comfyui: 1024x1536 portrait
+      const imageSize = imageModel === 'gpt-image-1' || imageModel === 'comfyui' ? '1024x1536' : 
                         imageModel === 'dall-e-3' ? '1024x1792' : '1024x1024';
       const imageQuality = 'standard';
-      const canonicalImageInput = `${imageModel}|${imageSize}|${imageQuality}|${scenePrompt}`;
+      // v5.1: ComfyUI includes workflow+checkpoint+steps+cfg in hash so config changes invalidate cache
+      const comfyConfigSuffix = imageModel === 'comfyui'
+        ? `|${(imagePromptConfig as any)?.comfyui_workflow || 'txt2img_sdxl'}|${(imagePromptConfig as any)?.comfyui_checkpoint || 'default'}|${(imagePromptConfig as any)?.comfyui_steps || 28}|${(imagePromptConfig as any)?.comfyui_cfg || 5.5}`
+        : '';
+      const canonicalImageInput = `${imageModel}|${imageSize}|${imageQuality}|${scenePrompt}${comfyConfigSuffix}`;
       const promptHash = await computeHash(canonicalImageInput);
       const promptHashKey = `${job.id}:image_prompt_hash:${promptHash}`;
       // Quality guard: only reuse if quality_ok !== false
@@ -3582,7 +3996,12 @@ export async function executeImagesStep(
         { model: imageModel, scene_index: i, sub_index: entry.subIndex }
       );
 
-      console.log(`[IMAGES] Generating image ${seqIdx + 1}/${imageSequence.length} (scene ${i}${entry.subIndex > 0 ? ` sub ${entry.subIndex}` : ''}) with ${imageModel} (hash: ${promptHash.slice(0, 8)}...)`);
+      // Progress bar — visual log matching ComfyUI style
+      const pct = Math.round(((seqIdx + 1) / imageSequence.length) * 100);
+      const filled = Math.round(pct / 4);
+      const bar = '█'.repeat(filled) + '░'.repeat(25 - filled);
+      const cueType = visualCues.find(vc => vc.sceneIndex === i)?.sceneType || '-';
+      console.log(`[IMAGES] ${pct}% |${bar}| ${seqIdx + 1}/${imageSequence.length} scene ${i}${entry.subIndex > 0 ? ` sub ${entry.subIndex}` : ''} (${cueType}) [${imageModel}]`);
 
       // Log prompt snapshot (first, every 5th, and last — balance storage vs visibility)
       if (seqIdx === 0 || seqIdx === imageSequence.length - 1 || seqIdx % 5 === 0) {
@@ -3595,6 +4014,8 @@ export async function executeImagesStep(
           size: imageSize,
           visual_cue: cue ? { type: cue.sceneType, camera: cue.camera, description: (cue.description || '').slice(0, 200) } : null,
           story_anchor_used: !!storyAnchor,
+          character_reference_available: !!characterReferenceBytes,
+          scene_chain_available: !!previousSceneImageBytes,
           source: cue ? 'visual_cue+anchor' : 'raw_text'
         }, `Image ${seqIdx + 1}/${imageSequence.length} prompt (scene ${i}${entry.subIndex > 0 ? ` sub ${entry.subIndex}` : ''}, ${cue?.sceneType || 'no_cue'})`);
       }
@@ -3602,38 +4023,333 @@ export async function executeImagesStep(
       // === LEASE GRACE CHECK: Verify enough time before expensive API call ===
       await requireLeaseGrace(supabase, job.id, workerId, `${imageModel} scene ${i}${entry.subIndex > 0 ? ` sub ${entry.subIndex}` : ''}`);
 
-      // === COST CONTROL: Check budget + acquire slot before gpt-image-1 call ===
+      // === COST CONTROL: Check budget + acquire slot before cloud API call ===
+      // ComfyUI local generation is free — skip cost control when using local
       const costHelper = new CostControlHelper(supabase, job.id, workerId);
       let costSlotAcquired = false;
-      try {
-        await assertCanSpend(costHelper, 'openai_image', `scene_${i}${entry.subIndex > 0 ? `_sub_${entry.subIndex}` : ''}`, 1);
-        costSlotAcquired = true;
-      } catch (costError) {
-        if (isCostLimitError(costError)) {
-          // Cost limit reached - fail with clear message for DLQ (class: misconfig)
-          console.error(`[IMAGES] ❌ Cost limit hit at image ${seqIdx} (scene ${i}): ${costError instanceof Error ? costError.message : costError}`);
-          return { 
-            success: false, 
-            error: `cost_limit_exceeded: openai_image (gpt-image-1) - ${costError instanceof Error ? costError.message : 'budget reached'}`,
-            data: { 
-              images_completed: scenesCompleted.length,
-              images_total: imageSequence.length,
-              cost_limit_hit: true,
-              failure_class: 'misconfig'  // Signal to DLQ this is operator-actionable
-            }
-          };
+      const costOperation = `scene_${i}${entry.subIndex > 0 ? `_sub_${entry.subIndex}` : ''}`;
+      if (imageModel !== 'comfyui') {
+        try {
+          await assertCanSpend(costHelper, 'openai_image', costOperation, 1);
+          costSlotAcquired = true;
+        } catch (costError) {
+          if (isCostLimitError(costError)) {
+            // Cost limit reached - fail with clear message for DLQ (class: misconfig)
+            console.error(`[IMAGES] ❌ Cost limit hit at image ${seqIdx} (scene ${i}): ${costError instanceof Error ? costError.message : costError}`);
+            return { 
+              success: false, 
+              error: `cost_limit_exceeded: openai_image (gpt-image-1) - ${costError instanceof Error ? costError.message : 'budget reached'}`,
+              data: { 
+                images_completed: scenesCompleted.length,
+                images_total: imageSequence.length,
+                cost_limit_hit: true,
+                failure_class: 'misconfig'  // Signal to DLQ this is operator-actionable
+              }
+            };
+          }
+          throw costError; // Re-throw non-cost errors
         }
-        throw costError; // Re-throw non-cost errors
       }
+
+      // === SLOT GUARD: try/finally ensures slot is ALWAYS released ===
+      // Prevents slot leaks on throw, continue, or return between acquire and release.
+      try {
 
       // Generate image using selected model
       let imageUrl: string;
       
-      if (imageModel === 'gpt-image-1') {
+      // v8.0: Determine if this scene should use character reference (Issue #13)
+      const effectiveSceneType = (visualCues.find(vc => vc.sceneIndex === i)?.sceneType) || 'atmosphere';
+      const useCharacterReference = characterReferenceBytes 
+        && (imageModel === 'gpt-image-1')
+        && (effectiveSceneType === 'character' || effectiveSceneType === 'group');
+      // v8.1 Phase 2: Scene chain — use previous scene's image for style/palette continuity
+      // Every scene (except the first) gets a soft reference from the previous scene.
+      const useSceneChain = previousSceneImageBytes && (imageModel === 'gpt-image-1');
+      // Either reference type routes through /v1/images/edits instead of /v1/images/generations
+      const useImageReference = useCharacterReference || useSceneChain;
+      
+      // === COMFYUI LOCAL GENERATION ===
+      // Check health → generate via renderer → fall back to gpt-image-1 on failure
+      if (imageModel === 'comfyui') {
+        // Prefer COMFYUI_RENDERER_URL (local tunnel) for ComfyUI endpoints,
+        // fall back to VIDEO/FFMPEG renderer URLs
+        const rendererUrl = env.COMFYUI_RENDERER_URL || env.VIDEO_RENDERER_URL || env.FFMPEG_RENDERER_URL;
+        let comfySuccess = false;
+        let comfyFallbackReason: FallbackReason | null = null;
+
+        if (rendererUrl) {
+          try {
+            // 1. Health check (2s timeout)
+            const healthController = new AbortController();
+            const healthTimeout = setTimeout(() => healthController.abort(), 2000);
+            const healthRes = await fetch(`${rendererUrl}/comfyui-health`, {
+              signal: healthController.signal,
+            });
+            clearTimeout(healthTimeout);
+
+            if (healthRes.ok) {
+              const health = await healthRes.json();
+
+              if (!health.available) {
+                comfyFallbackReason = health.fallback_reason || 'offline';
+                console.warn(`[IMAGES] ComfyUI skipped: ${comfyFallbackReason} → cloud fallback`);
+              } else {
+                // 2. Submit generation
+                console.log(`[IMAGES] ComfyUI available (queue=${health.queue_size}/${health.queue_limit}, vram=${health.gpu_vram_free_mb}MB). Generating scene ${i} (art_style=${artStyle})...`);
+                
+                const genRes = await fetch(`${rendererUrl}/comfyui-generate`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    job_id: job.id,
+                    scenes: [{ index: i, prompt: scenePrompt }],
+                    workflow: (job.meta?.comfyui_workflow as string)
+                      || (imagePromptConfig as any)?.comfyui_workflow
+                      || undefined,
+                    checkpoint: (job.meta?.comfyui_checkpoint as string)
+                      || (imagePromptConfig as any)?.comfyui_checkpoint
+                      || undefined,
+                    steps: (job.meta?.comfyui_steps as number)
+                      || (imagePromptConfig as any)?.comfyui_steps
+                      || undefined,
+                    cfg: (job.meta?.comfyui_cfg as number)
+                      || (imagePromptConfig as any)?.comfyui_cfg
+                      || undefined,
+                    width: 1024,
+                    height: 1536,
+                    brand_dna: {
+                      ...(job.meta || {}),
+                      art_style: artStyle,  // Ensure art_style flows to STYLE_MAP lookup in translatePromptForComfyUI
+                      comfyui_tokens: artStyleRow?.comfyui_tokens || undefined,  // v7.0: DB-sourced tokens bypass hardcoded STYLE_MAP
+                    },
+                  }),
+                });
+
+                if (!genRes.ok) {
+                  const errText = await genRes.text().catch(() => '');
+                  throw new Error(`ComfyUI generate failed: ${genRes.status} ${errText.slice(0, 200)}`);
+                }
+
+                const genData = await genRes.json();
+                const comfyJobId = genData.comfy_job_id;
+                const statusUrl = genData.status_url;
+
+                // 3. Poll for completion (respects COMFYUI_TIMEOUT_MS via the renderer)
+                const comfyPollStart = Date.now();
+                const comfyTimeoutMs = 360000; // 6 min — cold checkpoint load can take 2-3 min on VRAM-constrained GPU
+                const pollIntervalMs = 3000;
+                let comfyNotFoundCount = 0; // Track consecutive 404s (server restart = lost job)
+
+                while (Date.now() - comfyPollStart < comfyTimeoutMs) {
+                  // WALL CLOCK SAFETY: bail out of poll loop if we're running low on function time
+                  // to ensure the outer loop can still trigger continuation_needed properly.
+                  if (functionStartTime) {
+                    const fnElapsed = Date.now() - functionStartTime;
+                    if (fnElapsed > WALL_CLOCK_BUDGET_MS - IMAGE_RESERVE_MS) {
+                      console.warn(`[IMAGES] ComfyUI poll loop hitting wall clock budget (${Math.round(fnElapsed / 1000)}s elapsed). Breaking to allow continuation.`);
+                      comfyFallbackReason = 'timeout';
+                      break;
+                    }
+                  }
+
+                  await new Promise(r => setTimeout(r, pollIntervalMs));
+
+                  const statusRes = await fetch(`${rendererUrl}${statusUrl}`);
+                  if (!statusRes.ok) {
+                    // Track consecutive 404s — server restart = lost comfy job
+                    if (statusRes.status === 404) {
+                      comfyNotFoundCount++;
+                      if (comfyNotFoundCount >= 3) {
+                        console.warn(`[IMAGES] ComfyUI job ${comfyJobId} returned 404 x3 — server likely restarted, falling back`);
+                        comfyFallbackReason = 'error';
+                        break;
+                      }
+                    }
+                    continue;
+                  }
+                  comfyNotFoundCount = 0; // Reset on success
+                  const statusData = await statusRes.json();
+
+                  if (statusData.status === 'complete' || statusData.status === 'partial') {
+                    const sceneResult = statusData.images?.find((img: any) => img.index === i);
+                    if (sceneResult?.url) {
+                      imageUrl = sceneResult.url;
+                      comfySuccess = true;
+                      console.log(`[IMAGES] ✓ ComfyUI scene ${i} generated in ${((Date.now() - comfyPollStart) / 1000).toFixed(1)}s`);
+
+                      // Store ComfyUI-specific metadata alongside the asset
+                      if (sceneResult.metadata) {
+                        await logger.snapshot('images', 'comfyui_metadata', {
+                          scene_index: i,
+                          ...sceneResult.metadata,
+                        }, `ComfyUI render metadata for scene ${i}`);
+                      }
+                    }
+                    break;
+                  }
+
+                  // Check for scene-level errors
+                  const sceneError = statusData.errors?.find((e: any) => e.index === i);
+                  if (sceneError) {
+                    comfyFallbackReason = sceneError.fallback_reason || 'error';
+                    console.warn(`[IMAGES] ComfyUI scene ${i} error: ${sceneError.error} → cloud fallback`);
+                    break;
+                  }
+                }
+
+                if (!comfySuccess && !comfyFallbackReason) {
+                  comfyFallbackReason = 'timeout';
+                  console.warn(`[IMAGES] ComfyUI scene ${i} timed out after ${comfyTimeoutMs}ms → cloud fallback`);
+                }
+              }
+            } else {
+              comfyFallbackReason = 'offline';
+              console.warn(`[IMAGES] ComfyUI health check returned ${healthRes.status} → cloud fallback`);
+            }
+          } catch (comfyErr) {
+            comfyFallbackReason = 'error';
+            if ((comfyErr as Error)?.name === 'AbortError') {
+              comfyFallbackReason = 'offline';
+            }
+            console.warn(`[IMAGES] ComfyUI error: ${comfyErr instanceof Error ? comfyErr.message : comfyErr} → cloud fallback`);
+          }
+        } else {
+          comfyFallbackReason = 'offline';
+          console.warn(`[IMAGES] No VIDEO_RENDERER_URL configured → ComfyUI unavailable, cloud fallback`);
+        }
+
+        // If ComfyUI failed, fall back to gpt-image-1 (with retry + sanitization)
+        if (!comfySuccess) {
+          console.log(`[IMAGES] ComfyUI fallback → gpt-image-1 for scene ${i} (reason: ${comfyFallbackReason})`);
+          
+          // Record that we fell back to cloud
+          await logger.snapshot('images', 'comfyui_fallback', {
+            scene_index: i,
+            fallback_reason: comfyFallbackReason,
+            fallback_model: 'gpt-image-1',
+          }, `ComfyUI → cloud fallback for scene ${i}: ${comfyFallbackReason}`);
+
+          const MAX_FALLBACK_RETRIES = 3;
+          let fallbackGenerated = false;
+          let fallbackPrompt = scenePrompt;
+
+          for (let attempt = 1; attempt <= MAX_FALLBACK_RETRIES; attempt++) {
+            const response = await fetch(
+              'https://api.openai.com/v1/images/generations',
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${openaiKey}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  model: 'gpt-image-1',
+                  prompt: fallbackPrompt,
+                  n: 1,
+                  size: '1024x1536',
+                  quality: 'low',
+                  output_format: 'webp',
+                }),
+              },
+            );
+
+            if (!response.ok) {
+              const errorBody = await response.text().catch(() => '');
+              console.error(`[IMAGES] ComfyUI fallback gpt-image-1 scene ${i} attempt ${attempt}/${MAX_FALLBACK_RETRIES}: ${response.status} - ${errorBody.substring(0, 300)}`);
+
+              // Moderation / content policy (400) — sanitize and retry
+              if (response.status === 400 && (errorBody.includes('moderation') || errorBody.includes('safety') || errorBody.includes('content_policy'))) {
+                console.log(`[IMAGES] ⚠️ ComfyUI fallback moderation block on scene ${i}, attempt ${attempt}. Sanitizing prompt...`);
+                if (attempt < MAX_FALLBACK_RETRIES) {
+                  if (attempt === 1) {
+                    const safetyResult = applyContentSafetyFilter(fallbackPrompt, safetyRules);
+                    fallbackPrompt = safetyResult.filtered;
+                    if (safetyResult.changeCount > 0) {
+                      console.log(`[SAFETY] ComfyUI fallback scene ${i}: safety filter applied ${safetyResult.changeCount} categories (${safetyResult.categories.join(', ')})`);
+                      await logger.snapshot('images', 'safety_filter', {
+                        scene_index: i, sub_index: entry.subIndex,
+                        categories_filtered: safetyResult.categories,
+                        change_count: safetyResult.changeCount,
+                        trigger: 'comfyui_fallback_moderation',
+                      }, `Safety filter (ComfyUI fallback retry): ${safetyResult.changeCount} categories in scene ${i}`);
+                    }
+                  } else {
+                    fallbackPrompt = sanitizeImagePrompt(fallbackPrompt, attempt);
+                  }
+                  await new Promise(r => setTimeout(r, 2000));
+                  continue;
+                }
+                // All retries exhausted — skip scene gracefully
+                console.error(`[IMAGES] ⚠️ ComfyUI fallback scene ${i} permanently blocked by moderation after ${attempt} attempts. Skipping scene.`);
+                moderationFailCount++;
+                await logger.snapshot('images', 'moderation_skip', {
+                  scene_index: i, sub_index: entry.subIndex,
+                  attempts: attempt, prompt_length: fallbackPrompt.length,
+                  trigger: 'comfyui_fallback',
+                }, `Scene ${i} skipped: ComfyUI fallback moderation block after ${attempt} attempts`);
+                break;
+              }
+
+              // Rate limit (429) — backoff
+              if (response.status === 429 && attempt < MAX_FALLBACK_RETRIES) {
+                const waitTime = 20 * attempt * 1000;
+                console.log(`[IMAGES] ComfyUI fallback rate limited on scene ${i}, waiting ${waitTime / 1000}s...`);
+                await new Promise(r => setTimeout(r, waitTime));
+                continue;
+              }
+
+              // Non-retryable / exhausted — skip scene instead of killing the step
+              if (response.status === 400 && (errorBody.includes('moderation') || errorBody.includes('safety') || errorBody.includes('content_policy'))) {
+                moderationFailCount++;
+                await logger.snapshot('images', 'moderation_skip', {
+                  scene_index: i, sub_index: entry.subIndex,
+                  attempts: attempt, trigger: 'comfyui_fallback',
+                }, `Scene ${i} skipped: moderation after ${attempt} attempts`);
+                break;
+              }
+              throw new Error(`ComfyUI fallback gpt-image-1 scene ${i} failed: ${response.status} ${errorBody.slice(0, 300)}`);
+            }
+
+            const result = await response.json();
+            if (result.data?.[0]?.b64_json) {
+              imageUrl = `data:image/webp;base64,${result.data[0].b64_json}`;
+              fallbackGenerated = true;
+            } else if (result.data?.[0]?.url) {
+              imageUrl = result.data[0].url;
+              fallbackGenerated = true;
+            }
+
+            if (fallbackGenerated) {
+              if (attempt > 1) {
+                console.log(`[IMAGES] ✓ ComfyUI fallback scene ${i} succeeded on sanitized attempt ${attempt}`);
+              }
+              break;
+            } else {
+              throw new Error(`ComfyUI fallback gpt-image-1 returned no image for scene ${i}`);
+            }
+          }
+
+          if (!fallbackGenerated) {
+            // Don't kill the step — skip scene, assemble will use previous scene's image
+            console.warn(`[IMAGES] ComfyUI fallback scene ${i} has no image (moderation or empty). Continuing.`);
+            scenesCompleted.push(seqIdx);
+            continue;
+          }
+        }
+      } else if (imageModel === 'gpt-image-1') {
         // === GPT-IMAGE-1 (Cheapest: ~$0.016/image at low quality) ===
         // Has retry loop with prompt sanitization for moderation blocks
+        // v8.0+8.1: Character/group scenes use hero portrait; all scenes use scene chain
         const MAX_IMAGE_RETRIES = 3;
         let imageGenerated = false;
+        
+        if (useImageReference) {
+          const refs: string[] = [];
+          if (useCharacterReference) refs.push('character_portrait');
+          if (useSceneChain) refs.push('scene_chain');
+          console.log(`[IMAGES] Scene ${i} (${effectiveSceneType}): using image reference [${refs.join('+')}] for visual consistency`);
+        }
         
         // v6.0: Send the FULL creative prompt on first attempt (no pre-filter).
         // Safety filter only kicks in as a RETRY strategy after a moderation rejection.
@@ -3642,24 +4358,135 @@ export async function executeImagesStep(
         let currentPrompt = scenePrompt;
         
         for (let attempt = 1; attempt <= MAX_IMAGE_RETRIES; attempt++) {
-          const response = await fetch(
-            'https://api.openai.com/v1/images/generations',
-            {
+          let response: Response;
+          
+          if (useImageReference) {
+            // v8.0+8.1: Use /v1/images/edits with reference image(s)
+            // Phase 1: character/group scenes get hero portrait for character consistency
+            // Phase 2: ALL scenes get previous scene image for style/palette continuity
+            // When both apply, both images are sent as references.
+            
+            // Build the reference-aware prompt
+            let refPrompt: string;
+            if (useCharacterReference && useSceneChain) {
+              refPrompt = `REFERENCE IMAGES: Image 1 is the CHARACTER REFERENCE — maintain this EXACT character appearance (face, hair, clothing, features).\n` +
+                `Image 2 is the PREVIOUS SCENE — maintain visual style, color palette, and atmosphere continuity.\n` +
+                `Generate a NEW scene matching this prompt while keeping both consistencies:\n\n` +
+                currentPrompt;
+            } else if (useCharacterReference) {
+              refPrompt = `IMPORTANT: The attached reference image shows the EXACT character appearance to maintain.\n` +
+                `Generate a NEW scene matching this prompt, but keep the character looking like the reference:\n\n` +
+                currentPrompt;
+            } else {
+              // Scene chain only (atmosphere, establishing, object scenes)
+              refPrompt = `STYLE REFERENCE: The attached image is the previous scene. Maintain visual consistency —\n` +
+                `same color palette, lighting style, rendering technique, and atmosphere.\n` +
+                `Generate a NEW, DIFFERENT scene matching this prompt while preserving the visual style:\n\n` +
+                currentPrompt;
+            }
+            
+            // Build multipart form data (Deno-compatible)
+            const boundary = '----FormBoundary' + Math.random().toString(36).substring(2);
+            const encoder = new TextEncoder();
+            const parts: Uint8Array[] = [];
+            
+            // Collect reference images to send
+            const refImages: Array<{ bytes: Uint8Array; filename: string }> = [];
+            if (useCharacterReference) {
+              refImages.push({ bytes: characterReferenceBytes!, filename: 'character_reference.png' });
+            }
+            if (useSceneChain) {
+              refImages.push({ bytes: previousSceneImageBytes!, filename: 'previous_scene.png' });
+            }
+            
+            // image field(s) — use "image[]" for multiple, "image" for single
+            const imageFieldName = refImages.length > 1 ? 'image[]' : 'image';
+            for (const refImg of refImages) {
+              parts.push(encoder.encode(
+                `--${boundary}\r\n` +
+                `Content-Disposition: form-data; name="${imageFieldName}"; filename="${refImg.filename}"\r\n` +
+                `Content-Type: image/png\r\n\r\n`
+              ));
+              parts.push(refImg.bytes);
+              parts.push(encoder.encode('\r\n'));
+            }
+            
+            // prompt field
+            parts.push(encoder.encode(
+              `--${boundary}\r\n` +
+              `Content-Disposition: form-data; name="prompt"\r\n\r\n` +
+              refPrompt + '\r\n'
+            ));
+            
+            // model field
+            parts.push(encoder.encode(
+              `--${boundary}\r\n` +
+              `Content-Disposition: form-data; name="model"\r\n\r\n` +
+              `gpt-image-1\r\n`
+            ));
+            
+            // size field
+            parts.push(encoder.encode(
+              `--${boundary}\r\n` +
+              `Content-Disposition: form-data; name="size"\r\n\r\n` +
+              `1024x1536\r\n`
+            ));
+            
+            // quality field
+            parts.push(encoder.encode(
+              `--${boundary}\r\n` +
+              `Content-Disposition: form-data; name="quality"\r\n\r\n` +
+              `low\r\n`
+            ));
+            
+            // n field
+            parts.push(encoder.encode(
+              `--${boundary}\r\n` +
+              `Content-Disposition: form-data; name="n"\r\n\r\n` +
+              `1\r\n`
+            ));
+            
+            // closing boundary
+            parts.push(encoder.encode(`--${boundary}--\r\n`));
+            
+            // Merge all parts into single buffer
+            const totalLength = parts.reduce((sum, p) => sum + p.length, 0);
+            const body = new Uint8Array(totalLength);
+            let offset = 0;
+            for (const part of parts) {
+              body.set(part, offset);
+              offset += part.length;
+            }
+
+            response = await fetch('https://api.openai.com/v1/images/edits', {
               method: 'POST',
               headers: {
                 'Authorization': `Bearer ${openaiKey}`,
-                'Content-Type': 'application/json',
+                'Content-Type': `multipart/form-data; boundary=${boundary}`,
               },
-              body: JSON.stringify({
-                model: 'gpt-image-1',
-                prompt: currentPrompt,
-                n: 1,
-                size: '1024x1536', // Portrait format for vertical video
-                quality: 'low',    // Cheapest option
-                output_format: 'webp',
-              }),
-            },
-          );
+              body: body,
+            });
+          } else {
+            // Standard text-only generation (atmosphere, establishing, object scenes)
+            response = await fetch(
+              'https://api.openai.com/v1/images/generations',
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${openaiKey}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  model: 'gpt-image-1',
+                  prompt: currentPrompt,
+                  n: 1,
+                  size: '1024x1536', // Portrait format for vertical video
+                  quality: 'low',    // Cheapest option
+                  output_format: 'webp',
+                }),
+              },
+            );
+          }
 
           if (!response.ok) {
             const errorBody = await response.text().catch(() => '');
@@ -3721,9 +4548,32 @@ export async function executeImagesStep(
           if (result.data?.[0]?.b64_json) {
             imageUrl = `data:image/webp;base64,${result.data[0].b64_json}`;
             imageGenerated = true;
+            // v8.1: Capture raw bytes for scene chain (next scene's reference)
+            try {
+              const rawB64 = result.data[0].b64_json;
+              const binaryStr = atob(rawB64);
+              const sceneBytes = new Uint8Array(binaryStr.length);
+              for (let k = 0; k < binaryStr.length; k++) {
+                sceneBytes[k] = binaryStr.charCodeAt(k);
+              }
+              previousSceneImageBytes = sceneBytes;
+              console.log(`[IMAGES] Scene ${i}: captured ${sceneBytes.length} bytes for scene chain`);
+            } catch (chainErr) {
+              console.warn(`[IMAGES] Scene ${i}: failed to capture chain bytes (non-fatal): ${chainErr instanceof Error ? chainErr.message : chainErr}`);
+            }
           } else if (result.data?.[0]?.url) {
             imageUrl = result.data[0].url;
             imageGenerated = true;
+            // v8.1: Fetch image bytes for scene chain from URL
+            try {
+              const chainFetch = await fetch(result.data[0].url);
+              if (chainFetch.ok) {
+                previousSceneImageBytes = new Uint8Array(await chainFetch.arrayBuffer());
+                console.log(`[IMAGES] Scene ${i}: captured ${previousSceneImageBytes.length} bytes for scene chain (from URL)`);
+              }
+            } catch (chainErr) {
+              console.warn(`[IMAGES] Scene ${i}: failed to fetch chain bytes (non-fatal): ${chainErr instanceof Error ? chainErr.message : chainErr}`);
+            }
           }
 
           if (imageGenerated) {
@@ -3810,32 +4660,35 @@ export async function executeImagesStep(
       );
 
       // Store asset with scene key
-      await upsertAsset(supabase, job.id, idempotencyKey, 'dalle_image', storagePath, publicUrl, {
+      const assetMeta: Record<string, unknown> = {
         scene_index: i,
         sub_index: entry.subIndex,
         prompt: scenePrompt,
         prompt_hash: promptHash,
         art_style: artStyle,
         image_model: imageModel,
-      });
+        character_reference_used: !!useCharacterReference,
+        scene_chain_used: !!useSceneChain,
+      };
+      // v5.1: Include ComfyUI config for audit trail + cache invalidation
+      if (imageModel === 'comfyui') {
+        assetMeta.comfyui_workflow = (imagePromptConfig as any)?.comfyui_workflow || 'txt2img_sdxl';
+        assetMeta.comfyui_checkpoint = (imagePromptConfig as any)?.comfyui_checkpoint || 'default';
+        assetMeta.comfyui_steps = (imagePromptConfig as any)?.comfyui_steps || 28;
+        assetMeta.comfyui_cfg = (imagePromptConfig as any)?.comfyui_cfg || 5.5;
+      }
+      await upsertAsset(supabase, job.id, idempotencyKey, 'dalle_image', storagePath, publicUrl, assetMeta);
       
       // Also store asset with prompt hash key (for external idempotency)
-      await upsertAsset(supabase, job.id, promptHashKey, 'dalle_image', storagePath, publicUrl, {
-        scene_index: i,
-        sub_index: entry.subIndex,
-        prompt: scenePrompt,
-        prompt_hash: promptHash,
-        art_style: artStyle,
-        image_model: imageModel,
-      });
+      await upsertAsset(supabase, job.id, promptHashKey, 'dalle_image', storagePath, publicUrl, assetMeta);
 
       generatedCount++;
       scenesCompleted.push(seqIdx);
       console.log(`[IMAGES] ✓ Image ${seqIdx + 1}/${imageSequence.length} (scene ${i}${entry.subIndex > 0 ? ` sub ${entry.subIndex}` : ''}) uploaded (${imageModel}): ${publicUrl}`);
 
-      // === COST CONTROL: Record usage + release slot ===
+      // === COST CONTROL: Record usage (only on successful generation) ===
       if (costSlotAcquired) {
-        const costIdempotencyKey = `job:${job.id}:openai_image:scene_${i}${entry.subIndex > 0 ? `_sub_${entry.subIndex}` : ''}:${promptHash.slice(0, 16)}`;
+        const costIdempotencyKey = `job:${job.id}:openai_image:${costOperation}:${promptHash.slice(0, 16)}`;
         await costHelper.recordUsage(
           'openai_image',
           costIdempotencyKey,
@@ -3845,10 +4698,19 @@ export async function executeImagesStep(
             estimated_cost_cents: imageModel === 'gpt-image-1' ? 2 : (imageModel === 'dall-e-3' ? 8 : 4)
           },
           'images',
-          `scene_${i}${entry.subIndex > 0 ? `_sub_${entry.subIndex}` : ''}`
+          costOperation
         );
-        await costHelper.releaseSlot('openai_image', `scene_${i}${entry.subIndex > 0 ? `_sub_${entry.subIndex}` : ''}`);
       }
+
+      } finally {
+        // === SLOT GUARD: ALWAYS release slot to prevent accumulation ===
+        // Fires on success, throw, continue, or return paths.
+        if (costSlotAcquired) {
+          await costHelper.releaseSlot('openai_image', costOperation).catch((releaseErr: unknown) => {
+            console.error(`[IMAGES] Slot release failed for ${costOperation}:`, releaseErr);
+          });
+        }
+      } // end slot guard try/finally
     }
 
     // ======================================================================
@@ -3907,6 +4769,10 @@ interface VisualCue {
   sceneType: string;      // establishing | object | atmosphere | character | group
   camera: string;         // wide, medium, close-up, overhead, etc.
   isClimax?: boolean;     // true if this is a climactic moment
+  // v9.0: Animation intent — cinematographer flags ~20-25% of scenes for animation
+  animate?: boolean;      // true if this scene should be animated via img2vid
+  motionType?: string;    // atmospheric | environmental | fire_light | camera
+  animationHint?: string; // What physical motion should be visible (e.g. "rain falling through beams")
 }
 
 /**
@@ -3994,6 +4860,10 @@ interface ImageSequenceEntry {
   assetKey: string;       // Asset idempotency key for lookup
   url?: string;           // Resolved public URL (populated at end of images step)
   prompt?: string;        // The final assembled DALL-E prompt (populated at resolution for auditability)
+  // v9.0: Animation intent from cinematographer AI
+  animate?: boolean;       // true if cinematographer flagged this for img2vid animation
+  motionType?: string;     // atmospheric | environmental | fire_light | camera
+  animationHint?: string;  // What physical motion should be visible
 }
 
 /**
@@ -4026,7 +4896,11 @@ async function createStoryAnchor(
   const moodHint = config?.mood || '';
 
   // Determine genre context — only request horror-specific fields for horror presets
-  const HORROR_PRESETS = new Set(['urban_legend', 'counting_horror', 'cosmic_dread', 'folklore', 'body_horror', 'analog_horror']);
+  const HORROR_PRESETS = new Set([
+    'urban_legend', 'counting_horror', 'cosmic_dread', 'folklore', 'body_horror', 'analog_horror',
+    'one_too_many', 'reddit_trending_horror', 'dark_origins', 'slow_creepy', 'punchy_shock',
+    'atmospheric', 'nosleep', 'backrooms', 'glitch',
+  ]);
   const isHorrorPreset = HORROR_PRESETS.has(vibePreset);
   const genreField = isHorrorPreset
     ? '4. horrorTone: Type of horror (psychological, supernatural, counting, cosmic, folklore, body)'
@@ -4044,7 +4918,7 @@ STORY:
 
 Extract:
 1. environment: The PRIMARY setting — be specific (not just "forest" but "dense pine forest with twisted roots at dusk")
-2. characterDescription: If ANY humans appear, describe them in detail (age, clothing, hair, distinguishing features). null if no humans.
+2. characterDescription: If ANY humans appear, describe them as a SINGLE STRING with age, clothing, hair, distinguishing features (e.g. "25-year-old woman with messy dark hair in a loose bun, wearing a stained diner uniform, tired eyes with a nervous twitch"). Return null if no humans appear. MUST be a plain string, NOT an object or array.
 3. recurringMotifs: Visual elements to repeat (specific objects, atmospheric details, textures mentioned in story)
 ${genreField}
 5. timeOfDay: Specific lighting/time
@@ -4100,11 +4974,196 @@ Return JSON: { "environment": "...", "characterDescription": "..." or null, "rec
       parsed.groupCount = null;
     }
 
-    console.log(`[STORY_ANCHOR] Created: env="${(parsed.environment || '').substring(0, 60)}...", group=${parsed.isGroupStory}, count=${parsed.groupCount}`);
+    // Normalize: if GPT returned genreTone instead of horrorTone (non-horror preset), map it
+    if (!parsed.horrorTone && parsed.genreTone) {
+      parsed.horrorTone = parsed.genreTone;
+      delete parsed.genreTone;
+    }
+
+    // Normalize: characterDescription must be a string or null
+    // GPT returns many shapes: {age, hair, clothing, ...}, [{...}, {...}],
+    // or nested like {baby: {...}, adults: [{...}]} — flatten ALL to readable string
+    if (parsed.characterDescription && typeof parsed.characterDescription === 'object') {
+      const flattenCharObj = (c: any, label?: string): string => {
+        if (typeof c === 'string') return label ? `${label}: ${c}` : c;
+        if (!c || typeof c !== 'object') return '';
+        const parts = [c.name, c.age ? `age ${c.age}` : null, c.hair, c.clothing, c.distinguishingFeatures || c.features].filter(Boolean);
+        if (parts.length > 0) return label ? `${label}: ${parts.join(', ')}` : parts.join(', ');
+        return label ? `${label}: ${JSON.stringify(c)}` : JSON.stringify(c);
+      };
+
+      const desc = parsed.characterDescription as any;
+
+      if (Array.isArray(desc)) {
+        // Simple array of character objects: [{...}, {...}]
+        parsed.characterDescription = desc.map((c: any, i: number) =>
+          flattenCharObj(c, `Character ${i + 1}`)
+        ).join('. ');
+      } else {
+        // Check for nested grouped shape: {baby: {...}, adults: [{...}], protagonist: {...}, ...}
+        const keys = Object.keys(desc);
+        const hasDirectFields = ['age', 'hair', 'clothing', 'distinguishingFeatures', 'features'].some(f => f in desc);
+
+        if (hasDirectFields) {
+          // Single flat character object: {age, hair, clothing, ...}
+          parsed.characterDescription = flattenCharObj(desc);
+        } else if (keys.length > 0) {
+          // Nested grouped shape: {baby: {...}, adults: [{...}, {...}], narrator: {...}}
+          const segments: string[] = [];
+          for (const key of keys) {
+            const val = desc[key];
+            const label = key.charAt(0).toUpperCase() + key.slice(1);
+            if (Array.isArray(val)) {
+              val.forEach((item: any, i: number) => {
+                segments.push(flattenCharObj(item, `${label} ${i + 1}`));
+              });
+            } else {
+              segments.push(flattenCharObj(val, label));
+            }
+          }
+          parsed.characterDescription = segments.filter(Boolean).join('. ');
+        } else {
+          parsed.characterDescription = JSON.stringify(desc);
+        }
+      }
+      console.log(`[STORY_ANCHOR] Normalized characterDescription from object to string: "${(parsed.characterDescription as string).substring(0, 120)}..."`);
+    }
+
+    console.log(`[STORY_ANCHOR] Created: env="${(parsed.environment || '').substring(0, 60)}...", group=${parsed.isGroupStory}, count=${parsed.groupCount}, tone=${parsed.horrorTone || '-'}`);
     return parsed as StoryAnchor;
   } catch (err) {
     console.warn(`[STORY_ANCHOR] Creation failed: ${err instanceof Error ? err.message : err}`);
     return null;
+  }
+}
+
+/**
+ * v8.0: Cross-scene visual consistency audit.
+ * Reviews ALL visual cue descriptions together in a single GPT-4o-mini call
+ * to catch prop/object contradictions before image generation.
+ *
+ * Examples it catches:
+ * - Scene 11 shows a smartphone but Scene 13 shows a landline phone
+ * - Character wearing a jacket in Scene 3 but a hoodie in Scene 7
+ * - Car is a sedan in Scene 5 but an SUV in Scene 9
+ * - Scene is indoors in a store but next scene implies outdoors
+ *
+ * Returns the same cues array with any contradictory descriptions patched.
+ * If the LLM call fails, returns the original cues unchanged (graceful degradation).
+ */
+async function auditVisualCueConsistency(
+  cues: VisualCue[],
+  scenes: Array<{ index: number; text: string; keywords: string[] }>,
+  openaiKey: string,
+  storyAnchor: StoryAnchor | null,
+): Promise<{ cues: VisualCue[]; fixes: Array<{ scene: number; issue: string; before: string; after: string }> }> {
+  if (!openaiKey || cues.length < 3) {
+    return { cues, fixes: [] };
+  }
+
+  try {
+    // Build a compact scene+cue list for the LLM to review
+    const sceneDescriptions = cues.map(c => {
+      const sceneText = scenes[c.sceneIndex]?.text?.substring(0, 200) || '';
+      return `Scene ${c.sceneIndex + 1} [${c.sceneType}]: Cue: "${c.description}" | Narration: "${sceneText}"`;
+    }).join('\n');
+
+    const anchorContext = storyAnchor ? `
+STORY SETTING: ${storyAnchor.environment || 'unknown'}
+CHARACTERS: ${storyAnchor.characterDescription || 'not specified'}
+TIME: ${storyAnchor.timeOfDay || 'not specified'}` : '';
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openaiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `You are a CONTINUITY SUPERVISOR for a short video. You review visual scene descriptions and find CONTRADICTIONS.
+
+You are reviewing CONSISTENCY and NARRATION ALIGNMENT. Look for:
+1. PROPS changing type (smartphone → landline phone, modern car → old truck, flashlight → candle)
+2. CLOTHING changing unexpectedly (jacket → hoodie, formal → casual) within the same character
+3. SETTING contradictions (indoors → outdoors when story didn't change location)
+4. TECHNOLOGY anachronisms (modern phone in one scene, rotary phone in next)
+5. VEHICLE changes (sedan → SUV, car color changing)
+6. WEAPON/TOOL changes (kitchen knife → hunting knife)
+7. LOCATION MISMATCH WITH NARRATION (CRITICAL): If the narration says the character is in their car, at home, outside, in a parking lot, etc. — the visual cue description MUST match that location. If narration says "I ran to my car" but the cue shows them inside a store, THAT IS A CONTRADICTION that must be fixed.
+8. DEVICE ORIENTATION: If a character is described holding/using a phone, the screen should face the viewer, not the back of the phone.
+
+Do NOT flag:
+- Different camera angles or framing (that's intentional variety)
+- Mood/lighting changes (that's dramatic escalation)
+- Different characters holding different objects
+- Scene-appropriate changes (going from inside to outside when the story says they left)
+
+For each contradiction found, provide the FIXED description for the scene that should change.
+Keep the fix minimal — only change the contradictory element, keep everything else identical.
+Prefer fixing LATER scenes to match EARLIER ones (first mention establishes canon).`,
+          },
+          {
+            role: 'user',
+            content: `Review these ${cues.length} scene descriptions for visual continuity errors:${anchorContext}
+
+${sceneDescriptions}
+
+Respond with JSON: { "fixes": [ { "sceneIndex": <0-based>, "issue": "<brief description of the contradiction>", "fixedDescription": "<corrected description>" } ] }
+If no contradictions found, respond: { "fixes": [] }`,
+          },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.2,
+        max_tokens: 2000,
+      }),
+    });
+
+    if (!response.ok) {
+      console.warn(`[CONSISTENCY] GPT call failed: ${response.status} — skipping audit`);
+      return { cues, fixes: [] };
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) return { cues, fixes: [] };
+
+    const parsed = JSON.parse(content);
+    const rawFixes = parsed.fixes || [];
+
+    if (rawFixes.length === 0) {
+      console.log(`[CONSISTENCY] ✓ No contradictions found across ${cues.length} scenes`);
+      return { cues, fixes: [] };
+    }
+
+    // Apply fixes to cue descriptions
+    const appliedFixes: Array<{ scene: number; issue: string; before: string; after: string }> = [];
+    const patchedCues = [...cues];
+
+    for (const fix of rawFixes) {
+      const idx = patchedCues.findIndex(c => c.sceneIndex === fix.sceneIndex);
+      if (idx >= 0 && fix.fixedDescription && fix.fixedDescription.length > 10) {
+        const before = patchedCues[idx].description;
+        patchedCues[idx] = { ...patchedCues[idx], description: fix.fixedDescription };
+        appliedFixes.push({
+          scene: fix.sceneIndex,
+          issue: fix.issue || 'continuity fix',
+          before: before.substring(0, 150),
+          after: fix.fixedDescription.substring(0, 150),
+        });
+        console.log(`[CONSISTENCY] 🔧 Scene ${fix.sceneIndex + 1}: ${fix.issue} | "${before.substring(0, 80)}" → "${fix.fixedDescription.substring(0, 80)}"`);
+      }
+    }
+
+    console.log(`[CONSISTENCY] Applied ${appliedFixes.length} continuity fixes across ${cues.length} scenes`);
+    return { cues: patchedCues, fixes: appliedFixes };
+
+  } catch (err) {
+    console.warn(`[CONSISTENCY] Audit failed: ${err instanceof Error ? err.message : err} — using original cues`);
+    return { cues, fixes: [] };
   }
 }
 
@@ -4141,16 +5200,23 @@ HORROR TONE: ${storyAnchor.horrorTone}
 TIME OF DAY: ${storyAnchor.timeOfDay}
 ${storyAnchor.isGroupStory ? `GROUP STORY: Yes, ${storyAnchor.groupCount || 'unknown number of'} people` : ''}` : '';
 
-  // Special rules for counting horror (one_too_many)
+  // Special rules for counting horror (one_too_many) — manga-horror style
   const countingRules = (vibePreset === 'one_too_many' && storyAnchor?.isGroupStory) ? `
-COUNTING HORROR RULES (CRITICAL):
+COUNTING HORROR RULES (CRITICAL — MANGA STYLE):
 - This is a "one too many" story — the group discovers an extra person
 - Expected group size: ${storyAnchor.groupCount || 'varies'}
 - BEFORE the reveal moment: show exactly the expected count, everyone looks normal
 - AFTER the reveal: show one extra person, with subtly unsettling expressions
 - For "implied presence" scenes (feeling watched, shadows): do NOT show extra people as humans — use shadow distortions, light anomalies, motion blur
 - For scenes examining photos/footage: ALWAYS show the wrong count
-- VARY the scene types — not every scene needs the full group. Use establishing shots, object close-ups, atmosphere shots, and individual character moments too.` : '';
+- VARY the scene types — not every scene needs the full group. Use establishing shots, object close-ups, atmosphere shots, and individual character moments too.
+- MANGA VISUAL STYLE: All shots should feel like dark manga panels. Use heavy black ink, cross-hatching for shadows, stark high-contrast monochrome with selective blood-red accents. Faces should show extreme detail in expressions of dread — wide eyes, sweat drops, trembling hands. Think Junji Ito spirals and obsessive patterns.
+- COUNTING MOTIFS: Where possible, incorporate counting imagery — tally marks scratched into surfaces, spiraling numbers, fingers counting, repeated objects in rows. The counting obsession should feel visual, not just narrative.` : '';
+  const countingRulesSolo = (vibePreset === 'one_too_many' && !storyAnchor?.isGroupStory) ? `
+COUNTING HORROR RULES (NON-GROUP — MANGA STYLE):
+- MANGA VISUAL STYLE: All shots should feel like dark manga panels. Heavy black ink linework, obsessive cross-hatching, extreme detail on disturbing elements. High contrast monochrome with selective blood-red accents. Junji Ito aesthetic — spiral motifs, impossible geometry, faces showing obsessive dread.
+- Use dramatic foreshortening, panel-like compositions, thick bold outlines.
+- Prefer extreme close-ups of faces, hands, and small unsettling details.` : '';
 
   // Backrooms-specific rules
   const liminalRules = vibePreset === 'backrooms' ? `
@@ -4159,11 +5225,25 @@ LIMINAL SPACE RULES:
 - Focus on empty impossible architecture, repeating patterns, fluorescent-lit void
 - Use POV shots, impossible corridors, empty rooms` : '';
 
+  // Dark Origins documentary-specific rules
+  const darkOriginsRules = vibePreset === 'dark_origins' ? `
+DARK ORIGINS / DOCUMENTARY RULES (CRITICAL):
+- This is a THIRD-PERSON DOCUMENTARY narration, NOT first-person horror. Think true-crime documentary, Investigation Discovery, Dateline.
+- NEVER invent characters who do not appear in the narration. If the story is about a man, do NOT show random women reacting. Every person in a shot MUST be referenced in the story text.
+- NEVER use "reaction shots" of unnamed/unmentioned people. If the narration describes a concept, evidence, or aftermath — show the EVIDENCE, the LOCATION, or the OBJECT, not a random bystander's face.
+- Prefer ARCHIVAL/EVIDENCE-STYLE shots: crime scene photos, sealed files, old buildings, empty rooms, abandoned equipment, newspaper headlines, locked doors, fog-covered landscapes.
+- For abstract narration (things being "unexplained", "chilling silence", aftermath): use ATMOSPHERE and OBJECT shots — an empty room, a spinning tape, a locked filing cabinet, a boarded-up building — NOT character reaction shots.
+- The main subject is typically ONE specific historical figure. Only show THAT person (matching the characterDescription) when the narration is specifically about them doing something.
+- Heavily favor: establishing shots of locations, close-ups of evidence/objects, atmosphere shots of empty/abandoned spaces.
+- This preset should feel like flipping through a cold case file, not watching someone scream.` : '';
+
   const prompt = `You are an expert CINEMATOGRAPHER creating a shot list for a short horror video.
 ${styleContext}
 ${anchorContext}
 ${countingRules}
+${countingRulesSolo}
 ${liminalRules}
+${darkOriginsRules}
 
 Genre/vibe: ${vibePreset}
 
@@ -4187,8 +5267,10 @@ SHOT DESIGN PRINCIPLES:
 SCENE-GROUNDING RULES:
 - Each description must match the DOMINANT ACTION or SUBJECT of THAT specific scene's narration.
 - Do NOT bleed unique elements between scenes.
-- MAINTAIN CONSISTENCY for: location/setting, character appearance, recurring props.
+- MAINTAIN CONSISTENCY for: character appearance, recurring props.
 - The BACKGROUND and CAST stay consistent, but the CAMERA FOCUS and FRAMING change every scene.
+- LOCATION CHANGES (CRITICAL): If a scene's narration explicitly mentions the character is NOW IN A DIFFERENT PLACE (e.g. "I'm sitting in my car", "I got back to my apartment", "posting this from the parking lot", "I ran outside"), your visual description MUST show that NEW location — do NOT keep them in the previous setting. The narration is the authority on WHERE the character is.
+- DEVICE/OBJECT USAGE: When narration mentions a character using a phone, laptop, camera, or recording device, show the SCREEN SIDE facing the viewer (not the back of the device). Show the character interacting with the device naturally — holding it, looking at the screen, typing on it.
 
 CINEMATOGRAPHIC SHOT SELECTION (think like a movie director / cinematographer):
 - For EACH scene, ask: "What shot best SERVES this moment in the story?"
@@ -4254,12 +5336,21 @@ Respond with a JSON object: { "cues": [ { "sceneIndex": 0, "description": "...",
     const parsed = JSON.parse(content);
     const cues = parsed.cues || parsed.scenes || [];
     
-    // Log scene type distribution for diagnostics
+    // Log scene type distribution and animation intent for diagnostics
     const typeDistribution: Record<string, number> = {};
+    const animatedScenes: number[] = [];
+    const motionTypes: Record<string, number> = {};
     for (const cue of cues) {
       typeDistribution[cue.sceneType] = (typeDistribution[cue.sceneType] || 0) + 1;
+      if (cue.animate) {
+        animatedScenes.push(cue.sceneIndex);
+        if (cue.motionType) {
+          motionTypes[cue.motionType] = (motionTypes[cue.motionType] || 0) + 1;
+        }
+      }
     }
     console.log(`[VISUAL_CUES] Extracted ${cues.length} cues for ${scenes.length} scenes. Types: ${JSON.stringify(typeDistribution)}`);
+    console.log(`[VISUAL_CUES] Animation intent: ${animatedScenes.length}/${cues.length} scenes flagged for animation [${animatedScenes.join(', ')}]. Motion types: ${JSON.stringify(motionTypes)}`);
     
     return cues;
   } catch (err) {
@@ -4652,6 +5743,7 @@ function buildImagePrompt(
   config: ImagePromptConfig | null,
   visualCue?: VisualCue,
   storyAnchor?: StoryAnchor | null,
+  artStyleRow?: any,
 ): string {
   // === DB-driven prompt (new path) ===
   if (config) {
@@ -4739,25 +5831,27 @@ function buildImagePrompt(
       environment = storyAnchor.environment;
     }
 
-    // v3.1: Override lighting and color_palette with story anchor context
-    // The DB config may reference a generic setting (e.g. "campfire glow")
-    // that doesn't match the actual story (e.g. a train). When story anchor
-    // provides timeOfDay/environment, derive setting-appropriate values.
-    // v3.2: Scene-type-aware — only reference "characters/faces" for group/character
-    // scenes. For atmosphere/establishing/object scenes, focus on environment lighting.
+    // v3.1 / v10.0: Derive lighting and color_palette from the SCENE context.
+    // Use the visual cue description (per-scene) as the primary location signal.
+    // Only fall back to story anchor environment when no visual cue is available.
+    // This prevents a global anchor like "abandoned workshop" from overriding
+    // a scene-specific cue like "foggy town street."
     let lighting = config.lighting;
     let colorPalette = config.color_palette;
     if (storyAnchor) {
       const tod = storyAnchor.timeOfDay || '';
-      const env = storyAnchor.environment || '';
+      // v10.0: Scene-local environment — prefer visual cue description over global anchor
+      const sceneEnv = cueDescription && cueDescription.length > 20
+        ? cueDescription.substring(0, 80)
+        : (storyAnchor.environment || '').substring(0, 80);
       const isCharacterScene = sceneType === 'group' || sceneType === 'character';
-      // Build story-aware lighting — only mention characters for character scenes
+      // Build scene-aware lighting using per-scene location
       if (isCharacterScene) {
-        lighting = `bright key lighting on all characters, ${tod ? tod + ' lighting conditions, ' : ''}practical lighting matching the setting (${env.substring(0, 80)}), ambient fill light so no face is lost in shadow`;
-        colorPalette = `vivid clothing colors, clear skin tones, high color contrast, colors appropriate for: ${env.substring(0, 80)}, ${tod ? tod + ' tones' : 'rich deep tones'}`;
+        lighting = `bright key lighting on all characters, ${tod ? tod + ' lighting conditions, ' : ''}practical lighting matching the scene (${sceneEnv}), ambient fill light so no face is lost in shadow`;
+        colorPalette = `vivid clothing colors, clear skin tones, high color contrast, colors appropriate for: ${sceneEnv}, ${tod ? tod + ' tones' : 'rich deep tones'}`;
       } else {
-        lighting = `${tod ? tod + ' lighting conditions, ' : ''}practical lighting matching the setting (${env.substring(0, 80)}), atmospheric ambient light, clear scene visibility`;
-        colorPalette = `setting-appropriate colors for: ${env.substring(0, 80)}, ${tod ? tod + ' tones, ' : ''}high contrast, rich deep tones`;
+        lighting = `${tod ? tod + ' lighting conditions, ' : ''}practical lighting matching the scene (${sceneEnv}), atmospheric ambient light, clear scene visibility`;
+        colorPalette = `setting-appropriate colors for: ${sceneEnv}, ${tod ? tod + ' tones, ' : ''}high contrast, rich deep tones`;
       }
     }
 
@@ -4798,6 +5892,13 @@ function buildImagePrompt(
         : `ABSOLUTELY NO: groups of people, crowds, multiple faces, multiple figures standing together.`;
     }
 
+    // v8.1: Prevent "back of phone" issue — when scene involves device usage,
+    // ensure the screen side faces the viewer and the device is held naturally
+    const deviceMentioned = /\b(phone|smartphone|cell\s*phone|mobile|laptop|tablet|screen|recording|filming|posting|scrolling|texting)\b/i.test(sceneText);
+    if (deviceMentioned) {
+      negativePrompt += '\nNEVER show back of phone, back of device, phone rear camera facing viewer. Always show phone screen facing viewer, character looking at screen.';
+    }
+
     const parts = [
       sceneDescription,
       '',
@@ -4819,18 +5920,32 @@ function buildImagePrompt(
   }
 
   // === Legacy fallback (hardcoded maps) ===
-  const styleTemplates: Record<string, string> = {
-    'cinematic-dark': 'Cinematic dark photography, moody desaturated colors, deep shadows, film grain, A24 horror aesthetic.',
-    'analog-horror': 'Analog horror VHS aesthetic, heavy static, glitch artifacts, scanlines, found footage style.',
-    'uncanny-illustrated': 'Editorial cartoon illustration, cel-shaded horror, bold black ink outlines, flat colors, uncanny faces.',
-    // DecideThisDaily art styles (non-horror)
-    'editorial-clean': 'Clean modern editorial photography, sharp focus, balanced neutral tones, documentary-style framing, everyday realism.',
-    'surreal-contemplative': 'Surreal contemplative digital art, dreamlike atmospheric compositions, ethereal volumetric light, soft painterly edges.',
-    'cinematic-contrast': 'High-contrast cinematic photography, bold dramatic compositions, vivid split-tone color grading, theatrical lighting.',
-    // Neutral fallback (used when DB config unavailable)
-    'cinematic': 'Cinematic photography, dramatic compositions, balanced lighting, film-quality aesthetic.',
-  };
-  const styleBase = styleTemplates[artStyle] || styleTemplates['cinematic'];
+  // v7.0 — Issue #7: Prefer DB art_styles registry over hardcoded templates
+  let styleBase: string;
+  let negativePromptSuffix = '';
+
+  if (artStyleRow) {
+    // DB registry available — use full prompt + negative from art_styles table
+    styleBase = artStyleRow.base_prompt;
+    if (artStyleRow.color_override) styleBase += ` Color palette: ${artStyleRow.color_override}.`;
+    if (artStyleRow.technical_style) styleBase += ` Style: ${artStyleRow.technical_style}.`;
+    negativePromptSuffix = artStyleRow.negative_prompt ? ` Avoid: ${artStyleRow.negative_prompt}.` : '';
+  } else {
+    // Final fallback — hardcoded style one-liners (kept for resilience if DB unavailable)
+    const styleTemplates: Record<string, string> = {
+      'cinematic-dark': 'Cinematic dark photography, moody desaturated colors, deep shadows, film grain, A24 horror aesthetic.',
+      'analog-horror': 'Analog horror VHS aesthetic, heavy static, glitch artifacts, scanlines, found footage style.',
+      'vhs-horror': 'Eerie horror photography with VHS tape degradation, warped distorted realism, analog video artifacts, grainy surveillance quality, chromatic aberration, found-footage documentary aesthetic.',
+      'uncanny-illustrated': 'Editorial cartoon illustration, cel-shaded horror, bold black ink outlines, flat colors, uncanny faces.',
+      'rnmort': 'Adult animated cartoon illustration in the style of Rick and Morty. Bold thick black outlines, flat cel-shaded coloring, exaggerated character proportions, large expressive eyes with dot pupils, vibrant saturated colors against dark moody backgrounds.',
+      'manga-horror': 'Dark horror manga illustration in the style of Junji Ito. Heavy black ink linework, obsessive cross-hatching, extreme detail on faces and hands showing dread. High contrast monochrome with selective blood-red accents. Panel-like compositions, dramatic foreshortening, thick bold outlines, deep pure blacks.',
+      'editorial-clean': 'Clean modern editorial photography, sharp focus, balanced neutral tones, documentary-style framing, everyday realism.',
+      'surreal-contemplative': 'Surreal contemplative digital art, dreamlike atmospheric compositions, ethereal volumetric light, soft painterly edges.',
+      'cinematic-contrast': 'High-contrast cinematic photography, bold dramatic compositions, vivid split-tone color grading, theatrical lighting.',
+      'cinematic': 'Cinematic photography, dramatic compositions, balanced lighting, film-quality aesthetic.',
+    };
+    styleBase = styleTemplates[artStyle] || styleTemplates['cinematic'];
+  }
 
   // Use visual cue description if available, else raw text
   const sceneDescription = visualCue?.description || sceneText.substring(0, 200);
@@ -4847,7 +5962,1269 @@ function buildImagePrompt(
   const envHint = envHints[visualPreset] || envHints['default'];
 
   const keywordStr = keywords.slice(0, 3).join(', ');
-  return `${styleBase} Scene: ${sceneDescription}.${cameraHint} Environment: ${envHint}. Keywords: ${keywordStr}. Portrait orientation 9:16. No text, no words, no letters.`;
+  return `${styleBase} Scene: ${sceneDescription}.${cameraHint} Environment: ${envHint}. Keywords: ${keywordStr}. Portrait orientation 9:16. No text, no words, no letters.${negativePromptSuffix}`;
+}
+
+// =====================================================
+// ANIMATION POTENTIAL SCORING
+// Scores a scene prompt for img2vid suitability based on motion keywords.
+// Higher scores = more potential for visually interesting animation.
+// =====================================================
+
+/**
+ * Score a scene prompt for animation potential.
+ * Returns 0 if the scene has no motion keywords (static — better as Ken Burns).
+ * Higher scores = better candidates for SVD/AnimateDiff animation.
+ *
+ * Categories scored:
+ *   - Human motion: walking, running, turning, reaching, grabbing, gesturing
+ *   - Vehicle motion: driving, car, truck, bicycle, motorcycle
+ *   - Weather effects: rain, snow, wind, storm, fog, mist, clouds
+ *   - Water/liquid: water, river, ocean, waves, dripping, flooding, pouring
+ *   - Fire/smoke: fire, flames, burning, smoke, embers, candles, flickering
+ *   - Nature motion: trees swaying, leaves falling, grass, branches
+ *   - Camera motion: panning, tracking, dolly, following
+ *   - Atmospheric: dust, particles, floating, drifting, swirling
+ *   - Action/tension: chase, escape, fleeing, struggle, fight, crash
+ */
+function scoreAnimationPotential(prompt: string): { score: number; reasons: string[] } {
+  if (!prompt) return { score: 0, reasons: ['no_prompt'] };
+  const p = prompt.toLowerCase();
+  let score = 0;
+  const reasons: string[] = [];
+
+  // ── Human motion (high value — SVD animates people well) ──
+  const humanMotion = [
+    'walk', 'walking', 'walks', 'run', 'running', 'runs', 'sprint',
+    'turning', 'turns', 'reaching', 'reaches', 'grabbing', 'grabs',
+    'gestur', 'waving', 'pointing', 'crawl', 'climbing', 'stumbl',
+    'stagger', 'pacing', 'stepping', 'approach', 'retreat',
+    'dancing', 'shaking', 'trembl', 'shiver', 'nod', 'breathing',
+  ];
+  const humanMatches = humanMotion.filter(k => p.includes(k));
+  if (humanMatches.length > 0) {
+    score += 3 + Math.min(humanMatches.length - 1, 2); // 3-5 pts
+    reasons.push(`human_motion:${humanMatches.slice(0, 3).join(',')}`);
+  }
+
+  // ── Vehicle motion ──
+  const vehicleMotion = [
+    'car ', 'cars ', 'vehicle', 'truck', 'bus ', 'driving', 'driv',
+    'motorcycle', 'bicycle', 'traffic', 'headlights moving',
+  ];
+  const vehicleMatches = vehicleMotion.filter(k => p.includes(k));
+  if (vehicleMatches.length > 0) {
+    score += 3;
+    reasons.push(`vehicle:${vehicleMatches.slice(0, 2).join(',')}`);
+  }
+
+  // ── Weather effects (great for SVD — natural motion) ──
+  const weather = [
+    'rain', 'raining', 'snow', 'snowing', 'snowfall', 'snowflake',
+    'wind', 'windy', 'storm', 'thunder', 'lightning',
+    'fog ', 'foggy', 'mist', 'misty', 'haze', 'blizzard',
+    'downpour', 'drizzle', 'sleet', 'hail',
+  ];
+  const weatherMatches = weather.filter(k => p.includes(k));
+  if (weatherMatches.length > 0) {
+    score += 4 + Math.min(weatherMatches.length - 1, 2); // 4-6 pts
+    reasons.push(`weather:${weatherMatches.slice(0, 3).join(',')}`);
+  }
+
+  // ── Water/liquid ──
+  const water = [
+    'water', 'river', 'stream', 'ocean', 'sea ', 'lake',
+    'wave', 'waves', 'dripping', 'drip', 'flooding', 'flood',
+    'pouring', 'splash', 'puddle', 'ripple', 'current',
+    'waterfall', 'fountain', 'rain',
+  ];
+  const waterMatches = water.filter(k => p.includes(k));
+  if (waterMatches.length > 0) {
+    score += 3 + Math.min(waterMatches.length - 1, 2);
+    reasons.push(`water:${waterMatches.slice(0, 3).join(',')}`);
+  }
+
+  // ── Fire/smoke/light ──
+  const fire = [
+    'fire', 'flame', 'burning', 'burn', 'smoke', 'smoking',
+    'ember', 'candle', 'flicker', 'torch', 'campfire',
+    'glow', 'glowing', 'sparks', 'smolder',
+  ];
+  const fireMatches = fire.filter(k => p.includes(k));
+  if (fireMatches.length > 0) {
+    score += 4;
+    reasons.push(`fire_smoke:${fireMatches.slice(0, 2).join(',')}`);
+  }
+
+  // ── Nature motion (trees, leaves, grass) ──
+  const nature = [
+    'sway', 'swaying', 'leaves falling', 'leaves blowing',
+    'branches', 'rustling', 'grass moving', 'trees bending',
+    'petals', 'blossoms', 'dandelion',
+  ];
+  const natureMatches = nature.filter(k => p.includes(k));
+  if (natureMatches.length > 0) {
+    score += 2;
+    reasons.push(`nature:${natureMatches.slice(0, 2).join(',')}`);
+  }
+
+  // ── Atmospheric particles ──
+  const atmospheric = [
+    'dust', 'particles', 'floating', 'drifting', 'swirl',
+    'rising', 'falling', 'descend', 'ascend', 'hover',
+    'shimmer', 'sparkle', 'aurora', 'northern lights',
+  ];
+  const atmoMatches = atmospheric.filter(k => p.includes(k));
+  if (atmoMatches.length > 0) {
+    score += 2;
+    reasons.push(`atmosphere:${atmoMatches.slice(0, 2).join(',')}`);
+  }
+
+  // ── Action/tension (climactic scenes) ──
+  const action = [
+    'chase', 'chasing', 'escape', 'escaping', 'flee', 'fleeing',
+    'struggle', 'fight', 'crash', 'collision', 'explosion',
+    'attack', 'lunge', 'leap', 'jump', 'falling', 'collapse',
+  ];
+  const actionMatches = action.filter(k => p.includes(k));
+  if (actionMatches.length > 0) {
+    score += 4;
+    reasons.push(`action:${actionMatches.slice(0, 2).join(',')}`);
+  }
+
+  // ── Camera movement hints ──
+  const cameraMotion = [
+    'pan', 'panning', 'tracking shot', 'dolly', 'following',
+    'sweeping', 'rotating', 'zoom', 'pull back', 'push in',
+  ];
+  const cameraMatches = cameraMotion.filter(k => p.includes(k));
+  if (cameraMatches.length > 0) {
+    score += 1;
+    reasons.push(`camera:${cameraMatches.slice(0, 2).join(',')}`);
+  }
+
+  // ── Bonus: climax scenes (isClimax from visual cue extraction) ──
+  if (p.includes('climax') || p.includes('reveal') || p.includes('final moment')) {
+    score += 2;
+    reasons.push('climax_bonus');
+  }
+
+  // ── Penalty: very static descriptions ──
+  const staticIndicators = [
+    'empty room', 'still life', 'photograph', 'portrait',
+    'close-up of text', 'document', 'newspaper', 'letter',
+    'static', 'motionless', 'frozen in place',
+  ];
+  const staticMatches = staticIndicators.filter(k => p.includes(k));
+  if (staticMatches.length > 0 && score > 0) {
+    score = Math.max(0, score - 2);
+    reasons.push(`static_penalty:${staticMatches.slice(0, 2).join(',')}`);
+  }
+
+  if (reasons.length === 0) reasons.push('no_motion_keywords');
+  return { score, reasons };
+}
+
+/**
+ * Build a concise motion prompt for AnimateDiff from a scene's image prompt.
+ * Extracts motion-relevant phrases (weather, human action, fire/smoke, water,
+ * camera movement) and assembles them into a short, AnimateDiff-friendly prompt.
+ * Falls back to a generic cinematic motion prompt if nothing specific is found.
+ *
+ * NOTE: This is the fast/free fallback. Prefer generateMotionPromptLLM() when
+ * an OpenAI key is available — it handles arbitrary scene content (curtains,
+ * paper, mouths, fabric, machinery, etc.) that no keyword list can enumerate.
+ */
+function buildMotionPrompt(scenePrompt: string): string {
+  if (!scenePrompt) return '';
+  const p = scenePrompt.toLowerCase();
+  const motionPhrases: string[] = [];
+
+  // ── Weather ──
+  if (p.includes('rain') || p.includes('downpour') || p.includes('drizzle'))
+    motionPhrases.push('rain pouring down with visible raindrops');
+  if (p.includes('snow') || p.includes('snowfall') || p.includes('blizzard'))
+    motionPhrases.push('snow falling gently');
+  if (p.includes('storm') || p.includes('thunder') || p.includes('lightning'))
+    motionPhrases.push('stormy atmosphere with lightning flashes');
+  if (p.includes('wind') || p.includes('windy'))
+    motionPhrases.push('wind blowing through the scene');
+  if (p.includes('fog') || p.includes('mist') || p.includes('haze'))
+    motionPhrases.push('fog drifting slowly');
+
+  // ── Fire / smoke / light ──
+  if (p.includes('fire') || p.includes('flame') || p.includes('burning') || p.includes('campfire'))
+    motionPhrases.push('flickering flames and dancing fire light');
+  if (p.includes('smoke') || p.includes('smoking') || p.includes('smolder'))
+    motionPhrases.push('smoke rising and curling');
+  if (p.includes('candle'))
+    motionPhrases.push('candlelight flickering');
+  if (p.includes('flicker') || p.includes('neon') || p.includes('sign'))
+    motionPhrases.push('lights flickering on and off');
+  if (p.includes('glow') || p.includes('sparks') || p.includes('ember'))
+    motionPhrases.push('glowing embers and sparks drifting');
+
+  // ── Water / liquid ──
+  if (p.includes('river') || p.includes('stream') || p.includes('current'))
+    motionPhrases.push('water flowing steadily');
+  if (p.includes('ocean') || p.includes('sea ') || p.includes('wave'))
+    motionPhrases.push('ocean waves rolling');
+  if (p.includes('drip') || p.includes('puddle') || p.includes('ripple'))
+    motionPhrases.push('water dripping with ripples');
+  if (p.includes('waterfall') || p.includes('fountain'))
+    motionPhrases.push('water cascading down');
+
+  // ── Human motion ──
+  if (p.includes('walk') || p.includes('pacing') || p.includes('approach'))
+    motionPhrases.push('person walking slowly');
+  if (p.includes('run') || p.includes('sprint') || p.includes('chase') || p.includes('flee'))
+    motionPhrases.push('figure running with urgent motion');
+  if (p.includes('trembl') || p.includes('shiver') || p.includes('shaking'))
+    motionPhrases.push('subtle trembling movement');
+  if (p.includes('crawl') || p.includes('climb'))
+    motionPhrases.push('slow crawling movement');
+  if (p.includes('turning') || p.includes('reaching') || p.includes('grabbing'))
+    motionPhrases.push('figure reaching forward with deliberate motion');
+  if (p.includes('breathing') || p.includes('nod'))
+    motionPhrases.push('subtle breathing motion');
+
+  // ── Vehicle ──
+  if (p.includes('car') || p.includes('vehicle') || p.includes('truck') || p.includes('traffic') || p.includes('headlight'))
+    motionPhrases.push('vehicle lights moving through the scene');
+
+  // ── Nature ──
+  if (p.includes('sway') || p.includes('branches') || p.includes('rustl') || p.includes('leaves'))
+    motionPhrases.push('trees and branches swaying gently');
+  if (p.includes('grass') || p.includes('field'))
+    motionPhrases.push('grass moving in the wind');
+
+  // ── Atmospheric particles ──
+  if (p.includes('dust') || p.includes('particles') || p.includes('float'))
+    motionPhrases.push('dust particles floating in the air');
+  if (p.includes('shimmer') || p.includes('sparkle'))
+    motionPhrases.push('shimmering light reflections');
+
+  // ── Shadows / darkness (common in horror content) ──
+  if (p.includes('shadow') || p.includes('silhouette'))
+    motionPhrases.push('shadows shifting slowly');
+  if (p.includes('dark') && (p.includes('corridor') || p.includes('hallway') || p.includes('room')))
+    motionPhrases.push('subtle movement in the darkness');
+
+  // ── Camera hints ──
+  if (p.includes('pan') || p.includes('sweep'))
+    motionPhrases.push('slow camera pan');
+  if (p.includes('zoom') || p.includes('close-up') || p.includes('closeup'))
+    motionPhrases.push('slow push-in camera movement');
+
+  if (motionPhrases.length === 0) {
+    // No specific motion detected — use atmospheric default
+    return 'cinematic motion, slow atmospheric drift, subtle ambient movement';
+  }
+
+  // Cap at 4 phrases to keep the prompt focused (AnimateDiff works better with concise prompts)
+  const selected = motionPhrases.slice(0, 4);
+  return selected.join(', ') + ', cinematic';
+}
+
+/**
+ * LLM-powered motion prompt generation.
+ * Sends the scene description to GPT-4o-mini and asks it to describe
+ * ONLY the physical motions that should be animated — not the scene itself.
+ * Handles arbitrary content (curtains, mouths, paper, machinery, fabric, etc.)
+ * that no hardcoded keyword list can cover.
+ *
+ * Falls back to buildMotionPrompt() if the LLM call fails or key is missing.
+ *
+ * @param scenePrompt - The image generation prompt describing the scene
+ * @param openaiKey - OpenAI API key
+ * @returns Motion prompt string for AnimateDiff
+ */
+async function generateMotionPromptLLM(scenePrompt: string, openaiKey: string): Promise<string> {
+  if (!scenePrompt || !openaiKey) {
+    return buildMotionPrompt(scenePrompt);
+  }
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openaiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        max_tokens: 80,
+        temperature: 0.4,
+        messages: [
+          {
+            role: 'system',
+            content: `You are a motion prompt writer for AnimateDiff video generation. Given a scene description, output ONLY a short motion prompt (max 20 words) describing ambient/atmospheric motion.
+
+CRITICAL — AnimateDiff LIMITATIONS:
+- AnimateDiff CANNOT move specific body parts (fingers, hands, arms, legs, mouth, eyes)
+- AnimateDiff CANNOT do actions (walking, pointing, grabbing, writing, speaking)
+- AnimateDiff CAN do: ambient particle motion (snow, rain, dust, smoke, fog, sparks)
+- AnimateDiff CAN do: environmental sway (branches, grass, curtains, hair, fabric, water)
+- AnimateDiff CAN do: lighting shifts (flickering, pulsing, shadow movement, light rays)
+- AnimateDiff CAN do: camera motion (slow pan, gentle zoom, subtle drift, push-in)
+- AnimateDiff CAN do: atmospheric effects (wind, clouds moving, fire, reflections)
+
+RULES:
+- NEVER suggest body part movements or human actions — they will fail
+- Focus on 2-3 ambient/environmental motions the scene naturally has
+- Use present participle verbs (falling, drifting, flickering, swaying, flowing)
+- Include one camera hint if appropriate (slow pan, gentle zoom, static)
+- Always end with "cinematic"
+- Keep it concise — short focused prompts work best
+
+EXAMPLES:
+Scene: "A dark hallway with flickering fluorescent lights and a shadowy figure"
+Motion: "lights flickering rapidly, shadows shifting on walls, slow push-in camera, cinematic"
+
+Scene: "A woman sitting at a desk reading papers, window curtains behind her"
+Motion: "curtains billowing gently, warm light shifting across desk, soft dust particles, cinematic"
+
+Scene: "A snowy forest path with pine trees covered in snow"
+Motion: "snowflakes drifting softly, pine branches swaying in wind, gentle camera drift, cinematic"
+
+Scene: "An old man at a microphone in a dimly lit room with candles"
+Motion: "candlelight flickering warmly, soft shadows dancing on walls, subtle camera zoom, cinematic"
+
+Scene: "A person reading a book by a fireplace"
+Motion: "fire crackling with dancing flames, warm light pulsing across pages, gentle smoke wisps, cinematic"
+
+Output ONLY the motion prompt, nothing else.`,
+          },
+          {
+            role: 'user',
+            content: scenePrompt,
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      console.warn(`[MOTION-LLM] GPT call failed: ${response.status} — falling back to keyword matching`);
+      return buildMotionPrompt(scenePrompt);
+    }
+
+    const data = await response.json();
+    const motionPrompt = data.choices?.[0]?.message?.content?.trim();
+
+    if (!motionPrompt || motionPrompt.length < 5) {
+      console.warn(`[MOTION-LLM] Empty response — falling back to keyword matching`);
+      return buildMotionPrompt(scenePrompt);
+    }
+
+    // Ensure it ends with cinematic
+    const final = motionPrompt.endsWith('cinematic')
+      ? motionPrompt
+      : motionPrompt.replace(/[,.\s]+$/, '') + ', cinematic';
+
+    console.log(`[MOTION-LLM] Generated: "${final.slice(0, 120)}"`);
+    return final;
+
+  } catch (err) {
+    console.warn(`[MOTION-LLM] Exception: ${err instanceof Error ? err.message : err} — falling back to keyword matching`);
+    return buildMotionPrompt(scenePrompt);
+  }
+}
+
+// =====================================================
+// STEP 6b: IMAGE-TO-VIDEO GENERATION (Phase 2)
+// Optional step: converts generated images into short video clips
+// via local ComfyUI (SVD or AnimateDiff). Skipped when video_mode = 'static'.
+// Smart scene selection: only animates the top ~30% of scenes based on
+// animation potential scoring (motion keywords in prompts).
+// =====================================================
+
+export async function executeImg2VidStep(
+  supabase: SupabaseClient,
+  job: Job,
+  workerId: string,
+  env: Record<string, string>,
+  logger: StepLogger,
+  functionStartTime?: number
+): Promise<StepResult> {
+  // Resolve brand config to check video_mode
+  const brandId = job.brand_id || job.meta?.brand_id as string || '';
+  const vibePreset = job.meta?.vibe_preset as string || null;
+  const imagePromptConfig = await getImagePromptConfigForJob(supabase, brandId, vibePreset, job.meta || {});
+
+  const videoMode = (job.meta?.video_mode as string)
+    || imagePromptConfig?.video_mode
+    || 'static';
+
+  // Skip entirely if video_mode is 'static' (default behavior — Ken Burns pans)
+  if (videoMode !== 'img2vid') {
+    console.log(`[IMG2VID] Skipping — video_mode=${videoMode} (not img2vid)`);
+    await logger.snapshot('img2vid', 'result', { video_mode: videoMode, reason: 'static_mode' }, `Skipped: video_mode=${videoMode} (using Ken Burns pans)`);
+    return { success: true, skipped: true, data: { video_mode: videoMode, reason: 'static_mode' } };
+  }
+
+  const img2vidWorkflow = (job.meta?.img2vid_workflow as string)
+    || imagePromptConfig?.img2vid_workflow
+    || 'img2vid_animatediff_ipa';
+  const motionStrength = (job.meta?.img2vid_motion as number)
+    || imagePromptConfig?.img2vid_motion
+    || 0.5;
+  const img2vidFps = imagePromptConfig?.img2vid_fps || 8;
+  const img2vidFrames = imagePromptConfig?.img2vid_frames || 16;
+  const img2vidMaxRatio = imagePromptConfig?.img2vid_max_ratio ?? 0.25; // v9.0: Reduced from 0.35 → 0.25 — animate fewer scenes but with higher quality
+  // v8.2: Bumped from 512x768 → 640x960 — single biggest quality improvement.
+  // 640x960 fits in 12GB VRAM with AnimateDiff+IPA and reduces upscale ratio (1.33x vs 1.67x).
+  const img2vidRenderWidth = imagePromptConfig?.img2vid_render_width ?? 640;
+  const img2vidRenderHeight = imagePromptConfig?.img2vid_render_height ?? 960;
+  const img2vidOutputWidth = imagePromptConfig?.img2vid_output_width ?? 720;
+  const img2vidOutputHeight = imagePromptConfig?.img2vid_output_height ?? 1280;
+
+  console.log(`[IMG2VID] Starting — workflow=${img2vidWorkflow}, motion=${motionStrength}, fps=${img2vidFps}, frames=${img2vidFrames}, render=${img2vidRenderWidth}x${img2vidRenderHeight}, output=${img2vidOutputWidth}x${img2vidOutputHeight}, maxRatio=${img2vidMaxRatio}`);
+
+  // Get the ComfyUI renderer URL (prefer dedicated COMFYUI_RENDERER_URL for local tunnel)
+  const videoRendererUrl = env.COMFYUI_RENDERER_URL || env.VIDEO_RENDERER_URL || env.FFMPEG_RENDERER_URL;
+  console.log(`[IMG2VID] Env check: COMFYUI_RENDERER_URL=${env.COMFYUI_RENDERER_URL ? 'SET' : 'UNSET'}, VIDEO_RENDERER_URL=${env.VIDEO_RENDERER_URL ? 'SET' : 'UNSET'}, using=${videoRendererUrl ? videoRendererUrl.slice(0, 50) : 'NONE'}`);
+  if (!videoRendererUrl) {
+    console.log(`[IMG2VID] No COMFYUI_RENDERER_URL/VIDEO_RENDERER_URL configured — skipping img2vid`);
+    await logger.snapshot('img2vid', 'result', { reason: 'no_renderer_url' }, `Skipped: No ComfyUI renderer URL configured`);
+    return { success: true, skipped: true, data: { reason: 'no_renderer_url' } };
+  }
+
+  // Free VRAM before health check — only on the FIRST img2vid invocation.
+  // On continuation runs, SVD model may still be loaded from the previous invocation's dispatch;
+  // calling /comfyui-free would kill any in-progress generation AND force a 1-2 min model reload.
+  const stepMeta = (job.meta as Record<string,unknown>)?.steps 
+    ? ((job.meta as Record<string,unknown>).steps as Record<string,unknown>)?.img2vid as Record<string,unknown> | undefined
+    : undefined;
+  const isContinuation = stepMeta?.meta && (stepMeta.meta as Record<string,unknown>)?.continuation_needed === true;
+  const pendingDispatch = (job.meta as Record<string,unknown>)?.img2vid_pending_dispatch as { comfy_job_id: string; status_url: string; scene_index: number } | undefined;
+
+  // Max-attempts guard — prevent infinite continuation cycling.
+  // Each continuation increments `attempts` in the step meta. If we exceed the limit,
+  // abort with a clear error instead of cycling workers forever.
+  // NOTE: With 17 scenes each taking ~5 min and a 280s budget, we need ~25+ invocations.
+  // Only count attempts where no progress (new clips) was made to detect true stalls.
+  const currentAttempts = (stepMeta?.meta as Record<string,unknown>)?.attempts as number || 0;
+  const MAX_IMG2VID_ATTEMPTS = 40;
+  if (currentAttempts >= MAX_IMG2VID_ATTEMPTS) {
+    console.log(`[IMG2VID] ❌ Max attempts (${MAX_IMG2VID_ATTEMPTS}) exceeded — aborting img2vid`);
+    await logger.snapshot('img2vid', 'result', {
+      reason: 'max_attempts_exceeded',
+      attempts: currentAttempts,
+    }, `Failed: exceeded ${MAX_IMG2VID_ATTEMPTS} continuation attempts`);
+    return {
+      success: false,
+      error: `img2vid exceeded ${MAX_IMG2VID_ATTEMPTS} continuation attempts without completing`,
+    };
+  }
+
+  // Free VRAM before health check — but NOT if there's a pending dispatch (in-flight generation).
+  // On continuation WITHOUT pending dispatch: SVD model is idle, eating ~9GB VRAM.
+  // Freeing it lets the health check pass so we can generate remaining clips.
+  // On continuation WITH pending dispatch: SVD is actively generating — don't kill it.
+  if (pendingDispatch) {
+    console.log(`[IMG2VID] Pending dispatch for scene ${pendingDispatch.scene_index} — skipping VRAM free to protect in-flight generation`);
+  } else {
+    try {
+      console.log(`[IMG2VID] Freeing VRAM (${isContinuation ? 'continuation, no pending dispatch' : 'first run'} — unloading idle models)...`);
+      await fetch(`${videoRendererUrl}/comfyui-free`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unload_models: true, free_memory: true }),
+      });
+      // Wait for models to unload
+      await new Promise(r => setTimeout(r, 3000));
+    } catch (freeErr) {
+      console.log(`[IMG2VID] VRAM free request failed (non-fatal): ${freeErr instanceof Error ? freeErr.message : freeErr}`);
+    }
+  }
+
+  // Check img2vid health first (higher VRAM threshold)
+  // BUT: skip VRAM check if we have a pending dispatch — SVD is actively generating
+  // and will naturally free VRAM when done. Skipping here would abandon the in-flight clip.
+  if (!pendingDispatch) {
+    // v8.1: Retry health check up to 3 times with backoff before giving up.
+    // Transient failures (tunnel briefly down during renderer restart) previously
+    // caused the entire img2vid step to be skipped even when ComfyUI was healthy.
+    const MAX_HEALTH_RETRIES = 3;
+    const HEALTH_RETRY_DELAY_MS = 5000; // 5s between retries
+    let healthPassed = false;
+    let lastHealthError: string | null = null;
+
+    for (let healthAttempt = 1; healthAttempt <= MAX_HEALTH_RETRIES; healthAttempt++) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout for health check
+        const healthResp = await fetch(`${videoRendererUrl}/comfyui-health`, {
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+
+        if (healthResp.ok) {
+          const health = await healthResp.json();
+          const vramFree = health.gpu_vram_free_mb || 0;
+          const vramFloor = health.vram_floor_img2vid_mb || 4096;
+
+          if (vramFree < vramFloor) {
+            // On continuation with clips already generated, don't give up — request continuation to retry.
+            // This prevents the step from being marked 'skipped' with only partial clips.
+            const clipsSoFar = (stepMeta?.meta as Record<string,unknown>)?.clips_so_far as number || 0;
+            if (isContinuation && clipsSoFar > 0) {
+              console.log(`[IMG2VID] VRAM too low (${vramFree}MB < ${vramFloor}MB) but ${clipsSoFar} clips already generated — requesting continuation to retry later`);
+              await logger.snapshot('img2vid', 'result', { reason: 'vram_low_retry', vram_free: vramFree, vram_floor: vramFloor, clips_so_far: clipsSoFar }, `VRAM low (${vramFree}MB) but ${clipsSoFar} clips exist — will retry`);
+              return {
+                success: true,
+                continuation_needed: true,
+                data: {
+                  video_mode: videoMode,
+                  completed: clipsSoFar,
+                  total: 0,
+                  skipped: 0,
+                  failed: 0,
+                  clips_so_far: clipsSoFar,
+                  attempts: currentAttempts + 1,
+                  pause_reason: 'vram_low_retry',
+                },
+              };
+            }
+            console.log(`[IMG2VID] VRAM too low for img2vid: ${vramFree}MB free < ${vramFloor}MB floor — skipping (static Ken Burns)`);
+            await logger.snapshot('img2vid', 'result', { reason: 'vram_low', vram_free: vramFree, vram_floor: vramFloor }, `Skipped: VRAM ${vramFree}MB < ${vramFloor}MB floor`);
+            return {
+              success: true,
+              skipped: true,
+              data: { reason: 'vram_low', vram_free: vramFree, vram_floor: vramFloor },
+            };
+          }
+          // Health check passed — VRAM is sufficient
+          healthPassed = true;
+          if (healthAttempt > 1) {
+            console.log(`[IMG2VID] Health check passed on attempt ${healthAttempt}/${MAX_HEALTH_RETRIES}`);
+          }
+          break;
+        } else {
+          lastHealthError = `health_check_failed:${healthResp.status}`;
+          console.log(`[IMG2VID] ComfyUI health check failed (${healthResp.status}) — attempt ${healthAttempt}/${MAX_HEALTH_RETRIES}`);
+        }
+      } catch (healthErr) {
+        lastHealthError = `comfyui_offline:${healthErr instanceof Error ? healthErr.message : healthErr}`;
+        console.log(`[IMG2VID] ComfyUI unreachable — attempt ${healthAttempt}/${MAX_HEALTH_RETRIES}: ${healthErr instanceof Error ? healthErr.message : healthErr}`);
+      }
+
+      // Wait before retrying (unless this was the last attempt)
+      if (healthAttempt < MAX_HEALTH_RETRIES) {
+        console.log(`[IMG2VID] Waiting ${HEALTH_RETRY_DELAY_MS}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, HEALTH_RETRY_DELAY_MS));
+      }
+    }
+
+    if (!healthPassed) {
+      const reason = lastHealthError?.startsWith('comfyui_offline') ? 'comfyui_offline' : 'health_check_failed';
+      console.log(`[IMG2VID] All ${MAX_HEALTH_RETRIES} health check attempts failed (${lastHealthError}) — skipping img2vid`);
+      await logger.snapshot('img2vid', 'result', { reason, details: lastHealthError, retries: MAX_HEALTH_RETRIES }, `Skipped: ${MAX_HEALTH_RETRIES} health check attempts all failed`);
+      return { success: true, skipped: true, data: { reason, retries: MAX_HEALTH_RETRIES } };
+    }
+  } else {
+    console.log(`[IMG2VID] Skipping health/VRAM check — pending dispatch exists for scene ${pendingDispatch.scene_index}, will poll its result first`);
+  }
+
+  // Get all generated image assets
+  const imageAssets = await getAssetsByPrefix(supabase, job.id, `${job.id}:image_generate:`);
+  if (imageAssets.length === 0) {
+    console.log(`[IMG2VID] No image assets found — run images step first`);
+    return { success: false, error: 'No image assets for img2vid — images step not complete' };
+  }
+
+  // Filter to primary scene images only (exclude sub-images)
+  const primaryAssets = imageAssets.filter(a => !a.idempotency_key.includes('_sub_'));
+  console.log(`[IMG2VID] Found ${imageAssets.length} image assets (${primaryAssets.length} primary scenes)`);
+
+  // ── Smart Scene Selection: Only animate scenes with high animation potential ──
+  // Score each scene based on motion keywords in its prompt, then select the top N%.
+  // Scenes with people walking, vehicles moving, weather effects, water, fire, etc.
+  // have much higher animation potential than static portraits or empty environments.
+  const imageSequence = (job.meta as Record<string,unknown>)?.image_sequence as Array<{
+    sceneIndex: number; prompt?: string; duration?: number;
+  }> | undefined;
+
+  // Check if we already computed the selection on a previous invocation (continuation)
+  let selectedSceneIndices: Set<number>;
+  const cachedSelection = (job.meta as Record<string,unknown>)?.img2vid_selected_scenes as number[] | undefined;
+
+  if (cachedSelection) {
+    selectedSceneIndices = new Set(cachedSelection);
+    console.log(`[IMG2VID] Using cached scene selection: ${cachedSelection.length} scenes [${cachedSelection.join(', ')}]`);
+  } else {
+    // v9.1: AI-only scene selection — ONLY scenes the cinematographer AI explicitly
+    // flagged with animate=true get animated. No keyword scoring fallback.
+    // This ensures every animated scene was designed with animatable elements
+    // baked into the prompt (rain, fog, flickering lights, etc.) rather than
+    // retroactively guessing which static scenes might animate OK.
+    
+    // Build a map of AI animation intent from image_sequence
+    const aiAnimateMap = new Map<number, { motionType?: string; animationHint?: string }>();
+    if (imageSequence) {
+      for (const entry of imageSequence) {
+        if ((entry as Record<string, unknown>).animate === true) {
+          aiAnimateMap.set(entry.sceneIndex, {
+            motionType: (entry as Record<string, unknown>).motionType as string | undefined,
+            animationHint: (entry as Record<string, unknown>).animationHint as string | undefined,
+          });
+        }
+      }
+    }
+    console.log(`[IMG2VID] AI animation flags: ${aiAnimateMap.size} scenes flagged [${Array.from(aiAnimateMap.keys()).join(', ')}]`);
+    
+    // If AI didn't flag any scenes, skip img2vid entirely
+    if (aiAnimateMap.size === 0) {
+      console.log(`[IMG2VID] No AI-flagged scenes — skipping img2vid entirely`);
+      await logger.snapshot('img2vid', 'result', { reason: 'no_ai_flagged_scenes' }, `Skipped: AI did not flag any scenes for animation`);
+      return { success: true, skipped: true, data: { reason: 'no_ai_flagged_scenes' } };
+    }
+
+    // Select ONLY AI-flagged scenes — match them to primary assets
+    const selected: Array<{ sceneIndex: number; aiAnimated: true; motionType?: string; animationHint?: string }> = [];
+    for (const asset of primaryAssets) {
+      const sceneMatch = asset.idempotency_key.match(/scene_(\d+)/);
+      const sceneIdx = sceneMatch ? parseInt(sceneMatch[1]) : 0;
+      const aiIntent = aiAnimateMap.get(sceneIdx);
+      
+      if (aiIntent) {
+        selected.push({
+          sceneIndex: sceneIdx,
+          aiAnimated: true,
+          motionType: aiIntent.motionType,
+          animationHint: aiIntent.animationHint,
+        });
+      }
+    }
+
+    selectedSceneIndices = new Set(selected.map(s => s.sceneIndex));
+    
+    // Store per-scene animation metadata for dispatch (motionType → per-scene params)
+    const sceneAnimationMeta: Record<number, { motionType?: string; animationHint?: string; aiAnimated: boolean }> = {};
+    for (const s of selected) {
+      sceneAnimationMeta[s.sceneIndex] = {
+        motionType: s.motionType,
+        animationHint: s.animationHint,
+        aiAnimated: true,
+      };
+    }
+
+    const totalScenes = primaryAssets.length;
+
+    // Log results
+    console.log(`[IMG2VID] AI-only selection: ${selected.length} scenes (no keyword fallback)`);
+    for (const s of selected) {
+      console.log(`[IMG2VID]   Scene ${s.sceneIndex}: ✓ AI-flagged 🎬 motionType=${s.motionType} hint="${(s.animationHint || '').slice(0, 80)}"`);
+    }
+
+    // Log the final distribution pattern (visual timeline)
+    const timeline = Array.from({ length: totalScenes }, (_, i) =>
+      selectedSceneIndices.has(i) ? '▓' : '░'
+    ).join('');
+    console.log(`[IMG2VID] Distribution: [${timeline}] (${selected.length}/${totalScenes} scenes, AI-only)`);
+
+    // Cache selection + per-scene animation meta in job meta
+    await updateJobMeta(supabase, job.id, {
+      img2vid_selected_scenes: Array.from(selectedSceneIndices),
+      img2vid_scene_scores: selected.map(s => ({ scene: s.sceneIndex, score: 'ai_flagged', aiAnimated: true, motionType: s.motionType })),
+      img2vid_distribution: timeline,
+      img2vid_scene_animation_meta: sceneAnimationMeta,
+    });
+
+    await logger.snapshot('img2vid', 'scene_selection', {
+      total_primary_scenes: primaryAssets.length,
+      selection_mode: 'ai_only',
+      ai_flagged_count: aiAnimateMap.size,
+      selected_count: selected.length,
+      selected_scenes: selected.map(s => ({ scene: s.sceneIndex, motionType: s.motionType, animationHint: s.animationHint })),
+      distribution: timeline,
+    }, `Selected ${selected.length}/${primaryAssets.length} scenes for animation (AI-only, no keyword fallback)`);
+  }
+
+  await logger.snapshot('img2vid', 'config', {
+    video_mode: videoMode,
+    workflow: img2vidWorkflow,
+    motion_strength: motionStrength,
+    fps: img2vidFps,
+    frames: img2vidFrames,
+    render_resolution: `${img2vidRenderWidth}x${img2vidRenderHeight}`,
+    output_resolution: `${img2vidOutputWidth}x${img2vidOutputHeight}`,
+    total_scenes: primaryAssets.length,
+    selected_scenes: selectedSceneIndices.size,
+    max_ratio: img2vidMaxRatio,
+  }, `img2vid starting: ${img2vidWorkflow}, ${selectedSceneIndices.size}/${primaryAssets.length} scenes, motion=${motionStrength}, ${img2vidRenderWidth}x${img2vidRenderHeight}→${img2vidOutputWidth}x${img2vidOutputHeight}`);
+
+  let completed = 0;
+  let skipped = 0;
+  let failed = 0;
+  const clipResults: Array<{ scene: number; url: string; duration: number }> = [];
+
+  for (const asset of imageAssets) {
+    // Parse scene index from asset key: "jobid:image_generate:scene_3"
+    const sceneMatch = asset.idempotency_key.match(/scene_(\d+)/);
+    const sceneIndex = sceneMatch ? parseInt(sceneMatch[1]) : 0;
+
+    // Skip sub-images (scene_X_sub_Y) — only convert primary scene images
+    if (asset.idempotency_key.includes('_sub_')) {
+      console.log(`[IMG2VID] Skipping sub-image: ${asset.idempotency_key}`);
+      skipped++;
+      continue;
+    }
+
+    // Skip scenes not selected for animation (low motion potential)
+    if (!selectedSceneIndices.has(sceneIndex)) {
+      console.log(`[IMG2VID] Scene ${sceneIndex} not selected for animation — using Ken Burns`);
+      skipped++;
+      continue;
+    }
+
+    // Idempotency: check if this scene's video clip already exists
+    const clipKey = `${job.id}:img2vid:scene_${sceneIndex}`;
+    const existingClip = await getAssetByKey(supabase, job.id, clipKey);
+    if (existingClip?.public_url) {
+      console.log(`[IMG2VID] Scene ${sceneIndex} clip already exists: ${existingClip.public_url}`);
+      clipResults.push({
+        scene: sceneIndex,
+        url: existingClip.public_url,
+        duration: (existingClip.metadata as Record<string, unknown>)?.duration_seconds as number || 3,
+      });
+      completed++;
+      continue;
+    }
+
+    // Storage fallback: the server uploads clips to Supabase storage even if the
+    // edge function's poll timed out before creating the asset record. Use the
+    // storage admin API (list) instead of public-URL HEAD — more reliable from
+    // the edge-function Deno runtime which can struggle with public-URL fetches.
+    const storageClipPath = `jobs/${job.id}/img2vid_scene_${sceneIndex}.mp4`;
+    const storageClipFileName = `img2vid_scene_${sceneIndex}.mp4`;
+    try {
+      const { data: listData, error: listErr } = await supabase.storage
+        .from('story-videos')
+        .list(`jobs/${job.id}`, { limit: 200 });
+
+      if (listErr) {
+        console.log(`[IMG2VID] Storage list error: ${listErr.message}`);
+      }
+
+      const clipFile = listData?.find((f: { name: string }) => f.name === storageClipFileName);
+      if (clipFile) {
+        // Clip exists in storage — build public URL and create asset record
+        const { data: pubUrlData } = supabase.storage
+          .from('story-videos')
+          .getPublicUrl(storageClipPath);
+        const clipPublicUrl = pubUrlData?.publicUrl || '';
+
+        console.log(`[IMG2VID] ✓ Scene ${sceneIndex} found in storage (orphaned clip) — recovering`);
+
+        await upsertAsset(supabase, job.id, clipKey, 'img2vid_clip', storageClipPath, clipPublicUrl, {
+          renderer: 'comfyui_img2vid',
+          workflow: img2vidWorkflow,
+          motion_strength: motionStrength,
+          fps: img2vidFps,
+          scene_index: sceneIndex,
+          source_image_url: asset.public_url,
+          recovered_from_storage: true,
+        });
+
+        clipResults.push({ scene: sceneIndex, url: clipPublicUrl, duration: 3 });
+        completed++;
+        // Clear pending dispatch if this was the pending scene
+        if (pendingDispatch && pendingDispatch.scene_index === sceneIndex) {
+          await updateJobMeta(supabase, job.id, { img2vid_pending_dispatch: null });
+        }
+        continue;
+      } else {
+        console.log(`[IMG2VID] Scene ${sceneIndex} not yet in storage (looked for ${storageClipFileName} among ${listData?.length || 0} files)`);
+      }
+    } catch (storageErr) {
+      // Storage check failed (non-fatal) — proceed with normal dispatch/poll
+      console.log(`[IMG2VID] Storage check for scene ${sceneIndex} error: ${storageErr instanceof Error ? storageErr.message : String(storageErr)}`);
+    }
+
+    if (!asset.public_url) {
+      console.warn(`[IMG2VID] Scene ${sceneIndex} has no public_url — skipping`);
+      skipped++;
+      continue;
+    }
+
+    // Budget check: enough function time remaining?
+    if (functionStartTime) {
+      const elapsedMs = Date.now() - functionStartTime;
+      const remainingMs = 280_000 - elapsedMs; // 280s budget
+      if (remainingMs < 60_000) {
+        console.log(`[IMG2VID] ⏰ Time budget exhausted (${Math.round(remainingMs / 1000)}s remaining) — requesting continuation for remaining ${imageAssets.length - completed - skipped - failed} scenes`);
+
+        // Store partial progress in job meta before returning
+        if (clipResults.length > 0) {
+          const clipMap: Record<number, { url: string; duration: number }> = {};
+          for (const clip of clipResults) {
+            clipMap[clip.scene] = { url: clip.url, duration: clip.duration };
+          }
+          await updateJobMeta(supabase, job.id, { img2vid_clips: clipMap });
+        }
+
+        return {
+          success: true,
+          continuation_needed: true,
+          data: {
+            video_mode: videoMode,
+            completed,
+            total: imageAssets.length,
+            skipped,
+            failed,
+            clips_so_far: clipResults.length,
+            attempts: currentAttempts + 1,
+          },
+        };
+      }
+    }
+
+    // Dispatch to /comfyui-img2vid — or resume polling a pending dispatch from a previous invocation
+    let statusUrl: string;
+    let comfyJobId: string;
+    const hasPendingForThisScene = pendingDispatch && pendingDispatch.scene_index === sceneIndex;
+
+    if (hasPendingForThisScene) {
+      // Resume polling from the previous invocation's dispatch
+      statusUrl = `${videoRendererUrl}${pendingDispatch!.status_url.replace(videoRendererUrl, '')}`;
+      comfyJobId = pendingDispatch!.comfy_job_id;
+      console.log(`[IMG2VID] Scene ${sceneIndex}: resuming poll for pending dispatch ${comfyJobId}`);
+      await logger.progress('img2vid', completed + failed + skipped, imageAssets.length,
+        `Scene ${sceneIndex}: resuming poll for pending dispatch ${comfyJobId}`, {
+          scene_index: sceneIndex,
+          comfy_job_id: comfyJobId,
+          resumed: true,
+        });
+    } else {
+      console.log(`[IMG2VID] Scene ${sceneIndex}: dispatching to ${videoRendererUrl}/comfyui-img2vid`);
+      await logger.progress('img2vid', completed + failed + skipped, imageAssets.length,
+        `Scene ${sceneIndex}: dispatching to ComfyUI (${img2vidWorkflow})`, {
+          scene_index: sceneIndex,
+          workflow: img2vidWorkflow,
+          motion_strength: motionStrength,
+          image_url: asset.public_url,
+          status: 'dispatching',
+        });
+    }
+
+    try {
+      if (!hasPendingForThisScene) {
+        // Build per-scene motion prompt (for AnimateDiff and CogVideoX workflows)
+        const seqEntry = imageSequence?.find(e => e.sceneIndex === sceneIndex);
+        const scenePrompt = seqEntry?.prompt
+          || (asset.metadata as Record<string, unknown>)?.prompt as string
+          || '';
+        // Use LLM-generated prompt if OpenAI key is available, else fall back to keyword matching
+        const openaiKey = env.OPENAI_API_KEY || '';
+        const needsMotionPrompt = img2vidWorkflow.includes('animatediff') || img2vidWorkflow.includes('cogvideox');
+        
+        // v9.0: If AI provided an animationHint, use it directly as the motion prompt
+        // (it's already written in AnimateDiff-friendly format by the cinematographer)
+        const cachedAnimMeta = (job.meta as Record<string,unknown>)?.img2vid_scene_animation_meta as Record<number, { motionType?: string; animationHint?: string; aiAnimated: boolean }> | undefined;
+        const sceneAnimMeta = cachedAnimMeta?.[sceneIndex];
+        const aiAnimationHint = sceneAnimMeta?.animationHint;
+        
+        let motionPrompt: string | undefined;
+        if (needsMotionPrompt) {
+          if (aiAnimationHint) {
+            // Use AI's animation hint directly — it was designed for this scene
+            motionPrompt = aiAnimationHint.endsWith('cinematic')
+              ? aiAnimationHint
+              : aiAnimationHint.replace(/[,.\s]+$/, '') + ', cinematic';
+            console.log(`[IMG2VID] Scene ${sceneIndex} using AI animation hint: "${motionPrompt.slice(0, 120)}"`);
+          } else if (openaiKey) {
+            motionPrompt = await generateMotionPromptLLM(scenePrompt, openaiKey);
+          } else {
+            motionPrompt = buildMotionPrompt(scenePrompt);
+          }
+        }
+        
+        // v9.0: Per-scene motion_strength based on motionType
+        // Different motion types need different AnimateDiff parameter profiles:
+        //   atmospheric (rain, snow, fog, dust) → moderate motion, higher denoise
+        //   environmental (wind, water, swaying) → moderate-high motion
+        //   fire_light (flames, flickering, neon) → lower motion to avoid warping, subtle shifts
+        //   camera (slow pan, zoom, drift) → lowest motion, cleanest result
+        const MOTION_TYPE_STRENGTH: Record<string, number> = {
+          'atmospheric': 0.70,    // Rain/snow/fog need visible particle motion
+          'environmental': 0.65,  // Trees swaying, water — moderate motion
+          'fire_light': 0.55,     // Flames/flickering — subtle to avoid warping
+          'camera': 0.45,         // Camera drift — minimal, clean motion
+        };
+        const sceneMotionType = sceneAnimMeta?.motionType;
+        const perSceneMotionStrength = sceneMotionType
+          ? MOTION_TYPE_STRENGTH[sceneMotionType] ?? motionStrength
+          : motionStrength;
+        
+        // Score this scene for animation potential (for UI display)
+        const { score: animScore, reasons: animReasons } = scoreAnimationPotential(scenePrompt);
+        if (motionPrompt) {
+          console.log(`[IMG2VID] Scene ${sceneIndex} motion prompt: "${motionPrompt.slice(0, 120)}" | score=${animScore} | motionType=${sceneMotionType || 'default'} | strength=${perSceneMotionStrength}`);
+        }
+
+        const dispatchResp = await fetch(`${videoRendererUrl}/comfyui-img2vid`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            job_id: job.id,
+            scene_index: sceneIndex,
+            image_url: asset.public_url,
+            workflow: img2vidWorkflow,
+            motion_strength: perSceneMotionStrength,
+            fps: img2vidFps,
+            video_frames: img2vidFrames,
+            width: img2vidRenderWidth,
+            height: img2vidRenderHeight,
+            upscale_to_width: img2vidOutputWidth,
+            upscale_to_height: img2vidOutputHeight,
+            ...(motionPrompt ? { motion_prompt: motionPrompt } : {}),
+          }),
+        });
+
+        if (!dispatchResp.ok) {
+          const errBody = await dispatchResp.text();
+          console.warn(`[IMG2VID] Scene ${sceneIndex} dispatch failed: ${dispatchResp.status} ${errBody.slice(0, 200)}`);
+          // Check for VRAM fallback
+          try {
+            const errJson = JSON.parse(errBody);
+            if (errJson.fallback_reason === 'vram_low' || errJson.fallback_reason === 'queue_full') {
+              // Wait 45s + free VRAM before returning continuation to prevent rapid-fire loop.
+              // Without this delay, each continuation immediately re-dispatches → gets queue_full
+              // again → 7+ wasted invocations in 30s before VRAM check kills the step.
+              const waitMs = 45_000;
+              if (functionStartTime) {
+                const fnElapsed = Date.now() - functionStartTime;
+                const fnRemaining = 280_000 - fnElapsed;
+                if (fnRemaining > waitMs + 30_000) {
+                  console.log(`[IMG2VID] ${errJson.fallback_reason} — waiting ${waitMs/1000}s for resources to free (${Math.round(fnRemaining/1000)}s budget remaining)...`);
+                  await new Promise(r => setTimeout(r, waitMs));
+                  // Free VRAM before returning so next invocation has a clean slate
+                  try {
+                    await fetch(`${videoRendererUrl}/comfyui-free`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ unload_models: true, free_memory: true }),
+                    });
+                    await new Promise(r => setTimeout(r, 5_000));
+                  } catch { /* ignore */ }
+                } else {
+                  console.log(`[IMG2VID] ${errJson.fallback_reason} — insufficient budget (${Math.round(fnRemaining/1000)}s) to wait, returning continuation immediately`);
+                }
+              }
+
+              console.log(`[IMG2VID] GPU resource constraint (${errJson.fallback_reason}) — will retry remaining scenes on next invocation`);
+
+              // Store partial progress before returning
+              if (clipResults.length > 0) {
+                const clipMap: Record<number, { url: string; duration: number }> = {};
+                for (const clip of clipResults) {
+                  clipMap[clip.scene] = { url: clip.url, duration: clip.duration };
+                }
+                await updateJobMeta(supabase, job.id, { img2vid_clips: clipMap });
+              }
+
+              await logger.snapshot('img2vid', 'result', {
+                reason: errJson.fallback_reason,
+                completed,
+                failed,
+                skipped,
+                total: imageAssets.length,
+              }, `img2vid paused: ${errJson.fallback_reason} after ${completed} clips, ${failed} failed — will continue`);
+
+              return {
+                success: true,
+                continuation_needed: true,
+                data: {
+                  video_mode: videoMode,
+                  completed,
+                  total: imageAssets.length,
+                  skipped,
+                  failed,
+                  clips_so_far: clipResults.length,
+                  attempts: currentAttempts + 1,
+                  pause_reason: errJson.fallback_reason,
+                },
+              };
+            }
+          } catch { /* non-JSON error */ }
+          failed++;
+          continue;
+        }
+
+        const dispatch = await dispatchResp.json();
+        statusUrl = `${videoRendererUrl}${dispatch.status_url}`;
+        comfyJobId = dispatch.comfy_job_id;
+        console.log(`[IMG2VID] Scene ${sceneIndex}: ${comfyJobId}, estimated ${dispatch.estimated_seconds}s`);
+
+        // Store pending dispatch info so a continuation can resume polling
+        await updateJobMeta(supabase, job.id, {
+          img2vid_pending_dispatch: {
+            comfy_job_id: comfyJobId,
+            status_url: dispatch.status_url,
+            scene_index: sceneIndex,
+          },
+        });
+      }
+
+      // Poll for completion — SVD needs ~1-2 min model load + 2-4 min generation on 4070 Ti.
+      // Cap poll timeout to fit within the edge function's wall_clock_budget (280s).
+      // If we don't, Supabase kills the edge function mid-poll with no cleanup.
+      const pollStart = Date.now();
+      const elapsedSoFar = functionStartTime ? Date.now() - functionStartTime : 0;
+      const budgetRemainingMs = 280_000 - elapsedSoFar;
+      const pollTimeout = Math.min(420_000, Math.max(budgetRemainingMs - 15_000, 30_000)); // leave 15s buffer for cleanup, min 30s
+      let clipDone = false;
+      let consecutiveNotFound = 0; // track 404s from server (means server restarted, job state lost)
+
+      while (Date.now() - pollStart < pollTimeout) {
+        await new Promise(r => setTimeout(r, 5000)); // 5s poll interval (video gen is slow)
+
+        try {
+          const statusResp = await fetch(statusUrl);
+
+          // Server restarted — in-memory job tracking lost. Check storage directly
+          // instead of polling forever.
+          if (statusResp.status === 404) {
+            consecutiveNotFound++;
+            console.log(`[IMG2VID] Scene ${sceneIndex}: status 404 (server restarted?) — attempt ${consecutiveNotFound}/3`);
+            if (consecutiveNotFound >= 3) {
+              // Server doesn't know about this job anymore. Check if clip landed in storage.
+              console.log(`[IMG2VID] Scene ${sceneIndex}: 3x 404 — checking storage for completed clip`);
+              try {
+                const { data: recoveryList, error: recoveryErr } = await supabase.storage
+                  .from('story-videos')
+                  .list(`jobs/${job.id}`, { limit: 200 });
+                const recoveredClip = recoveryList?.find((f: { name: string }) => f.name === `img2vid_scene_${sceneIndex}.mp4`);
+                if (recoveredClip) {
+                  const { data: recPubUrl } = supabase.storage.from('story-videos').getPublicUrl(storageClipPath);
+                  const recoveredUrl = recPubUrl?.publicUrl || '';
+                  console.log(`[IMG2VID] ✓ Scene ${sceneIndex}: recovered from storage after 404 — ${recoveredUrl}`);
+                  await upsertAsset(supabase, job.id, clipKey, 'img2vid_clip', storageClipPath, recoveredUrl, {
+                    renderer: 'comfyui_img2vid',
+                    workflow: img2vidWorkflow,
+                    motion_strength: motionStrength,
+                    fps: img2vidFps,
+                    scene_index: sceneIndex,
+                    source_image_url: asset.public_url,
+                    recovered_from_storage: true,
+                    recovery_reason: 'server_404',
+                  });
+                  clipResults.push({ scene: sceneIndex, url: recoveredUrl, duration: 3 });
+                  completed++;
+                  clipDone = true;
+                  break;
+                } else {
+                  console.log(`[IMG2VID] Scene ${sceneIndex}: not in storage yet (${recoveryList?.length || 0} files). Server lost job and clip not uploaded.`);
+                  // Clip lost — server restarted before upload completed
+                  failed++;
+                  clipDone = true;
+                  break;
+                }
+              } catch (recoveryErr) {
+                console.log(`[IMG2VID] Scene ${sceneIndex}: storage recovery check failed: ${recoveryErr instanceof Error ? recoveryErr.message : String(recoveryErr)}`);
+                failed++;
+                clipDone = true;
+                break;
+              }
+            }
+            continue;
+          }
+
+          if (!statusResp.ok) continue;
+          const status = await statusResp.json() as Record<string, unknown>;
+
+          // Extract real-time progress info from video-renderer
+          const genProgress = status.generation_progress as Record<string, unknown> | undefined;
+          const stage = (status.stage as string) || 'running';
+          const stageDetail = (status.stage_detail as string) || '';
+          const progressStep = genProgress?.step as number || 0;
+          const progressMax = genProgress?.max_steps as number || 0;
+          const progressPct = genProgress?.percentage as number || 0;
+
+          const progressSummary = progressMax > 0
+            ? `step ${progressStep}/${progressMax} (${progressPct}%)`
+            : stage;
+          console.log(`[IMG2VID] Scene ${sceneIndex}: ${status.status} | ${stage} | ${progressSummary}`);
+
+          // Write real-time progress to step logger so the UI can display it
+          // Only write every ~15 seconds to avoid excessive DB writes  
+          const pollElapsed = Date.now() - pollStart;
+          if (pollElapsed > 0 && Math.floor(pollElapsed / 15_000) !== Math.floor((pollElapsed - 5000) / 15_000)) {
+            await logger.progress('img2vid', completed + failed + skipped, imageAssets.length,
+              `Scene ${sceneIndex}: ${stageDetail || stage}${progressMax > 0 ? ` — ${progressPct}%` : ''}`, {
+                scene_index: sceneIndex,
+                stage,
+                status: 'rendering',
+                progress_step: progressStep,
+                progress_max: progressMax,
+                progress_pct: progressPct,
+                comfy_job_id: comfyJobId,
+                elapsed_ms: pollElapsed,
+                ...(typeof motionPrompt !== 'undefined' && motionPrompt ? { motion_prompt: motionPrompt } : {}),
+                ...(typeof animScore !== 'undefined' ? { animation_score: animScore } : {}),
+              });
+          }
+
+          if (status.status === 'complete') {
+            // Store the video clip as an asset
+            // video_url may be absolute (Supabase storage URL) or relative — handle both
+            const rawVideoUrl = status.video_url as string;
+            const clipFullUrl = rawVideoUrl.startsWith('http') ? rawVideoUrl : `${videoRendererUrl}${rawVideoUrl}`;
+            // Gather per-clip motion prompt & animation score (available from dispatch block above)
+            // For pending dispatches (resumed), these will be undefined — that's OK.
+            const clipMotionPrompt = typeof motionPrompt !== 'undefined' ? motionPrompt : undefined;
+            const clipAnimScore = typeof animScore !== 'undefined' ? animScore : undefined;
+            const clipAnimReasons = typeof animReasons !== 'undefined' ? animReasons : undefined;
+            await upsertAsset(supabase, job.id, clipKey, 'img2vid_clip', '', clipFullUrl, {
+              renderer: 'comfyui_img2vid',
+              workflow: img2vidWorkflow,
+              motion_strength: motionStrength,
+              duration_seconds: status.video_duration_seconds as number,
+              frame_count: status.frame_count as number,
+              fps: img2vidFps,
+              scene_index: sceneIndex,
+              source_image_url: asset.public_url,
+              generation_time_ms: (status.metadata as Record<string, unknown>)?.generation_time_ms,
+              comfyui_prompt_id: (status.metadata as Record<string, unknown>)?.comfyui_prompt_id,
+              ...(clipMotionPrompt ? { motion_prompt: clipMotionPrompt } : {}),
+              ...(clipAnimScore !== undefined ? { animation_score: clipAnimScore, animation_reasons: clipAnimReasons } : {}),
+            });
+
+            clipResults.push({
+              scene: sceneIndex,
+              url: clipFullUrl,
+              duration: status.video_duration_seconds as number,
+            });
+            completed++;
+            clipDone = true;
+            // Progress bar for img2vid clips
+            const i2vPct = Math.round(((completed + failed + skipped) / imageAssets.length) * 100);
+            const i2vFilled = Math.round(i2vPct / 4);
+            const i2vBar = '█'.repeat(i2vFilled) + '░'.repeat(25 - i2vFilled);
+            console.log(`[IMG2VID] ${i2vPct}% |${i2vBar}| ${completed + failed + skipped}/${imageAssets.length} ✓ Scene ${sceneIndex}: ${status.video_duration_seconds}s clip`);
+            await logger.progress('img2vid', completed + failed + skipped, imageAssets.length,
+              `✓ Scene ${sceneIndex}: ${status.video_duration_seconds}s clip (${status.frame_count || '?'} frames)`, {
+                scene_index: sceneIndex,
+                duration_seconds: status.video_duration_seconds as number,
+                frame_count: status.frame_count as number,
+                generation_time_ms: (status.metadata as Record<string, unknown>)?.generation_time_ms,
+              });
+            break;
+          }
+
+          if (status.status === 'error') {
+            const statusErrors = status.errors as Array<Record<string, unknown>> | undefined;
+            const errMsg = statusErrors?.[0]?.error as string || 'unknown';
+            console.warn(`[IMG2VID] Scene ${sceneIndex} failed: ${errMsg}`);
+            failed++;
+            clipDone = true;
+            await logger.progress('img2vid', completed + failed + skipped, imageAssets.length,
+              `✕ Scene ${sceneIndex} failed: ${errMsg}`, {
+                scene_index: sceneIndex,
+                error: errMsg,
+              });
+            break;
+          }
+        } catch (pollErr) {
+          // Network error during poll — continue trying
+        }
+      }
+
+      if (!clipDone) {
+        // Clip is likely still generating on ComfyUI — don't mark as failed.
+        // Instead, return continuation_needed so the next invocation can resume polling.
+        console.log(`[IMG2VID] Scene ${sceneIndex} still processing after ${Math.round(pollTimeout / 1000)}s — returning for continuation (dispatch ${comfyJobId} still pending)`);
+        await logger.progress('img2vid', completed + failed + skipped, imageAssets.length,
+          `⏳ Scene ${sceneIndex} still processing after ${Math.round(pollTimeout / 1000)}s — will resume on next invocation`, {
+            scene_index: sceneIndex,
+            comfy_job_id: comfyJobId,
+            poll_seconds: Math.round(pollTimeout / 1000),
+            reason: 'budget_exhausted',
+          });
+
+        // Store partial progress before returning
+        if (clipResults.length > 0) {
+          const clipMap: Record<number, { url: string; duration: number }> = {};
+          for (const clip of clipResults) {
+            clipMap[clip.scene] = { url: clip.url, duration: clip.duration };
+          }
+          await updateJobMeta(supabase, job.id, { img2vid_clips: clipMap });
+        }
+
+        return {
+          success: true,
+          continuation_needed: true,
+          data: {
+            video_mode: videoMode,
+            completed,
+            total: imageAssets.length,
+            skipped,
+            failed,
+            clips_so_far: clipResults.length,
+            pending_scene: sceneIndex,
+            pending_comfy_job_id: comfyJobId,
+            attempts: currentAttempts + 1,
+          },
+        };
+      }
+
+      // Clip completed (or errored) — clear the pending dispatch
+      await updateJobMeta(supabase, job.id, { img2vid_pending_dispatch: null });
+
+    } catch (dispatchErr) {
+      const dispatchErrMsg = dispatchErr instanceof Error ? dispatchErr.message : String(dispatchErr);
+      console.error(`[IMG2VID] Scene ${sceneIndex} dispatch error: ${dispatchErrMsg}`);
+      failed++;
+      await logger.progress('img2vid', completed + failed + skipped, imageAssets.length,
+        `✕ Scene ${sceneIndex} dispatch error: ${dispatchErrMsg}`, {
+          scene_index: sceneIndex,
+          error: dispatchErrMsg,
+        });
+    }
+  }
+
+  // Store clip mapping in job meta so the assemble step knows which scenes have video clips
+  if (clipResults.length > 0) {
+    const clipMap: Record<number, { url: string; duration: number }> = {};
+    for (const clip of clipResults) {
+      clipMap[clip.scene] = { url: clip.url, duration: clip.duration };
+    }
+    await updateJobMeta(supabase, job.id, { img2vid_clips: clipMap });
+  }
+
+  // Build distribution timeline for final result (may come from cache if continuation)
+  const finalDistribution = (job.meta as Record<string,unknown>)?.img2vid_distribution as string ||
+    Array.from({ length: primaryAssets.length }, (_, i) =>
+      selectedSceneIndices.has(i) ? '▓' : '░'
+    ).join('');
+
+  // Log summary via StepLogger
+  await logger.snapshot('img2vid', 'result', {
+    video_mode: videoMode,
+    workflow: img2vidWorkflow,
+    motion_strength: motionStrength,
+    total_scenes: imageAssets.length,
+    completed,
+    skipped,
+    failed,
+    clips: clipResults.length,
+    distribution: finalDistribution,
+    selected_scenes: Array.from(selectedSceneIndices),
+  }, `img2vid: ${completed} clips, ${failed} failed, ${skipped} skipped`);
+
+  console.log(`[IMG2VID] Summary: ${completed} clips generated, ${failed} failed, ${skipped} skipped`);
+
+  // img2vid failures are non-fatal — scenes without clips use Ken Burns fallback
+  return {
+    success: true,
+    data: {
+      video_mode: videoMode,
+      clips_generated: completed,
+      clips_failed: failed,
+      clips_skipped: skipped,
+    },
+  };
 }
 
 // =====================================================
@@ -5021,6 +7398,13 @@ export async function executeAssembleStep(
         if (statusData.status === 'complete' || statusData.status === 'succeeded') {
           const videoUrl = statusData.supabase_url || (statusData.url ? `${videoRendererUrl}${statusData.url}` : null);
           if (videoUrl) {
+            // v9.1: Log scene_sources from renderer
+            const sceneSrcs = statusData.scene_sources as string[] | undefined;
+            if (sceneSrcs && Array.isArray(sceneSrcs)) {
+              const img2vidUsed = sceneSrcs.filter((s: string) => s === 'img2vid').length;
+              const fallbackCount = sceneSrcs.filter((s: string) => s === 'kenburns-fallback').length;
+              console.log(`[ASSEMBLE] 📊 Scene sources (resumed): ${img2vidUsed} img2vid, ${fallbackCount} fallback, ${sceneSrcs.length - img2vidUsed - fallbackCount} kenburns`);
+            }
             console.log(`[ASSEMBLE] ✓ Render completed from previous invocation: ${videoUrl}`);
             
             // Clear pending render from meta + reset continuation counter
@@ -5063,6 +7447,13 @@ export async function executeAssembleStep(
               if (pollData.status === 'complete' || pollData.status === 'succeeded') {
                 const videoUrl = pollData.supabase_url || (pollData.url ? `${videoRendererUrl}${pollData.url}` : null);
                 if (videoUrl) {
+                  // v9.1: Log scene_sources
+                  const sceneSrcs = pollData.scene_sources as string[] | undefined;
+                  if (sceneSrcs && Array.isArray(sceneSrcs)) {
+                    const img2vidUsed = sceneSrcs.filter((s: string) => s === 'img2vid').length;
+                    const fallbackCount = sceneSrcs.filter((s: string) => s === 'kenburns-fallback').length;
+                    console.log(`[ASSEMBLE] 📊 Scene sources (poll resume): ${img2vidUsed} img2vid, ${fallbackCount} fallback`);
+                  }
                   console.log(`[ASSEMBLE] ✓ Render completed: ${videoUrl}`);
                   await updateJobMeta(supabase, job.id, { pending_render_job_id: null, render_continuation_count: 0 });
                   await upsertAsset(supabase, job.id, idempotencyKey, 'final_mp4', '', videoUrl, {
@@ -5159,6 +7550,8 @@ export async function executeAssembleStep(
   // =====================================================
   const isGameplayMode = job.meta?.gameplay_mode === true;
   let imageUrls: string[] = [];
+  // Map scene_number → first array index in imageUrls (for img2vid clip key remapping)
+  let sceneToArrayIndex: Record<string, number> = {};
 
   if (isGameplayMode) {
     console.log(`[ASSEMBLE] 🎮 Gameplay mode: using background video instead of images`);
@@ -5169,25 +7562,39 @@ export async function executeAssembleStep(
       return { success: false, error: 'No image assets found - run images step first' };
     }
 
-    imageUrls = imageAssets
-      .sort((a, b) => {
-      // Parse scene_X or scene_X_sub_Y from idempotency key
-      // e.g. "jobid:image_generate:scene_3" → sceneIdx=3, subIdx=0
-      // e.g. "jobid:image_generate:scene_3_sub_1" → sceneIdx=3, subIdx=1
-      const parseKey = (key: string) => {
-        const part = key.split('scene_')[1] || '0';
-        const segments = part.split('_sub_');
-        return {
-          scene: parseInt(segments[0]) || 0,
-          sub: segments.length > 1 ? parseInt(segments[1]) || 0 : 0,
-        };
+    // Parse scene_X or scene_X_sub_Y from idempotency key
+    // e.g. "jobid:image_generate:scene_3" → sceneIdx=3, subIdx=0
+    // e.g. "jobid:image_generate:scene_3_sub_1" → sceneIdx=3, subIdx=1
+    const parseSceneKey = (key: string) => {
+      const part = key.split('scene_')[1] || '0';
+      const segments = part.split('_sub_');
+      return {
+        scene: parseInt(segments[0]) || 0,
+        sub: segments.length > 1 ? parseInt(segments[1]) || 0 : 0,
       };
-      const ak = parseKey(a.idempotency_key);
-      const bk = parseKey(b.idempotency_key);
+    };
+
+    const sortedImageAssets = imageAssets.sort((a, b) => {
+      const ak = parseSceneKey(a.idempotency_key);
+      const bk = parseSceneKey(b.idempotency_key);
       return ak.scene !== bk.scene ? ak.scene - bk.scene : ak.sub - bk.sub;
-    })
-    .map(a => a.public_url)
-    .filter(Boolean) as string[];
+    });
+
+    imageUrls = sortedImageAssets.map(a => a.public_url).filter(Boolean) as string[];
+
+    // Build scene_number → array_index mapping for img2vid clip key remapping.
+    // img2vid clips are stored keyed by scene_number, but the renderer uses
+    // array index (0, 1, 2...). Sub-images cause these to diverge.
+    let filteredIdx = 0;
+    for (const asset of sortedImageAssets) {
+      if (!asset.public_url) continue; // matches filter(Boolean) above
+      const { scene, sub } = parseSceneKey(asset.idempotency_key);
+      // Map each scene's primary image (sub=0) to its array index
+      if (sub === 0) {
+        sceneToArrayIndex[String(scene)] = filteredIdx;
+      }
+      filteredIdx++;
+    }
   }
 
   const audioUrl = audioAsset.public_url;
@@ -5285,9 +7692,15 @@ export async function executeAssembleStep(
         // Soft failure: renderer will use hardcoded bold defaults
       }
 
+      // v8.2: Log img2vid clip status in meta BEFORE assembly
+      const metaClips = job.meta?.img2vid_clips as Record<string, unknown> | undefined;
+      const metaClipKeys = metaClips ? Object.keys(metaClips) : [];
+      console.log(`[ASSEMBLE] img2vid clips in job.meta: ${metaClipKeys.length > 0 ? `${metaClipKeys.length} clips, keys=[${metaClipKeys.join(',')}]` : 'NONE'}`);
+
       // Snapshot the assembly input before rendering
       await logger.snapshot('assemble', 'payload', {
         renderer: 'ffmpeg',
+        renderer_url: videoRendererUrl?.slice(0, 80),
         gameplay_mode: isGameplayMode,
         gameplay_clip: isGameplayMode ? job.meta?.gameplay_clip_name : undefined,
         gameplay_offset: isGameplayMode ? job.meta?.gameplay_clip_offset : undefined,
@@ -5295,14 +7708,22 @@ export async function executeAssembleStep(
         audio_url: audioUrl.slice(0, 100),
         duration: duration,
         has_music: musicEnabled,
+        music_url: musicUrl ? musicUrl.slice(0, 80) : null,
         music_track: job.meta?.music_track_id || null,
         music_volume: musicCfg?.default_volume || 0.18,
         ducking_enabled: musicCfg?.ducking?.enabled || false,
         effects_config_resolved: !!effectsConfig,
+        effects_config: effectsConfig || null,
         effects_enabled: effectsConfig?.enabled ?? 'legacy',
         effects_intensity: effectsConfig?.intensity ?? null,
+        overlay_video_configured: !!(effectsConfig as Record<string, unknown>)?.overlay_video &&
+          (effectsConfig as Record<string, unknown> & { overlay_video: { enabled?: boolean } }).overlay_video?.enabled === true,
+        overlay_video_url: (effectsConfig as Record<string, unknown> & { overlay_video?: { url?: string } })?.overlay_video?.url?.slice(0, 80) || null,
         subtitle_config_resolved: !!subtitleConfig,
         subtitle_style: subtitleConfig?.style ?? 'bold',
+        // v8.2: img2vid clip diagnostics
+        img2vid_clips_in_meta: metaClipKeys.length,
+        img2vid_clip_keys: metaClipKeys,
       }, isGameplayMode ? `Gameplay video assembly: ${job.meta?.gameplay_clip_name}` : 'Video assembly input');
 
       videoUrl = await assembleWithRenderer(
@@ -5317,6 +7738,7 @@ export async function executeAssembleStep(
         supabase,
         workerId,
         subtitleConfig as Record<string, unknown> | null,
+        sceneToArrayIndex,
       );
       
       // Handle continuation signal — render still in progress, need re-invocation
@@ -5379,12 +7801,20 @@ export async function executeAssembleStep(
     );
     await costHelper.releaseSlot(rendererService, 'assemble');
 
-    // Snapshot assembly output
+    // Snapshot assembly output — include overlay pipeline details
+    const overlayConfig = (effectsConfig as Record<string, unknown>)?.overlay_video as { enabled?: boolean; url?: string; opacity?: number; display_name?: string } | undefined;
     await logger.snapshot('assemble', 'output', {
       video_url: videoUrl.slice(0, 200),
       method: videoRendererUrl ? 'ffmpeg' : 'creatomate',
       image_count: imageUrls.length,
       duration: duration,
+      overlay_pipeline: {
+        configured: !!(overlayConfig?.enabled && overlayConfig?.url),
+        source_url: overlayConfig?.url?.slice(0, 120) || null,
+        source_file: overlayConfig?.display_name || overlayConfig?.url?.split('/').pop() || null,
+        opacity: overlayConfig?.opacity || null,
+        blend_mode: overlayConfig?.enabled ? 'screen' : null,
+      },
     }, 'Final video assembled');
 
     console.log(`[ASSEMBLE] ✓ Video assembled: ${videoUrl}`);
@@ -5429,6 +7859,7 @@ async function assembleWithRenderer(
   supabaseClient?: SupabaseClient,
   workerId?: string,
   subtitleConfig: Record<string, unknown> | null = null,
+  sceneToArrayIndex: Record<string, number> = {},
 ): Promise<string> {
   // ======================================================================
   // PER-SCENE DURATIONS + MOOD LEVELS (Improvements #1, #2, #4)
@@ -5555,6 +7986,41 @@ async function assembleWithRenderer(
   const gameplayClipUrl = meta?.gameplay_clip_url as string | undefined;
   const gameplayClipOffset = meta?.gameplay_clip_offset as number | undefined;
 
+  // Phase 2: img2vid clips — map of scene_number → { url, duration }
+  // When present, the renderer uses video clips instead of static images + Ken Burns.
+  // ISSUE #8 FIX: Clips are stored keyed by scene_number (e.g. "3", "7", "12"),
+  // but the renderer looks up by array index (0, 1, 2...). Sub-images cause
+  // these to diverge. Remap keys here before sending to renderer.
+  const rawImg2vidClips = meta?.img2vid_clips as Record<string, { url: string; duration: number }> | undefined;
+  const hasImg2VidClips = rawImg2vidClips && Object.keys(rawImg2vidClips).length > 0;
+  let remappedImg2vidClips: Record<string, { url: string; duration: number }> | undefined;
+  console.log(`[ASSEMBLE] img2vid_clips raw check: typeof=${typeof rawImg2vidClips}, hasClips=${hasImg2VidClips}, keys=${rawImg2vidClips ? Object.keys(rawImg2vidClips).join(',') : 'N/A'}`);
+  if (hasImg2VidClips) {
+    console.log(`[ASSEMBLE] img2vid clips found for ${Object.keys(rawImg2vidClips!).length} scene(s): keys=[${Object.keys(rawImg2vidClips!).join(',')}]`);
+    // Remap clip keys from scene_number → array_index
+    if (Object.keys(sceneToArrayIndex).length > 0) {
+      remappedImg2vidClips = {};
+      for (const [sceneNum, clipData] of Object.entries(rawImg2vidClips!)) {
+        const arrayIdx = sceneToArrayIndex[sceneNum];
+        if (arrayIdx !== undefined) {
+          remappedImg2vidClips[String(arrayIdx)] = clipData;
+          console.log(`[ASSEMBLE] Remapped img2vid clip: scene_${sceneNum} → array_index ${arrayIdx}`);
+        } else {
+          console.warn(`[ASSEMBLE] ⚠ img2vid clip for scene_${sceneNum} has no matching image asset — skipped`);
+        }
+      }
+      if (Object.keys(remappedImg2vidClips).length === 0) {
+        remappedImg2vidClips = undefined;
+        console.warn(`[ASSEMBLE] ⚠ All img2vid clips failed to remap — none will be used`);
+      } else {
+        console.log(`[ASSEMBLE] ✓ Remapped ${Object.keys(remappedImg2vidClips).length} img2vid clip(s) to array indices`);
+      }
+    } else {
+      // Gameplay or no image assets — pass raw clips (scene_number keys match as-is)
+      remappedImg2vidClips = rawImg2vidClips;
+    }
+  }
+
   const renderPayload = JSON.stringify({
     job_id: jobId,
     images: gameplayMode ? [] : imageUrls,
@@ -5565,8 +8031,16 @@ async function assembleWithRenderer(
     // Gameplay: background video instead of images
     background_video_url: gameplayMode ? gameplayClipUrl : undefined,
     background_video_offset: gameplayMode ? (gameplayClipOffset || 0) : undefined,
+    // Phase 2: img2vid clips — renderer replaces Ken Burns with video for these scenes
+    // Keys are now array indices (remapped from scene_numbers by Issue #8 fix)
+    img2vid_clips: remappedImg2vidClips || undefined,
+    _img2vid_debug: {
+      raw_keys: rawImg2vidClips ? Object.keys(rawImg2vidClips) : [],
+      remapped_keys: remappedImg2vidClips ? Object.keys(remappedImg2vidClips) : [],
+      scene_to_array: Object.keys(sceneToArrayIndex).length,
+    },
     effects: {
-      kenBurns: !gameplayMode, // No Ken Burns on gameplay video
+      kenBurns: !gameplayMode, // No Ken Burns on gameplay video (img2vid scenes auto-skip KB)
       fadeTransitions: !gameplayMode,
       fadeIn: true,
       fadeOut: true,
@@ -5576,7 +8050,18 @@ async function assembleWithRenderer(
       captionStyle: (subtitleConfig as Record<string, unknown>)?.style as string || 'bold',
     },
     // v4.0: Controlled Motion effects config (overrides legacy effects when present)
-    effects_config: effectsConfig || null,
+    // NOTE: renderer destructures 'effects_profile', not 'effects_config'
+    effects_profile: effectsConfig || null,
+    // v4.1: Video overlay — extract URL from effectsConfig.overlay_video if configured
+    overlay_video_url: (effectsConfig as Record<string, unknown>)?.overlay_video &&
+      (effectsConfig as Record<string, unknown> & { overlay_video: { enabled?: boolean; url?: string } }).overlay_video?.enabled &&
+      (effectsConfig as Record<string, unknown> & { overlay_video: { url?: string } }).overlay_video?.url
+        ? (effectsConfig as Record<string, unknown> & { overlay_video: { url: string } }).overlay_video.url
+        : undefined,
+    overlay_video_opacity: (effectsConfig as Record<string, unknown>)?.overlay_video &&
+      (effectsConfig as Record<string, unknown> & { overlay_video: { opacity?: number } }).overlay_video?.opacity
+        ? (effectsConfig as Record<string, unknown> & { overlay_video: { opacity: number } }).overlay_video.opacity
+        : undefined,
     // v6.0: Per-brand subtitle styling (Roadmap #14)
     subtitle_config: subtitleConfig || null,
     music_url: musicUrl,
@@ -5691,6 +8176,18 @@ async function assembleWithRenderer(
         if (!videoUrl) {
           throw new Error('Render complete but no video URL returned');
         }
+        
+        // v9.1: Verify scene_sources — check if img2vid clips were actually used
+        const sceneSrcs = statusData.scene_sources as string[] | undefined;
+        if (sceneSrcs && Array.isArray(sceneSrcs)) {
+          const img2vidUsed = sceneSrcs.filter((s: string) => s === 'img2vid').length;
+          const fallbackCount = sceneSrcs.filter((s: string) => s === 'kenburns-fallback').length;
+          console.log(`[ASSEMBLE] 📊 Scene sources: ${img2vidUsed} img2vid, ${fallbackCount} fallback, ${sceneSrcs.length - img2vidUsed - fallbackCount} kenburns`);
+          if (fallbackCount > 0) {
+            console.warn(`[ASSEMBLE] ⚠ ${fallbackCount} img2vid clip(s) fell back to Ken Burns — clip download or processing failed`);
+          }
+        }
+        
         console.log(`[ASSEMBLE] ✓ Video ready: ${videoUrl}`);
         return videoUrl;
       }
@@ -6028,10 +8525,9 @@ export async function executeScheduleStep(
   const allUnique = [...new Set(platforms)];
 
   // ── Disabled platforms ──────────────────────────────────────────────
-  // TikTok: API still in review — nothing actually posts (StubAdapter generates fake IDs)
   // Twitter/X: Requires paid API tier — posting fails permanently
   // Remove these from the schedule until their APIs are production-ready.
-  const DISABLED_PLATFORMS = new Set(['tiktok', 'twitter']);
+  const DISABLED_PLATFORMS = new Set(['twitter']);
   const uniquePlatforms = allUnique.filter(p => {
     if (DISABLED_PLATFORMS.has(p)) {
       console.log(`[SCHEDULE] ⏭ Skipping disabled platform "${p}" (API not available)`);
