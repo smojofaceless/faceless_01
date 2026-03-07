@@ -8669,7 +8669,7 @@ export async function executeScheduleStep(
   // Twitter/X: Requires paid API tier — posting fails permanently
   // Remove these from the schedule until their APIs are production-ready.
   const DISABLED_PLATFORMS = new Set(['twitter']);
-  const uniquePlatforms = allUnique.filter(p => {
+  const afterDisabled = allUnique.filter(p => {
     if (DISABLED_PLATFORMS.has(p)) {
       console.log(`[SCHEDULE] ⏭ Skipping disabled platform "${p}" (API not available)`);
       return false;
@@ -8677,9 +8677,59 @@ export async function executeScheduleStep(
     return true;
   });
 
+  // ── Smart connection filter ─────────────────────────────────────────
+  // Query platform_tokens to find which platforms the brand actually has connected.
+  // Only schedule posts for connected platforms — avoids guaranteed misconfig failures.
+  // platform_tokens uses short names (instagram, facebook, youtube, tiktok, threads)
+  // while schedule uses suffixed names (instagram_reels, facebook_reels, youtube_shorts).
+  const SCHEDULE_TO_TOKEN_PLATFORM: Record<string, string> = {
+    'youtube_shorts': 'youtube',
+    'instagram_reels': 'instagram',
+    'facebook_reels': 'facebook',
+    'tiktok': 'tiktok',
+    'threads': 'threads',
+    'twitter': 'twitter',
+  };
+
+  let connectedSet: Set<string> | null = null;
+  try {
+    const { data: tokenRows, error: tokenErr } = await supabase
+      .from('platform_tokens')
+      .select('platform')
+      .eq('brand_id', freshJob.brand_id)
+      .eq('is_valid', true);
+
+    if (!tokenErr && tokenRows) {
+      connectedSet = new Set(tokenRows.map((r: { platform: string }) => r.platform));
+      console.log(`[SCHEDULE] Connected platforms for brand: ${[...connectedSet].join(', ')}`);
+    } else {
+      console.warn(`[SCHEDULE] Could not query platform_tokens: ${tokenErr?.message}. Posting to all requested platforms (failures expected for unconnected).`);
+    }
+  } catch (connErr) {
+    console.warn(`[SCHEDULE] platform_tokens query failed: ${connErr}. Posting to all requested platforms.`);
+  }
+
+  const uniquePlatforms = connectedSet
+    ? afterDisabled.filter(p => {
+        const tokenName = SCHEDULE_TO_TOKEN_PLATFORM[p] || p;
+        const isConnected = connectedSet!.has(tokenName);
+        if (!isConnected) {
+          console.log(`[SCHEDULE] ⏭ Skipping "${p}" — not connected for this brand (no valid token for "${tokenName}")`);
+        }
+        return isConnected;
+      })
+    : afterDisabled; // fallback: try all if token query failed
+
   if (uniquePlatforms.length === 0) {
-    console.warn('[SCHEDULE] All platforms are disabled — nothing to schedule');
-    return { success: true, data: { scheduled_at: null, platforms: [], results: {}, note: 'All platforms disabled' } };
+    const msg = connectedSet
+      ? `No connected platforms found for this brand. Connect platforms in Settings. (requested: ${afterDisabled.join(', ')}, connected: ${connectedSet ? [...connectedSet].join(', ') : 'unknown'})`
+      : 'All platforms are disabled — nothing to schedule';
+    console.warn(`[SCHEDULE] ${msg}`);
+    return { success: true, data: { scheduled_at: null, platforms: [], results: {}, note: msg, skipped_platforms: afterDisabled } };
+  }
+
+  if (afterDisabled.length !== uniquePlatforms.length) {
+    console.log(`[SCHEDULE] Filtered ${afterDisabled.length} requested → ${uniquePlatforms.length} connected: ${uniquePlatforms.join(', ')}`);
   }
 
   // Determine scheduled time
