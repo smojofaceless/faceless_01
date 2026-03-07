@@ -129,8 +129,8 @@ async function downloadFile(url, outputPath) {
     method: 'GET',
     url: url,
     responseType: 'arraybuffer',
-    timeout: 120000, // 2 minute timeout for large files
-    maxContentLength: 100 * 1024 * 1024, // 100MB max
+    timeout: 300000, // 5 minute timeout for large files (gameplay videos can be 200MB+)
+    maxContentLength: 500 * 1024 * 1024, // 500MB max (gameplay videos are large)
   });
   
   await fs.writeFile(outputPath, response.data);
