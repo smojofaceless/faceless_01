@@ -17,6 +17,9 @@ class Calendar {
             status: null
         };
         
+        // Brand lookup map (populated by page controller)
+        this._brandMap = new Map();
+        
         // Callbacks
         this.onDateClick = options.onDateClick || null;
         this.onDateSelect = options.onDateSelect || null;
@@ -63,6 +66,23 @@ class Calendar {
     async setFilters(filters) {
         this.filters = { ...this.filters, ...filters };
         await this.render();
+    }
+
+    /**
+     * Set the brand lookup map for displaying brand labels/colors
+     * @param {Map} brandMap - Map of brandId → { name, color }
+     */
+    setBrandMap(brandMap) {
+        this._brandMap = brandMap;
+    }
+
+    /**
+     * Get brand info for a given brandId
+     * @param {string} brandId
+     * @returns {{ name: string, color: string } | null}
+     */
+    getBrandInfo(brandId) {
+        return this._brandMap.get(brandId) || null;
     }
 
     /**
@@ -203,9 +223,10 @@ class Calendar {
 
         // Render appropriate view (no header - controlled by page)
         const body = this.view === 'month' ? this.renderMonth() : this.renderWeek();
+        const showBrands = !this.filters.brandId && this._brandMap.size > 1;
 
         this.container.innerHTML = `
-            <div class="calendar calendar--${this.view}">
+            <div class="calendar calendar--${this.view}${showBrands ? ' calendar--show-brands' : ''}">
                 ${body}
             </div>
         `;
@@ -299,11 +320,20 @@ class Calendar {
                                 const metricsBadge = (post.status === 'posted' && post.metrics)
                                     ? (typeof metricsService !== 'undefined' ? metricsService.buildBadgeHTML(post.metrics) : '')
                                     : '';
+                                // Brand indicator (shown when viewing all brands)
+                                const brandInfo = this.getBrandInfo(post.brandId);
+                                const brandIndicator = brandInfo 
+                                    ? `<div class="calendar__post-brand">
+                                        <span class="calendar__brand-dot" style="background: ${brandInfo.color}"></span>
+                                        <span class="calendar__brand-label">${this.escapeHtml(brandInfo.name)}</span>
+                                       </div>`
+                                    : '';
                                 return `
                                 <div class="calendar__post calendar__post--${post.status} ${post.isConsolidated ? 'calendar__post--consolidated' : ''}" 
                                      data-post-id="${post.id}"
-                                     style="--platform-color: ${this.getPlatformColor(post.platformId)}"
-                                     title="${this.escapeHtml(post.content?.title || 'Untitled')} - ${this.formatTime(post.scheduledAt)}${post.isConsolidated ? ' (' + post.platformIds.length + ' platforms)' : ''}">
+                                     style="--platform-color: ${this.getPlatformColor(post.platformId)}; --brand-color: ${brandInfo?.color || 'transparent'}"
+                                     title="${this.escapeHtml(post.content?.title || 'Untitled')} - ${this.formatTime(post.scheduledAt)}${post.isConsolidated ? ' (' + post.platformIds.length + ' platforms)' : ''}${brandInfo ? ' [' + brandInfo.name + ']' : ''}">
+                                    ${brandIndicator}
                                     <span class="calendar__platform-dots">${platformDots}</span>
                                     ${metaIndicator}
                                     ${metricsBadge}
@@ -393,10 +423,19 @@ class Calendar {
                             const weekMetricsBadge = (post.status === 'posted' && post.metrics)
                                 ? (typeof metricsService !== 'undefined' ? metricsService.buildBadgeHTML(post.metrics) : '')
                                 : '';
+                            // Brand indicator (week view)
+                            const wBrandInfo = this.getBrandInfo(post.brandId);
+                            const weekBrandRow = wBrandInfo
+                                ? `<div class="calendar__post-card-brand">
+                                    <span class="calendar__brand-dot" style="background: ${wBrandInfo.color}"></span>
+                                    <span>${this.escapeHtml(wBrandInfo.name)}</span>
+                                   </div>`
+                                : '';
                             return `
                             <div class="calendar__post-card calendar__post-card--${post.status} ${post.isConsolidated ? 'calendar__post-card--consolidated' : ''}" 
                                  data-post-id="${post.id}"
-                                 style="--platform-color: ${this.getPlatformColor(post.platformId)}">
+                                 style="--platform-color: ${this.getPlatformColor(post.platformId)}; --brand-color: ${wBrandInfo?.color || 'transparent'}">
+                                ${weekBrandRow}
                                 <div class="calendar__post-card-header">
                                     <span class="calendar__post-time">${this.formatTime(post.scheduledAt)}</span>
                                     ${metaBadge}

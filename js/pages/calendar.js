@@ -10,6 +10,8 @@
     let calendar = null;
     let currentView = 'month';
     let selectedPost = null;
+    let activeBrandFilter = null; // null = All Brands, string = specific brand ID
+    let allBrands = []; // Cached list of all brands
 
     // DOM Elements
     const elements = {
@@ -23,7 +25,8 @@
         statusFilter: null,
         postModal: null,
         postModalBody: null,
-        createPostBtn: null
+        createPostBtn: null,
+        brandFilterBar: null
     };
 
     /**
@@ -71,6 +74,7 @@
         elements.postModal = document.getElementById('post-modal');
         elements.postModalBody = document.getElementById('post-modal-body');
         elements.createPostBtn = document.getElementById('create-post-btn');
+        elements.brandFilterBar = document.getElementById('brand-filter-bar');
     }
 
     /**
@@ -94,7 +98,10 @@
             await metadataVersionService.init();
         }
 
-        // Create calendar instance
+        // Build brand filter bar and brand map
+        await buildBrandFilterBar();
+
+        // Create calendar instance — start with no brand filter (all brands)
         calendar = new Calendar({
             container: elements.calendarContainer,
             view: currentView,
@@ -103,6 +110,9 @@
             onSlotClick: handleSlotClick,
             onNavigate: handleNavigate
         });
+
+        // Set the brand map so calendar can show brand indicators
+        calendar.setBrandMap(buildBrandMap());
 
         // Initialize calendar (async — loads data from Supabase)
         await calendar.init();
@@ -120,6 +130,101 @@
         updateCalendarTitle();
 
         console.log('✅ Calendar initialized');
+    }
+
+    /**
+     * Build the brand lookup map for the calendar component
+     * @returns {Map} brandId → { name, color }
+     */
+    function buildBrandMap() {
+        const map = new Map();
+        if (typeof brandManager !== 'undefined') {
+            const brands = brandManager.getAll();
+            for (const brand of brands) {
+                map.set(brand.id, {
+                    name: brand.name,
+                    color: brand.theme?.primaryColor || '#8b5cf6'
+                });
+            }
+        }
+        return map;
+    }
+
+    /**
+     * Build the brand filter pill bar at the top of the calendar
+     */
+    async function buildBrandFilterBar() {
+        if (!elements.brandFilterBar || typeof brandManager === 'undefined') return;
+
+        allBrands = brandManager.getAll();
+
+        // Only show the filter bar if there's more than 1 brand
+        if (allBrands.length <= 1) {
+            elements.brandFilterBar.style.display = 'none';
+            // If only one brand, just set the filter to that brand
+            if (allBrands.length === 1) {
+                activeBrandFilter = allBrands[0].id;
+            }
+            return;
+        }
+
+        // Build brand pills HTML (the "All Brands" pill is already in HTML)
+        const pillsHTML = allBrands.map(brand => {
+            const color = brand.theme?.primaryColor || '#8b5cf6';
+            return `
+                <button class="brand-filter-pill" data-brand-id="${brand.id}">
+                    <span class="brand-filter-pill__dot" style="background: ${color}"></span>
+                    <span>${escapeHtml(brand.name)}</span>
+                </button>
+            `;
+        }).join('');
+
+        // Append brand pills after the "All Brands" pill
+        elements.brandFilterBar.insertAdjacentHTML('beforeend', pillsHTML);
+
+        // Set up click handlers
+        elements.brandFilterBar.addEventListener('click', async (e) => {
+            const pill = e.target.closest('.brand-filter-pill');
+            if (!pill) return;
+
+            const brandId = pill.dataset.brandId || null; // empty string = all brands
+
+            // Update active state
+            elements.brandFilterBar.querySelectorAll('.brand-filter-pill').forEach(p => p.classList.remove('active'));
+            pill.classList.add('active');
+
+            // Update filter
+            activeBrandFilter = brandId || null;
+
+            if (calendar) {
+                await calendar.setFilters({ brandId: activeBrandFilter });
+                await enrichCalendarMetrics();
+            }
+        });
+
+        // Listen for brand changes from the brand manager (e.g., new brands created)
+        brandManager.on('brand:created', () => rebuildBrandFilterBar());
+        brandManager.on('brand:deleted', () => rebuildBrandFilterBar());
+        brandManager.on('brand:updated', () => rebuildBrandFilterBar());
+    }
+
+    /**
+     * Rebuild the brand filter bar (e.g., when brands change)
+     */
+    async function rebuildBrandFilterBar() {
+        if (!elements.brandFilterBar) return;
+
+        // Clear existing brand pills (keep the "All Brands" pill)
+        const allPill = elements.brandFilterBar.querySelector('.brand-filter-pill--all');
+        elements.brandFilterBar.innerHTML = '';
+        if (allPill) elements.brandFilterBar.appendChild(allPill);
+
+        await buildBrandFilterBar();
+
+        // Update the calendar's brand map
+        if (calendar) {
+            calendar.setBrandMap(buildBrandMap());
+        }
     }
 
     /**
@@ -379,12 +484,33 @@
     }
 
     /**
-     * Handle brand change from brand switcher
+     * Handle brand change from brand switcher (header dropdown)
+     * Syncs the pill filter bar and updates the calendar
      * @param {Object} brand - Selected brand
      */
     async function handleBrandChange(brand) {
+        const brandId = brand?.id || null;
+        activeBrandFilter = brandId;
+
+        // Sync the brand pill bar
+        if (elements.brandFilterBar) {
+            elements.brandFilterBar.querySelectorAll('.brand-filter-pill').forEach(p => {
+                const pillBrandId = p.dataset.brandId || null;
+                p.classList.toggle('active', pillBrandId === (brandId || ''));
+            });
+
+            // If a specific brand is selected from the header, activate its pill
+            // If no brand matches (shouldn't happen), activate "All Brands"
+            const activePill = elements.brandFilterBar.querySelector(`.brand-filter-pill[data-brand-id="${brandId || ''}"]`);
+            if (activePill) {
+                elements.brandFilterBar.querySelectorAll('.brand-filter-pill').forEach(p => p.classList.remove('active'));
+                activePill.classList.add('active');
+            }
+        }
+
         if (calendar) {
-            await calendar.setFilters({ brandId: brand?.id || null });
+            await calendar.setFilters({ brandId: brandId });
+            await enrichCalendarMetrics();
         }
     }
 
@@ -1344,6 +1470,14 @@
                 
                 <div class="day-detail__posts">
                     ${consolidated.map(post => {
+                        // Brand indicator
+                        const postBrandInfo = calendar ? calendar.getBrandInfo(post.brandId) : null;
+                        const brandChip = postBrandInfo && !activeBrandFilter
+                            ? `<span class="day-detail__brand-chip" style="--chip-color: ${postBrandInfo.color}">
+                                <span class="calendar__brand-dot" style="background: ${postBrandInfo.color}"></span>
+                                ${escapeHtml(postBrandInfo.name)}
+                               </span>`
+                            : '';
                         // Platform chips for consolidated or single badge
                         const platformHtml = post.isConsolidated
                             ? `<div class="day-detail__platforms">
@@ -1365,6 +1499,7 @@
                                     ${formatTime(post.scheduledAt)}
                                 </div>
                                 <div class="day-detail__post-info">
+                                    ${brandChip}
                                     <span class="day-detail__post-title">
                                         ${escapeHtml(post.content?.title || 'Untitled')}
                                     </span>

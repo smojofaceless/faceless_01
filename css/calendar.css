@@ -2,6 +2,172 @@
    Calendar Page Styles — v2
    ========================================================================== */
 
+/* ==================== Brand Filter Bar ==================== */
+.brand-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2, 8px);
+    padding: var(--space-3, 12px) 0;
+    margin-bottom: var(--space-2, 8px);
+    overflow-x: auto;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+}
+
+.brand-filter-bar::-webkit-scrollbar {
+    height: 4px;
+}
+
+.brand-filter-bar::-webkit-scrollbar-thumb {
+    background: var(--border-primary, #2a2a4a);
+    border-radius: 4px;
+}
+
+.brand-filter-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: var(--surface-secondary, #1a1a2e);
+    border: 1.5px solid var(--border-primary, #2a2a4a);
+    border-radius: 999px;
+    cursor: pointer;
+    white-space: nowrap;
+    font-size: var(--text-sm, 0.8125rem);
+    font-weight: 500;
+    color: var(--text-secondary, #aaa);
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.brand-filter-pill:hover {
+    border-color: var(--text-muted, #666);
+    color: var(--text-primary, #e0e0ff);
+    background: var(--surface-tertiary, #222244);
+}
+
+.brand-filter-pill.active {
+    border-color: var(--primary, #8b5cf6);
+    color: var(--text-primary, #e0e0ff);
+    background: rgba(139, 92, 246, 0.12);
+    font-weight: 600;
+}
+
+.brand-filter-pill--all.active {
+    border-color: var(--primary, #8b5cf6);
+    background: rgba(139, 92, 246, 0.12);
+}
+
+.brand-filter-pill__dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.brand-filter-pill__icon {
+    display: flex;
+    align-items: center;
+    opacity: 0.7;
+}
+
+.brand-filter-pill.active .brand-filter-pill__icon {
+    opacity: 1;
+}
+
+.brand-filter-pill__count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted, #888);
+}
+
+.brand-filter-pill.active .brand-filter-pill__count {
+    background: rgba(139, 92, 246, 0.2);
+    color: var(--primary, #8b5cf6);
+}
+
+/* ==================== Brand Indicator on Calendar Items ==================== */
+.calendar__brand-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: inline-block;
+}
+
+.calendar__brand-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    color: var(--text-muted, #888);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 60px;
+}
+
+/* Brand indicator row inside calendar posts */
+.calendar__post-brand {
+    display: none; /* Hidden by default, shown when "All Brands" active */
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 1px;
+}
+
+.calendar--show-brands .calendar__post-brand {
+    display: flex;
+}
+
+/* Week view brand indicator */
+.calendar__post-card-brand {
+    display: none;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--text-muted, #888);
+}
+
+.calendar--show-brands .calendar__post-card-brand {
+    display: flex;
+}
+
+.calendar__post-card-brand .calendar__brand-dot {
+    width: 8px;
+    height: 8px;
+}
+
+/* Brand-colored left border on posts when showing all brands */
+.calendar--show-brands .calendar__post {
+    border-left: 3px solid var(--brand-color, transparent);
+    padding-left: 4px;
+}
+
+.calendar--show-brands .calendar__post-card {
+    border-left: 3px solid var(--brand-color, transparent);
+}
+
+/* Day detail brand chip */
+.day-detail__brand-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary, #aaa);
+    padding: 1px 8px 1px 4px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid color-mix(in srgb, var(--chip-color, #666) 30%, transparent);
+}
+
 /* Calendar Toolbar */
 .calendar-toolbar {
     display: flex;
