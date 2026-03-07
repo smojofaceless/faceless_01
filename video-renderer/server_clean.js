@@ -1751,13 +1751,24 @@ app.post('/render', async (req, res) => {
       overlay_video_url = null, // v4.1: URL to a black-background overlay video (screen blend)
       overlay_video_opacity = 0.4, // v4.1: Opacity for overlay video (0-1)
       subtitle_config = null, // v6.0: Per-brand subtitle styling from get_subtitle_config_for_job()
+      background_video_url = null,  // v7.0: Gameplay/background video URL (replaces images)
+      background_video_offset = 0,  // v7.0: Start offset in seconds for background video trim
+      audio_duration = 0, // v7.1: Total audio duration in seconds (used for gameplay trim)
     } = req.body;
     
-    if (!images || images.length === 0) {
-      return res.status(400).json({ error: 'No images provided' });
+    const isGameplayMode = !!background_video_url;
+    
+    if (!isGameplayMode && (!images || images.length === 0)) {
+      return res.status(400).json({ error: 'No images or background_video_url provided' });
     }
     
-    console.log(`[${jobId}] New render job: ${images.length} images, audio: ${audio_url ? 'yes' : 'no'}, music: ${music_url ? 'yes' : 'no'}, captions: ${captions.length} words`);
+    if (isGameplayMode) {
+      console.log(`[${jobId}] \uD83C\uDFAE GAMEPLAY MODE: background video @ offset ${background_video_offset}s`);
+      console.log(`[${jobId}]   Video URL: ${background_video_url.slice(0, 100)}...`);
+      console.log(`[${jobId}]   Audio: ${audio_url ? 'yes' : 'no'}, Captions: ${captions.length} words`);
+    } else {
+      console.log(`[${jobId}] New render job: ${images.length} images, audio: ${audio_url ? 'yes' : 'no'}, music: ${music_url ? 'yes' : 'no'}, captions: ${captions.length} words`);
+    }
     console.log(`[${jobId}] Effects:`, effects);
     console.log(`[${jobId}] Mood levels: ${mood_levels.length > 0 ? mood_levels.join(', ') : 'not provided (using defaults)'}`);
     console.log(`[${jobId}] Supabase job: ${supabaseJobId || 'none'}`);
@@ -1847,8 +1858,8 @@ app.post('/render', async (req, res) => {
       status_url: `/status/${jobId}`,
     });
     
-    // Process asynchronously (now with visual_dna, effects_profile, overlay, and subtitle_config)
-    processRender(jobId, images, audio_url, durations, captions, effects, webhook_url, supabaseJobId, low_memory, music_url, music_volume, mood_levels, visual_dna, safeEffectsProfile, img2vid_clips, resolvedOverlayUrl, resolvedOverlayOpacity, safeSubtitleConfig);
+    // Process asynchronously (now with visual_dna, effects_profile, overlay, subtitle_config, and background_video)
+    processRender(jobId, images || [], audio_url, durations || [], captions, effects, webhook_url, supabaseJobId, low_memory, music_url, music_volume, mood_levels, visual_dna, safeEffectsProfile, img2vid_clips, resolvedOverlayUrl, resolvedOverlayOpacity, safeSubtitleConfig, background_video_url, background_video_offset, audio_duration);
     
   } catch (error) {
     console.error('[RENDER] Error:', error);
@@ -1869,7 +1880,7 @@ app.post('/render', async (req, res) => {
  * @param overlayOpacity - Overlay opacity 0-1 (default 0.4)
  * @param subtitleConfig - Per-brand subtitle styling from get_subtitle_config_for_job()
  */
-async function processRender(jobId, imageUrls, audioUrl, durations, captions, effects, webhookUrl, supabaseJobId, lowMemory, musicUrl = null, musicVolume = 15, moodLevels = [], visualDNA = null, effectsProfile = null, img2vidClips = null, overlayVideoUrl = null, overlayOpacity = 0.4, subtitleConfig = null) {
+async function processRender(jobId, imageUrls, audioUrl, durations, captions, effects, webhookUrl, supabaseJobId, lowMemory, musicUrl = null, musicVolume = 15, moodLevels = [], visualDNA = null, effectsProfile = null, img2vidClips = null, overlayVideoUrl = null, overlayOpacity = 0.4, subtitleConfig = null, backgroundVideoUrl = null, backgroundVideoOffset = 0, audioDuration = 0) {
   activeRenders++;
   const jobDir = path.join(TEMP_DIR, jobId);
   await fs.mkdir(jobDir, { recursive: true });
@@ -1967,21 +1978,122 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
   try {
     const job = jobs.get(jobId);
     
-    // Step 1: Download images (handle base64 and URLs)
-    const downloadStart = Date.now();
-    console.log(`[${jobId}] Downloading ${imageUrls.length} images...`);
-    const imagePaths = [];
-    for (let i = 0; i < imageUrls.length; i++) {
-      const ext = imageUrls[i].startsWith('data:image/webp') ? 'webp' : 
-                  imageUrls[i].startsWith('data:image/png') ? 'png' : 'jpg';
-      const imgPath = path.join(jobDir, `image_${i}.${ext}`);
-      await downloadFile(imageUrls[i], imgPath);
-      imagePaths.push(imgPath);
-      job.progress = Math.round((i + 1) / imageUrls.length * 20);
+    // Detect gameplay mode
+    const isGameplayMode = !!backgroundVideoUrl;
+    let rawVideoPath;
+    let imagePaths = [];
+    
+    if (isGameplayMode) {
+      // =====================================================
+      // GAMEPLAY MODE: Download + trim background video
+      // =====================================================
+      const downloadStart = Date.now();
+      console.log(`[${jobId}] 🎮 Downloading gameplay video...`);
+      const gameplayPath = path.join(jobDir, 'gameplay_source.mp4');
+      await downloadFile(backgroundVideoUrl, gameplayPath);
+      job.progress = 15;
+      console.log(`[${jobId}] ✓ Gameplay video downloaded`);
+      timings.download = Date.now() - downloadStart;
+      
+      // Get audio duration for trim length
+      let trimDuration = 60;
+      if (audioDuration > 0) {
+        trimDuration = audioDuration;
+        console.log(`[${jobId}]   Using explicit audio_duration: ${trimDuration}s`);
+      } else if (durations && durations.length > 0) {
+        trimDuration = durations.reduce((a, b) => a + b, 0);
+        console.log(`[${jobId}]   Using durations sum: ${trimDuration}s`);
+      } else {
+        console.log(`[${jobId}]   ⚠️ No audio_duration or durations — using default ${trimDuration}s`);
+      }
+      
+      // Trim the gameplay video from offset for trimDuration + 1s buffer
+      const videoStart = Date.now();
+      console.log(`[${jobId}] 🎮 Trimming gameplay: offset=${backgroundVideoOffset}s, duration=${trimDuration}s`);
+      rawVideoPath = path.join(jobDir, 'raw.mp4');
+      
+      const { execFile } = require('child_process');
+      const GAMEPLAY_TRIM_TIMEOUT_MS = 5 * 60 * 1000;
+      await new Promise((resolve, reject) => {
+        let timedOut = false;
+        const args = [
+          '-ss', String(backgroundVideoOffset),
+          '-i', gameplayPath,
+          '-t', String(trimDuration + 1),
+          '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black',
+          '-c:v', 'libx264',
+          '-preset', useLowMemory ? 'ultrafast' : 'fast',
+          '-crf', '23',
+          '-an',
+          '-y',
+          rawVideoPath,
+        ];
+        
+        console.log(`[${jobId}]   FFmpeg trim: ffmpeg ${args.join(' ')}`);
+        const proc = execFile('ffmpeg', args, { maxBuffer: 50 * 1024 * 1024 }, (err, stdout, stderr) => {
+          clearTimeout(timeoutHandle);
+          if (timedOut) return;
+          if (err) {
+            console.error(`[${jobId}]   FFmpeg trim error: ${stderr?.slice(-500)}`);
+            return reject(new Error(`Gameplay trim failed: ${err.message}`));
+          }
+          resolve();
+        });
+        const timeoutHandle = setTimeout(() => {
+          timedOut = true;
+          console.error(`[${jobId}] ⚠️ Gameplay trim timed out after 5 minutes, killing FFmpeg`);
+          proc.kill('SIGKILL');
+          reject(new Error('Gameplay trim timed out after 5 minutes'));
+        }, GAMEPLAY_TRIM_TIMEOUT_MS);
+      });
+      
+      // Clean up source file
+      await fs.unlink(gameplayPath).catch(() => {});
+      timings.createVideo = Date.now() - videoStart;
+      job.progress = 50;
+      console.log(`[${jobId}] ✓ Gameplay trimmed (${Math.round(timings.createVideo/1000)}s)`);
+      
+    } else {
+      // =====================================================
+      // NORMAL MODE: Download images + create video from images
+      // =====================================================
+    
+      // Step 1: Download images (handle base64 and URLs)
+      const downloadStart = Date.now();
+      console.log(`[${jobId}] Downloading ${imageUrls.length} images...`);
+      for (let i = 0; i < imageUrls.length; i++) {
+        const ext = imageUrls[i].startsWith('data:image/webp') ? 'webp' : 
+                    imageUrls[i].startsWith('data:image/png') ? 'png' : 'jpg';
+        const imgPath = path.join(jobDir, `image_${i}.${ext}`);
+        await downloadFile(imageUrls[i], imgPath);
+        imagePaths.push(imgPath);
+        job.progress = Math.round((i + 1) / imageUrls.length * 20);
+      }
+      console.log(`[${jobId}] ✓ Images downloaded`);
+      timings.download = Date.now() - downloadStart;
+      job.status = 'processing';
+      
+      // Step 3: Create video from images
+      const videoStart = Date.now();
+      const useKenBurns = mergedEffects.kenBurns !== false && !DISABLE_KEN_BURNS;
+      console.log(`[${jobId}] Creating video from images (lowMemory: ${useLowMemory}, kenBurns: ${useKenBurns})...`);
+      console.log(`[${jobId}] 🎬 processRender → createVideoFromImages: img2vidClips=${img2vidClips ? `YES (${Object.keys(img2vidClips).length} keys)` : 'null/undefined'}`);
+      rawVideoPath = path.join(jobDir, 'raw.mp4');
+      const videoResult = await createVideoFromImages(jobId, imagePaths, durations, rawVideoPath, {
+        kenBurns: useKenBurns,
+        lowMemory: useLowMemory,
+        moodLevels: moodLevels,
+        motionOverride: dnaMotionOverride,
+        img2vidClips: img2vidClips,
+      });
+      timings.createVideo = Date.now() - videoStart;
+      job.progress = 50;
+      const sceneSources = videoResult.sceneSources || [];
+      job.scene_sources = sceneSources;
+      const img2vidUsed = sceneSources.filter(s => s === 'img2vid').length;
+      const kbFallback = sceneSources.filter(s => s === 'kenburns-fallback').length;
+      console.log(`[${jobId}] ✓ Base video created (${Math.round(timings.createVideo/1000)}s) — scene sourcing: ${img2vidUsed} img2vid, ${kbFallback} fallback, ${sceneSources.length - img2vidUsed - kbFallback} kenburns`);
     }
-    console.log(`[${jobId}] ✓ Images downloaded`);
-    timings.download = Date.now() - downloadStart;
-    job.status = 'processing';
     
     // Step 2: Download audio
     let audioPath = null;
@@ -1992,28 +2104,6 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
       console.log(`[${jobId}] ✓ Audio downloaded`);
     }
     job.progress = 25;
-    
-    // Step 3: Create video from images
-    const videoStart = Date.now();
-    const useKenBurns = mergedEffects.kenBurns !== false && !DISABLE_KEN_BURNS;
-    console.log(`[${jobId}] Creating video from images (lowMemory: ${useLowMemory}, kenBurns: ${useKenBurns})...`);
-    console.log(`[${jobId}] 🎬 processRender → createVideoFromImages: img2vidClips=${img2vidClips ? `YES (${Object.keys(img2vidClips).length} keys)` : 'null/undefined'}`);
-    const rawVideoPath = path.join(jobDir, 'raw.mp4');
-    const videoResult = await createVideoFromImages(jobId, imagePaths, durations, rawVideoPath, {
-      kenBurns: useKenBurns,
-      lowMemory: useLowMemory,
-      moodLevels: moodLevels, // Pass mood levels for intelligent Ken Burns
-      motionOverride: dnaMotionOverride, // v3.0: Pass Visual DNA motion override
-      img2vidClips: img2vidClips, // Phase 2: pre-generated video clips per scene
-    });
-    timings.createVideo = Date.now() - videoStart;
-    job.progress = 50;
-    // v9.1: Store scene_sources in job status so the worker can verify clip usage
-    const sceneSources = videoResult.sceneSources || [];
-    job.scene_sources = sceneSources;
-    const img2vidUsed = sceneSources.filter(s => s === 'img2vid').length;
-    const kbFallback = sceneSources.filter(s => s === 'kenburns-fallback').length;
-    console.log(`[${jobId}] ✓ Base video created (${Math.round(timings.createVideo/1000)}s) — scene sourcing: ${img2vidUsed} img2vid, ${kbFallback} fallback, ${sceneSources.length - img2vidUsed - kbFallback} kenburns`);
     
     // Step 4: Add audio (narration)
     let currentVideo = rawVideoPath;

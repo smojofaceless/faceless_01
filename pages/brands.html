@@ -1322,7 +1322,29 @@
             <div class="preset-tab-bar" id="ip-preset-tabs"></div>
             <div class="modal__body" id="imgprompt-modal-body">
 
+                <!-- Gameplay Mode Banner -->
+                <div id="ip-gameplay-banner" style="display:none; margin-bottom:16px; padding:14px 18px; border-radius:12px; background:linear-gradient(135deg, rgba(34,197,94,0.12), rgba(59,130,246,0.10)); border:1px solid rgba(34,197,94,0.25);">
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <span style="font-size:22px;">🎮</span>
+                            <div>
+                                <div style="font-size:13px; font-weight:700; color:#34d399;" id="ip-gameplay-title">Background Video Mode</div>
+                                <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">This preset uses gameplay/background video instead of AI-generated images. Image settings below are disabled.</div>
+                            </div>
+                        </div>
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; white-space:nowrap; flex-shrink:0;">
+                            <span style="font-size:11px; font-weight:600; color:var(--text-secondary);">Gameplay</span>
+                            <div style="position:relative; width:44px; height:24px;">
+                                <input type="checkbox" id="ip-gameplay-toggle" onchange="onGameplayToggle()" style="opacity:0; position:absolute; width:100%; height:100%; cursor:pointer; z-index:2; margin:0;">
+                                <div id="ip-gameplay-track" style="position:absolute; inset:0; border-radius:12px; background:rgba(34,197,94,0.4); transition:background 0.2s;"></div>
+                                <div id="ip-gameplay-thumb" style="position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%; background:#fff; transition:transform 0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
                 <!-- Image Model -->
+                <div id="ip-image-settings-container">
                 <div class="fx-section">
                     <div class="fx-section__header">
                         <span class="fx-toggle__label" style="font-weight:600;">Image Model</span>
@@ -1746,6 +1768,7 @@
 
                 </details><!-- /Dev Tools -->
 
+            </div><!-- /ip-image-settings-container -->
             </div>
             <div class="modal__footer--config">
                 <span class="modal__footer-status" id="ip-status"></span>
@@ -3338,9 +3361,12 @@
             let defaultType = null;
             (presets || []).forEach(p => {
                 const tab = document.createElement('button');
+                const isGameplay = p.config_overrides?.visual_type === 'gameplay';
                 tab.className = 'preset-tab' + (p.is_default ? ' preset-tab--active' : '');
                 tab.dataset.type = p.template_type;
-                tab.innerHTML = (p.is_default ? '<span class="preset-tab__star">★</span> ' : '') + escapeHtml(p.name);
+                tab.innerHTML = (p.is_default ? '<span class="preset-tab__star">★</span> ' : '') 
+                    + escapeHtml(p.name) 
+                    + (isGameplay ? ' <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,0.2);color:#34d399;font-weight:700;margin-left:4px;">🎮</span>' : '');
                 tab.addEventListener('click', () => {
                     container.querySelectorAll('.preset-tab').forEach(t => t.classList.remove('preset-tab--active'));
                     tab.classList.add('preset-tab--active');
@@ -3957,19 +3983,111 @@
             ipPresetType = null;
         }
 
+        // Track whether the current preset is in gameplay mode
+        let ipCurrentVisualType = null;
+
         async function loadImagePromptConfig(brandId, vibePreset) {
             try {
                 document.getElementById('ip-status').textContent = 'Loading...';
-                // Load this preset's raw config_overrides.image_prompt
-                const raw = await brandManager.getPresetConfigSection(brandId, vibePreset, 'image_prompt');
+                // Load the full config_overrides (to get visual_type at the top level)
+                const fullConfig = await brandManager.getPresetConfigSection(brandId, vibePreset, null);
+                ipCurrentVisualType = fullConfig?.visual_type || null;
+                
+                // Load image_prompt section
+                const raw = fullConfig?.image_prompt || null;
                 ipCurrentConfig = raw;
                 populateImagePromptForm(raw);
+                
+                // Show/hide gameplay banner and image settings
+                updateGameplayBanner(ipCurrentVisualType === 'gameplay');
+                
                 document.getElementById('ip-status').textContent = raw
                     ? 'Editing: ' + vibePreset
-                    : 'No image prompt config for ' + vibePreset + ' — using defaults';
+                    : ipCurrentVisualType === 'gameplay'
+                        ? '🎮 Gameplay preset — ' + vibePreset
+                        : 'No image prompt config for ' + vibePreset + ' — using defaults';
             } catch (e) {
                 document.getElementById('ip-status').textContent = 'Failed to load config';
                 console.error(e);
+            }
+        }
+
+        function updateGameplayBanner(isGameplay) {
+            const banner = document.getElementById('ip-gameplay-banner');
+            const container = document.getElementById('ip-image-settings-container');
+            const toggle = document.getElementById('ip-gameplay-toggle');
+            const track = document.getElementById('ip-gameplay-track');
+            const thumb = document.getElementById('ip-gameplay-thumb');
+            const title = document.getElementById('ip-gameplay-title');
+            
+            // Always show banner so user can toggle
+            banner.style.display = 'block';
+            toggle.checked = isGameplay;
+            
+            if (isGameplay) {
+                title.textContent = 'Background Video Mode';
+                title.style.color = '#34d399';
+                track.style.background = 'rgba(34,197,94,0.4)';
+                thumb.style.transform = 'translateX(20px)';
+                container.style.display = 'none';
+                banner.style.background = 'linear-gradient(135deg, rgba(34,197,94,0.12), rgba(59,130,246,0.10))';
+                banner.style.borderColor = 'rgba(34,197,94,0.25)';
+                banner.querySelector('div > div > div:last-child').textContent = 
+                    'This preset uses gameplay/background video instead of AI-generated images. Image settings below are hidden.';
+            } else {
+                title.textContent = 'AI Image Mode';
+                title.style.color = '#60a5fa';
+                track.style.background = 'rgba(96,165,250,0.3)';
+                thumb.style.transform = 'translateX(0)';
+                container.style.display = 'block';
+                banner.style.background = 'linear-gradient(135deg, rgba(59,130,246,0.08), rgba(139,92,246,0.06))';
+                banner.style.borderColor = 'rgba(59,130,246,0.2)';
+                banner.querySelector('div > div > div:last-child').textContent = 
+                    'This preset generates AI images for each scene. Toggle to switch to background video mode.';
+            }
+        }
+
+        async function onGameplayToggle() {
+            const toggle = document.getElementById('ip-gameplay-toggle');
+            const isGameplay = toggle.checked;
+            
+            updateGameplayBanner(isGameplay);
+            
+            // Save the visual_type change to the DB
+            if (ipBrandId && ipPresetType) {
+                try {
+                    const fullConfig = await brandManager.getPresetConfigSection(ipBrandId, ipPresetType, null);
+                    const overrides = fullConfig || {};
+                    overrides.visual_type = isGameplay ? 'gameplay' : 'ai_images';
+                    if (isGameplay) {
+                        overrides.art_style = 'none';
+                    }
+                    
+                    // Save directly to brand_templates config_overrides
+                    const { error } = await supabaseClient
+                        .from('brand_templates')
+                        .update({ config_overrides: overrides, updated_at: new Date().toISOString() })
+                        .eq('brand_id', ipBrandId)
+                        .eq('template_type', ipPresetType);
+                    
+                    if (error) throw error;
+                    
+                    ipCurrentVisualType = isGameplay ? 'gameplay' : 'ai_images';
+                    const status = document.getElementById('ip-status');
+                    status.textContent = isGameplay 
+                        ? '✓ Switched to gameplay mode' 
+                        : '✓ Switched to AI image mode';
+                    
+                    if (typeof toast !== 'undefined') {
+                        toast.success(isGameplay ? 'Preset set to gameplay mode' : 'Preset set to AI image mode');
+                    }
+                } catch (e) {
+                    console.error('Failed to update visual_type:', e);
+                    // Revert toggle
+                    toggle.checked = !isGameplay;
+                    updateGameplayBanner(!isGameplay);
+                    if (typeof toast !== 'undefined') toast.error('Failed to save mode change');
+                }
             }
         }
 

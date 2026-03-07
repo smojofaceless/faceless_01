@@ -3260,6 +3260,10 @@ const GAMEPLAY_PRESETS = new Set(['no_good_choice']);
  * Check if this job should use a gameplay clip instead of AI images.
  * Returns a StepResult if gameplay mode is active, null otherwise
  * (so the caller falls through to normal image generation).
+ * 
+ * v7.1: Also checks config_overrides.visual_type === 'gameplay' from the
+ * brand_templates table, so the UI toggle in Brands > Image Settings
+ * can dynamically switch any preset between gameplay and AI image modes.
  */
 async function trySelectGameplayClip(
   supabase: SupabaseClient,
@@ -3268,8 +3272,28 @@ async function trySelectGameplayClip(
 ): Promise<StepResult | null> {
   const vibePreset = job.vibe_preset || (job.meta?.vibe_preset as string) || '';
 
-  // Quick exit: not a gameplay preset
-  if (!GAMEPLAY_PRESETS.has(vibePreset)) {
+  // Quick exit: not a gameplay preset (check hardcoded set first, then DB)
+  let isGameplayPreset = GAMEPLAY_PRESETS.has(vibePreset);
+  
+  if (!isGameplayPreset && job.brand_id) {
+    // Dynamic check: query the brand_templates table for visual_type
+    try {
+      const { data: tmpl } = await supabase
+        .from('brand_templates')
+        .select('config_overrides')
+        .eq('brand_id', job.brand_id)
+        .eq('template_type', vibePreset)
+        .single();
+      if (tmpl?.config_overrides?.visual_type === 'gameplay') {
+        isGameplayPreset = true;
+        console.log(`[IMAGES] Preset "${vibePreset}" has visual_type=gameplay in DB (dynamic)`);
+      }
+    } catch (e) {
+      // Non-fatal — fall through to normal image generation
+    }
+  }
+  
+  if (!isGameplayPreset) {
     return null;
   }
 
