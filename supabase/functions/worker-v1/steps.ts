@@ -4921,6 +4921,7 @@ interface ImageSequenceEntry {
  */
 interface StoryAnchor {
   environment: string;       // primary setting description
+  consequenceEnvironment?: string; // v11.1: shifted environment for arc presets (after the "rule/cost" reveal)
   characterDescription: string | null; // main character(s) appearance, null if no humans
   recurringMotifs: string;   // visual elements to repeat across scenes
   horrorTone: string;        // type of horror/dread
@@ -4966,6 +4967,21 @@ async function createStoryAnchor(
 - horrorTone/genreTone should be "contemplative" or "aspirational", NOT dark/horror\n`
     : '';
 
+  // v11.1: Arc presets (one_rule_one_power) — story has wonder→consequence structure
+  const ARC_VIBES = new Set(['one_rule_one_power']);
+  const isArcVibe = ARC_VIBES.has(vibePreset);
+  const arcInstructions = isArcVibe
+    ? `\nIMPORTANT — This story has a NARRATIVE ARC with two visual phases:
+PHASE 1 (first half): The wonder/power — bright, expansive, aspirational imagery
+PHASE 2 (second half): The cost/rule — shifted mood, showing consequence, loss, emptiness
+
+You MUST provide TWO environments:
+- "environment": The Phase 1 (wonder/power) setting — bright, open, awe-inspiring
+- "consequenceEnvironment": The Phase 2 (cost/rule) setting — visually DIFFERENT from Phase 1 to show the shift. Same world but darker, emptier, more desolate. Show what changes when the price is paid.
+- recurringMotifs should be ABSTRACT mood elements (light fading, void expanding, warmth cooling), NOT literal story objects.
+- timeOfDay should reflect Phase 1 (the brighter phase)\n`
+    : '';
+
   // v11.0: Non-horror motif guidance to prevent disturbing imagery
   const motifGuidance = isHorrorPreset
     ? '3. recurringMotifs: Visual elements to repeat (specific objects, atmospheric details, textures mentioned in story)'
@@ -4977,7 +4993,7 @@ ART STYLE: ${stylePrompt}
 ${envHint ? `ENVIRONMENT GUIDE: ${envHint}` : ''}
 ${moodHint ? `MOOD: ${moodHint}` : ''}
 GENRE/VIBE: ${vibePreset}
-${contrastInstructions}
+${contrastInstructions}${arcInstructions}
 STORY:
 "${storyText.substring(0, 3500)}"
 
@@ -4990,7 +5006,7 @@ ${genreField}
 6. isGroupStory: true ONLY if multiple characters physically APPEAR TOGETHER in scenes (interacting, present in the same location at the same time). Characters who are merely MENTIONED (missing persons, historical figures, victims) but never appear on-screen do NOT count. A solo protagonist investigating multiple disappearances is NOT a group story.
 7. groupCount: The EXPECTED number of people who are PHYSICALLY PRESENT TOGETHER in scenes. null if not a group story. For "one too many" stories where the group discovers an extra person, return the NORMAL count BEFORE the extra person is noticed — NOT the total with the stranger included.
 
-Return JSON: { "environment": "...", "characterDescription": "..." or null, "recurringMotifs": "...", "horrorTone": "...", "timeOfDay": "...", "isGroupStory": true/false, "groupCount": N or null }`;
+Return JSON: { "environment": "...", ${isArcVibe ? '"consequenceEnvironment": "...", ' : ''}"characterDescription": "..." or null, "recurringMotifs": "...", "horrorTone": "...", "timeOfDay": "...", "isGroupStory": true/false, "groupCount": N or null }`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -5907,12 +5923,23 @@ function buildImagePrompt(
     // v3.0: Override environment with story anchor for consistency
     // v11.0: Skip for contrast presets (two_doors) — these need per-scene visual variety,
     // not a single global environment. The visual cue description provides scene context instead.
+    // v11.1: Arc presets (one_rule_one_power) — use anchor env for first half, then switch to
+    // consequenceEnvironment (or config env) for the second half to reflect narrative shift.
     const CONTRAST_PRESETS = new Set(['two_doors']);
+    const ARC_PRESETS = new Set(['one_rule_one_power']);
     const artStyleName = config.art_style || '';
     const isContrastPreset = CONTRAST_PRESETS.has(artStyleName) || artStyleName === 'cinematic-contrast';
+    const isArcPreset = ARC_PRESETS.has(artStyleName) || artStyleName === 'surreal-contemplative';
+    const pastMidpoint = sceneIndex >= Math.floor(totalScenes * 0.45);
     if (storyAnchor?.environment && sceneType !== 'establishing' && !isContrastPreset) {
-      // Use story-specific environment but keep preset flavor
-      environment = storyAnchor.environment;
+      if (isArcPreset && pastMidpoint) {
+        // Second half: use consequence environment if available, otherwise fall back to config
+        // This lets the visual cues and config environment drive the "cost/rule" imagery
+        environment = storyAnchor.consequenceEnvironment || config.environment;
+      } else {
+        // Use story-specific environment for consistency
+        environment = storyAnchor.environment;
+      }
     }
 
     // v3.1 / v10.0: Derive lighting and color_palette from the SCENE context.
