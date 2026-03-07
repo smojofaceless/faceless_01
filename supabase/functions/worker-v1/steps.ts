@@ -451,10 +451,13 @@ export async function executeStoryStep(
   }
   
   const vibePreset = job.vibe_preset || (job.meta?.vibe_preset as string) || 'urban_legend';
-  const duration = (job.meta?.duration as { min?: number; max?: number } | number) || 60;
+  const duration = (job.meta?.duration as { min?: number; max?: number; minSeconds?: number; maxSeconds?: number } | number) || 60;
   // Dark origins performs better at 90s+ (documentary pacing, algorithm retention)
   const defaultDuration = vibePreset === 'dark_origins' ? 90 : 60;
-  const targetDuration = typeof duration === 'object' ? (duration.min || defaultDuration) : (duration || defaultDuration);
+  // v11.0: Also check minSeconds/maxSeconds (used by campaign scheduler)
+  const targetDuration = typeof duration === 'object'
+    ? (duration.min || duration.minSeconds || defaultDuration)
+    : (duration || defaultDuration);
 
   // Calculate target word count (roughly 2.5 words per second for narration)
   const targetWords = Math.round(targetDuration * 2.5);
@@ -955,13 +958,14 @@ function buildStoryPrompt(vibePreset: string, wordRange: { min: number; max: num
 
 Rules:
 - Second person ("You're standing in front of...")
-- Setup the situation in 2-3 sentences (grounded, specific, modern)
-- Present Option A with its clear downside
-- Present Option B with a DIFFERENT clear downside
+- Setup the situation in 4-6 sentences — paint the scene, build the stakes, make the viewer FEEL the pressure before revealing the options
+- Present Option A: describe what happens in detail, then reveal its genuine downside. 3-4 sentences.
+- Present Option B: describe what happens in detail, then reveal its DIFFERENT genuine downside. 3-4 sentences.
+- Add 1-2 sentences of reflection — let the weight of the choice sink in
 - End with a direct question: "Which one do you pick?"
 - No correct answer. No moral. No softening.
-- Short sentences. Rising tension. No exposition dumps.
-- ${wordRange.min}-${wordRange.max} words total.
+- Punchy sentences mixed with longer descriptive ones. Build tension throughout.
+- ${wordRange.min}-${wordRange.max} words total. THIS IS CRITICAL — write the FULL word count.
 - Do NOT use horror, supernatural, or fantasy elements.
 - Do NOT frame as confession or personal story.
 - Scenarios: career, money, relationships, survival, reputation, trust, time`,
@@ -4951,20 +4955,36 @@ async function createStoryAnchor(
     ? '4. horrorTone: Type of horror (psychological, supernatural, counting, cosmic, folklore, body)'
     : '4. genreTone: The emotional tone/genre (philosophical, dramatic, contemplative, suspenseful, whimsical, etc.)';
   
+  // v11.0: Contrast presets (two_doors) — avoid single dark environment, emphasize visual variety
+  const CONTRAST_VIBES = new Set(['two_doors']);
+  const isContrastVibe = CONTRAST_VIBES.has(vibePreset);
+  const contrastInstructions = isContrastVibe
+    ? `\nIMPORTANT — This is a CONTRAST/CHOICE story. The two paths should have DIFFERENT visual identities:
+- environment should describe BOTH settings separated by " vs " (e.g. "sunlit mountain peak with wildflowers vs peaceful lake village at twilight")
+- recurringMotifs should be ABSTRACT themes (contrasts, transitions, reflections), NOT literal objects from the story. NEVER include literal objects like ropes, doors, pills, keys, etc. as motifs — they produce unintended disturbing imagery.
+- timeOfDay should reflect the BRIGHTER of the two paths
+- horrorTone/genreTone should be "contemplative" or "aspirational", NOT dark/horror\n`
+    : '';
+
+  // v11.0: Non-horror motif guidance to prevent disturbing imagery
+  const motifGuidance = isHorrorPreset
+    ? '3. recurringMotifs: Visual elements to repeat (specific objects, atmospheric details, textures mentioned in story)'
+    : '3. recurringMotifs: ABSTRACT visual themes to repeat (atmospheric details, textures, light qualities, color motifs). Do NOT include literal objects like ropes, chains, doors, pills, or keys — these create unintended disturbing imagery when repeated. Focus on mood elements: mist, golden light, reflections, shadows, warmth, stillness.';
+
   const prompt = `You are a visual director. Analyze this story and extract a consistent visual identity for generating images.
 
 ART STYLE: ${stylePrompt}
 ${envHint ? `ENVIRONMENT GUIDE: ${envHint}` : ''}
 ${moodHint ? `MOOD: ${moodHint}` : ''}
 GENRE/VIBE: ${vibePreset}
-
+${contrastInstructions}
 STORY:
 "${storyText.substring(0, 3500)}"
 
 Extract:
 1. environment: The PRIMARY setting — be specific (not just "forest" but "dense pine forest with twisted roots at dusk")
 2. characterDescription: If ANY humans appear, describe them as a SINGLE STRING with age, clothing, hair, distinguishing features (e.g. "25-year-old woman with messy dark hair in a loose bun, wearing a stained diner uniform, tired eyes with a nervous twitch"). Return null if no humans appear. MUST be a plain string, NOT an object or array.
-3. recurringMotifs: Visual elements to repeat (specific objects, atmospheric details, textures mentioned in story)
+${motifGuidance}
 ${genreField}
 5. timeOfDay: Specific lighting/time
 6. isGroupStory: true ONLY if multiple characters physically APPEAR TOGETHER in scenes (interacting, present in the same location at the same time). Characters who are merely MENTIONED (missing persons, historical figures, victims) but never appear on-screen do NOT count. A solo protagonist investigating multiple disappearances is NOT a group story.
@@ -5885,7 +5905,12 @@ function buildImagePrompt(
     }
 
     // v3.0: Override environment with story anchor for consistency
-    if (storyAnchor?.environment && sceneType !== 'establishing') {
+    // v11.0: Skip for contrast presets (two_doors) — these need per-scene visual variety,
+    // not a single global environment. The visual cue description provides scene context instead.
+    const CONTRAST_PRESETS = new Set(['two_doors']);
+    const artStyleName = config.art_style || '';
+    const isContrastPreset = CONTRAST_PRESETS.has(artStyleName) || artStyleName === 'cinematic-contrast';
+    if (storyAnchor?.environment && sceneType !== 'establishing' && !isContrastPreset) {
       // Use story-specific environment but keep preset flavor
       environment = storyAnchor.environment;
     }
