@@ -5306,6 +5306,35 @@ LIMINAL SPACE RULES:
 - Focus on empty impossible architecture, repeating patterns, fluorescent-lit void
 - Use POV shots, impossible corridors, empty rooms` : '';
 
+  // Contrast / choice-based preset rules (two_doors etc.)
+  const CHOICE_VIBES = new Set(['two_doors']);
+  const choiceRules = CHOICE_VIBES.has(vibePreset) ? `
+TWO-CHOICE / CONTRAST PRESET RULES (CRITICAL — READ CAREFULLY):
+This is a "choose between two options" story. The narration presents two possible paths/choices using a framing device (keys, doors, pills, etc.).
+
+RULE 1 — SHOW WHAT THE CHOICE REPRESENTS, NOT THE LITERAL OBJECT:
+- The story uses a framing device (e.g. "two keys", "two doors", "two pills") to present the choices.
+- Each choice REPRESENTS a different life, outcome, or world (e.g. a luxurious mansion, a peaceful mountain cabin, a bustling creative studio).
+- When the narration describes what a choice leads to, the image MUST show THAT WORLD — the mansion interior, the mountain vista, the art studio — NOT the literal key/door/pill.
+- Example: narration says "The first key hints at luxury, elegant soirees, creating timeless art" → show a GRAND BALLROOM with chandeliers, or an artist's sunlit studio, NOT a close-up of a golden key.
+- Example: narration says "The second key promises adventure, open roads, starlit camping" → show a WINDING MOUNTAIN ROAD at sunset, or a campfire under stars, NOT a sturdy key.
+- The ONLY scenes where the framing device (key/door/pill) should appear are:
+  a) The OPENING scene (introduction of the choice)
+  b) The FINAL "which do you choose?" scene
+- In ALL other scenes, show the WORLD/OUTCOME/LIFESTYLE that each choice leads to.
+
+RULE 2 — ONE OPTION PER SCENE, NO SPLIT IMAGERY:
+- When the narration is discussing ONE specific option/path, the image MUST commit fully to THAT option's visual world.
+- Do NOT create split imagery (half warm / half cool, showing both paths simultaneously) when only ONE path is being discussed.
+- If scene text talks about "the first option" → show ONLY that option's world, in its full visual identity (warm golden tones, daylight, etc.)
+- If scene text talks about "the second option" → show ONLY that option's world, in its full visual identity (cool blue tones, moonlight, etc.)
+- Split/dual imagery is ONLY appropriate for scenes that explicitly compare both options side by side or the final decision moment.
+
+RULE 3 — VARIETY WITHIN EACH PATH'S WORLD:
+- Even when multiple consecutive scenes discuss the same path, vary the specific subject within that world.
+- Scene about luxury path could show: a gourmet dining table, then a rooftop infinity pool, then a walk-in wardrobe — NOT the same ballroom three times.
+- Use the color palette from the config to differentiate: Path A scenes lean warm/golden, Path B scenes lean cool/silver.` : '';
+
   // Dark Origins documentary-specific rules
   const darkOriginsRules = vibePreset === 'dark_origins' ? `
 DARK ORIGINS / DOCUMENTARY RULES (CRITICAL):
@@ -5325,6 +5354,7 @@ ${countingRules}
 ${countingRulesSolo}
 ${liminalRules}
 ${darkOriginsRules}
+${choiceRules}
 
 Genre/vibe: ${vibePreset}
 
