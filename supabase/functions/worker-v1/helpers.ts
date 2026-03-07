@@ -113,7 +113,8 @@ export const STEP_PROGRESS: Record<string, number> = {
   scenes: 20,
   voice: 35,
   music: 40,
-  images: 70,
+  images: 65,
+  img2vid: 72,
   subtitles: 75,
   assemble: 90,
   upload: 95,
@@ -757,7 +758,7 @@ export async function updateStepStatus(
     };
   }
 
-  const { error } = await supabase.rpc('update_job_step', {
+  const { data, error } = await supabase.rpc('update_job_step', {
     p_job_id: jobId,
     p_step_name: stepName,
     p_status: status,
@@ -766,6 +767,8 @@ export async function updateStepStatus(
 
   if (error) {
     console.warn(`[STEP] Failed to update ${stepName} to ${status}: ${error.message}`);
+  } else if (data && Array.isArray(data) && data[0] && !data[0].success) {
+    console.warn(`[STEP] RPC rejected ${stepName} update: ${data[0].error_message}`);
   }
 }
 
@@ -857,7 +860,8 @@ export async function updateJobMeta(
 // =====================================================
 
 /**
- * Upload content to storage bucket with upsert
+ * Upload content to storage bucket with upsert.
+ * Retries up to 2 times on transient network errors (connection reset, timeout, etc.)
  */
 export async function uploadToStorage(
   supabase: SupabaseClient,
@@ -874,17 +878,37 @@ export async function uploadToStorage(
     uploadContent = content;
   }
 
-  const { error } = await supabase.storage.from(bucket).upload(path, uploadContent, {
-    contentType,
-    upsert: true,
-  });
+  const MAX_ATTEMPTS = 3;
+  let lastError: Error | null = null;
 
-  if (error) {
-    throw new Error(`Storage upload failed: ${error.message}`);
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const { error } = await supabase.storage.from(bucket).upload(path, uploadContent, {
+      contentType,
+      upsert: true,
+    });
+
+    if (!error) {
+      if (attempt > 1) {
+        console.log(`[STORAGE] Upload succeeded on attempt ${attempt}: ${path}`);
+      }
+      const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+      return data.publicUrl;
+    }
+
+    lastError = new Error(`Storage upload failed: ${error.message}`);
+
+    // Only retry on transient network errors (connection reset, timeout, 5xx)
+    const isTransient = /connection reset|ECONNRESET|timeout|ETIMEDOUT|503|502|500|SendRequest|socket hang up/i.test(error.message);
+    if (!isTransient || attempt === MAX_ATTEMPTS) {
+      break;
+    }
+
+    const backoffMs = attempt * 2000; // 2s, 4s
+    console.warn(`[STORAGE] Upload attempt ${attempt}/${MAX_ATTEMPTS} failed (${error.message}), retrying in ${backoffMs}ms...`);
+    await new Promise(r => setTimeout(r, backoffMs));
   }
 
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-  return data.publicUrl;
+  throw lastError!;
 }
 
 /**
@@ -1139,6 +1163,7 @@ export async function getSubtitleConfigForJob(
 // =====================================================
 
 export interface ImagePromptConfig {
+  image_model?: string;         // v5.1: brand-level image model preference (gpt-image-1 | dall-e-3 | comfyui)
   art_style: string;
   style_prompt: string;
   environment: string;
@@ -1149,6 +1174,22 @@ export interface ImagePromptConfig {
   tension_escalation: boolean;
   negative_prompt: string;
   suffix: string;
+  // ComfyUI txt2img config (Phase 1)
+  comfyui_workflow?: string;
+  comfyui_checkpoint?: string;
+  comfyui_steps?: number;
+  comfyui_cfg?: number;
+  // img2vid config (Phase 2)
+  video_mode?: 'static' | 'img2vid';   // 'static' = Ken Burns (default), 'img2vid' = local video gen
+  img2vid_workflow?: string;            // 'img2vid_svd' | 'img2vid_animatediff'
+  img2vid_motion?: number;              // 0.0–1.0 motion strength
+  img2vid_fps?: number;                 // frames per second (default: 6)
+  img2vid_frames?: number;              // total frames (default: 25)
+  img2vid_max_ratio?: number;           // max fraction of scenes to animate (default: 0.30 = 30%)
+  img2vid_render_width?: number;        // SVD render width (default: 640 — lower for speed)
+  img2vid_render_height?: number;       // SVD render height (default: 1136)
+  img2vid_output_width?: number;        // final output width after upscale (default: 1024)
+  img2vid_output_height?: number;       // final output height after upscale (default: 1536)
 }
 
 /**

@@ -1,0 +1,39 @@
+{
+  "id": "comfy_a2f7721a",
+  "job_id": "test-comfyui-1772354631055",
+  "status": "complete",
+  "workflow": "txt2img_sdxl",
+  "completed": 1,
+  "total": 1,
+  "images": [
+    {
+      "index": 0,
+      "url": null,
+      "metadata": {
+        "renderer": "comfyui",
+        "job_id": "test-comfyui-1772354631055",
+        "scene": 0,
+        "workflow": "txt2img_sdxl",
+        "checkpoint": "(default)",
+        "seed": 2627273986,
+        "cfg": 5.5,
+        "steps": 28,
+        "sampler": "euler_ancestral",
+        "scheduler": "normal",
+        "width": 1024,
+        "height": 1536,
+        "prompt_hash": "d1af47337f217230",
+        "prompt_positive": "A shadowy figure standing in a dimly lit Victorian hallway, horror atmosphere, cinematic lighting, detailed, 8k",
+        "prompt_negative": "text, watermark, logo, blurry, deformed, extra limbs, bad anatomy, nsfw",
+        "loras": [],
+        "generation_time_ms": 14092,
+        "comfyui_prompt_id": "1b5ed4cf-b46b-4ca3-8ea3-b35b8094b88c",
+        "fallback_used": false,
+        "fallback_reason": null
+      }
+    }
+  ],
+  "errors": [],
+  "started_at": "2026-03-01T08:43:51.066Z",
+  "completed_at": "2026-03-01T08:44:05.160Z"
+}

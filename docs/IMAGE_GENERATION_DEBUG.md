@@ -1107,6 +1107,8 @@ WHERE job_id = '{job_id}'
 
 ### Step 3: Rebuild styleConfig
 
+> **Note (Issue #7):** This describes the legacy `run-job` pipeline. The current `worker-v1` pipeline fetches style config from the `art_styles` DB table first (16 styles), falling back to hardcoded `styleTemplates` only if DB is unavailable.
+
 ```typescript
 let styleConfig;
 if (art_style.startsWith('custom-') && custom_style) {

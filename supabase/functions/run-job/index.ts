@@ -61,7 +61,7 @@ serve(async (req) => {
   try {
     // Get API keys from environment with validation
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const supabaseServiceKey = Deno.env.get("SVC_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const openaiKey = Deno.env.get("OPENAI_API_KEY");
     const elevenLabsKey = Deno.env.get("ELEVENLABS_API_KEY");
     const creatomateKey = Deno.env.get("CREATOMATE_API_KEY");
@@ -235,7 +235,9 @@ serve(async (req) => {
 
     // Lock the resolved model into job meta to ensure phase retries use the same model
     // This prevents check-job → run-job cycles from losing the model choice
-    if (!jobMeta.image_model || jobMeta.image_model !== resolvedImageModel) {
+    // v5.1: Only lock when explicitly provided — if no explicit model, let worker-v1
+    // resolve from brand image prompt config (supports brand-level ComfyUI toggle)
+    if (imageModel && (!jobMeta.image_model || jobMeta.image_model !== resolvedImageModel)) {
       console.log(`[LOCK] Locking image_model=${resolvedImageModel} into job meta`);
       const updatedMeta = {
         ...jobMeta,
@@ -245,6 +247,8 @@ serve(async (req) => {
       await updateJob(supabase, job_id, { meta: updatedMeta });
       // Update local reference so phase runners see the locked value
       Object.assign(jobMeta, updatedMeta);
+    } else if (!imageModel) {
+      console.log(`[LOCK] No explicit image_model — deferring to worker-v1 brand config resolution`);
     }
 
     // =====================================================

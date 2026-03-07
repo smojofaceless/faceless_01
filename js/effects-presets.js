@@ -507,6 +507,15 @@ function buildEffectsProfileFromSliders(sliders, basePreset = 'slow_creepy') {
       duration: 0.5,
       intensity: 0.7,
     },
+    
+    // Video Overlay (configured per-preset via brand settings, not sliders)
+    // This gets merged with any overlay_video config from brand_templates
+    overlay_video: sliders._overlay_video || {
+      enabled: false,
+      url: null,
+      opacity: 0.4,
+      blend_mode: 'screen',
+    },
   };
   
   return profile;

@@ -314,15 +314,36 @@ CLIMAX RULE:
 - These scenes MUST show the story's most powerful visual (the monster revealed, the impossible face, the terrifying realization). Never waste the climax on an atmosphere/establishing shot.
 - The final scene should be the image that lingers in the viewer's mind.
 
+ANIMATION INTENT (CRITICAL — READ CAREFULLY):
+Some scenes will be converted from still images into short animated video clips using AnimateDiff AI.
+AnimateDiff can animate: rain/snow falling, fog drifting, fire flickering, water flowing, wind in trees/curtains/hair, dust particles floating, shadows shifting, light flickering/pulsing, slow camera pan/zoom.
+AnimateDiff CANNOT animate: human body movement (walking, gesturing, turning), facial expressions changing, object manipulation (picking up items, opening doors).
+
+For EXACTLY 20-25% of scenes (pick the best candidates), set "animate": true and include:
+- "motionType": one of: "atmospheric" (rain, snow, fog, dust, particles), "environmental" (wind in trees/curtains, water flow, swaying), "fire_light" (flames, candles, flickering lights, neon), "camera" (slow pan, gentle zoom, drift)
+- "animationHint": 1 sentence describing what should move (e.g. "rain streaks falling through streetlight beams", "candle flames flickering casting dancing shadows")
+
+When you mark a scene for animation, DESIGN ITS DESCRIPTION with animatable elements baked in:
+- Instead of "a dark hallway" → "a dark hallway with flickering fluorescent lights and dust particles floating in the air"
+- Instead of "a forest path" → "a forest path with rain falling through the canopy, wet leaves, puddles with ripples"
+- Instead of "a fireplace" → "a fireplace with dancing flames casting warm shifting light across the room"
+
+DO NOT animate: close-up face shots, group scenes, scenes where the interesting part is a static object/detail.
+BEST candidates: establishing/atmosphere shots with weather, fire, water, fog, wind, or lighting effects.
+
 For each scene, provide:
-- description: A concise 1-2 sentence visual description. Be SPECIFIC about what is visible — describe the exact subject, framing, and what makes this shot different from the others.
+- description: A concise 1-2 sentence visual description. Be SPECIFIC about what is visible — describe the exact subject, framing, and what makes this shot different from the others. If animate=true, INCLUDE animatable elements in the description.
 - sceneType: One of: establishing (wide location), object (specific item/detail focus), atmosphere (mood/environment), character (single person), group (multiple people)
 - camera: One of: wide, medium, close-up, extreme-close-up, overhead, low-angle, pov
 - isClimax: true if this is one of the last 1-2 scenes and represents the story's most dramatic moment, false otherwise
+- animate: true if this scene should be animated (20-25% of scenes), false otherwise
+- motionType: (only if animate=true) one of: "atmospheric", "environmental", "fire_light", "camera"
+- animationHint: (only if animate=true) 1 sentence describing what physical motion should be visible
 
 ${sceneList}
 
-Respond with a JSON object: { "cues": [ { "sceneIndex": 0, "description": "...", "sceneType": "...", "camera": "...", "isClimax": false }, ... ] }`;
+Respond with a JSON object: { "cues": [ { "sceneIndex": 0, "description": "...", "sceneType": "...", "camera": "...", "isClimax": false, "animate": false }, ... ] }
+For animated scenes include motionType and animationHint fields.`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -409,7 +430,7 @@ serve(async (req) => {
     if (brand_id) {
       const supabase = createClient(
         Deno.env.get("SUPABASE_URL") || '',
-        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || '',
+        Deno.env.get("SVC_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || '',
       );
 
       try {

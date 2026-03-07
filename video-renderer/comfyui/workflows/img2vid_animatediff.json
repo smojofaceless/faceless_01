@@ -1,0 +1,94 @@
+{
+  "4": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "realisticVisionV51_sd15.safetensors"
+    }
+  },
+  "5": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "INPUT_IMAGE_PLACEHOLDER"
+    }
+  },
+  "10": {
+    "class_type": "ImageScale",
+    "_note": "Resize input image to match generation resolution (built-in node)",
+    "inputs": {
+      "image": ["5", 0],
+      "upscale_method": "lanczos",
+      "width": 512,
+      "height": 768,
+      "crop": "center"
+    }
+  },
+  "11": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": ["10", 0],
+      "vae": ["4", 2]
+    }
+  },
+  "16": {
+    "class_type": "RepeatLatentBatch",
+    "_note": "Replicate single-frame latent across batch dimension for AnimateDiff multi-frame generation",
+    "inputs": {
+      "samples": ["11", 0],
+      "amount": 16
+    }
+  },
+  "15": {
+    "class_type": "ADE_AnimateDiffLoaderWithContext",
+    "_note": "Requires ComfyUI-AnimateDiff-Evolved custom node. motion_scale amplifies temporal attention.",
+    "inputs": {
+      "model": ["4", 0],
+      "model_name": "v3_sd15_mm.ckpt",
+      "beta_schedule": "sqrt_linear (AnimateDiff)",
+      "motion_scale": 1.15,
+      "context_options": null
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["4", 1],
+      "text": "cinematic motion, slow camera drift, atmospheric movement"
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["4", 1],
+      "text": "static, jitter, fast motion, blurry, deformed"
+    }
+  },
+  "3": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["15", 0],
+      "positive": ["6", 0],
+      "negative": ["7", 0],
+      "latent_image": ["16", 0],
+      "seed": 0,
+      "steps": 15,
+      "cfg": 5.5,
+      "sampler_name": "euler_ancestral",
+      "scheduler": "normal",
+      "denoise": 0.55
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["3", 0],
+      "vae": ["4", 2]
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["8", 0],
+      "filename_prefix": "animdiff_output"
+    }
+  }
+}

@@ -101,6 +101,9 @@ class CreatePageController {
         this.presetSource = 'unknown'; // 'database' | 'fallback' | 'unknown'
         this.dbPresets = null; // Presets loaded from brand_templates
         
+        // Image prompt config (loaded from brand DNA)
+        this.imagePromptConfig = null;
+
         // Debug state - check URL param or localStorage
         this.debugMode = this._checkDebugMode();
         this.verboseMode = false;
@@ -329,6 +332,17 @@ class CreatePageController {
             // See docs/PRESET_SOURCE_OF_TRUTH.md for rationale
             // =====================================================
             await this.loadPresetsFromDB(brand);
+
+            // Load image prompt config (video mode, img2vid workflow, etc.)
+            try {
+                if (typeof brandManager !== 'undefined') {
+                    this.imagePromptConfig = await brandManager.getImagePromptConfig(brand.id);
+                    console.log('CreatePageController: Image prompt config loaded:', this.imagePromptConfig);
+                }
+            } catch (ipcErr) {
+                console.warn('CreatePageController: Failed to load image prompt config:', ipcErr);
+                this.imagePromptConfig = null;
+            }
             
             // Initialize generator with template
             console.log('CreatePageController: Creating VideoGenerator...');
@@ -663,6 +677,10 @@ class CreatePageController {
                             <span>Scenes</span>
                             <span>${this.sceneBuilder.scenes.length || '—'}</span>
                         </div>
+                        <div class="inspector-summary__row">
+                            <span>Video</span>
+                            <span>${this._getVideoModeLabel()}</span>
+                        </div>
                     </div>
                 </div>
                 
@@ -704,6 +722,38 @@ class CreatePageController {
         });
     }
     
+    /**
+     * Get short label for video mode (Inspector Panel)
+     */
+    _getVideoModeLabel() {
+        const cfg = this.imagePromptConfig;
+        if (!cfg || cfg.video_mode !== 'img2vid') return 'Static (Ken Burns)';
+        const wf = cfg.img2vid_workflow || 'animatediff_ipa';
+        const labels = {
+            cogvideox: 'img2vid · CogVideoX',
+            svd: 'img2vid · SVD',
+            animatediff: 'img2vid · AnimateDiff',
+            animatediff_ipa: 'img2vid · IPA'
+        };
+        return labels[wf] || `img2vid · ${wf}`;
+    }
+
+    /**
+     * Get descriptive label for video mode (Generation Plan card)
+     */
+    _getVideoModePlanLabel() {
+        const cfg = this.imagePromptConfig;
+        if (!cfg || cfg.video_mode !== 'img2vid') return 'Ken Burns pan/zoom (static frames)';
+        const wf = cfg.img2vid_workflow || 'animatediff_ipa';
+        const labels = {
+            cogvideox: 'CogVideoX-5B (head/body motion + T5-XXL)',
+            svd: 'SVD-XT 1.1 img2vid (cinematic motion)',
+            animatediff: 'AnimateDiff img2vid (prompt-guided)',
+            animatediff_ipa: 'AnimateDiff + IP-Adapter (prompted motion)'
+        };
+        return labels[wf] || `img2vid · ${wf}`;
+    }
+
     /**
      * Render a pinned job summary strip showing key state + Uniqueness HUD + Lockpoints
      */
@@ -2007,6 +2057,11 @@ class CreatePageController {
                                 <span class="generation-plan-item__check">✅</span>
                                 <span class="generation-plan-item__label">Images</span>
                                 <span class="generation-plan-item__value">${this.template?.defaults?.sceneCount || 6} frames (${this.formData.visualSource === 'pexels' ? 'Stock' : this.formData.imageModel || 'gpt-4o'})</span>
+                            </div>
+                            <div class="generation-plan-item">
+                                <span class="generation-plan-item__check">✅</span>
+                                <span class="generation-plan-item__label">Video</span>
+                                <span class="generation-plan-item__value">${this._getVideoModePlanLabel()}</span>
                             </div>
                             <div class="generation-plan-item">
                                 <span class="generation-plan-item__check">✅</span>

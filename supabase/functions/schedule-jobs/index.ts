@@ -48,6 +48,10 @@ const DEFAULT_LEASE_SECONDS = 900; // 15 minutes
 // Timeout for run-job call (ms) - we don't wait for completion, but log quick failures
 const RUN_JOB_TIMEOUT_MS = 30000;
 
+// Maximum scheduler attempts before a job is auto-failed
+// Prevents infinite retry loops (e.g. JWT errors cycling claim→fail→release→claim)
+const MAX_SCHEDULER_ATTEMPTS = 10;
+
 // =====================================================
 // ALERT WEBHOOK HELPER
 // Sends notifications to configured webhooks (Discord, Slack, etc.)
@@ -421,9 +425,11 @@ serve(async (req) => {
   
   try {
     // Get environment variables
+    // Prefer custom SVC_ROLE_KEY secret over auto-injected SUPABASE_SERVICE_ROLE_KEY
+    // (auto-injected key may be stale after key rotation)
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const supabaseServiceKey = Deno.env.get('SVC_ROLE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
     if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceKey) {
       throw new Error('Missing required environment variables');
@@ -535,6 +541,36 @@ serve(async (req) => {
             },
           });
         }
+      }
+    }
+    
+    // =========================================
+    // SWEEP STUCK JOBS (max attempts exceeded)
+    // Runs before finding eligible jobs to clean up runaway retries
+    // =========================================
+    
+    const { data: sweepResult, error: sweepError } = await supabase.rpc('sweep_stuck_jobs', {
+      p_max_attempts: MAX_SCHEDULER_ATTEMPTS,
+      p_limit: 50
+    });
+    
+    if (sweepError) {
+      console.warn(`[SCHEDULER] ⚠️ Could not sweep stuck jobs: ${sweepError.message}`);
+    } else {
+      const swept = Array.isArray(sweepResult) ? sweepResult[0] : sweepResult;
+      if (swept?.jobs_failed > 0) {
+        console.log(`[SCHEDULER] 🧹 Auto-failed ${swept.jobs_failed} stuck jobs (exceeded ${MAX_SCHEDULER_ATTEMPTS} attempts)`);
+        // Fire alert for stuck jobs
+        await sendAlertWebhooks(supabase, {
+          event: 'scheduler_error',
+          severity: 'warning',
+          title: `${swept.jobs_failed} Jobs Auto-Failed (Max Attempts)`,
+          message: `${swept.jobs_failed} job(s) exceeded ${MAX_SCHEDULER_ATTEMPTS} scheduler attempts and were moved to failed status. This usually indicates a systemic issue (e.g. expired JWT, worker crash loop).`,
+          data: {
+            jobs_failed: String(swept.jobs_failed),
+            max_attempts: String(MAX_SCHEDULER_ATTEMPTS),
+          },
+        });
       }
     }
     
@@ -663,13 +699,24 @@ serve(async (req) => {
           jobDetail.error = triggerResult.error;
           result.errors.push(`Job ${job.id}: ${triggerResult.error}`);
           
-          // Release claim back to 'pending' with error
+          // Check if this job has exceeded max attempts — fail permanently instead of recycling
+          const currentAttempts = jobDetail.attempt_count || 1;
+          const newStatus = currentAttempts >= MAX_SCHEDULER_ATTEMPTS ? 'failed' : 'pending';
+          const errorMsg = currentAttempts >= MAX_SCHEDULER_ATTEMPTS
+            ? `Permanently failed: exceeded ${MAX_SCHEDULER_ATTEMPTS} scheduler attempts. Last error: ${triggerResult.error}`
+            : `Scheduler trigger failed: ${triggerResult.error}`;
+          
+          if (newStatus === 'failed') {
+            console.error(`[SCHEDULER] ⛔ Job ${job.id} permanently failed after ${currentAttempts} attempts`);
+          }
+          
+          // Release claim back to pending or failed
           const releaseResult = await releaseJob(
             supabase, 
             job.id, 
             schedulerRunId, 
-            'pending',
-            `Scheduler trigger failed: ${triggerResult.error}`
+            newStatus,
+            errorMsg
           );
           
           if (!releaseResult.success) {

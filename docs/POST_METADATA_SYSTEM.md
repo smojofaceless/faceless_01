@@ -1,7 +1,7 @@
 # Post Metadata System — Technical Design Spec
 
-> **Version:** 2.1  
-> **Date:** February 23, 2026  
+> **Version:** 2.2  
+> **Date:** March 1, 2026  
 > **Status:** ✅ Production (Strategy + Time-Aware + Per-Platform Optimization)
 
 ---
@@ -22,6 +22,14 @@ AI-generated, platform-specific metadata (title, description, tags, hashtags, et
 - **Post-worker FB hard cap**: `FacebookReelsAdapter` now caps `rawCaption` to 300 characters (slices with `…`) before posting, and limits hashtags to 6 max. Prevents story descriptions (600-1000 chars) from leaking through as captions.
 - **Root cause**: When AI metadata had no `caption` field (only `title` + `description`), the post-worker fell through to `post.description` — the full story text. The tighter prompt + hard cap both defend against this.
 - **Exemplar learning is per-platform**: The `get_winning_patterns` and `get_exemplar_metadata` RPCs filter by `p_platform`, so each platform's AI prompt learns only from that platform's top performers. Facebook was in a chicken-and-egg trap (0 engagement → no exemplars → no learning).
+
+### v2.2 — SVC_ROLE_KEY Fix + Auth Hardening (Mar 1, 2026)
+
+- **Root cause of missing post tags**: `metadata-scheduler` and `generate-post-metadata` both used `Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")` — a stale auto-injected JWT that Supabase invalidated. This caused both edge functions to fail silently with `Invalid JWT`, so `post_metadata` records were never created for affected posts. The `post-worker` correctly fell through to fallback (no tags, raw story text as description), resulting in 8 posts published with 0 tags.
+- **Fix**: All 9 edge functions now use `Deno.env.get("SVC_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")` fallback pattern. The custom `SVC_ROLE_KEY` secret is set in Supabase project secrets with a known-good service role key.
+- **Affected functions**: `metadata-scheduler`, `generate-post-metadata`, `post-worker`, `schedule-posts`, `create-job`, `check-job`, `test-scenes`, `run-job`, `worker-v1`.
+- **Post-worker fallback behavior**: When no `post_metadata` record exists, `post-worker` uses the original post `title`/`description`/`tags` fields directly (fallback). This is by design but means posts go out without AI-optimized metadata. The `platform_content.metadata_source` field tracks whether `"ready"` (AI metadata used) or `"fallback"` was used.
+- **Limitation**: The `find_posts_needing_metadata` RPC only returns posts with `status IN ('scheduled', 'queued')`. Posts that have already been posted cannot retroactively get metadata generated.
 
 ---
 

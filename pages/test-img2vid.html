@@ -1,0 +1,1234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Img2Vid - ContentEngine</title>
+    
+    <!-- Core Design System -->
+    <link rel="stylesheet" href="../css/core/tokens.css">
+    <link rel="stylesheet" href="../css/core/base.css">
+    <link rel="stylesheet" href="../css/core/components.css">
+    <link rel="stylesheet" href="../css/core/layout.css">
+    <link rel="stylesheet" href="../css/core/responsive.css">
+    <link rel="stylesheet" href="../css/dashboard.css">
+    <style>
+        .test-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: var(--space-6);
+        }
+        .test-header {
+            margin-bottom: var(--space-6);
+        }
+        .test-header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: var(--space-2);
+        }
+        .test-header p {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+        .test-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--space-6);
+        }
+        @media (max-width: 900px) {
+            .test-layout { grid-template-columns: 1fr; }
+        }
+        .panel {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-lg);
+            padding: var(--space-5);
+        }
+        .panel__title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: var(--space-4);
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+        }
+        .panel__title svg {
+            width: 18px;
+            height: 18px;
+            color: var(--accent-primary);
+        }
+        .form-group {
+            margin-bottom: var(--space-4);
+        }
+        .form-group label {
+            display: block;
+            font-size: 0.8125rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: var(--space-1);
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: var(--space-2) var(--space-3);
+            background: var(--bg-primary);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            font-size: 0.875rem;
+            transition: border-color 0.15s;
+        }
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+        }
+        .form-group textarea {
+            resize: vertical;
+            min-height: 60px;
+            font-family: monospace;
+            font-size: 0.8125rem;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--space-3);
+        }
+        .form-row-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: var(--space-3);
+        }
+        .input-hint {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+        .btn-generate {
+            width: 100%;
+            padding: var(--space-3) var(--space-4);
+            background: var(--accent-primary);
+            color: #fff;
+            border: none;
+            border-radius: var(--radius-md);
+            font-size: 0.9375rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s, opacity 0.15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: var(--space-2);
+        }
+        .btn-generate:hover { background: var(--accent-hover); }
+        .btn-generate:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .btn-generate .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Status strip */
+        .status-strip {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            padding: var(--space-2) var(--space-3);
+            background: var(--bg-primary);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-md);
+            margin-bottom: var(--space-4);
+            font-size: 0.75rem;
+            flex-wrap: wrap;
+        }
+        .status-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 10px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--border-primary);
+            color: var(--text-secondary);
+            white-space: nowrap;
+            transition: border-color 0.3s, background 0.3s;
+        }
+        .status-chip__dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            flex-shrink: 0;
+            transition: background 0.3s;
+        }
+        .status-chip--online .status-chip__dot { background: #22c55e; }
+        .status-chip--online { border-color: rgba(34,197,94,0.25); }
+        .status-chip--offline .status-chip__dot { background: #ef4444; }
+        .status-chip--offline { border-color: rgba(239,68,68,0.25); }
+        .status-chip--warming .status-chip__dot {
+            background: #f59e0b;
+            animation: pulse-dot 1.2s ease-in-out infinite;
+        }
+        .status-chip--warming { border-color: rgba(245,158,11,0.25); }
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        .status-chip__label { font-weight: 500; }
+        .status-chip__detail {
+            color: var(--text-muted);
+            font-size: 0.6875rem;
+        }
+        .status-strip__spacer { flex: 1; }
+        .status-strip__uptime {
+            color: var(--text-muted);
+            font-size: 0.6875rem;
+        }
+
+        /* Progress section */
+        .progress-section {
+            margin-top: var(--space-4);
+            display: none;
+        }
+        .progress-section.active { display: block; }
+        .progress-bar-container {
+            background: var(--bg-primary);
+            border-radius: var(--radius-md);
+            height: 8px;
+            overflow: hidden;
+            margin-bottom: var(--space-2);
+        }
+        .progress-bar-fill {
+            height: 100%;
+            background: var(--accent-primary);
+            border-radius: var(--radius-md);
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        .progress-bar-fill.complete { background: #22c55e; }
+        .progress-bar-fill.error { background: #ef4444; }
+        .progress-text {
+            font-size: 0.8125rem;
+            color: var(--text-secondary);
+            display: flex;
+            justify-content: space-between;
+        }
+        .progress-text .stage {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        /* Log area */
+        .log-area {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-md);
+            padding: var(--space-3);
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: var(--space-3);
+            line-height: 1.6;
+        }
+        .log-area .log-entry {
+            margin-bottom: 2px;
+        }
+        .log-area .log-time {
+            color: var(--text-muted);
+        }
+        .log-area .log-info { color: var(--accent-primary); }
+        .log-area .log-success { color: #22c55e; }
+        .log-area .log-error { color: #ef4444; }
+        .log-area .log-warn { color: #f59e0b; }
+
+        /* Result section */
+        .result-section {
+            margin-top: var(--space-4);
+            display: none;
+        }
+        .result-section.active { display: block; }
+        .result-video {
+            width: 100%;
+            max-height: 500px;
+            border-radius: var(--radius-md);
+            background: #000;
+        }
+        .result-meta {
+            margin-top: var(--space-3);
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: var(--space-2);
+        }
+        .meta-chip {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-sm);
+            padding: var(--space-1) var(--space-2);
+            font-size: 0.75rem;
+        }
+        .meta-chip .meta-label {
+            color: var(--text-muted);
+            font-size: 0.6875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .meta-chip .meta-value {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        /* Image preview */
+        .image-preview {
+            margin-top: var(--space-2);
+            display: none;
+        }
+        .image-preview.active { display: block; }
+        .image-preview img {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border-primary);
+        }
+
+        /* Presets */
+        .presets {
+            display: flex;
+            gap: var(--space-2);
+            margin-bottom: var(--space-4);
+            flex-wrap: wrap;
+        }
+        .preset-btn {
+            padding: var(--space-1) var(--space-3);
+            background: var(--bg-primary);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-full);
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .preset-btn:hover {
+            border-color: var(--accent-primary);
+            color: var(--accent-primary);
+        }
+        .preset-btn.active {
+            background: var(--accent-primary);
+            border-color: var(--accent-primary);
+            color: #fff;
+        }
+
+        /* History */
+        .history-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .history-item {
+            display: flex;
+            align-items: center;
+            gap: var(--space-3);
+            padding: var(--space-2) 0;
+            border-bottom: 1px solid var(--border-primary);
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .history-item:hover {
+            background: var(--bg-primary);
+        }
+        .history-thumb {
+            width: 48px;
+            height: 48px;
+            border-radius: var(--radius-sm);
+            object-fit: cover;
+            background: var(--bg-primary);
+        }
+        .history-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .history-info .hi-title {
+            font-size: 0.8125rem;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .history-info .hi-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        .history-status {
+            font-size: 0.6875rem;
+            padding: 2px 8px;
+            border-radius: var(--radius-full);
+            font-weight: 500;
+        }
+        .history-status.complete { background: rgba(34,197,94,0.15); color: #22c55e; }
+        .history-status.running { background: rgba(59,130,246,0.15); color: #3b82f6; }
+        .history-status.error { background: rgba(239,68,68,0.15); color: #ef4444; }
+
+        .empty-state {
+            text-align: center;
+            padding: var(--space-6);
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar__header">
+                <a href="../index.html" class="logo">
+                    <svg class="logo__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                        <polyline points="2 17 12 22 22 17"/>
+                        <polyline points="2 12 12 17 22 12"/>
+                    </svg>
+                    <span class="logo__text">ContentEngine</span>
+                </a>
+            </div>
+
+            <nav class="sidebar__nav">
+                <div class="nav-section">
+                    <span class="nav-section__title">Overview</span>
+                    <a href="../index.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="7" height="7"/>
+                            <rect x="14" y="3" width="7" height="7"/>
+                            <rect x="14" y="14" width="7" height="7"/>
+                            <rect x="3" y="14" width="7" height="7"/>
+                        </svg>
+                        <span>Dashboard</span>
+                    </a>
+                    <a href="create.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="23 7 16 12 23 17 23 7"/>
+                            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                        </svg>
+                        <span>Create Video</span>
+                    </a>
+                    <a href="campaign.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                            <line x1="16" y1="2" x2="16" y2="6"/>
+                            <line x1="8" y1="2" x2="8" y2="6"/>
+                            <line x1="3" y1="10" x2="21" y2="10"/>
+                        </svg>
+                        <span>Campaigns</span>
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <span class="nav-section__title">Management</span>
+                    <a href="brands.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                            <line x1="7" y1="7" x2="7.01" y2="7"/>
+                        </svg>
+                        <span>Brands</span>
+                    </a>
+                    <a href="settings.html" class="nav-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="3"/>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                        </svg>
+                        <span>Settings</span>
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <span class="nav-section__title">Tools</span>
+                    <a href="test-img2vid.html" class="nav-link active">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="23 7 16 12 23 17 23 7"/>
+                            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                            <path d="M12 1v4M8 3h8" stroke-width="1.5"/>
+                        </svg>
+                        <span>Test Img2Vid</span>
+                    </a>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main">
+            <div class="test-container">
+                <div class="test-header">
+                    <h1>Image-to-Video Test Lab</h1>
+                    <p>Test animation generation with individual images. Verify motion quality for people, vehicles, weather, water, and other dynamic elements.</p>
+                </div>
+
+                <!-- Service Status Strip -->
+                <div class="status-strip" id="statusStrip">
+                    <div class="status-chip" id="chip-server">
+                        <span class="status-chip__dot"></span>
+                        <span class="status-chip__label">Server</span>
+                        <span class="status-chip__detail" id="chip-server-detail">...</span>
+                    </div>
+                    <div class="status-chip" id="chip-comfyui">
+                        <span class="status-chip__dot"></span>
+                        <span class="status-chip__label">ComfyUI</span>
+                        <span class="status-chip__detail" id="chip-comfyui-detail">...</span>
+                    </div>
+                    <div class="status-chip" id="chip-ffmpeg">
+                        <span class="status-chip__dot"></span>
+                        <span class="status-chip__label">FFmpeg</span>
+                    </div>
+                    <div class="status-chip" id="chip-gpu">
+                        <span class="status-chip__dot"></span>
+                        <span class="status-chip__label">GPU</span>
+                        <span class="status-chip__detail" id="chip-gpu-detail"></span>
+                    </div>
+                    <span class="status-strip__spacer"></span>
+                    <span class="status-strip__uptime" id="status-uptime"></span>
+                </div>
+
+                <div class="test-layout">
+                    <!-- Left: Controls -->
+                    <div>
+                        <div class="panel">
+                            <div class="panel__title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                                    <path d="M21 15l-5-5L5 21"/>
+                                </svg>
+                                Source Image
+                            </div>
+
+                            <div class="form-group">
+                                <label for="imageUrl">Image URL</label>
+                                <textarea id="imageUrl" placeholder="https://...supabase.co/.../scene_1.webp" rows="2"></textarea>
+                                <div class="input-hint">Paste a public image URL (Supabase storage, direct link, etc.)</div>
+                            </div>
+
+                            <div class="image-preview" id="imagePreview">
+                                <img id="previewImg" src="" alt="Preview" />
+                            </div>
+
+                            <div class="panel__title" style="margin-top: var(--space-4);">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="3"/>
+                                    <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                                </svg>
+                                Generation Settings
+                            </div>
+
+                            <div class="presets">
+                                <button class="preset-btn" data-preset="balanced" onclick="applyPreset('balanced')">Balanced</button>
+                                <button class="preset-btn" data-preset="fast" onclick="applyPreset('fast')">Fast Test</button>
+                                <button class="preset-btn" data-preset="quality" onclick="applyPreset('quality')">High Quality</button>
+                                <button class="preset-btn" data-preset="subtle" onclick="applyPreset('subtle')">Subtle Motion</button>
+                                <button class="preset-btn" data-preset="dynamic" onclick="applyPreset('dynamic')">Dynamic</button>
+                                <button class="preset-btn" data-preset="prompted" onclick="applyPreset('prompted')" style="background: linear-gradient(135deg, rgba(139,92,246,0.15), rgba(59,130,246,0.15)); border-color: rgba(139,92,246,0.3);">&#x2728; Prompted</button>
+                                <button class="preset-btn" data-preset="cogvideo" onclick="applyPreset('cogvideo')" style="background: linear-gradient(135deg, rgba(16,185,129,0.15), rgba(59,130,246,0.15)); border-color: rgba(16,185,129,0.3);">🧠 CogVideoX</button>
+                                <button class="preset-btn" data-preset="wan21" onclick="applyPreset('wan21')" style="background: linear-gradient(135deg, rgba(245,158,11,0.15), rgba(239,68,68,0.15)); border-color: rgba(245,158,11,0.3);">🎬 Wan2.1</button>
+                                <button class="preset-btn" data-preset="kling" onclick="applyPreset('kling')" style="background: linear-gradient(135deg, rgba(236,72,153,0.15), rgba(168,85,247,0.15)); border-color: rgba(236,72,153,0.3);">💎 Kling</button>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="motionStrength">Motion Strength</label>
+                                    <input type="range" id="motionStrength" min="0" max="1" step="0.05" value="0.5" oninput="document.getElementById('motionVal').textContent = this.value">
+                                    <div class="input-hint">Strength: <span id="motionVal">0.5</span> (0=still, 1=max)</div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="fps">FPS</label>
+                                    <input type="number" id="fps" value="6" min="2" max="30">
+                                    <div class="input-hint">Frames per second</div>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="videoFrames">Total Frames</label>
+                                    <input type="number" id="videoFrames" value="25" min="8" max="50">
+                                    <div class="input-hint">More frames = longer clip</div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="workflow">Workflow</label>
+                                    <select id="workflow" onchange="onWorkflowChange()">
+                                        <option value="img2vid_svd">SVD-XT 1.1 (ambient)</option>
+                                        <option value="img2vid_animatediff">AnimateDiff (basic)</option>
+                                        <option value="img2vid_animatediff_ipa" selected>AnimateDiff + IP-Adapter (prompted)</option>
+                                        <option value="img2vid_cogvideox">CogVideoX-5B (human motion)</option>
+                                        <option value="img2vid_wan">Wan2.1-14B (best quality)</option>
+                                        <option value="img2vid_kling">Kling v2.1 API (paid, ~$0.03)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div id="motionPromptSection" style="display: none; margin-bottom: var(--space-3);">
+                                <div class="form-group" style="width: 100%;">
+                                    <label for="motionPrompt">Motion Prompt 
+                                        <span style="color: var(--text-tertiary); font-weight: 400; font-size: 0.75rem;">(describe what should move)</span>
+                                    </label>
+                                    <textarea id="motionPrompt" rows="2" placeholder="e.g. snowflakes falling softly, curtains billowing, mouth moving subtly, fire flickering" style="width: 100%; padding: 10px 14px; background: var(--surface-secondary); border: 1px solid var(--border); border-radius: 8px; color: var(--text-primary); font-size: 0.875rem; resize: vertical; font-family: inherit;"></textarea>
+                                    <div class="input-hint">Text prompt guides the specific motion. Leave empty for generic cinematic motion.</div>
+                                </div>
+                                <!-- AI Suggest -->
+                                <div class="form-group" style="width: 100%; margin-top: -8px;">
+                                    <label for="sceneDescription">Scene Description <span style="color: var(--text-tertiary); font-weight: 400; font-size: 0.75rem;">(for AI suggest)</span></label>
+                                    <div style="display: flex; gap: 8px; align-items: flex-start;">
+                                        <textarea id="sceneDescription" rows="2" placeholder="Describe the scene: &quot;A snowy forest with pine trees, a cabin with smoke rising from the chimney&quot;" style="flex: 1; padding: 10px 14px; background: var(--surface-secondary); border: 1px solid var(--border); border-radius: 8px; color: var(--text-primary); font-size: 0.875rem; resize: vertical; font-family: inherit;"></textarea>
+                                        <button id="btnSuggestMotion" onclick="suggestMotionPrompt()" style="padding: 10px 16px; background: linear-gradient(135deg, rgba(139,92,246,0.2), rgba(59,130,246,0.2)); border: 1px solid rgba(139,92,246,0.3); border-radius: 8px; color: var(--text-primary); font-size: 0.8125rem; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.15s;">✨ Suggest</button>
+                                    </div>
+                                    <div class="input-hint">Describe what's in the image and AI will suggest which elements to animate.</div>
+                                </div>
+                            </div>
+
+                            <div class="panel__title" style="margin-top: var(--space-3);">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                                    <line x1="8" y1="21" x2="16" y2="21"/>
+                                    <line x1="12" y1="17" x2="12" y2="21"/>
+                                </svg>
+                                Resolution
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="renderWidth">Render Width</label>
+                                    <input type="number" id="renderWidth" value="640" min="256" max="2048" step="64">
+                                    <div class="input-hint">SVD generation res</div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="renderHeight">Render Height</label>
+                                    <input type="number" id="renderHeight" value="1136" min="256" max="2048" step="64">
+                                    <div class="input-hint">SVD generation res</div>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="upscaleWidth">Upscale Width</label>
+                                    <input type="number" id="upscaleWidth" value="1024" min="256" max="4096" step="64">
+                                    <div class="input-hint">Output (FFmpeg bicubic)</div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="upscaleHeight">Upscale Height</label>
+                                    <input type="number" id="upscaleHeight" value="1536" min="256" max="4096" step="64">
+                                    <div class="input-hint">Output (FFmpeg bicubic)</div>
+                                </div>
+                            </div>
+
+                            <button class="btn-generate" id="btnGenerate" onclick="generateVideo()">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                                    <polygon points="5 3 19 12 5 21 5 3"/>
+                                </svg>
+                                Generate Video
+                            </button>
+
+                            <!-- Progress -->
+                            <div class="progress-section" id="progressSection">
+                                <div class="progress-bar-container">
+                                    <div class="progress-bar-fill" id="progressBar"></div>
+                                </div>
+                                <div class="progress-text">
+                                    <span class="stage" id="progressStage">Initializing...</span>
+                                    <span id="progressPct">0%</span>
+                                </div>
+                                <div class="log-area" id="logArea"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Result + History -->
+                    <div>
+                        <!-- Result -->
+                        <div class="panel" id="resultPanel">
+                            <div class="panel__title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polygon points="23 7 16 12 23 17 23 7"/>
+                                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                                </svg>
+                                Result
+                            </div>
+
+                            <div id="resultEmpty" class="empty-state">
+                                Generate a video to see the result here
+                            </div>
+
+                            <div class="result-section" id="resultSection">
+                                <video class="result-video" id="resultVideo" controls loop autoplay muted>
+                                    <source id="resultSource" src="" type="video/mp4">
+                                </video>
+                                <div class="result-meta" id="resultMeta"></div>
+                            </div>
+                        </div>
+
+                        <!-- History -->
+                        <div class="panel" style="margin-top: var(--space-4);">
+                            <div class="panel__title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                                </svg>
+                                Recent Tests
+                            </div>
+                            <div class="history-list" id="historyList">
+                                <div class="empty-state">No tests yet</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- API Keys Service (for OpenAI suggest button) -->
+    <script src="../js/services/apiKeys.js"></script>
+
+    <script>
+    // ─── Config ───
+    const RENDERER_URL = 'http://localhost:3001';
+    let currentPollId = null;
+    let pollInterval = null;
+    const testHistory = JSON.parse(localStorage.getItem('img2vid_test_history') || '[]');
+
+    // ─── Presets ───
+    // SVD can render at higher res natively. AnimateDiff (SD1.5) native is 512x768
+    // but we can push to 576x1024 with acceptable quality.
+    // Upscale ratio should stay ≤1.5× to avoid blur; lanczos+sharpen helps.
+    const PRESETS = {
+        balanced: { motion: 0.5, fps: 6, frames: 25, renderW: 640, renderH: 1136, upW: 1024, upH: 1536 },
+        fast:     { motion: 0.4, fps: 6, frames: 14, renderW: 512, renderH: 768,  upW: 768,  upH: 1152 },
+        quality:  { motion: 0.5, fps: 8, frames: 32, renderW: 768, renderH: 1344, upW: 1080, upH: 1920 },
+        subtle:   { motion: 0.25, fps: 6, frames: 25, renderW: 640, renderH: 1136, upW: 1024, upH: 1536 },
+        dynamic:  { motion: 0.8, fps: 8, frames: 25, renderW: 640, renderH: 1136, upW: 1024, upH: 1536 },
+        prompted: { motion: 0.4, fps: 8, frames: 16, renderW: 576, renderH: 1024, upW: 1080, upH: 1920, workflow: 'img2vid_animatediff_ipa' },
+        cogvideo: { motion: 0.5, fps: 8, frames: 49, renderW: 480, renderH: 720,  upW: 720,  upH: 1280, workflow: 'img2vid_cogvideox' },
+        wan21:    { motion: 0.5, fps: 16, frames: 81, renderW: 480, renderH: 832,  upW: 720,  upH: 1280, workflow: 'img2vid_wan' },
+        kling:    { motion: 0.5, fps: 30, frames: 150, renderW: 1080, renderH: 1920, upW: 1080, upH: 1920, workflow: 'img2vid_kling' },
+    };
+
+    function applyPreset(name) {
+        const p = PRESETS[name];
+        if (!p) return;
+        document.getElementById('motionStrength').value = p.motion;
+        document.getElementById('motionVal').textContent = p.motion;
+        document.getElementById('fps').value = p.fps;
+        document.getElementById('videoFrames').value = p.frames;
+        document.getElementById('renderWidth').value = p.renderW;
+        document.getElementById('renderHeight').value = p.renderH;
+        document.getElementById('upscaleWidth').value = p.upW;
+        document.getElementById('upscaleHeight').value = p.upH;
+        document.querySelectorAll('.preset-btn').forEach(b => b.classList.toggle('active', b.dataset.preset === name));
+        // If preset has a workflow, apply it
+        if (p.workflow) {
+            document.getElementById('workflow').value = p.workflow;
+            onWorkflowChange();
+        }
+    }
+
+    // ─── Workflow Change Handler ───
+    function onWorkflowChange() {
+        const wf = document.getElementById('workflow').value;
+        const promptSection = document.getElementById('motionPromptSection');
+        // Show motion prompt for all workflows that accept text prompts
+        const isPrompted = wf.includes('animatediff') || wf === 'img2vid_cogvideox' || wf === 'img2vid_wan' || wf === 'img2vid_kling';
+        promptSection.style.display = isPrompted ? 'block' : 'none';
+    }
+
+    // ─── AI Suggest Motion Prompt ───
+    async function suggestMotionPrompt() {
+        const sceneDesc = document.getElementById('sceneDescription').value.trim();
+        if (!sceneDesc) {
+            alert('Please describe the scene first (what\'s in the image)');
+            return;
+        }
+
+        // Get OpenAI key from Settings (window.apiKeys)
+        const openaiKey = window.apiKeys?.get('openai');
+        if (!openaiKey) {
+            alert('OpenAI API key not configured. Add it in Settings → API Keys.');
+            return;
+        }
+
+        const btn = document.getElementById('btnSuggestMotion');
+        const origText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = '⏳ Thinking...';
+        btn.style.opacity = '0.6';
+
+        try {
+            const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${openaiKey}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: 'gpt-4o-mini',
+                    max_tokens: 80,
+                    temperature: 0.4,
+                    messages: [
+                        {
+                            role: 'system',
+                            content: `You are a motion prompt writer for AnimateDiff video generation. Given a scene description, output ONLY a short motion prompt (max 20 words) describing ambient/atmospheric motion.
+
+CRITICAL — AnimateDiff LIMITATIONS:
+- AnimateDiff CANNOT move specific body parts (fingers, hands, arms, legs, mouth, eyes)
+- AnimateDiff CANNOT do actions (walking, pointing, grabbing, writing, speaking)
+- AnimateDiff CAN do: ambient particle motion (snow, rain, dust, smoke, fog, sparks)
+- AnimateDiff CAN do: environmental sway (branches, grass, curtains, hair, fabric, water)
+- AnimateDiff CAN do: lighting shifts (flickering, pulsing, shadow movement, light rays)
+- AnimateDiff CAN do: camera motion (slow pan, gentle zoom, subtle drift, push-in)
+- AnimateDiff CAN do: atmospheric effects (wind, clouds moving, fire, reflections)
+
+RULES:
+- NEVER suggest body part movements or human actions — they will fail
+- Focus on 2-3 ambient/environmental motions the scene naturally has
+- Use present participle verbs (falling, drifting, flickering, swaying, flowing)
+- Include one camera hint if appropriate (slow pan, gentle zoom, static)
+- Always end with "cinematic"
+- Keep it concise — short focused prompts work best
+
+EXAMPLES:
+Scene: "A dark hallway with flickering fluorescent lights and a shadowy figure"
+Motion: "lights flickering rapidly, shadows shifting on walls, slow push-in camera, cinematic"
+
+Scene: "A woman sitting at a desk reading papers, window curtains behind her"
+Motion: "curtains billowing gently, warm light shifting across desk, soft dust particles, cinematic"
+
+Scene: "A snowy forest path with pine trees covered in snow"
+Motion: "snowflakes drifting softly, pine branches swaying in wind, gentle camera drift, cinematic"
+
+Scene: "An old man at a microphone in a dimly lit room with candles"
+Motion: "candlelight flickering warmly, soft shadows dancing on walls, subtle camera zoom, cinematic"
+
+Scene: "A person reading a book by a fireplace"
+Motion: "fire crackling with dancing flames, warm light pulsing across pages, gentle smoke wisps, cinematic"
+
+Output ONLY the motion prompt, nothing else.`,
+                        },
+                        { role: 'user', content: sceneDesc.slice(0, 1000) },
+                    ],
+                }),
+            });
+
+            if (!resp.ok) {
+                const errText = await resp.text();
+                throw new Error(`OpenAI error ${resp.status}: ${errText.slice(0, 200)}`);
+            }
+
+            const data = await resp.json();
+            let motionPrompt = data.choices?.[0]?.message?.content?.trim() || '';
+            if (motionPrompt && !motionPrompt.endsWith('cinematic')) {
+                motionPrompt = motionPrompt.replace(/[,.\s]+$/, '') + ', cinematic';
+            }
+            document.getElementById('motionPrompt').value = motionPrompt;
+            addLog(`✨ AI suggested: "${motionPrompt}"`, 'success');
+        } catch (err) {
+            addLog(`Motion suggest failed: ${err.message}`, 'error');
+            alert('Failed to suggest motion: ' + err.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = origText;
+            btn.style.opacity = '1';
+        }
+    }
+
+    // ─── Image Preview ───
+    document.getElementById('imageUrl').addEventListener('input', function() {
+        const url = this.value.trim();
+        const preview = document.getElementById('imagePreview');
+        const img = document.getElementById('previewImg');
+        if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+            img.src = url;
+            img.onload = () => preview.classList.add('active');
+            img.onerror = () => preview.classList.remove('active');
+        } else {
+            preview.classList.remove('active');
+        }
+    });
+
+    // ─── Service Status ───
+    let _healthInterval = null;
+    let _allOnline = false;
+
+    function setChip(id, state, detail) {
+        const chip = document.getElementById(id);
+        if (!chip) return;
+        chip.className = `status-chip status-chip--${state}`;
+        const detailEl = chip.querySelector('.status-chip__detail');
+        if (detailEl && detail !== undefined) detailEl.textContent = detail;
+    }
+
+    function fmtUptime(seconds) {
+        if (!seconds || seconds < 0) return '';
+        if (seconds < 60) return `${seconds}s`;
+        if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        return m > 0 ? `${h}h ${m}m` : `${h}h`;
+    }
+
+    async function checkHealth() {
+        let serverOk = false;
+        let comfyOk = false;
+
+        // 1) Check /health (server + ffmpeg + supabase + comfyui basic)
+        try {
+            const resp = await fetch(`${RENDERER_URL}/health`, { signal: AbortSignal.timeout(3000) });
+            const h = await resp.json();
+            serverOk = h.status === 'ok';
+            setChip('chip-server', serverOk ? 'online' : 'offline', serverOk ? `port 3001` : 'down');
+            setChip('chip-ffmpeg', h.ffmpeg ? 'online' : 'offline');
+            const uptimeEl = document.getElementById('status-uptime');
+            if (uptimeEl && h.uptime) uptimeEl.textContent = `uptime ${fmtUptime(h.uptime)}`;
+        } catch {
+            setChip('chip-server', 'offline', 'unreachable');
+            setChip('chip-ffmpeg', 'offline');
+            setChip('chip-comfyui', 'offline', 'no server');
+            setChip('chip-gpu', 'offline', '');
+            adjustPolling(false);
+            return;
+        }
+
+        // 2) Check /comfyui-health (detailed GPU + queue info)
+        try {
+            const resp = await fetch(`${RENDERER_URL}/comfyui-health`, { signal: AbortSignal.timeout(5000) });
+            const data = await resp.json();
+            if (data.available) {
+                comfyOk = true;
+                setChip('chip-comfyui', 'online', `queue ${data.queue_size}/${data.queue_limit}`);
+                const vram = data.gpu_vram_free_mb;
+                const gpuName = (data.gpu || 'GPU').replace(/NVIDIA |GeForce /g, '');
+                setChip('chip-gpu', 'online', vram ? `${gpuName} · ${vram}MB free` : gpuName);
+            } else {
+                setChip('chip-comfyui', 'warming', 'starting...');
+                setChip('chip-gpu', 'warming', 'waiting');
+            }
+        } catch {
+            setChip('chip-comfyui', serverOk ? 'warming' : 'offline', serverOk ? 'connecting...' : 'down');
+            setChip('chip-gpu', 'offline', '');
+        }
+
+        adjustPolling(serverOk && comfyOk);
+    }
+
+    function adjustPolling(allReady) {
+        if (allReady && !_allOnline) {
+            // Just came online — slow down polling
+            clearInterval(_healthInterval);
+            _healthInterval = setInterval(checkHealth, 15000);
+            _allOnline = true;
+        } else if (!allReady && _allOnline) {
+            // Something went down — poll faster
+            clearInterval(_healthInterval);
+            _healthInterval = setInterval(checkHealth, 3000);
+            _allOnline = false;
+        } else if (!allReady && !_healthInterval) {
+            // Initial state, not ready — fast poll
+            _healthInterval = setInterval(checkHealth, 3000);
+        }
+    }
+
+    // ─── Log Helper ───
+    function addLog(msg, type = 'info') {
+        const area = document.getElementById('logArea');
+        const time = new Date().toLocaleTimeString();
+        const entry = document.createElement('div');
+        entry.className = 'log-entry';
+        entry.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-${type}">${msg}</span>`;
+        area.appendChild(entry);
+        area.scrollTop = area.scrollHeight;
+    }
+
+    // ─── Generate ───
+    async function generateVideo() {
+        const imageUrl = document.getElementById('imageUrl').value.trim();
+        if (!imageUrl) {
+            alert('Please enter an image URL');
+            return;
+        }
+
+        const btn = document.getElementById('btnGenerate');
+        btn.disabled = true;
+        btn.innerHTML = '<div class="spinner"></div> Generating...';
+
+        const progressSection = document.getElementById('progressSection');
+        progressSection.classList.add('active');
+        document.getElementById('logArea').innerHTML = '';
+        document.getElementById('progressBar').style.width = '0%';
+        document.getElementById('progressBar').className = 'progress-bar-fill';
+        document.getElementById('progressStage').textContent = 'Starting...';
+        document.getElementById('progressPct').textContent = '0%';
+        document.getElementById('resultSection').classList.remove('active');
+        document.getElementById('resultEmpty').style.display = 'block';
+
+        const body = {
+            image_url: imageUrl,
+            motion_strength: parseFloat(document.getElementById('motionStrength').value),
+            fps: parseInt(document.getElementById('fps').value),
+            video_frames: parseInt(document.getElementById('videoFrames').value),
+            width: parseInt(document.getElementById('renderWidth').value),
+            height: parseInt(document.getElementById('renderHeight').value),
+            upscale_to_width: parseInt(document.getElementById('upscaleWidth').value),
+            upscale_to_height: parseInt(document.getElementById('upscaleHeight').value),
+            workflow: document.getElementById('workflow').value,
+        };
+        
+        // Include motion prompt for AnimateDiff workflows
+        const motionPrompt = document.getElementById('motionPrompt').value.trim();
+        if (motionPrompt && (body.workflow.includes('animatediff') || body.workflow === 'img2vid_cogvideox' || body.workflow === 'img2vid_wan' || body.workflow === 'img2vid_kling')) {
+            body.motion_prompt = motionPrompt;
+        }
+
+        addLog(`Starting img2vid: ${body.width}x${body.height} → ${body.upscale_to_width}x${body.upscale_to_height}`);
+        addLog(`Workflow: ${body.workflow} | Motion: ${body.motion_strength}, FPS: ${body.fps}, Frames: ${body.video_frames}`);
+        if (body.motion_prompt) addLog(`Prompt: "${body.motion_prompt}"`);
+
+        try {
+            const resp = await fetch(`${RENDERER_URL}/test-img2vid`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({ error: resp.statusText }));
+                throw new Error(err.error || `HTTP ${resp.status}`);
+            }
+
+            const data = await resp.json();
+            addLog(`Job started: ${data.comfy_job_id}`, 'success');
+            addLog(`Estimated: ~${data.estimated_seconds}s`);
+
+            // Save to history
+            const historyEntry = {
+                id: data.comfy_job_id,
+                image_url: imageUrl,
+                settings: body,
+                started_at: new Date().toISOString(),
+                status: 'running',
+                video_url: null,
+            };
+            testHistory.unshift(historyEntry);
+            if (testHistory.length > 20) testHistory.length = 20;
+            saveHistory();
+            renderHistory();
+
+            // Start polling
+            startPolling(data.comfy_job_id, historyEntry);
+
+        } catch (err) {
+            addLog(`Failed: ${err.message}`, 'error');
+            document.getElementById('progressBar').className = 'progress-bar-fill error';
+            document.getElementById('progressBar').style.width = '100%';
+            document.getElementById('progressStage').textContent = 'Error';
+            btn.disabled = false;
+            btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><polygon points="5 3 19 12 5 21 5 3"/></svg> Generate Video';
+        }
+    }
+
+    // ─── Polling ───
+    function startPolling(jobId, historyEntry) {
+        if (pollInterval) clearInterval(pollInterval);
+        currentPollId = jobId;
+
+        pollInterval = setInterval(async () => {
+            try {
+                const resp = await fetch(`${RENDERER_URL}/comfyui-status/${jobId}`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+
+                // Update progress
+                const stage = data.stage || data.status;
+                const pct = data.generation_progress?.percentage || 0;
+                const detail = data.stage_detail || stage;
+
+                document.getElementById('progressStage').textContent = detail;
+
+                if (data.status === 'running') {
+                    if (pct > 0) {
+                        document.getElementById('progressBar').style.width = pct + '%';
+                        document.getElementById('progressPct').textContent = pct + '%';
+                    } else {
+                        // Indeterminate stages (downloading, loading model)
+                        document.getElementById('progressBar').style.width = '15%';
+                        document.getElementById('progressPct').textContent = stage;
+                    }
+
+                    // Log stage transitions
+                    if (data.stage === 'downloading') addLog('Downloading source image...', 'info');
+                    if (data.stage === 'loading_model') addLog('Loading SVD model into VRAM...', 'warn');
+                    if (data.stage === 'generating' && pct > 0 && pct % 20 < 5) {
+                        addLog(`Generating: ${data.generation_progress.step}/${data.generation_progress.max_steps} (${pct}%)`, 'info');
+                    }
+                    if (data.stage === 'encoding') addLog('Encoding frames to MP4...', 'info');
+                    if (data.stage === 'uploading') addLog('Uploading to storage...', 'info');
+
+                } else if (data.status === 'complete') {
+                    clearInterval(pollInterval);
+                    pollInterval = null;
+
+                    document.getElementById('progressBar').style.width = '100%';
+                    document.getElementById('progressBar').className = 'progress-bar-fill complete';
+                    document.getElementById('progressPct').textContent = '100%';
+                    document.getElementById('progressStage').textContent = data.stage_detail || 'Complete!';
+                    addLog(`Complete! ${data.frame_count} frames → ${data.video_duration_seconds}s clip`, 'success');
+
+                    // Show result
+                    showResult(data);
+
+                    // Update history
+                    historyEntry.status = 'complete';
+                    historyEntry.video_url = data.video_url;
+                    historyEntry.metadata = data.metadata;
+                    historyEntry.completed_at = new Date().toISOString();
+                    saveHistory();
+                    renderHistory();
+
+                    // Re-enable button
+                    const btn = document.getElementById('btnGenerate');
+                    btn.disabled = false;
+                    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><polygon points="5 3 19 12 5 21 5 3"/></svg> Generate Video';
+
+                } else if (data.status === 'error') {
+                    clearInterval(pollInterval);
+                    pollInterval = null;
+
+                    document.getElementById('progressBar').style.width = '100%';
+                    document.getElementById('progressBar').className = 'progress-bar-fill error';
+                    document.getElementById('progressPct').textContent = 'Error';
+                    document.getElementById('progressStage').textContent = data.stage_detail || 'Generation failed';
+                    addLog(`Error: ${data.stage_detail || 'Unknown error'}`, 'error');
+
+                    historyEntry.status = 'error';
+                    historyEntry.error = data.stage_detail;
+                    saveHistory();
+                    renderHistory();
+
+                    const btn = document.getElementById('btnGenerate');
+                    btn.disabled = false;
+                    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><polygon points="5 3 19 12 5 21 5 3"/></svg> Generate Video';
+                }
+
+            } catch (err) {
+                // Network blip — keep polling
+            }
+        }, 2000);
+    }
+
+    // ─── Show Result ───
+    function showResult(data) {
+        document.getElementById('resultEmpty').style.display = 'none';
+        const section = document.getElementById('resultSection');
+        section.classList.add('active');
+
+        const video = document.getElementById('resultVideo');
+        const source = document.getElementById('resultSource');
+        source.src = data.video_url;
+        video.load();
+        video.play().catch(() => {});
+
+        // Metadata chips
+        const meta = document.getElementById('resultMeta');
+        const m = data.metadata || {};
+        const chips = [
+            { label: 'Duration', value: `${data.video_duration_seconds}s` },
+            { label: 'Frames', value: data.frame_count },
+            { label: 'FPS', value: m.fps },
+            { label: 'Motion', value: m.motion_strength },
+            { label: 'Render Res', value: `${m.render_width}x${m.render_height}` },
+            { label: 'Output Res', value: `${m.output_width}x${m.output_height}` },
+            { label: 'Upscaled', value: m.upscaled ? 'Yes' : 'No' },
+            { label: 'Steps', value: m.steps },
+            { label: 'CFG', value: m.cfg },
+            { label: 'Gen Time', value: m.generation_time_ms ? `${(m.generation_time_ms / 1000).toFixed(1)}s` : 'N/A' },
+            { label: 'Workflow', value: m.workflow },
+            { label: 'Seed', value: m.seed },
+        ];
+
+        meta.innerHTML = chips.map(c =>
+            `<div class="meta-chip"><div class="meta-label">${c.label}</div><div class="meta-value">${c.value ?? 'N/A'}</div></div>`
+        ).join('');
+    }
+
+    // ─── History ───
+    function saveHistory() {
+        localStorage.setItem('img2vid_test_history', JSON.stringify(testHistory));
+    }
+
+    function renderHistory() {
+        const list = document.getElementById('historyList');
+        if (testHistory.length === 0) {
+            list.innerHTML = '<div class="empty-state">No tests yet</div>';
+            return;
+        }
+
+        list.innerHTML = testHistory.map((h, i) => {
+            const time = new Date(h.started_at).toLocaleString();
+            const settings = h.settings || {};
+            return `
+                <div class="history-item" onclick="loadHistoryItem(${i})">
+                    <img class="history-thumb" src="${h.image_url}" onerror="this.style.display='none'" alt="">
+                    <div class="history-info">
+                        <div class="hi-title">${h.id}</div>
+                        <div class="hi-meta">${time} &bull; m=${settings.motion_strength || '?'} fps=${settings.fps || '?'}</div>
+                    </div>
+                    <span class="history-status ${h.status}">${h.status}</span>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function loadHistoryItem(idx) {
+        const h = testHistory[idx];
+        if (!h) return;
+
+        // Load settings back
+        document.getElementById('imageUrl').value = h.image_url;
+        document.getElementById('imageUrl').dispatchEvent(new Event('input'));
+        if (h.settings) {
+            document.getElementById('motionStrength').value = h.settings.motion_strength || 0.5;
+            document.getElementById('motionVal').textContent = h.settings.motion_strength || 0.5;
+            document.getElementById('fps').value = h.settings.fps || 6;
+            document.getElementById('videoFrames').value = h.settings.video_frames || 25;
+            document.getElementById('renderWidth').value = h.settings.width || 640;
+            document.getElementById('renderHeight').value = h.settings.height || 1136;
+            document.getElementById('upscaleWidth').value = h.settings.upscale_to_width || 1024;
+            document.getElementById('upscaleHeight').value = h.settings.upscale_to_height || 1536;
+            document.getElementById('workflow').value = h.settings.workflow || 'img2vid_svd';
+        }
+
+        // If completed, show result
+        if (h.status === 'complete' && h.video_url) {
+            showResult({
+                video_url: h.video_url,
+                video_duration_seconds: h.metadata?.duration_seconds || '?',
+                frame_count: h.metadata?.video_frames || '?',
+                metadata: h.metadata || {},
+            });
+        }
+
+        // If still running, re-poll
+        if (h.status === 'running') {
+            const progressSection = document.getElementById('progressSection');
+            progressSection.classList.add('active');
+            addLog(`Re-attaching to running job: ${h.id}`, 'info');
+            startPolling(h.id, h);
+        }
+    }
+
+    // ─── Init ───
+    checkHealth();
+    renderHistory();
+    applyPreset('prompted'); // Default to AnimateDiff+IPA preset
+    </script>
+</body>
+</html>

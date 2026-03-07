@@ -1,0 +1,132 @@
+{
+  "_meta": {
+    "title": "CogVideoX 1.5-5B I2V (fp8 runtime quant) — API Workflow",
+    "description": "Image-to-video using CogVideoX 1.5-5B-I2V bf16 model with fp8 runtime quantization. Much higher quality than GGUF Q4."
+  },
+  "9": {
+    "class_type": "CLIPLoader",
+    "_note": "Load T5-XXL text encoder for CogVideoX text conditioning",
+    "inputs": {
+      "clip_name": "t5xxl_fp8_e4m3fn.safetensors",
+      "type": "sd3"
+    }
+  },
+  "1": {
+    "class_type": "CogVideoXModelLoader",
+    "_note": "Load CogVideoX 1.5-5B I2V bf16 model with fp8 runtime quantization (output: [0]=COGVIDEOMODEL)",
+    "inputs": {
+      "model": "CogVideoX_1_5_5b_I2V_bf16.safetensors",
+      "base_precision": "bf16",
+      "quantization": "fp8_e4m3fn",
+      "load_device": "main_device",
+      "enable_sequential_cpu_offload": false
+    }
+  },
+  "12": {
+    "class_type": "CogVideoXVAELoader",
+    "_note": "Load CogVideoX VAE separately (output: [0]=VAE)",
+    "inputs": {
+      "model_name": "cogvideox_vae_bf16.safetensors",
+      "precision": "bf16"
+    }
+  },
+  "2": {
+    "class_type": "CogVideoTextEncode",
+    "_note": "Positive prompt (clip from CLIPLoader node 9)",
+    "inputs": {
+      "clip": ["9", 0],
+      "prompt": "cinematic motion, gentle movement, atmospheric",
+      "strength": 1.0,
+      "force_offload": true
+    }
+  },
+  "3": {
+    "class_type": "CogVideoTextEncode",
+    "_note": "Negative prompt (clip chained from positive encode output [1])",
+    "inputs": {
+      "clip": ["2", 1],
+      "prompt": "static, blurry, distorted, low quality, jittery, flickering",
+      "strength": 1.0,
+      "force_offload": true
+    }
+  },
+  "4": {
+    "class_type": "LoadImage",
+    "_note": "Source image uploaded to ComfyUI input/ directory",
+    "inputs": {
+      "image": "INPUT_IMAGE_PLACEHOLDER"
+    }
+  },
+  "10": {
+    "class_type": "ImageScale",
+    "_note": "Resize source image to target render dimensions before encoding",
+    "inputs": {
+      "image": ["4", 0],
+      "upscale_method": "lanczos",
+      "width": 480,
+      "height": 720,
+      "crop": "center"
+    }
+  },
+  "5": {
+    "class_type": "CogVideoImageEncode",
+    "_note": "Encode source image for I2V conditioning (vae from separate VAE loader node 12)",
+    "inputs": {
+      "vae": ["12", 0],
+      "start_image": ["10", 0],
+      "enable_tiling": false,
+      "noise_aug_strength": 0.02,
+      "strength": 1.0,
+      "start_percent": 0.0,
+      "end_percent": 1.0
+    }
+  },
+  "6": {
+    "class_type": "CogVideoSampler",
+    "_note": "Main sampler — 13 frames, CFG 9.0, 30 steps",
+    "inputs": {
+      "model": ["1", 0],
+      "positive": ["2", 0],
+      "negative": ["3", 0],
+      "image_cond_latents": ["5", 0],
+      "num_frames": 13,
+      "steps": 30,
+      "cfg": 9.0,
+      "seed": 0,
+      "scheduler": "CogVideoXDDIM",
+      "denoise_strength": 1.0
+    }
+  },
+  "7": {
+    "class_type": "CogVideoDecode",
+    "_note": "Decode latents to image frames with VAE tiling (vae from separate VAE loader node 12)",
+    "inputs": {
+      "vae": ["12", 0],
+      "samples": ["6", 0],
+      "enable_vae_tiling": true,
+      "tile_sample_min_height": 240,
+      "tile_sample_min_width": 360,
+      "tile_overlap_factor_height": 0.2,
+      "tile_overlap_factor_width": 0.2,
+      "auto_tile_size": true
+    }
+  },
+  "11": {
+    "class_type": "ImageSharpen",
+    "_note": "Post-decode sharpening (lighter touch since fp8 preserves more detail)",
+    "inputs": {
+      "image": ["7", 0],
+      "sharpen_radius": 1,
+      "sigma": 1.0,
+      "alpha": 1.0
+    }
+  },
+  "8": {
+    "class_type": "SaveImage",
+    "_note": "Save output frames for retrieval",
+    "inputs": {
+      "images": ["11", 0],
+      "filename_prefix": "cogvideox_output"
+    }
+  }
+}

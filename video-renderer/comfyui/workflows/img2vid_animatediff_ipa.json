@@ -1,0 +1,133 @@
+{
+  "4": {
+    "class_type": "CheckpointLoaderSimple",
+    "_note": "SD1.5 checkpoint for AnimateDiff base generation",
+    "inputs": {
+      "ckpt_name": "realisticVisionV51_sd15.safetensors"
+    }
+  },
+  "5": {
+    "class_type": "LoadImage",
+    "_note": "Source image uploaded to ComfyUI input/ directory",
+    "inputs": {
+      "image": "INPUT_IMAGE_PLACEHOLDER"
+    }
+  },
+  "20": {
+    "class_type": "IPAdapterUnifiedLoader",
+    "_note": "Auto-loads IP-Adapter SD1.5 model + CLIP vision encoder. Preset STANDARD uses ip-adapter_sd15 + ViT-H",
+    "inputs": {
+      "model": ["4", 0],
+      "preset": "STANDARD (medium strength)"
+    }
+  },
+  "21": {
+    "class_type": "PrepImageForClipVision",
+    "_note": "Preprocess source image for CLIP vision embedding (crop, resize to 224x224)",
+    "inputs": {
+      "image": ["5", 0],
+      "interpolation": "LANCZOS",
+      "crop_position": "center",
+      "sharpening": 0.0
+    }
+  },
+  "22": {
+    "class_type": "IPAdapter",
+    "_note": "Apply IP-Adapter: inject source image visual features into model. weight controls image fidelity (0.6-1.0). weight_type='style transfer' preserves composition best",
+    "inputs": {
+      "model": ["20", 0],
+      "ipadapter": ["20", 1],
+      "image": ["21", 0],
+      "weight": 0.80,
+      "start_at": 0.0,
+      "end_at": 0.85,
+      "weight_type": "standard"
+    }
+  },
+  "10": {
+    "class_type": "ImageScale",
+    "_note": "Resize input image to match generation resolution",
+    "inputs": {
+      "image": ["5", 0],
+      "upscale_method": "lanczos",
+      "width": 512,
+      "height": 768,
+      "crop": "center"
+    }
+  },
+  "11": {
+    "class_type": "VAEEncode",
+    "_note": "Encode resized image to latent space for img2img denoising",
+    "inputs": {
+      "pixels": ["10", 0],
+      "vae": ["4", 2]
+    }
+  },
+  "16": {
+    "class_type": "RepeatLatentBatch",
+    "_note": "Replicate single-frame latent across batch dimension for multi-frame generation",
+    "inputs": {
+      "samples": ["11", 0],
+      "amount": 16
+    }
+  },
+  "15": {
+    "class_type": "ADE_AnimateDiffLoaderWithContext",
+    "_note": "Load AnimateDiff motion module onto IPA-conditioned model. motion_scale amplifies temporal attention — 1.15+ needed to overcome IPA clamping",
+    "inputs": {
+      "model": ["22", 0],
+      "model_name": "v3_sd15_mm.ckpt",
+      "beta_schedule": "sqrt_linear (AnimateDiff)",
+      "motion_scale": 1.15,
+      "context_options": null
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "_note": "Positive prompt describing desired motion/scene",
+    "inputs": {
+      "clip": ["4", 1],
+      "text": "cinematic motion, slow camera drift, atmospheric movement"
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "_note": "Negative prompt to avoid artifacts",
+    "inputs": {
+      "clip": ["4", 1],
+      "text": "static, jitter, fast motion, blurry, deformed, morphing, face distortion, soft focus, out of focus, bokeh, gaussian blur, low detail, smooth, overexposed"
+    }
+  },
+  "3": {
+    "class_type": "KSampler",
+    "_note": "Sampling: denoise 0.55-0.75 (lower=more faithful to input, higher=more motion). Model comes from AnimateDiff which wraps IP-Adapter model",
+    "inputs": {
+      "model": ["15", 0],
+      "positive": ["6", 0],
+      "negative": ["7", 0],
+      "latent_image": ["16", 0],
+      "seed": 0,
+      "steps": 25,
+      "cfg": 5.5,
+      "sampler_name": "euler_ancestral",
+      "scheduler": "normal",
+      "denoise": 0.45
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "_note": "Decode latent frames back to pixel space",
+    "inputs": {
+      "samples": ["3", 0],
+      "vae": ["4", 2]
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "_note": "Save output frames for retrieval",
+    "inputs": {
+      "images": ["8", 0],
+      "filename_prefix": "animdiff_ipa_output"
+    }
+  }
+}

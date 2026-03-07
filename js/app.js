@@ -82,6 +82,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize audio controls
     initAudioControls();
     
+    // Initialize video overlay controls
+    initOverlayControls();
+    
     // Initialize effect render time tracking
     initEffectTimeTracking();
     
@@ -96,7 +99,8 @@ document.addEventListener('DOMContentLoaded', () => {
 // ART STYLE PREVIEWS
 // =====================================================
 
-const ART_STYLE_INFO = {
+// Hardcoded fallback — will be overwritten by DB fetch if available
+let ART_STYLE_INFO = {
     "cinematic-dark": {
         icon: "🎬",
         name: "Cinematic Dark Photography",
@@ -131,6 +135,11 @@ const ART_STYLE_INFO = {
         icon: "🌀",
         name: "Surreal Nightmare",
         desc: "Beksiński / H.R. Giger style. Impossible geometry, melting forms, biomechanical horror, dream logic. Subconscious terror made visible."
+    },
+    "rnmort": {
+        icon: "🧪",
+        name: "RnMort (Cartoon Horror)",
+        desc: "Rick & Morty-inspired adult cartoon style. Bold thick outlines, flat cel shading, exaggerated proportions, vibrant colors against dark moody backgrounds."
     }
 };
 
@@ -159,6 +168,96 @@ function updateArtStylePreview() {
     if (nameEl) nameEl.textContent = info.name;
     if (descEl) descEl.textContent = info.desc;
 }
+
+// =====================================================
+// ART STYLE DB REGISTRY (Issue #7)
+// Fetch all active art styles from DB to replace hardcoded objects
+// =====================================================
+
+async function loadArtStylesFromDB() {
+    try {
+        const sb = typeof getSupabaseClient === 'function' ? getSupabaseClient() : null;
+        if (!sb) return;
+
+        const { data: styles, error } = await sb
+            .from('art_styles')
+            .select('*')
+            .eq('is_active', true)
+            .order('sort_order', { ascending: true });
+
+        if (error || !styles || styles.length === 0) {
+            console.warn('[ART_STYLES] DB fetch failed or empty — using hardcoded fallback', error?.message);
+            return;
+        }
+
+        console.log(`[ART_STYLES] ✅ Loaded ${styles.length} art styles from DB registry`);
+
+        // Rebuild ART_STYLE_INFO from DB
+        const newInfo = {};
+        const newBuiltin = {};
+        styles.forEach(s => {
+            newInfo[s.id] = {
+                icon: s.icon || '🎨',
+                name: s.name,
+                desc: s.description || s.base_prompt.substring(0, 150) + '...'
+            };
+            newBuiltin[s.id] = {
+                name: s.name,
+                icon: s.icon || '🎨',
+                basePrompt: s.base_prompt,
+                colorOverride: s.color_override || '',
+                technicalStyle: s.technical_style || '',
+                negativePrompt: s.negative_prompt || ''
+            };
+        });
+
+        ART_STYLE_INFO = newInfo;
+        BUILTIN_ART_STYLES = newBuiltin;
+
+        // Update the art style dropdown with all DB styles
+        const select = document.getElementById('art-style');
+        if (select) {
+            const currentValue = select.value;
+            // Remove all non-custom options
+            Array.from(select.options).forEach(opt => {
+                if (!opt.value.startsWith('custom-')) {
+                    select.removeChild(opt);
+                }
+            });
+            // Add DB styles before custom ones
+            const firstCustom = select.querySelector('option[value^="custom-"]');
+            styles.forEach(s => {
+                const option = document.createElement('option');
+                option.value = s.id;
+                option.textContent = `${s.icon || '🎨'} ${s.name}`;
+                if (firstCustom) {
+                    select.insertBefore(option, firstCustom);
+                } else {
+                    select.appendChild(option);
+                }
+            });
+            // Restore previous selection if still valid
+            if (select.querySelector(`option[value="${currentValue}"]`)) {
+                select.value = currentValue;
+            }
+        }
+
+        // Refresh preview
+        updateArtStylePreview();
+        // Refresh styles editor if open
+        if (document.getElementById('builtin-styles-grid')) {
+            renderBuiltinStyles();
+        }
+    } catch (err) {
+        console.warn('[ART_STYLES] Exception loading from DB — using hardcoded fallback', err);
+    }
+}
+
+// Load on DOMContentLoaded (non-blocking)
+document.addEventListener('DOMContentLoaded', () => {
+    // Delay slightly to ensure supabase client is initialized
+    setTimeout(loadArtStylesFromDB, 500);
+});
 
 // =====================================================
 // SCENE COUNT VALIDATION
@@ -280,8 +379,8 @@ function showTab(tab) {
 // ART STYLE EDITOR
 // =====================================================
 
-// Full art style data for editor
-const BUILTIN_ART_STYLES = {
+// Full art style data for editor — will be overwritten by DB fetch if available
+let BUILTIN_ART_STYLES = {
     "cinematic-dark": {
         name: "Cinematic Dark Photography",
         icon: "🎬",
@@ -337,6 +436,14 @@ const BUILTIN_ART_STYLES = {
         colorOverride: "muted earth tones, sepia, burnt oranges, biomechanical grays",
         technicalStyle: "surrealist art, nightmare imagery, biomechanical horror, Beksiński style, dreamlike",
         negativePrompt: "realistic, normal, cheerful, bright colors, cartoon, text, words, letters"
+    },
+    "rnmort": {
+        name: "RnMort (Cartoon Horror)",
+        icon: "🧪",
+        basePrompt: "Adult animated cartoon illustration in the style of Rick and Morty. Bold thick black outlines on every character and object. Flat cel-shaded coloring with vibrant saturated hues. Exaggerated character proportions — large expressive heads, dot-like pupils, wide mouths. Dark horror atmosphere but rendered in colorful cartoon style. Fluid organic shapes, slightly wobbly linework for hand-drawn feel.",
+        colorOverride: "vibrant saturated cartoon colors, neon greens and purples for sci-fi elements, warm skin tones, deep moody backgrounds with bright character colors, teal and pink accent lighting",
+        technicalStyle: "adult cartoon, cel shading, bold black outlines, flat color fills, exaggerated anatomy, large expressive eyes with dot pupils, hand-drawn aesthetic, Rick and Morty style, animated series quality",
+        negativePrompt: "photorealism, photography, DSLR, camera, realistic, oil painting, watercolor, 3D render, CGI, anime, manga, chibi, text, words, letters, symbols"
     }
 };
 
@@ -2680,3 +2787,202 @@ function formatFileSize(bytes) {
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
+
+// =====================================================
+// VIDEO OVERLAY MANAGEMENT
+// =====================================================
+
+let currentOverlayPreset = null;
+let currentOverlayConfig = null;
+
+/**
+ * Populate the overlay preset selector with brand's presets
+ */
+async function initOverlayControls() {
+    const select = document.getElementById('overlay-preset-select');
+    if (!select) return;
+
+    try {
+        const presets = await brandManager.getVibePresets(currentBrandId);
+        select.innerHTML = '<option value="">Select a preset...</option>';
+        for (const p of presets) {
+            const opt = document.createElement('option');
+            opt.value = p.template_type;
+            opt.textContent = p.name || p.template_type;
+            select.appendChild(opt);
+        }
+    } catch (err) {
+        console.error('Failed to init overlay controls:', err);
+    }
+}
+
+/**
+ * Load overlay config for the selected preset
+ */
+async function loadOverlayForPreset() {
+    const select = document.getElementById('overlay-preset-select');
+    const presetName = select?.value;
+    
+    if (!presetName) {
+        hideOverlayStatus();
+        currentOverlayPreset = null;
+        currentOverlayConfig = null;
+        return;
+    }
+    
+    currentOverlayPreset = presetName;
+    
+    try {
+        const config = await brandManager.getOverlayConfig(currentBrandId, presetName);
+        currentOverlayConfig = config;
+        
+        if (config && config.enabled) {
+            showOverlayStatus(config);
+        } else {
+            hideOverlayStatus();
+        }
+    } catch (err) {
+        console.error('Failed to load overlay config:', err);
+        hideOverlayStatus();
+    }
+}
+
+/**
+ * Handle overlay video file upload
+ */
+async function handleOverlayUpload(event) {
+    const file = event.target.files?.[0];
+    if (!file || !currentOverlayPreset) {
+        if (!currentOverlayPreset) {
+            alert('Please select a preset first');
+            event.target.value = '';
+        }
+        return;
+    }
+    
+    // Validate file type
+    if (!file.type.startsWith('video/')) {
+        alert('Please upload a video file (MP4 or WebM)');
+        event.target.value = '';
+        return;
+    }
+    
+    // Show progress
+    const progressContainer = document.getElementById('overlay-upload-progress');
+    const progressBar = document.getElementById('overlay-progress-bar');
+    const progressText = document.getElementById('overlay-progress-text');
+    const uploadArea = document.getElementById('overlay-upload-area');
+    
+    progressContainer?.classList.remove('hidden');
+    uploadArea?.classList.add('opacity-50', 'pointer-events-none');
+    
+    try {
+        // Update progress (simple since standard upload)
+        progressBar.style.width = '30%';
+        progressText.textContent = 'Uploading...';
+        
+        const opacitySlider = document.getElementById('overlay-opacity');
+        const opacity = opacitySlider ? parseInt(opacitySlider.value) / 100 : 0.4;
+        
+        const overlayConfig = await brandManager.uploadOverlayVideo(
+            currentBrandId,
+            currentOverlayPreset,
+            file,
+            { opacity, display_name: file.name }
+        );
+        
+        progressBar.style.width = '100%';
+        progressText.textContent = 'Done!';
+        
+        currentOverlayConfig = overlayConfig;
+        showOverlayStatus(overlayConfig);
+        
+        // Reset after animation
+        setTimeout(() => {
+            progressContainer?.classList.add('hidden');
+            progressBar.style.width = '0%';
+            uploadArea?.classList.remove('opacity-50', 'pointer-events-none');
+        }, 1000);
+        
+    } catch (err) {
+        console.error('Overlay upload failed:', err);
+        alert('Upload failed: ' + err.message);
+        progressContainer?.classList.add('hidden');
+        uploadArea?.classList.remove('opacity-50', 'pointer-events-none');
+    }
+    
+    // Reset file input
+    event.target.value = '';
+}
+
+/**
+ * Remove overlay video for current preset
+ */
+async function removeOverlayVideo() {
+    if (!currentOverlayPreset) return;
+    
+    if (!confirm(`Remove overlay video from "${currentOverlayPreset}" preset?`)) return;
+    
+    try {
+        await brandManager.removeOverlayVideo(currentBrandId, currentOverlayPreset);
+        currentOverlayConfig = null;
+        hideOverlayStatus();
+    } catch (err) {
+        console.error('Failed to remove overlay:', err);
+        alert('Failed to remove overlay: ' + err.message);
+    }
+}
+
+/**
+ * Update overlay opacity
+ */
+async function updateOverlayOpacity() {
+    const slider = document.getElementById('overlay-opacity');
+    const label = document.getElementById('overlay-opacity-label');
+    if (!slider || !label) return;
+    
+    const value = parseInt(slider.value);
+    label.textContent = value + '%';
+    
+    // Debounce the save
+    clearTimeout(updateOverlayOpacity._timer);
+    updateOverlayOpacity._timer = setTimeout(async () => {
+        if (!currentOverlayPreset || !currentOverlayConfig) return;
+        try {
+            await brandManager.updateOverlayOpacity(currentBrandId, currentOverlayPreset, value / 100);
+        } catch (err) {
+            console.error('Failed to update overlay opacity:', err);
+        }
+    }, 500);
+}
+
+/**
+ * Show overlay status UI
+ */
+function showOverlayStatus(config) {
+    const statusEl = document.getElementById('overlay-status');
+    const filenameEl = document.getElementById('overlay-filename');
+    const opacityControl = document.getElementById('overlay-opacity-control');
+    const opacitySlider = document.getElementById('overlay-opacity');
+    const opacityLabel = document.getElementById('overlay-opacity-label');
+    
+    if (statusEl) statusEl.classList.remove('hidden');
+    if (filenameEl) filenameEl.textContent = config.display_name || 'overlay.mp4';
+    if (opacityControl) opacityControl.classList.remove('hidden');
+    if (opacitySlider) opacitySlider.value = Math.round((config.opacity || 0.4) * 100);
+    if (opacityLabel) opacityLabel.textContent = Math.round((config.opacity || 0.4) * 100) + '%';
+}
+
+/**
+ * Hide overlay status UI
+ */
+function hideOverlayStatus() {
+    document.getElementById('overlay-status')?.classList.add('hidden');
+    document.getElementById('overlay-opacity-control')?.classList.add('hidden');
+}
+
+// Expose overlay functions globally
+window.loadOverlayForPreset = loadOverlayForPreset;
+window.handleOverlayUpload = handleOverlayUpload;
+window.removeOverlayVideo = removeOverlayVideo;
+window.updateOverlayOpacity = updateOverlayOpacity;

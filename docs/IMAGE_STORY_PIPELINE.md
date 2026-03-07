@@ -47,7 +47,7 @@ The **worker-v1** pipeline processes each video as a single job with 10 sequenti
 | 1 | `story` | `executeStoryStep()` | OpenAI GPT-4o | ~$0.01 | Story text + title |
 | 2 | `uniqueness` | `executeUniquenessStep()` | None (DB) | Free | Uniqueness score |
 | 3 | `scenes` | `executeScenesStep()` | None (local) | Free | Scene array with timing |
-| 4 | `voice` | `executeVoiceStep()` | ElevenLabs TTS | ~$0.05 | Narration MP3 + timestamps |
+| 4 | `voice` | `executeVoiceStep()` | OpenAI TTS (`gpt-4o-mini-tts`) + Whisper | ~$0.015/1K chars | Narration MP3 + word timestamps |
 | 5 | `music` | `executeMusicStep()` | None (DB) | Free | Music track selection |
 | 6 | `images` | `executeImagesStep()` | OpenAI gpt-image-1 | ~$0.20-0.50 | Scene images + manifest |
 | 7 | `subtitles` | `executeSubtitlesStep()` | None (local) | Free | SRT file |
@@ -90,9 +90,9 @@ The **worker-v1** pipeline processes each video as a single job with 10 sequenti
           │                │                    │
           ▼                ▼                    ▼
     ┌──────────┐    ┌──────────┐         ┌──────────┐
-    │  OpenAI  │    │ElevenLabs│         │  FFmpeg  │
-    │  GPT-4o  │    │   TTS    │         │ Renderer │
-    │gpt-image-1│   │          │         │ (Docker) │
+    │  OpenAI  │    │ OpenAI  │         │  FFmpeg  │
+    │  GPT-4o  │    │   TTS   │         │ Renderer │
+    │gpt-image-1│   │ Whisper │         │ (Docker) │
     └──────────┘    └──────────┘         └──────────┘
 ```
 
@@ -207,29 +207,46 @@ Each scene has:
 
 ## Step 4: Voice Synthesis
 
-**Function:** `executeVoiceStep()`  
-**API:** ElevenLabs TTS with timestamps  
-**Endpoint:** `POST https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/with-timestamps`
+**Function:** `executeVoiceStep()` → dispatches to `executeVoiceStepOpenAI()` (primary) or `executeVoiceStepElevenLabs()` (legacy fallback)  
+**API:** OpenAI TTS (`gpt-4o-mini-tts`) + Whisper alignment  
+**Endpoint:** `POST https://api.openai.com/v1/audio/speech` + `POST https://api.openai.com/v1/audio/transcriptions`
 
 ### Configuration
 
 | Parameter | Value |
 |-----------|-------|
-| Voice ID | `pNInz6obpgDQGcFmaJgB` (Adam) |
-| Model | `eleven_turbo_v2_5` |
-| Stability | 0.5 |
-| Similarity Boost | 0.75 |
+| Model | `gpt-4o-mini-tts` |
+| Voice | Per-brand override from `brand_templates.config_overrides.voice`, falling back to preset default |
+| Instructions | Per-brand or per-preset narration instructions |
 | Output Format | MP3 |
+| Cost | ~$0.015 per 1K characters |
 
 ### Process
 
-1. Hash input parameters (`voice_id|model|stability|similarity|text`) for billing protection
+1. Hash input parameters (`openai|model|voice|text`) for billing protection
 2. Check for existing asset with same hash → skip API call if found
-3. Call ElevenLabs with `with-timestamps` endpoint
-4. Receive base64 audio + character-level timestamps
-5. Parse character timestamps into word-level timestamps
-6. Upload audio to `brands/{brand_id}/jobs/{job_id}/audio/narration.mp3`
-7. Store word timestamps in `job.meta.audio_timestamps`
+3. Call OpenAI TTS API
+4. Run Whisper alignment (`whisper-1`) on the generated audio to get word-level timestamps
+5. Force-align Whisper timestamps back onto original story words
+6. **Truncation detection + auto-retry** (see below)
+7. Upload audio to `brands/{brand_id}/jobs/{job_id}/audio/narration.mp3`
+8. Store word timestamps in `job.meta.audio_timestamps`
+
+### TTS Truncation Auto-Retry
+
+OpenAI TTS can silently truncate the ending of long narrations — the last several words are never spoken but the API returns no error. Detection works by analyzing forced-alignment output: if ≥3 consecutive trailing words all have exactly 0.08s duration (the interpolation floor), they were never spoken by TTS.
+
+**Retry strategy (up to 3 attempts):**
+
+| Attempt | Strategy | Description |
+|---------|----------|-------------|
+| 1 | Normal | Standard TTS call |
+| 2 | Speed 0.95 | Slightly slower speech gives the model more time to finish |
+| 3 | Text split | Split text at nearest sentence boundary to midpoint, generate two separate TTS clips, concatenate MP3 bytes |
+
+The `findSentenceSplitPoint()` helper finds the sentence-ending punctuation (`.!?`) closest to the text midpoint (constrained to 20%-80% of text length). MP3 is frame-based, so raw byte concatenation produces valid audio.
+
+Job meta tracks: `tts_retry_attempts`, `tts_retry_strategy` (`speed_0.95` | `text_split`), `tts_truncation_resolved`.
 
 ### Word Timestamps Format
 
@@ -241,14 +258,15 @@ Each scene has:
 }
 ```
 
-These timestamps are critical for [Voice-Aligned Scene Transitions](#voice-aligned-scene-transitions).
+Timestamps come from Whisper forced alignment (precise) or approximate interpolation (fallback). These are critical for [Voice-Aligned Scene Transitions](#voice-aligned-scene-transitions).
 
 ### Outputs
 
 - Supabase Storage: `narration.mp3`
-- Job asset: `{job_id}:voice_narration`
+- Job asset: `{job_id}:voice_narration` + hash key for billing protection
 - `job.meta.audio_timestamps` — Word-level timing array
-- `job.meta.audio_duration` — Total audio duration in seconds
+- `job.meta.audio_duration_ms` — Total audio duration in milliseconds
+- `job.meta.tts_provider` — `'openai'`
 
 ---
 
@@ -405,7 +423,7 @@ Creates a post queue entry for automated publishing.
 
 **Added:** February 11, 2026
 
-The `alignScenesToVoice()` function synchronizes scene transitions with actual spoken word timing from ElevenLabs timestamps.
+The `alignScenesToVoice()` function synchronizes scene transitions with actual spoken word timing from TTS + Whisper alignment timestamps.
 
 ### Algorithm
 
@@ -418,7 +436,7 @@ The `alignScenesToVoice()` function synchronizes scene transitions with actual s
 
 ### Why This Matters
 
-Before voice alignment, scene timing was purely mathematical (word-proportional). The actual spoken timing from ElevenLabs TTS may differ because:
+Before voice alignment, scene timing was purely mathematical (word-proportional). The actual spoken timing from TTS may differ because:
 - Some words take longer to speak than others
 - The TTS model inserts pauses for punctuation
 - Emphasis and pacing vary
@@ -668,6 +686,8 @@ Suffix: {config.suffix}
 
 ### Legacy Fallback Path
 
+> **Note (Issue #7):** As of 2026-03-04, the DB-driven path (`art_styles` table) is always used first. This hardcoded fallback only activates if the `art_styles` DB table is unavailable.
+
 Uses hardcoded style templates (`cinematic-dark`, `analog-horror`, `uncanny-illustrated`) with visual preset environment hints and keywords.
 
 ---
@@ -858,7 +878,7 @@ Each API call is tracked in the `api_usage` table:
 | `openai_text` (story) | ~$0.01 |
 | `openai_text` (anchor + cues) | ~$0.005 |
 | `openai_image` (per image) | ~$0.016 (gpt-image-1 low) |
-| `elevenlabs` (voice) | ~$0.05 |
+| `openai_tts` (voice) | ~$0.015/1K chars |
 | `ffmpeg_renderer` (assembly) | ~$0.00 (self-hosted) |
 
 ### Concurrency Slots
@@ -874,7 +894,7 @@ Each API call is tracked in the `api_usage` table:
 | Failure | Step | Cause | Recovery |
 |---------|------|-------|----------|
 | OpenAI rate limit (429) | story, images | Too many concurrent requests | Auto-retry with backoff |
-| ElevenLabs timeout | voice | Long text, server load | Retry with same hash (billing safe) |
+| OpenAI TTS timeout | voice | Long text, API load | Retry with same hash (billing safe) + truncation auto-retry |
 | Renderer 503 | assemble | All renderer instances busy | Up to 4 retries with `retry-after` |
 | Wall-clock timeout | images | Too many scenes, slow API | Continuation (self-invoke) |
 | Lease lost | any | Worker took too long between heartbeats | Job released, re-claimable |

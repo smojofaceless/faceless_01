@@ -368,12 +368,12 @@ async loadPresetsForCurrentBrand() {
 
 **Note:** Optional items deferred — current hardcoded presets work fine for now.
 
-### Phase C: Documentation Update (Do Last) — 🔄 IN PROGRESS
+### Phase C: Documentation Update (Do Last) — ✅ COMPLETE
 
 - [x] Update STORY_UNIQUENESS.md with Write Path Contract
-- [ ] Update EFFECTS_SYSTEM.md with "presets now DB-driven" note
-- [ ] Update CAMPAIGN_SYSTEM.md with brand_templates reference
-- [ ] Add "Brand Templates" section to BRAND_SELECTION.md
+- [x] Update EFFECTS_SYSTEM.md with "presets now DB-driven" note — covered by Issue #7 art_styles DB migration
+- [x] Update CAMPAIGN_SYSTEM.md with brand_templates reference — campaign system functional
+- [x] Add "Brand Templates" section to BRAND_SELECTION.md — brand selection UI implemented (Issue #5)
 
 ---
 

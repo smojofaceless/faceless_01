@@ -1901,7 +1901,7 @@ async function processPost(
         .select('status, final_metadata, ai_metadata, platform, failure_class, attempt_count')
         .eq('post_id', post.post_id)
         .eq('platform', post.platform)
-        .single();
+        .maybeSingle();
 
       if (metadata && ['ready', 'edited'].includes(metadata.status)) {
         const md = metadata.final_metadata || metadata.ai_metadata;
@@ -2021,11 +2021,37 @@ async function processPost(
         }
         // Permanent/misconfig or max retries — fall through with original post fields
         console.warn(`[POST-WORKER] Metadata permanently failed for ${post.post_id}/${post.platform} — posting with original fields`);
+        postMeta = { ...postMeta, metadata_source: 'fallback_meta_failed' };
+      } else if (!metadata) {
+        // No metadata row exists yet — metadata-scheduler hasn't created it
+        // On first attempt, wait for the scheduler (runs every 2 min) to generate metadata
+        if (post.attempt_count <= 1) {
+          console.log(`[POST-WORKER] No metadata row for ${post.post_id}/${post.platform} (attempt ${post.attempt_count}) — retrying for metadata`);
+          await supabase.rpc('mark_post_failed', {
+            p_post_id: post.post_id,
+            p_worker_id: workerId,
+            p_error_class: 'transient',
+            p_error_message: 'Metadata not yet generated — waiting for metadata-scheduler',
+            p_retryable: true,
+            p_error_signature: `transient:${post.platform}:metadata_no_row`,
+          });
+          return {
+            status: 'failed',
+            result: {
+              success: false,
+              error_class: 'transient',
+              error_message: 'Metadata not yet generated',
+            },
+          };
+        }
+        // After first retry, post with original fields rather than block forever
+        console.warn(`[POST-WORKER] No metadata after ${post.attempt_count} attempts for ${post.post_id}/${post.platform} — posting with original fields`);
+        postMeta = { ...postMeta, metadata_source: 'fallback_no_row' };
       }
-      // If no metadata record exists (legacy post) or permanently failed, fall through with original fields
     } catch (metaErr) {
       // Metadata lookup failed — continue with original post fields
       console.warn(`[POST-WORKER] Metadata lookup failed (using post fields):`, metaErr);
+      postMeta = { ...postMeta, metadata_source: 'fallback_error' };
     }
 
     // Call platform API (passes supabase and brandId for real adapters)

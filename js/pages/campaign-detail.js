@@ -1024,7 +1024,7 @@ class CampaignDetailPage {
      * Pipeline steps in order
      */
     get pipelineSteps() {
-        return ['story', 'uniqueness', 'scenes', 'voice', 'music', 'images', 'subtitles', 'assemble', 'upload', 'schedule'];
+        return ['story', 'uniqueness', 'scenes', 'voice', 'music', 'images', 'img2vid', 'subtitles', 'assemble', 'upload', 'schedule'];
     }
 
     /**
@@ -1306,8 +1306,9 @@ class CampaignDetailPage {
         } catch { data.stepMeta = {}; }
         
         // Load assets for specific steps
-        if (['images', 'voice', 'music', 'subtitles', 'assemble'].includes(stepName)) {
-            const prefix = stepName === 'images' ? `${jobId}:image_generate` 
+        if (['images', 'img2vid', 'voice', 'music', 'subtitles', 'assemble'].includes(stepName)) {
+            const prefix = stepName === 'images' ? `${jobId}:image_generate`
+                         : stepName === 'img2vid' ? `${jobId}:img2vid`
                          : stepName === 'voice' ? `${jobId}:voice`
                          : stepName === 'music' ? `${jobId}:music`
                          : stepName === 'subtitles' ? `${jobId}:subtitle`
@@ -1320,6 +1321,17 @@ class CampaignDetailPage {
                 .like('idempotency_key', `${prefix}%`)
                 .order('created_at', { ascending: true });
             data.assets = assets || [];
+            
+            // For img2vid: also load source images so we can show side-by-side
+            if (stepName === 'img2vid') {
+                const { data: srcImages } = await supabase
+                    .from('job_assets')
+                    .select('*')
+                    .eq('job_id', jobId)
+                    .like('idempotency_key', `${jobId}:image_generate%`)
+                    .order('created_at', { ascending: true });
+                data.sourceImages = srcImages || [];
+            }
             
             // v3.0: Also load visual_cues and story_anchor for images step
             if (stepName === 'images') {
@@ -1339,6 +1351,18 @@ class CampaignDetailPage {
                         .eq('idempotency_key', `${jobId}:story_anchor`)
                         .maybeSingle();
                     data.storyAnchorFull = saAsset?.meta || null;
+                    
+                    // v8.0: Load character reference portrait (Issue #13)
+                    const { data: charRefAsset } = await supabase
+                        .from('job_assets')
+                        .select('meta, public_url')
+                        .eq('job_id', jobId)
+                        .eq('idempotency_key', `${jobId}:character_reference`)
+                        .maybeSingle();
+                    data.characterReference = charRefAsset ? {
+                        url: charRefAsset.public_url,
+                        ...charRefAsset.meta,
+                    } : null;
                 } catch { /* non-critical */ }
             }
         }
@@ -1427,6 +1451,7 @@ class CampaignDetailPage {
             case 'voice': html += this.renderVoiceDetail(data); break;
             case 'music': html += this.renderMusicDetail(data); break;
             case 'images': html += this.renderImagesDetail(data); break;
+            case 'img2vid': html += this.renderImg2VidDetail(data); break;
             case 'subtitles': html += this.renderSubtitlesDetail(data); break;
             case 'assemble': html += this.renderAssembleDetail(data); break;
             case 'upload': html += this.renderUploadDetail(data); break;
@@ -1539,8 +1564,24 @@ class CampaignDetailPage {
         
         // Story Anchor (loaded from job asset)  
         if (data.storyAnchorFull) {
-            const sa = data.storyAnchorFull;
-            this._storyAnchorText = JSON.stringify(sa, null, 2);
+            let sa = data.storyAnchorFull;
+            // Defensive: handle meta returned as string (JSONB edge case)
+            if (typeof sa === 'string') {
+                try { sa = JSON.parse(sa); } catch { sa = {}; }
+            }
+            // Defensive: unwrap if nested under .meta
+            if (!sa.environment && sa.meta && typeof sa.meta === 'object' && sa.meta.environment) {
+                sa = sa.meta;
+            }
+            console.log('[DEBUG] Story anchor data:', sa);
+            try {
+                this._storyAnchorText = JSON.stringify(sa, null, 2);
+            } catch {
+                this._storyAnchorText = '{error: "Could not serialize story anchor"}';
+            }
+            // Handle both horrorTone and genreTone (GPT may use either depending on preset)
+            const tone = sa.horrorTone || sa.genreTone || sa.horror_tone || sa.genre_tone || '-';
+            const toneLabel = sa.horrorTone ? 'Horror Tone' : (sa.genreTone ? 'Genre Tone' : 'Tone');
             html += `<div class="step-detail__section">
                 <div class="step-detail__label">🎯 Story Anchor (Visual Bible)
                     <button class="step-detail__copy-btn" onclick="window.campaignDetailPage.copyToClipboard(window.campaignDetailPage._storyAnchorText, this)">📋 Copy</button>
@@ -1552,8 +1593,8 @@ class CampaignDetailPage {
                     <span class="step-detail__kv-val">${this.escapeHtml(this.formatCharacterDescription(sa.characterDescription))}</span>
                     <span class="step-detail__kv-key">Recurring Motifs</span>
                     <span class="step-detail__kv-val">${this.escapeHtml(sa.recurringMotifs || '-')}</span>
-                    <span class="step-detail__kv-key">Horror Tone</span>
-                    <span class="step-detail__kv-val">${this.escapeHtml(sa.horrorTone || '-')}</span>
+                    <span class="step-detail__kv-key">${toneLabel}</span>
+                    <span class="step-detail__kv-val">${this.escapeHtml(tone)}</span>
                     <span class="step-detail__kv-key">Time of Day</span>
                     <span class="step-detail__kv-val">${this.escapeHtml(sa.timeOfDay || '-')}</span>
                     <span class="step-detail__kv-key">Group Story</span>
@@ -1678,7 +1719,7 @@ class CampaignDetailPage {
         const tips = [];
         if (score !== '-') {
             // Concept-level checks
-            if (!storyConcept && !setting) {
+            if (!concept && !setting) {
                 tips.push({ icon: '🎯', area: 'Concept Metadata', tip: 'Story has no extracted setting or concept — the uniqueness check fell back to full-text hashing. Richer concept metadata would enable smarter thematic comparison.' });
             }
             if (hasCollision) {
@@ -1922,8 +1963,13 @@ class CampaignDetailPage {
         // Also look for visual_cues snapshot for type distribution info
         const vcSnap = data.snapshots.find(s => s.message?.includes('Visual cues'));
         const vcData = vcSnap?.meta?.payload || vcSnap?.meta?.data || vcSnap?.meta || {};
-        const storyAnchorInfo = vcData.story_anchor || null;
+        // v7.0: Story anchor — prefer job_assets (always available) over snapshot logs (sparse)
+        const storyAnchorInfo = vcData.story_anchor || data.storyAnchorFull || null;
         const sceneTypeDistribution = vcData.scene_type_distribution || null;
+        
+        // v7.0: Derive image size from model when snapshot is missing
+        const imageModel = promptData.model || data.stepMeta?.image_model || job.meta?.image_model || '-';
+        const derivedSize = promptData.size || ({'gpt-image-1': '1024x1536', 'dall-e-3': '1024x1792', 'dall-e-2': '1024x1024', 'comfyui': '1024x1536'}[imageModel] || '-');
         
         // Image sequence manifest
         const imageSequence = job.meta?.image_sequence || [];
@@ -1938,13 +1984,17 @@ class CampaignDetailPage {
             </div>
             <div class="step-detail__kv-grid">
                 <span class="step-detail__kv-key">Model</span>
-                <span class="step-detail__kv-val">${promptData.model || data.stepMeta?.image_model || job.meta?.image_model || '-'}</span>
+                <span class="step-detail__kv-val">${imageModel}</span>
                 <span class="step-detail__kv-key">Size</span>
-                <span class="step-detail__kv-val">${promptData.size || '-'}</span>
+                <span class="step-detail__kv-val">${derivedSize}</span>
                 <span class="step-detail__kv-key">Generated</span>
                 <span class="step-detail__kv-val">${imageAssets.length} / ${totalScenes}</span>
                 <span class="step-detail__kv-key">Story Anchor</span>
                 <span class="step-detail__kv-val">${storyAnchorInfo ? '✅ Used' : '❌ Not used'}</span>
+                <span class="step-detail__kv-key">Char Reference</span>
+                <span class="step-detail__kv-val">${data.characterReference?.url 
+                    ? '✅ <a href="' + data.characterReference.url + '" target="_blank" style="color:var(--color-accent)">View Portrait</a>'
+                    : '— None'}</span>
                 <span class="step-detail__kv-key">Voice Aligned</span>
                 <span class="step-detail__kv-val">${hasVoiceAlignment 
                     ? '<span class="voice-aligned-badge voice-aligned-badge--yes">🎙️ Yes</span>' 
@@ -1968,15 +2018,19 @@ class CampaignDetailPage {
                         const mood = entry.moodLevel || 0;
                         const color = mood >= 7 ? '#EF4444' : mood >= 4 ? '#F59E0B' : '#3B82F6';
                         const isMulti = entry.subIndex > 0;
-                        return `<div class="duration-bar" style="height:${pct}%;background:${color}${isMulti ? ';border:1px dashed rgba(255,255,255,0.3)' : ''}">
-                            <div class="duration-bar__tooltip">S${entry.sceneIndex + 1}${isMulti ? '.' + (entry.subIndex + 1) : ''}: ${dur}s · mood ${mood}</div>
+                        const isAnimated = entry.animate === true;
+                        const motionLabel = entry.motionType || '';
+                        return `<div class="duration-bar${isAnimated ? ' duration-bar--animated' : ''}" style="height:${pct}%;background:${color}${isMulti ? ';border:1px dashed rgba(255,255,255,0.3)' : ''}">
+                            <div class="duration-bar__tooltip">S${entry.sceneIndex + 1}${isMulti ? '.' + (entry.subIndex + 1) : ''}: ${dur}s · mood ${mood}${isAnimated ? ' · 🎬 ' + motionLabel : ''}</div>
+                            ${isAnimated ? '<div class="duration-bar__anim-dot" title="Designed for animation: ' + motionLabel + '">🎬</div>' : ''}
                         </div>`;
                     }).join('')}
                 </div>
-                <div style="display:flex;gap:12px;font-size:10px;color:var(--text-secondary);margin-top:4px">
+                <div style="display:flex;gap:12px;font-size:10px;color:var(--text-secondary);margin-top:4px;flex-wrap:wrap">
                     <span style="display:flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:#3B82F6"></span> Gentle (1-3)</span>
                     <span style="display:flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:#F59E0B"></span> Building (4-6)</span>
                     <span style="display:flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:#EF4444"></span> Intense (7-10)</span>
+                    <span style="display:flex;align-items:center;gap:3px"><span style="font-size:10px">🎬</span> Animation Intent</span>
                 </div>
             </div>`;
             
@@ -1987,28 +2041,52 @@ class CampaignDetailPage {
                     ${imageSequence.map((entry, i) => {
                         const mood = entry.moodLevel || 0;
                         const cls = mood >= 7 ? 'mood-pill--high' : mood >= 4 ? 'mood-pill--mid' : 'mood-pill--low';
-                        return `<span class="mood-pill ${cls}" title="Scene ${entry.sceneIndex + 1}${entry.subIndex > 0 ? '.' + (entry.subIndex + 1) : ''}: mood ${mood}">${mood}</span>`;
+                        const animCls = entry.animate ? ' mood-pill--animate' : '';
+                        const animTitle = entry.animate ? ` · 🎬 ${entry.motionType || 'animated'}` : '';
+                        return `<span class="mood-pill ${cls}${animCls}" title="Scene ${entry.sceneIndex + 1}${entry.subIndex > 0 ? '.' + (entry.subIndex + 1) : ''}: mood ${mood}${animTitle}">${mood}</span>`;
                     }).join('')}
                 </div>
             </div>`;
         }
         
-        // Story Anchor details (if available)
-        if (storyAnchorInfo) {
-            this._imagesStoryAnchorText = JSON.stringify(storyAnchorInfo, null, 2);
+        // Story Anchor details — use full anchor from job_assets (data.storyAnchorFull),
+        // NOT the snapshot summary (storyAnchorInfo) which only has truncated/boolean fields
+        const anchorSource = data.storyAnchorFull || storyAnchorInfo;
+        if (anchorSource) {
+            let sa = anchorSource;
+            // Defensive: handle meta returned as string
+            if (typeof sa === 'string') {
+                try { sa = JSON.parse(sa); } catch { sa = {}; }
+            }
+            // Defensive: unwrap if nested under .meta
+            if (!sa.environment && sa.meta && typeof sa.meta === 'object' && sa.meta.environment) {
+                sa = sa.meta;
+            }
+            console.log('[DEBUG] Images step story anchor data:', sa);
+            try {
+                this._imagesStoryAnchorText = JSON.stringify(sa, null, 2);
+            } catch {
+                this._imagesStoryAnchorText = '{error: "Could not serialize"}';
+            }
+            const tone = sa.horrorTone || sa.genreTone || sa.horror_tone || sa.genre_tone || '-';
+            const toneLabel = sa.horrorTone ? 'Horror Tone' : (sa.genreTone ? 'Genre Tone' : 'Tone');
             html += `<div class="step-detail__section">
                 <div class="step-detail__label">🎯 Story Anchor
                     <button class="step-detail__copy-btn" onclick="window.campaignDetailPage.copyToClipboard(window.campaignDetailPage._imagesStoryAnchorText, this)">📋 Copy</button>
                 </div>
                 <div class="step-detail__kv-grid">
                     <span class="step-detail__kv-key">Environment</span>
-                    <span class="step-detail__kv-val">${this.escapeHtml(storyAnchorInfo.environment || '-')}</span>
-                    <span class="step-detail__kv-key">Horror Tone</span>
-                    <span class="step-detail__kv-val">${storyAnchorInfo.horrorTone || '-'}</span>
+                    <span class="step-detail__kv-val">${this.escapeHtml(sa.environment || '-')}</span>
+                    <span class="step-detail__kv-key">Character(s)</span>
+                    <span class="step-detail__kv-val">${this.escapeHtml(this.formatCharacterDescription(sa.characterDescription))}</span>
+                    <span class="step-detail__kv-key">Recurring Motifs</span>
+                    <span class="step-detail__kv-val">${this.escapeHtml(sa.recurringMotifs || '-')}</span>
+                    <span class="step-detail__kv-key">${toneLabel}</span>
+                    <span class="step-detail__kv-val">${this.escapeHtml(tone)}</span>
+                    <span class="step-detail__kv-key">Time of Day</span>
+                    <span class="step-detail__kv-val">${this.escapeHtml(sa.timeOfDay || '-')}</span>
                     <span class="step-detail__kv-key">Group Story</span>
-                    <span class="step-detail__kv-val">${storyAnchorInfo.isGroupStory ? `Yes (${storyAnchorInfo.groupCount || '?'} people)` : 'No'}</span>
-                    <span class="step-detail__kv-key">Character</span>
-                    <span class="step-detail__kv-val">${storyAnchorInfo.hasCharacterDescription ? '✅ Described' : '❌ None'}</span>
+                    <span class="step-detail__kv-val">${sa.isGroupStory ? `Yes (${sa.groupCount || '?'} people)` : 'No'}</span>
                 </div>
             </div>`;
         }
@@ -2020,13 +2098,14 @@ class CampaignDetailPage {
                     <button class="step-detail__copy-btn" onclick="window.campaignDetailPage.copyVisualCues(this)">📋 Copy</button>
                 </div>
                 <div style="max-height:200px;overflow-y:auto">
-                    ${data.visualCues.map((vc, i) => `
-                        <div style="padding:4px 8px;margin-bottom:2px;font-size:11px;background:var(--bg-primary);border-radius:3px;display:flex;gap:8px;align-items:flex-start">
+                    ${data.visualCues.map((vc, i) => {
+                        const animBadge = vc.animate ? `<span class="vc-anim-badge" title="${this.escapeHtml(vc.animationHint || vc.motionType || 'animated')}">🎬 ${this.escapeHtml(vc.motionType || 'anim')}</span>` : '';
+                        return `<div style="padding:4px 8px;margin-bottom:2px;font-size:11px;background:var(--bg-primary);border-radius:3px;display:flex;gap:8px;align-items:flex-start${vc.animate ? ';border-left:2px solid #A855F7' : ''}">
                             <strong style="color:var(--text-secondary);min-width:20px">S${(vc.sceneIndex ?? i) + 1}</strong>
                             <span style="color:var(--text-primary);flex:1">${this.escapeHtml(vc.description || '-')}</span>
-                            <span style="font-size:10px;color:var(--text-secondary);white-space:nowrap">${vc.sceneType || '-'} · ${vc.camera || '-'}${vc.isClimax ? ' · 🔥' : ''}</span>
-                        </div>
-                    `).join('')}
+                            <span style="font-size:10px;color:var(--text-secondary);white-space:nowrap">${vc.sceneType || '-'} · ${vc.camera || '-'}${vc.isClimax ? ' · 🔥' : ''}${animBadge ? ' ' + animBadge : ''}</span>
+                        </div>`;
+                    }).join('')}
                 </div>
             </div>`;
         }
@@ -2040,6 +2119,25 @@ class CampaignDetailPage {
                         const colors = { establishing: '#6366F1', object: '#F59E0B', atmosphere: '#10B981', character: '#3B82F6', group: '#EF4444' };
                         return `<span style="background:${colors[type] || '#6B7280'}20;color:${colors[type] || '#6B7280'};padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600">${type}: ${count}</span>`;
                     }).join('')}
+                </div>
+            </div>`;
+        }
+        
+        // v8.0: Consistency audit results
+        const consistencySnap = data.snapshots.find(s => s.message?.includes('Consistency audit') || s.message?.includes('consistency_audit'));
+        const consistencyData = consistencySnap?.meta?.payload || consistencySnap?.meta?.data || consistencySnap?.meta || {};
+        const consistencyFixes = consistencyData.fixes || [];
+        if (consistencyFixes.length > 0) {
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">🔧 Continuity Fixes (${consistencyFixes.length})</div>
+                <div style="max-height:200px;overflow-y:auto">
+                    ${consistencyFixes.map(f => `
+                        <div style="padding:6px 8px;margin-bottom:4px;font-size:11px;background:var(--bg-primary);border-radius:4px;border-left:3px solid #F59E0B">
+                            <div style="font-weight:600;color:#F59E0B;margin-bottom:2px">S${(f.scene ?? 0) + 1}: ${this.escapeHtml(f.issue || 'continuity fix')}</div>
+                            <div style="color:var(--text-secondary)"><span style="text-decoration:line-through">${this.escapeHtml((f.before || '').substring(0, 120))}</span></div>
+                            <div style="color:var(--text-primary);margin-top:2px">→ ${this.escapeHtml((f.after || '').substring(0, 120))}</div>
+                        </div>
+                    `).join('')}
                 </div>
             </div>`;
         }
@@ -2060,9 +2158,10 @@ class CampaignDetailPage {
             this._imageAssets = imageAssets;
             this._imagePromptSnapshots = data.snapshots.filter(s => s.message?.includes('prompt'));
             this._imageScenes = data.scenesData || [];
-            this._imageStoryAnchor = storyAnchorInfo;
+            this._imageStoryAnchor = data.storyAnchorFull || storyAnchorInfo;
             this._imageSequence = imageSequence;
             this._visualCues = data.visualCues || [];
+            this._characterReference = data.characterReference || null;
             
             html += `<div class="step-detail__section">
                 <div class="step-detail__label">🎨 Generated Images (${imageAssets.length}) <span style="font-size:11px;color:var(--text-secondary);font-weight:normal">— click for details</span></div>
@@ -2072,8 +2171,11 @@ class CampaignDetailPage {
                         const seqEntry = imageSequence.find(e => e.sceneIndex === sceneIdx && (e.subIndex || 0) === 0);
                         const dur = seqEntry ? seqEntry.duration.toFixed(1) + 's' : '';
                         const mood = seqEntry ? seqEntry.moodLevel : '';
-                        return `<div class="step-detail__image-item step-detail__image-item--clickable" data-scene-index="${sceneIdx}" onclick="window.campaignDetailPage.showImageDetail(${sceneIdx})">
+                        const isAnimIntent = seqEntry?.animate === true;
+                        const motionType = seqEntry?.motionType || '';
+                        return `<div class="step-detail__image-item step-detail__image-item--clickable${isAnimIntent ? ' step-detail__image-item--animate' : ''}" data-scene-index="${sceneIdx}" onclick="window.campaignDetailPage.showImageDetail(${sceneIdx})">
                             <img src="${a.public_url}" alt="Scene ${sceneIdx + 1}" loading="lazy">
+                            ${isAnimIntent ? '<div class="step-detail__image-item__anim-badge" title="Designed for animation: ' + motionType + '">🎬 ' + motionType + '</div>' : ''}
                             <div class="step-detail__image-item__label">S${sceneIdx + 1}${dur ? ' · ' + dur : ''}${mood ? ' · M' + mood : ''}</div>
                         </div>`;
                     }).join('')}
@@ -2121,7 +2223,10 @@ class CampaignDetailPage {
         
         // Build prompt — from snapshot or from asset meta
         const prompt = snapData.prompt || meta.prompt || 'Prompt not recorded for this scene';
-        const visualCue = snapData.visual_cue || null;
+        // v7.0: Visual cue — prefer snapshot data, fall back to visual_cues job asset (always has ALL scenes)
+        const allVisualCues = this._visualCues || [];
+        const assetVisualCue = allVisualCues.find(vc => vc.sceneIndex === sceneIndex);
+        const visualCue = snapData.visual_cue || (assetVisualCue ? { type: assetVisualCue.sceneType, sceneType: assetVisualCue.sceneType, camera: assetVisualCue.camera, description: assetVisualCue.description, isClimax: assetVisualCue.isClimax } : null);
         const artStyle = meta.art_style || snapData.art_style || '-';
         const imageModel = meta.image_model || snapData.model || '-';
         
@@ -2162,6 +2267,27 @@ class CampaignDetailPage {
                                 ${meta.prompt_hash ? `<span>Prompt Hash</span><span style="font-family:monospace;font-size:11px">${meta.prompt_hash.substring(0, 16)}...</span>` : ''}
                             </div>
                         </div>
+                        ${(() => {
+                            const anchor = this._imageStoryAnchor;
+                            if (!anchor) return '';
+                            return `
+                        <div class="image-detail-modal__section">
+                            <div class="image-detail-modal__label">🎯 Story Anchor (Consistency Context)</div>
+                            <div class="image-detail-modal__kv">
+                                <span>Environment</span><span style="font-size:12px">${this.escapeHtml(anchor.environment || '-')}</span>
+                                <span>Character(s)</span><span style="font-size:12px">${this.escapeHtml(anchor.characterDescription || '-')}</span>
+                                <span>Horror Tone</span><span style="font-size:12px">${this.escapeHtml(anchor.horrorTone || '-')}</span>
+                                <span>Time of Day</span><span style="font-size:12px">${this.escapeHtml(anchor.timeOfDay || '-')}</span>
+                                <span>Motifs</span><span style="font-size:12px">${this.escapeHtml(anchor.recurringMotifs || '-')}</span>
+                                <span>Group Story</span><span>${anchor.isGroupStory ? 'Yes (' + (anchor.groupCount || '?') + ' characters)' : 'No (solo)'}</span>
+                                <span>Ref Image</span><span>${this._characterReference?.url 
+                                    ? (meta.character_reference_used 
+                                        ? '✅ <a href="' + this._characterReference.url + '" target="_blank" style="color:var(--color-accent)">Used for this scene</a>' 
+                                        : '📷 <a href="' + this._characterReference.url + '" target="_blank" style="color:var(--text-secondary)">Available (not used for ' + (visualCue?.sceneType || 'this') + ' scene)</a>')
+                                    : '<span style="color:var(--text-secondary);font-style:italic">None — text-only anchoring</span>'}</span>
+                            </div>
+                        </div>`;
+                        })()}
                         ${visualCue ? `
                         <div class="image-detail-modal__section">
                             <div class="image-detail-modal__label">👁️ Visual Cue</div>
@@ -2210,6 +2336,559 @@ class CampaignDetailPage {
         return html;
     }
 
+    renderImg2VidDetail(data) {
+        const resultSnap = data.snapshots.find(s => s.message?.includes('img2vid') || s.message?.includes('result'));
+        const configSnap = data.snapshots.find(s => s.message?.includes('config') || s.message?.includes('starting'));
+        const resultData = resultSnap?.meta?.payload || resultSnap?.meta?.data || resultSnap?.meta || {};
+        const configData = configSnap?.meta?.payload || configSnap?.meta?.data || configSnap?.meta || {};
+        const job = data.job || {};
+        const assets = data.assets || [];
+        const sourceImages = data.sourceImages || [];
+        const progress = data.progress || [];
+        
+        // Read config from various sources
+        const videoMode = resultData.video_mode || configData.video_mode || job.meta?.video_mode || 'static';
+        const workflow = resultData.workflow || configData.workflow || job.meta?.img2vid_workflow || '-';
+        const motionStrength = resultData.motion_strength ?? configData.motion_strength ?? job.meta?.img2vid_motion ?? '-';
+        const fps = configData.fps || resultData.fps || job.meta?.img2vid_fps || 8;
+        const frames = configData.frames || resultData.frames || job.meta?.img2vid_frames || 25;
+        const totalScenes = resultData.total_scenes || configData.total_scenes || '-';
+        const completed = resultData.completed ?? '-';
+        const failed = resultData.failed ?? '-';
+        const skipped = resultData.skipped ?? resultData.clips_skipped ?? '-';
+        const clipCount = resultData.clips ?? assets.length ?? '-';
+        
+        // Get img2vid clip assets
+        const clipAssets = assets
+            .filter(a => a.idempotency_key?.includes('img2vid'))
+            .sort((a, b) => {
+                const aIdx = parseInt(a.idempotency_key?.match(/scene_(\d+)/)?.[1] || '0');
+                const bIdx = parseInt(b.idempotency_key?.match(/scene_(\d+)/)?.[1] || '0');
+                return aIdx - bIdx;
+            });
+        
+        // Build source image lookup map
+        const srcImageMap = {};
+        sourceImages.forEach(img => {
+            if (!img.public_url || !img.idempotency_key?.includes('image_generate')) return;
+            const m = img.idempotency_key.match(/scene_(\d+)/);
+            if (m) srcImageMap[parseInt(m[1])] = img.public_url;
+        });
+        
+        // Was it skipped?
+        const wasSkipped = data.status === 'completed' && (
+            videoMode !== 'img2vid' ||
+            resultData.reason === 'static_mode' ||
+            resultData.reason === 'vram_low' ||
+            resultData.reason === 'comfyui_offline' ||
+            resultData.reason === 'no_renderer_url' ||
+            resultData.reason === 'health_check_failed'
+        );
+        
+        // Decide skip reason label
+        const skipReasonLabels = {
+            static_mode: 'Video mode is "static" (Ken Burns pans)',
+            vram_low: `VRAM too low: ${resultData.vram_free || '?'}MB / ${resultData.vram_floor || '4096'}MB floor`,
+            comfyui_offline: 'ComfyUI server not reachable',
+            no_renderer_url: 'COMFYUI_RENDERER_URL not configured',
+            health_check_failed: 'ComfyUI health check failed'
+        };
+        
+        if (wasSkipped) {
+            const reason = resultData.reason || 'static_mode';
+            const reasonLabel = skipReasonLabels[reason] || reason;
+            let html = `<div class="step-detail__section">
+                <div class="step-detail__label">🎥 Image-to-Video (Skipped)</div>
+                <div class="step-detail__kv-grid">
+                    <span class="step-detail__kv-key">Status</span>
+                    <span class="step-detail__kv-val"><span class="step-detail__badge step-detail__badge--warning">Skipped</span></span>
+                    <span class="step-detail__kv-key">Reason</span>
+                    <span class="step-detail__kv-val">${this.escapeHtml(reasonLabel)}</span>
+                    <span class="step-detail__kv-key">Video Mode</span>
+                    <span class="step-detail__kv-val">${videoMode}</span>
+                    <span class="step-detail__kv-key">Fallback</span>
+                    <span class="step-detail__kv-val">Ken Burns pan/zoom (static)</span>
+                </div>
+            </div>`;
+            
+            if (reason === 'vram_low') {
+                html += `<div class="step-detail__section">
+                    <div class="img2vid-tip">
+                        <strong>💡 Tip:</strong> Free VRAM by closing other GPU applications or restart ComfyUI before the next campaign.
+                        Required: ≥${resultData.vram_floor || 4096}MB free VRAM.
+                    </div>
+                </div>`;
+            }
+            
+            return html;
+        }
+        
+        // Active img2vid run — show full details
+        const workflowLabel = workflow.includes('animatediff') ? 'AnimateDiff' : workflow.includes('svd') ? 'SVD-XT' : workflow;
+        const statusLabel = completed > 0 && failed === 0 ? '✅ All clips generated'
+            : completed > 0 && failed > 0 ? `⚠️ Partial (${failed} failed → Ken Burns fallback)`
+            : failed > 0 ? '❌ All failed (Ken Burns fallback)'
+            : '⏳ In progress...';
+        
+        let html = `<div class="step-detail__section">
+            <div class="step-detail__label">🎥 Image-to-Video Generation
+                <button class="step-detail__copy-btn" onclick="window.campaignDetailPage.copyImg2VidSummary(this)">📋 Copy Summary</button>
+            </div>
+            <div class="step-detail__kv-grid">
+                <span class="step-detail__kv-key">Video Mode</span>
+                <span class="step-detail__kv-val"><span class="img2vid-mode-badge">img2vid</span></span>
+                <span class="step-detail__kv-key">Workflow</span>
+                <span class="step-detail__kv-val"><span class="img2vid-workflow-badge img2vid-workflow-badge--${workflow.includes('animatediff') ? 'animatediff' : 'svd'}">${workflowLabel}</span></span>
+                <span class="step-detail__kv-key">Motion Strength</span>
+                <span class="step-detail__kv-val">${motionStrength}</span>
+                <span class="step-detail__kv-key">FPS / Frames</span>
+                <span class="step-detail__kv-val">${fps} fps · ${frames} frames</span>
+                <span class="step-detail__kv-key">Result</span>
+                <span class="step-detail__kv-val">${statusLabel}</span>
+            </div>
+        </div>`;
+        
+        // Clip stats
+        html += `<div class="step-detail__section">
+            <div class="step-detail__label">📊 Clip Statistics</div>
+            <div class="img2vid-stats-grid">
+                <div class="img2vid-stat img2vid-stat--total">
+                    <div class="img2vid-stat__value">${totalScenes}</div>
+                    <div class="img2vid-stat__label">Total Scenes</div>
+                </div>
+                <div class="img2vid-stat img2vid-stat--success">
+                    <div class="img2vid-stat__value">${completed}</div>
+                    <div class="img2vid-stat__label">Clips Generated</div>
+                </div>
+                <div class="img2vid-stat img2vid-stat--error">
+                    <div class="img2vid-stat__value">${failed}</div>
+                    <div class="img2vid-stat__label">Failed</div>
+                </div>
+                <div class="img2vid-stat img2vid-stat--skip">
+                    <div class="img2vid-stat__value">${skipped}</div>
+                    <div class="img2vid-stat__label">Skipped</div>
+                </div>
+            </div>
+        </div>`;
+        
+        // ── LIVE PROGRESS PANEL (while generating) ──
+        // Find the latest rendering progress event to show real-time status
+        const renderingProgress = [...progress].reverse().find(p => 
+            p.meta?.status === 'rendering' || p.meta?.stage || p.meta?.progress_pct > 0
+        );
+        const latestProgress = [...progress].reverse()[0];
+        const isGenerating = data.status === 'running';
+        
+        if (isGenerating && latestProgress) {
+            const lastMeta = latestProgress.meta || {};
+            const currentScene = lastMeta.scene_index ?? '?';
+            const stageName = lastMeta.stage || lastMeta.status || 'processing';
+            const pctVal = lastMeta.progress_pct ?? 0;
+            const stepCur = lastMeta.progress_step || 0;
+            const stepMax = lastMeta.progress_max || 0;
+            const motionPr = lastMeta.motion_prompt || '';
+            const animScoreVal = lastMeta.animation_score;
+            const elapsedMs = lastMeta.elapsed_ms || 0;
+            
+            // Calculate ETA based on completed clip generation times
+            const completedGenTimes = clipAssets
+                .map(a => (a.meta || a.metadata || {}).generation_time_ms)
+                .filter(t => t && t > 0);
+            const avgGenTime = completedGenTimes.length > 0 
+                ? Math.round(completedGenTimes.reduce((a, b) => a + b, 0) / completedGenTimes.length)
+                : 0;
+            const etaStr = avgGenTime > 0 && elapsedMs > 0
+                ? `~${Math.max(0, Math.round((avgGenTime - elapsedMs) / 1000))}s`
+                : avgGenTime > 0
+                ? `~${Math.round(avgGenTime / 1000)}s`
+                : '';
+            
+            // Progress states in pipeline: dispatching → loading_model → generating → upscaling → uploading → done
+            const stageLabels = {
+                dispatching: '📤 Dispatching',
+                loading_model: '⏳ Loading Model',
+                generating: '🎬 Generating',
+                upscaling: '🔍 Upscaling',
+                uploading: '☁️ Uploading',
+                running: '🔄 Running',
+                rendering: '🎬 Rendering',
+                queued: '📋 Queued',
+            };
+            const stageLabel = stageLabels[stageName] || `🔄 ${stageName}`;
+            
+            // List scenes: completed, current, pending
+            const completedScenesList = clipAssets
+                .map(a => 'S' + ((a.meta || a.metadata || {}).scene_index + 1))
+                .join(' ');
+            const totalSelected = job.meta?.img2vid_selected_scenes?.length || selectedSceneIndices?.size || '?';
+            
+            html += `<div class="step-detail__section img2vid-live-progress">
+                <div class="step-detail__label">🎥 Generating Clip ${typeof completed !== 'undefined' && completed !== '-' ? (completed + 1) : '?'}/${totalSelected}</div>
+                <div class="img2vid-progress-card">
+                    <div class="img2vid-progress-card__header">
+                        <span class="img2vid-progress-card__scene">Scene ${currentScene + 1}</span>
+                        <span class="img2vid-progress-card__stage">${stageLabel}</span>
+                    </div>
+                    <div class="img2vid-progress-bar-container">
+                        <div class="img2vid-progress-bar" style="width:${Math.max(2, pctVal)}%"></div>
+                        <span class="img2vid-progress-bar__label">${pctVal > 0 ? `${pctVal}%` : stageName}${stepMax > 0 ? ` (${stepCur}/${stepMax})` : ''}${etaStr ? `  ETA: ${etaStr}` : ''}</span>
+                    </div>
+                    ${motionPr ? `<div class="img2vid-progress-card__motion">
+                        <span class="img2vid-progress-card__motion-label">Motion:</span>
+                        <span class="img2vid-progress-card__motion-text">"${this.escapeHtml(motionPr)}"</span>
+                    </div>` : ''}
+                    ${animScoreVal !== undefined ? `<div class="img2vid-progress-card__score">
+                        <span class="img2vid-progress-card__score-label">Animation Score:</span>
+                        <span class="img2vid-progress-card__score-val">${animScoreVal}/20</span>
+                    </div>` : ''}
+                    <div class="img2vid-progress-card__footer">
+                        ${completedScenesList ? `<span class="img2vid-progress-card__done">✅ ${completedScenesList}</span>` : ''}
+                        <span class="img2vid-progress-card__current">🔄 S${currentScene + 1}</span>
+                    </div>
+                </div>
+            </div>`;
+        }
+        
+        // ── SCENE SELECTION TIMELINE ──
+        // Show the ▓░░▓ distribution pattern from scene selection
+        const selectionSnap = data.snapshots.find(s => s.message?.includes('scene_selection') || s.meta?.snapshot_type === 'scene_selection');
+        const selectionMeta = selectionSnap?.meta?.payload || selectionSnap?.meta?.data || selectionSnap?.meta || {};
+        const distribution = selectionMeta.distribution || job.meta?.img2vid_distribution || '';
+        const selectedScenes = selectionMeta.selected_scenes || job.meta?.img2vid_scene_scores?.filter(s => 
+            (job.meta?.img2vid_selected_scenes || []).includes(s.scene)
+        ) || [];
+        const sceneScores = job.meta?.img2vid_scene_scores || selectionMeta.selected_scenes?.concat(selectionMeta.skipped_scenes || []) || [];
+        
+        if (distribution || selectedScenes.length > 0) {
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">🎯 Scene Selection</div>`;
+            
+            if (distribution) {
+                html += `<div class="img2vid-timeline">
+                    <div class="img2vid-timeline__bar">
+                        ${distribution.split('').map((char, i) => {
+                            const isSelected = char === '▓';
+                            const scoreEntry = sceneScores.find(s => s.scene === i);
+                            const tooltip = scoreEntry ? `S${i + 1}: score=${scoreEntry.score} [${(scoreEntry.reasons || []).join(', ')}]` : `S${i + 1}`;
+                            return `<div class="img2vid-timeline__cell ${isSelected ? 'img2vid-timeline__cell--active' : ''}" title="${this.escapeHtml(tooltip)}">
+                                <span class="img2vid-timeline__cell-label">S${i + 1}</span>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                    <div class="img2vid-timeline__legend">
+                        <span class="img2vid-timeline__legend-item">
+                            <span class="img2vid-timeline__legend-dot img2vid-timeline__legend-dot--active"></span> Animated
+                        </span>
+                        <span class="img2vid-timeline__legend-item">
+                            <span class="img2vid-timeline__legend-dot img2vid-timeline__legend-dot--static"></span> Ken Burns
+                        </span>
+                    </div>
+                </div>`;
+            }
+            
+            // Show score breakdown for selected scenes
+            if (selectedScenes.length > 0) {
+                html += `<div class="img2vid-scores">
+                    ${selectedScenes.map(s => {
+                        const score = s.score || 0;
+                        const maxScore = 20;
+                        const barPct = Math.min(100, (score / maxScore) * 100);
+                        const color = score >= 12 ? '#10B981' : score >= 6 ? '#F59E0B' : '#EF4444';
+                        return `<div class="img2vid-score-row">
+                            <span class="img2vid-score-row__label">S${(s.scene ?? s.sceneIndex ?? 0) + 1}</span>
+                            <div class="img2vid-score-row__bar-bg">
+                                <div class="img2vid-score-row__bar" style="width:${barPct}%;background:${color}"></div>
+                            </div>
+                            <span class="img2vid-score-row__val">${score}</span>
+                            <span class="img2vid-score-row__reasons">${(s.reasons || []).slice(0, 3).join(', ')}</span>
+                        </div>`;
+                    }).join('')}
+                </div>`;
+            }
+            
+            html += `</div>`;
+        }
+        
+        // Generation time bar chart (like images step)
+        if (clipAssets.length > 1) {
+            const genTimes = clipAssets.map(a => {
+                const meta = a.meta || a.metadata || {};
+                return {
+                    sceneIndex: meta.scene_index ?? parseInt(a.idempotency_key?.match(/scene_(\d+)/)?.[1] || '0'),
+                    genTimeMs: meta.generation_time_ms || 0,
+                    duration: meta.duration_seconds || 0,
+                    frames: meta.frame_count || 0
+                };
+            });
+            const maxGenTime = Math.max(...genTimes.map(g => g.genTimeMs), 1);
+            
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">⚡ Generation Time per Clip</div>
+                <div class="duration-bar-chart">
+                    ${genTimes.map(g => {
+                        const secs = (g.genTimeMs / 1000).toFixed(1);
+                        const pct = Math.max(10, (g.genTimeMs / maxGenTime) * 100);
+                        const color = g.genTimeMs > 60000 ? '#EF4444' : g.genTimeMs > 30000 ? '#F59E0B' : '#10B981';
+                        return `<div class="duration-bar" style="height:${pct}%;background:${color}">
+                            <div class="duration-bar__tooltip">S${g.sceneIndex + 1}: ${secs}s · ${g.frames}f · ${g.duration.toFixed(1)}s clip</div>
+                        </div>`;
+                    }).join('')}
+                </div>
+                <div style="display:flex;gap:12px;font-size:10px;color:var(--text-secondary);margin-top:4px">
+                    <span style="display:flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:#10B981"></span> Fast (&lt;30s)</span>
+                    <span style="display:flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:#F59E0B"></span> Medium (30-60s)</span>
+                    <span style="display:flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:#EF4444"></span> Slow (&gt;60s)</span>
+                </div>
+            </div>`;
+        }
+        
+        // Side-by-side grid: Source image + Video clip (like the images grid but richer)
+        if (clipAssets.length > 0 || Object.keys(srcImageMap).length > 0) {
+            // Store for modal access
+            this._img2vidClipAssets = clipAssets;
+            this._img2vidSrcImageMap = srcImageMap;
+            
+            // Build a merged scene list: every scene that has either a source image or a clip
+            const allSceneIndices = new Set([
+                ...clipAssets.map(a => {
+                    const m = a.idempotency_key?.match(/scene_(\d+)/);
+                    return m ? parseInt(m[1]) : -1;
+                }).filter(i => i >= 0),
+                ...Object.keys(srcImageMap).map(Number)
+            ]);
+            const sortedScenes = [...allSceneIndices].sort((a, b) => a - b);
+            
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">🎬 Scene Clips (${clipAssets.length} generated) <span style="font-size:11px;color:var(--text-secondary);font-weight:normal">— click for details</span></div>
+                <div class="img2vid-card-grid">
+                    ${sortedScenes.map(sceneIdx => {
+                        const clip = clipAssets.find(a => {
+                            const m = a.idempotency_key?.match(/scene_(\d+)/);
+                            return m && parseInt(m[1]) === sceneIdx;
+                        });
+                        const srcUrl = srcImageMap[sceneIdx];
+                        const clipMeta = clip?.meta || clip?.metadata || {};
+                        const duration = clipMeta.duration_seconds ? `${Number(clipMeta.duration_seconds).toFixed(1)}s` : '';
+                        const genTime = clipMeta.generation_time_ms ? `${(clipMeta.generation_time_ms / 1000).toFixed(1)}s gen` : '';
+                        const frameCount = clipMeta.frame_count ? `${clipMeta.frame_count}f` : '';
+                        const hasClip = !!clip?.public_url;
+                        
+                        return `<div class="img2vid-card ${hasClip ? 'img2vid-card--has-clip' : 'img2vid-card--pending'}" onclick="window.campaignDetailPage.showImg2VidDetail(${sceneIdx})">
+                            <div class="img2vid-card__source">
+                                ${srcUrl 
+                                    ? `<img src="${srcUrl}" alt="Source S${sceneIdx + 1}" loading="lazy">`
+                                    : `<div class="img2vid-card__placeholder">No src</div>`}
+                            </div>
+                            <div class="img2vid-card__arrow">${hasClip ? '▶' : '⏳'}</div>
+                            <div class="img2vid-card__clip">
+                                ${hasClip 
+                                    ? `<video src="${clip.public_url}" preload="metadata" muted loop onmouseenter="this.play()" onmouseleave="this.pause();this.currentTime=0"></video>`
+                                    : `<div class="img2vid-card__placeholder">${data.status === 'running' ? '⏳ Generating...' : 'Ken Burns'}</div>`}
+                            </div>
+                            <div class="img2vid-card__label">
+                                <span class="img2vid-card__scene-num">S${sceneIdx + 1}</span>
+                                ${hasClip ? `<span class="img2vid-card__meta">${[duration, frameCount, genTime].filter(Boolean).join(' · ')}</span>` 
+                                          : `<span class="img2vid-card__meta img2vid-card__meta--pending">fallback</span>`}
+                            </div>
+                        </div>`;
+                    }).join('')}
+                </div>
+            </div>`;
+        }
+        
+        // img2vid_clips in job.meta (clip map used by assemble step) — only if no asset data
+        const clipMap = job.meta?.img2vid_clips || {};
+        const clipMapEntries = Object.entries(clipMap);
+        if (clipMapEntries.length > 0 && clipAssets.length === 0) {
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">🎬 Clip Map (${clipMapEntries.length} clips ready for render)</div>
+                <div class="img2vid-clips-list">
+                    ${clipMapEntries.map(([sceneIdx, clip]) => `<div class="img2vid-clip">
+                        <div class="img2vid-clip__header">
+                            <span class="img2vid-clip__scene">Scene ${parseInt(sceneIdx) + 1}</span>
+                            <span class="img2vid-clip__badge img2vid-clip__badge--success">✓ ready</span>
+                        </div>
+                        <div class="img2vid-clip__details">
+                            <span title="Duration">⏱ ${clip.duration ? clip.duration.toFixed(1) + 's' : '-'}</span>
+                        </div>
+                    </div>`).join('')}
+                </div>
+            </div>`;
+        }
+        
+        // Progress log
+        if (progress.length > 0) {
+            html += `<div class="step-detail__section">
+                <div class="step-detail__label">📈 Progress (${progress.length} updates)</div>
+                <div style="max-height:200px;overflow-y:auto;font-size:12px">
+                    ${progress.map(p => {
+                        const time = new Date(p.created_at).toLocaleTimeString();
+                        const icon = p.message?.includes('✓') ? '✅' : p.message?.includes('✕') ? '❌' : '🔄';
+                        return `<div style="padding:2px 0;color:var(--text-secondary)">${icon} ${time} — ${p.message || ''}</div>`;
+                    }).join('')}
+                </div>
+            </div>`;
+        }
+        
+        // Store for copy helper
+        this._img2vidSummary = {
+            video_mode: videoMode,
+            workflow: workflowLabel,
+            motion_strength: motionStrength,
+            fps, frames,
+            total_scenes: totalScenes,
+            completed,
+            failed,
+            skipped,
+            clips: clipAssets.map(a => ({
+                scene: a.meta?.scene_index,
+                duration: a.meta?.duration_seconds,
+                frames: a.meta?.frame_count,
+                gen_time_ms: a.meta?.generation_time_ms
+            }))
+        };
+        
+        return html;
+    }
+
+    /**
+     * Copy img2vid summary to clipboard
+     */
+    async copyImg2VidSummary(buttonEl) {
+        const summary = this._img2vidSummary || {};
+        const text = `=== IMG2VID Summary ===
+Video Mode: ${summary.video_mode || '-'}
+Workflow: ${summary.workflow || '-'}
+Motion Strength: ${summary.motion_strength || '-'}
+Total Scenes: ${summary.total_scenes || '-'}
+Clips Generated: ${summary.completed || 0}
+Failed: ${summary.failed || 0}
+Skipped: ${summary.skipped || 0}
+
+Clips:
+${(summary.clips || []).map((c, i) => `  Scene ${(c.scene ?? i) + 1}: ${c.duration ? c.duration.toFixed(1) + 's' : '-'}, ${c.frames || '-'} frames, gen ${c.gen_time_ms ? (c.gen_time_ms / 1000).toFixed(1) + 's' : '-'}`).join('\n')}`;
+        await this.copyToClipboard(text, buttonEl);
+    }
+
+    /**
+     * Show detailed modal for an img2vid clip (like showImageDetail)
+     */
+    showImg2VidDetail(sceneIndex) {
+        const clipAssets = this._img2vidClipAssets || [];
+        const srcImageMap = this._img2vidSrcImageMap || {};
+        const job = this.currentJob || {};
+        const scenes = job.meta?.scenes || [];
+        const imageSeq = job.meta?.image_sequence || [];
+        
+        const clip = clipAssets.find(a => {
+            const m = a.idempotency_key?.match(/scene_(\d+)/);
+            return m && parseInt(m[1]) === sceneIndex;
+        });
+        const srcUrl = srcImageMap[sceneIndex];
+        const clipMeta = clip?.meta || clip?.metadata || {};
+        const sceneData = scenes[sceneIndex] || {};
+        const seqEntry = imageSeq.find(s => s.sceneIndex === sceneIndex) || {};
+        const visualCue = seqEntry.visualCue || sceneData.visualCue || {};
+        
+        const duration = clipMeta.duration_seconds ? Number(clipMeta.duration_seconds).toFixed(1) + 's' : '-';
+        const frameCount = clipMeta.frame_count || '-';
+        const genTime = clipMeta.generation_time_ms ? (clipMeta.generation_time_ms / 1000).toFixed(1) + 's' : '-';
+        const wf = clipMeta.workflow || job.meta?.img2vid_workflow || '-';
+        const wfLabel = wf.includes('animatediff') ? 'AnimateDiff' : wf.includes('svd') ? 'SVD-XT' : wf;
+        const motion = clipMeta.motion_strength ?? job.meta?.img2vid_motion ?? '-';
+        const fps = clipMeta.fps || job.meta?.img2vid_fps || 8;
+        const frames = clipMeta.frames || job.meta?.img2vid_frames || 25;
+        const resolution = clipMeta.width && clipMeta.height ? `${clipMeta.width}×${clipMeta.height}` : '-';
+        const hasClip = !!clip?.public_url;
+        
+        const overlay = document.createElement('div');
+        overlay.className = 'image-detail-modal-overlay';
+        overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+        
+        overlay.innerHTML = `
+            <div class="image-detail-modal img2vid-detail-modal">
+                <div class="image-detail-modal__header">
+                    <h3>Scene ${sceneIndex + 1} — Img2Vid Details</h3>
+                    <button class="image-detail-modal__close" onclick="this.closest('.image-detail-modal-overlay').remove()">✕</button>
+                </div>
+                <div class="image-detail-modal__body img2vid-detail-modal__body">
+                    <div class="img2vid-detail-modal__media-col">
+                        ${srcUrl ? `
+                        <div class="img2vid-detail-modal__media-section">
+                            <div class="img2vid-detail-modal__media-label">📷 Source Image</div>
+                            <img src="${srcUrl}" alt="Source Scene ${sceneIndex + 1}" class="img2vid-detail-modal__source-img" />
+                            <button onclick="window.open('${srcUrl}', '_blank')" class="btn-secondary-sm" style="margin-top:6px">🔗 Open Full Size</button>
+                        </div>` : ''}
+                        ${hasClip ? `
+                        <div class="img2vid-detail-modal__media-section">
+                            <div class="img2vid-detail-modal__media-label">🎬 Generated Clip</div>
+                            <video src="${clip.public_url}" controls autoplay loop muted class="img2vid-detail-modal__video"></video>
+                            <button onclick="window.open('${clip.public_url}', '_blank')" class="btn-secondary-sm" style="margin-top:6px">🔗 Open Video</button>
+                        </div>` : `
+                        <div class="img2vid-detail-modal__media-section">
+                            <div class="img2vid-detail-modal__media-label">🎬 Video Clip</div>
+                            <div class="img2vid-detail-modal__no-clip">No clip generated — Ken Burns fallback</div>
+                        </div>`}
+                    </div>
+                    <div class="image-detail-modal__info-col">
+                        <div class="image-detail-modal__section">
+                            <div class="image-detail-modal__label">⚙️ Generation Config</div>
+                            <div class="image-detail-modal__kv">
+                                <span>Workflow</span><span>${this.escapeHtml(wfLabel)}</span>
+                                <span>Motion</span><span>${motion}</span>
+                                <span>FPS</span><span>${fps}</span>
+                                <span>Frames</span><span>${frames}</span>
+                                <span>Duration</span><span>${duration}</span>
+                                <span>Frame Count</span><span>${frameCount}</span>
+                                <span>Resolution</span><span>${resolution}</span>
+                                <span>Gen Time</span><span>${genTime}</span>
+                                ${clipMeta.vram_used ? `<span>VRAM Used</span><span>${clipMeta.vram_used}MB</span>` : ''}
+                                ${clipMeta.seed ? `<span>Seed</span><span style="font-family:monospace;font-size:11px">${clipMeta.seed}</span>` : ''}
+                                ${clipMeta.animation_score !== undefined ? `<span>Anim Score</span><span>${clipMeta.animation_score}/20</span>` : ''}
+                            </div>
+                        </div>
+                        ${clipMeta.motion_prompt ? `
+                        <div class="image-detail-modal__section">
+                            <div class="image-detail-modal__label">🎯 Motion Prompt</div>
+                            <p style="font-size:13px;color:var(--text-primary);line-height:1.5;font-style:italic">"${this.escapeHtml(clipMeta.motion_prompt)}"</p>
+                        </div>` : ''}
+                        ${clipMeta.animation_score !== undefined && clipMeta.animation_reasons?.length ? `
+                        <div class="image-detail-modal__section">
+                            <div class="image-detail-modal__label">📊 Animation Score: ${clipMeta.animation_score}/20</div>
+                            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
+                                ${clipMeta.animation_reasons.map(r => `<span style="display:inline-block;padding:2px 8px;border-radius:4px;background:var(--bg-secondary);font-size:11px;color:var(--text-secondary)">${this.escapeHtml(r)}</span>`).join('')}
+                            </div>
+                        </div>` : ''}
+                        ${visualCue?.description ? `
+                        <div class="image-detail-modal__section">
+                            <div class="image-detail-modal__label">👁️ Visual Cue</div>
+                            <p style="font-size:13px;color:var(--text-primary);line-height:1.5">${this.escapeHtml(visualCue.description)}</p>
+                            ${visualCue.camera ? `<div style="margin-top:4px;font-size:11px;color:var(--text-secondary)">Camera: ${this.escapeHtml(visualCue.camera)}</div>` : ''}
+                        </div>` : ''}
+                        ${sceneData.text ? `
+                        <div class="image-detail-modal__section">
+                            <div class="image-detail-modal__label">📖 Scene Narration</div>
+                            <p style="font-size:13px;color:var(--text-primary);line-height:1.5">${this.escapeHtml(sceneData.text)}</p>
+                            ${sceneData.keywords?.length ? `<div style="margin-top:6px;font-size:11px;color:var(--text-secondary)">Keywords: ${sceneData.keywords.join(', ')}</div>` : ''}
+                        </div>` : ''}
+                        ${seqEntry.moodLevel ? `
+                        <div class="image-detail-modal__section">
+                            <div class="image-detail-modal__label">🎭 Mood</div>
+                            <div style="font-size:13px;color:var(--text-primary)">Level: ${seqEntry.moodLevel} ${seqEntry.isClimax ? '<span style="color:#EF4444;font-weight:600">🔥 Climax</span>' : ''}</div>
+                        </div>` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(overlay);
+        
+        const escHandler = (e) => {
+            if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', escHandler); }
+        };
+        document.addEventListener('keydown', escHandler);
+    }
+
     renderAssembleDetail(data) {
         const payloadSnap = data.snapshots.find(s => s.message?.includes('payload'));
         const outputSnap = data.snapshots.find(s => s.message?.includes('output') || s.message?.includes('complete'));
@@ -2226,19 +2905,21 @@ class CampaignDetailPage {
             </div>
             <div class="step-detail__kv-grid">
                 <span class="step-detail__kv-key">Renderer</span>
-                <span class="step-detail__kv-val">${payload.renderer_url ? 'Video Renderer' : 'N/A'}</span>
+                <span class="step-detail__kv-val">${payload.renderer_url || payload.renderer || 'N/A'}</span>
                 <span class="step-detail__kv-key">Images</span>
-                <span class="step-detail__kv-val">${payload.scene_count || payload.total_scenes || imageSeq.length || '-'}</span>
+                <span class="step-detail__kv-val">${payload.image_count || payload.scene_count || payload.total_scenes || imageSeq.length || '-'}</span>
+                <span class="step-detail__kv-key">img2vid Clips</span>
+                <span class="step-detail__kv-val">${payload.img2vid_clips_in_meta > 0 ? `✅ ${payload.img2vid_clips_in_meta} clips (scenes ${(payload.img2vid_clip_keys || []).join(',')})` : (job.meta?.img2vid_clips ? `✅ ${Object.keys(job.meta.img2vid_clips).length} clips (meta)` : '— None')}</span>
                 <span class="step-detail__kv-key">Effects Mode</span>
                 <span class="step-detail__kv-val">${payload.effects_mode || job.meta?.effects_mode || '-'}</span>
                 <span class="step-detail__kv-key">Controlled Motion</span>
-                <span class="step-detail__kv-val">${payload.effects_config?.enabled ? '✅ Active' : '❌ Legacy'}</span>
+                <span class="step-detail__kv-val">${(payload.effects_config?.enabled || payload.effects_enabled === true) ? '✅ Active' : '❌ Legacy'}</span>
                 <span class="step-detail__kv-key">Per-Scene Durations</span>
                 <span class="step-detail__kv-val">${imageSeq.length > 0 ? '✅ From image_sequence' : '⚠️ Uniform'}</span>
                 <span class="step-detail__kv-key">Mood Levels</span>
                 <span class="step-detail__kv-val">${imageSeq.length > 0 ? `✅ ${imageSeq.map(e => e.moodLevel).join(',')}` : '— N/A'}</span>
                 <span class="step-detail__kv-key">Music</span>
-                <span class="step-detail__kv-val">${payload.music_url ? '🎵 Included' : '— None'}</span>
+                <span class="step-detail__kv-val">${(payload.music_url || payload.has_music) ? '🎵 Included' : '— None'}</span>
                 <span class="step-detail__kv-key">Captions</span>
                 <span class="step-detail__kv-val">${payload.captions?.length ? `${payload.captions.length} words` : '— None'}</span>
             </div>
@@ -2299,7 +2980,7 @@ class CampaignDetailPage {
 
     // Utility methods for step details
     getStepIcon(step) {
-        const icons = { story: '📖', uniqueness: '🔍', scenes: '🎬', voice: '🎙️', music: '🎵', images: '🖼️', subtitles: '📝', assemble: '🔧', upload: '☁️', schedule: '📅' };
+        const icons = { story: '📖', uniqueness: '🔍', scenes: '🎬', voice: '🎙️', music: '🎵', images: '🖼️', img2vid: '🎥', subtitles: '📝', assemble: '🔧', upload: '☁️', schedule: '📅' };
         return icons[step] || '⚙️';
     }
     capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
@@ -2314,7 +2995,11 @@ class CampaignDetailPage {
      */
     async copyToClipboard(text, buttonEl) {
         try {
-            await navigator.clipboard.writeText(text);
+            // Ensure text is always a string (prevent [object Object] in clipboard)
+            const str = typeof text === 'string' ? text 
+                      : typeof text === 'object' ? JSON.stringify(text, null, 2) 
+                      : String(text ?? '');
+            await navigator.clipboard.writeText(str);
             if (buttonEl) {
                 const orig = buttonEl.innerHTML;
                 buttonEl.innerHTML = '✓ Copied';
@@ -2384,11 +3069,18 @@ class CampaignDetailPage {
             if (desc.name) return desc.name;
             // Array of characters
             if (Array.isArray(desc)) {
-                return desc.map(c => {
+                return desc.map((c, i) => {
                     if (typeof c === 'string') return c;
-                    return c.description || c.name || JSON.stringify(c);
+                    if (c.description) return c.description;
+                    // Handle {age, hair, clothing, distinguishingFeatures} shape from GPT
+                    const parts = [c.name, c.age ? `age ${c.age}` : null, c.hair, c.clothing, c.distinguishingFeatures || c.features].filter(Boolean);
+                    if (parts.length > 0) return parts.join(', ');
+                    return JSON.stringify(c);
                 }).join('; ');
             }
+            // Handle {age, hair, clothing, distinguishingFeatures} shape from GPT
+            const structured = [desc.name, desc.age ? `age ${desc.age}` : null, desc.hair, desc.clothing, desc.distinguishingFeatures || desc.features].filter(Boolean);
+            if (structured.length >= 2) return structured.join(', ');
             // Last resort: readable key-value pairs
             const entries = Object.entries(desc).filter(([_, v]) => v);
             if (entries.length > 0) {

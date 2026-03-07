@@ -40,6 +40,9 @@ export interface ArtStyleConfig {
   negativePrompt: string;
 }
 
+// @deprecated — Issue #7: This hardcoded config is superseded by the `art_styles` DB table.
+// The worker-v1 pipeline now reads from DB. This remains only for the legacy run-job pipeline.
+// TODO: Migrate run-job to read from `art_styles` table and remove this constant.
 export const ART_STYLE_CONFIG: Record<string, ArtStyleConfig> = {
   "cinematic-dark": {
     name: "Cinematic Dark Photography",
@@ -133,6 +136,27 @@ export const ART_STYLE_CONFIG: Record<string, ArtStyleConfig> = {
     technicalStyle: "cinematic contrast, split-tone, theatrical lighting, bold composition, high contrast, editorial, architectural symmetry, dramatic",
     negativePrompt: "horror, supernatural, VHS, film grain, monsters, blood, A24 horror, dark forest, desaturated, creepy, unsettling, analog artifacts, text, words, letters",
   },
+  "rnmort": {
+    name: "RnMort (Cartoon Horror)",
+    basePrompt: "Adult animated cartoon illustration in the style of Rick and Morty. Bold thick black outlines on every character and object. Flat cel-shaded coloring with vibrant saturated hues. Exaggerated character proportions — large expressive heads, dot-like pupils, wide mouths. Dark horror atmosphere but rendered in colorful cartoon style. Fluid organic shapes, slightly wobbly linework for hand-drawn feel.",
+    colorOverride: "vibrant saturated cartoon colors, neon greens and purples for sci-fi elements, warm skin tones, deep moody backgrounds with bright character colors, teal and pink accent lighting",
+    technicalStyle: "adult cartoon, cel shading, bold black outlines, flat color fills, exaggerated anatomy, large expressive eyes with dot pupils, hand-drawn aesthetic, Rick and Morty style, animated series quality",
+    negativePrompt: "photorealism, photography, DSLR, camera, realistic, oil painting, watercolor, 3D render, CGI, anime, manga, chibi, text, words, letters, symbols",
+  },
+  "manga-horror": {
+    name: "Manga Horror (Junji Ito)",
+    basePrompt: "Dark horror manga illustration in the style of Junji Ito. Heavy black ink linework, obsessive cross-hatching, extreme detail on faces and hands showing dread. High contrast monochrome with selective blood-red accents. Panel-like compositions, dramatic foreshortening, spiral and repetitive motifs suggesting counting obsession. Thick bold outlines, deep pure blacks, white negative space used for horror emphasis.",
+    colorOverride: "monochrome with selective blood-red accents, pure deep blacks, stark whites, ink wash greys, no warm tones except blood",
+    technicalStyle: "manga horror, Junji Ito, heavy inking, cross-hatching, dramatic foreshortening, panel composition, Japanese horror manga",
+    negativePrompt: "cute, chibi, kawaii, bright colors, 3D render, photorealistic, text, words, letters, watermarks",
+  },
+  "vhs-horror": {
+    name: "VHS Horror (Documentary)",
+    basePrompt: "Eerie horror photography with VHS tape degradation, warped distorted realism, analog video artifacts, grainy surveillance quality, chromatic aberration, found-footage documentary aesthetic.",
+    colorOverride: "washed-out sickly green and yellow undertones, VHS color bleeding, crushed blacks, sodium vapor orange, desaturated flesh tones",
+    technicalStyle: "VHS horror, found footage, analog video artifacts, surveillance camera, documentary horror, tape degradation",
+    negativePrompt: "cartoon, anime, illustration, bright colors, clean, professional, sharp, cheerful, text, words, letters",
+  },
 };
 
 // =====================================================
@@ -205,6 +229,28 @@ export const UNCANNY_EXTRA_RULES = {
   // What to ban when extra person is present:
   extraPersonBan: "ghost in background, pale figure standing apart, glowing figure, transparent person, figure in shadows, person standing behind group, obvious supernatural entity, person with different lighting than group",
 };
+
+// =====================================================
+// RNMORT STYLE PROTECTION
+// =====================================================
+// When art_style is rnmort, these tokens must be stripped from
+// Visual DNA / style injection to keep the cartoon look clean.
+export const RNMORT_BANNED_TOKENS = [
+  // Photography terms
+  "photography", "photographic", "photograph", "photo",
+  "DSLR", "camera", "lens", "bokeh", "depth of field",
+  "film still", "movie screenshot", "movie still",
+  "cinematic dark photography", "portrait photography", "studio lighting",
+  "professional cinematography", "realistic skin texture", "realistic skin pores",
+  // Painterly terms (we want cartoon, not painting)
+  "painterly realism", "painterly", "oil painting", "watercolor",
+  "digital painting", "soft brush", "airbrushed", "smooth blending",
+  // Realism terms
+  "photorealistic", "photoreal", "photo-realistic", "hyper-realistic",
+  "realistic lighting", "natural lighting",
+  // 3D terms
+  "3D render", "CGI", "unreal engine", "octane render",
+];
 
 // =====================================================
 // TYPES
@@ -624,7 +670,7 @@ export function rewriteToContentOnly(input: string, _preset: string): string {
  * - gpt-4o: Good quality, ~$0.03/image (75% cheaper) - default
  * - flux: FLUX.1 Pro/Redux via Replicate, ~$0.04/image + reference conditioning
  */
-export function getImageModel(jobModel?: string): "dall-e-3" | "gpt-image-1" | "flux" {
+export function getImageModel(jobModel?: string): "dall-e-3" | "gpt-image-1" | "flux" | "comfyui" {
   // First check job-specific setting
   if (jobModel) {
     if (jobModel === "dall-e-3" || jobModel === "dalle-3" || jobModel === "dalle") {
@@ -635,6 +681,9 @@ export function getImageModel(jobModel?: string): "dall-e-3" | "gpt-image-1" | "
     }
     if (jobModel === "flux" || jobModel === "replicate") {
       return "flux";
+    }
+    if (jobModel === "comfyui" || jobModel === "local") {
+      return "comfyui";
     }
   }
   
@@ -648,6 +697,9 @@ export function getImageModel(jobModel?: string): "dall-e-3" | "gpt-image-1" | "
   }
   if (model === "dall-e-3" || model === "dalle-3" || model === "dalle") {
     return "dall-e-3";
+  }
+  if (model === "comfyui" || model === "local") {
+    return "comfyui";
   }
   // Default to gpt-image-1 (cheapest: ~$0.016/image at low quality)
   return "gpt-image-1";

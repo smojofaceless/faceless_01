@@ -71,34 +71,90 @@ export class CostControlHelper {
   /**
    * Check budget and acquire concurrency slot in one call.
    * Use this before making an expensive API call.
+   * 
+   * Includes retry logic (2 attempts) to handle transient DB/RPC failures
+   * that could return null data without an explicit error.
    */
   async checkAndAcquire(
     service: ServiceType,
     operation?: string,
     unitsNeeded: number = 1
   ): Promise<BudgetCheckResult> {
-    // Step 1: Check budget
-    const { data: budgetCheck, error: budgetError } = await this.supabase
-      .rpc('check_budget', {
-        p_service: service,
-        p_job_id: this.jobId,
-        p_units_needed: unitsNeeded,
-      });
+    const MAX_BUDGET_CHECK_RETRIES = 2;
 
-    if (budgetError) {
-      console.error(`[CostControl] Budget check failed:`, budgetError);
-      return {
-        allowed: false,
-        reason: `Budget check error: ${budgetError.message}`,
-      };
+    // Step 1: Check budget (with retry for transient failures)
+    let budgetCheck: Record<string, unknown> | null = null;
+    let lastBudgetError: string | null = null;
+
+    for (let attempt = 0; attempt < MAX_BUDGET_CHECK_RETRIES; attempt++) {
+      const { data, error: budgetError } = await this.supabase
+        .rpc('check_budget', {
+          p_service: service,
+          p_job_id: this.jobId,
+          p_units_needed: unitsNeeded,
+        });
+
+      if (budgetError) {
+        lastBudgetError = budgetError.message;
+        console.warn(`[CostControl] Budget check attempt ${attempt + 1}/${MAX_BUDGET_CHECK_RETRIES} failed: ${budgetError.message}`);
+        if (attempt < MAX_BUDGET_CHECK_RETRIES - 1) {
+          await new Promise(r => setTimeout(r, 500)); // Brief delay before retry
+          continue;
+        }
+        console.error(`[CostControl] Budget check failed after ${MAX_BUDGET_CHECK_RETRIES} attempts:`, budgetError);
+        return {
+          allowed: false,
+          reason: `Budget check error after ${MAX_BUDGET_CHECK_RETRIES} attempts: ${budgetError.message}`,
+        };
+      }
+
+      // Null-safety: if RPC returns null/undefined data without an error,
+      // treat as transient failure and retry (not as "budget exceeded")
+      if (!data || typeof data !== 'object' || !('can_proceed' in data)) {
+        lastBudgetError = `check_budget returned unexpected data: ${JSON.stringify(data)}`;
+        console.warn(`[CostControl] Budget check attempt ${attempt + 1}/${MAX_BUDGET_CHECK_RETRIES}: ${lastBudgetError}`);
+        if (attempt < MAX_BUDGET_CHECK_RETRIES - 1) {
+          await new Promise(r => setTimeout(r, 500));
+          continue;
+        }
+        console.error(`[CostControl] Budget check returned null/invalid after ${MAX_BUDGET_CHECK_RETRIES} attempts — allowing operation to prevent false rejections`);
+        // ALLOW the operation rather than blocking with a phantom budget failure
+        budgetCheck = { can_proceed: true, checks_failed: [], effective_limits: {} };
+        break;
+      }
+
+      budgetCheck = data as Record<string, unknown>;
+      break; // Success
+    }
+
+    if (!budgetCheck) {
+      // Should not reach here, but safety net
+      console.error(`[CostControl] Budget check yielded no result — allowing operation`);
+      budgetCheck = { can_proceed: true, checks_failed: [], effective_limits: {} };
     }
 
     if (!budgetCheck.can_proceed) {
+      // Build descriptive reason from checks_failed array
+      const failedChecks = (budgetCheck.checks_failed as Array<Record<string, unknown>>) || [];
+      let reason = 'Budget limit reached';
+      if (failedChecks.length > 0) {
+        const descriptions = failedChecks.map((cf: Record<string, unknown>) => {
+          const check = cf.check || 'unknown';
+          if (check === 'max_calls_per_job') return `per-job call limit (${cf.current}/${cf.limit})`;
+          if (check === 'daily_budget') return `daily budget ${cf.service} (${cf.current_cents}c/${cf.limit_cents}c)`;
+          if (check === 'global_daily_budget') return `global daily budget (${cf.current_cents}c/${cf.limit_cents}c)`;
+          if (check === 'monthly_budget') return `monthly budget ${cf.service} (${cf.current_cents}c/${cf.limit_cents}c)`;
+          if (check === 'max_concurrent') return `max concurrent slots ${cf.service} (${cf.current}/${cf.limit})`;
+          return `${check} (${JSON.stringify(cf)})`;
+        });
+        reason = descriptions.join('; ');
+      }
+      console.warn(`[CostControl] Budget check DENIED for ${service} job=${this.jobId}: ${reason}`);
       return {
         allowed: false,
-        reason: budgetCheck.checks_failed?.[0]?.message || 'Budget limit reached',
-        checksFailed: budgetCheck.checks_failed,
-        estimatedCostCents: budgetCheck.estimated_cost_cents,
+        reason,
+        checksFailed: failedChecks,
+        estimatedCostCents: budgetCheck.estimated_cost_cents as number | undefined,
       };
     }
 
@@ -120,6 +176,15 @@ export class CostControlHelper {
       };
     }
 
+    // Null-safety for slot result
+    if (!slotResult || typeof slotResult !== 'object') {
+      console.warn(`[CostControl] Slot acquisition returned null — allowing operation`);
+      return {
+        allowed: true,
+        estimatedCostCents: budgetCheck.estimated_cost_cents as number | undefined,
+      };
+    }
+
     if (!slotResult.acquired) {
       return {
         allowed: false,
@@ -136,7 +201,7 @@ export class CostControlHelper {
     return {
       allowed: true,
       slotId: slotResult.slot_id,
-      estimatedCostCents: budgetCheck.estimated_cost_cents,
+      estimatedCostCents: budgetCheck.estimated_cost_cents as number | undefined,
     };
   }
 

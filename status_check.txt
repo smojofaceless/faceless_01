@@ -1,0 +1,37 @@
+{
+    "id":  "vid_30ef90fc",
+    "job_id":  "4244a6f5-24ca-4fb7-a1b8-b34728886fa9",
+    "type":  "img2vid",
+    "status":  "complete",
+    "workflow":  "svd",
+    "scene_index":  0,
+    "motion_strength":  0.5,
+    "fps":  8,
+    "video_frames":  25,
+    "video_url":  "https://ustmetegzisztqqcjigt.supabase.co/storage/v1/object/public/story-videos/jobs/4244a6f5-24ca-4fb7-a1b8-b34728886fa9/img2vid_scene_0.mp4",
+    "video_duration_seconds":  3.13,
+    "frame_count":  25,
+    "errors":  [
+
+               ],
+    "started_at":  "2026-03-01T21:12:56.587Z",
+    "completed_at":  "2026-03-01T21:15:38.031Z",
+    "metadata":  {
+                     "renderer":  "comfyui_img2vid",
+                     "job_id":  "4244a6f5-24ca-4fb7-a1b8-b34728886fa9",
+                     "scene":  0,
+                     "workflow":  "svd",
+                     "checkpoint":  "(default)",
+                     "seed":  2254955937,
+                     "motion_strength":  0.5,
+                     "fps":  8,
+                     "video_frames":  25,
+                     "width":  768,
+                     "height":  1024,
+                     "duration_seconds":  3.13,
+                     "generation_time_ms":  159669,
+                     "comfyui_prompt_id":  "d2d92786-a274-4fb3-a320-5f0ee15d4470",
+                     "steps":  15,
+                     "cfg":  7
+                 }
+}
