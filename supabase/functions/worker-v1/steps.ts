@@ -7690,6 +7690,7 @@ export async function executeAssembleStep(
 
   try {
     let videoUrl: string;
+    let effectsConfig: Record<string, unknown> | null = null; // Declared here for post-assembly snapshot access
 
     // === LEASE GRACE CHECK: Verify enough time before expensive rendering ===
     await requireLeaseGrace(supabase, job.id, workerId, 'video assembly');
@@ -7724,7 +7725,6 @@ export async function executeAssembleStep(
       const musicEnabled = job.meta?.music_enabled !== false && !!musicUrl;
 
       // v4.0: Resolve effects_config from DB (Roadmap #15 — Controlled Motion)
-      let effectsConfig = null;
       try {
         effectsConfig = await getEffectsConfigForJob(
           supabase,
