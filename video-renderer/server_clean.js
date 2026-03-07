@@ -1982,6 +1982,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     const isGameplayMode = !!backgroundVideoUrl;
     let rawVideoPath;
     let imagePaths = [];
+    let useKenBurns = false; // Declared here so tracking code can reference it after both branches
     
     if (isGameplayMode) {
       // =====================================================
@@ -2075,7 +2076,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
       
       // Step 3: Create video from images
       const videoStart = Date.now();
-      const useKenBurns = mergedEffects.kenBurns !== false && !DISABLE_KEN_BURNS;
+      useKenBurns = mergedEffects.kenBurns !== false && !DISABLE_KEN_BURNS;
       console.log(`[${jobId}] Creating video from images (lowMemory: ${useLowMemory}, kenBurns: ${useKenBurns})...`);
       console.log(`[${jobId}] 🎬 processRender → createVideoFromImages: img2vidClips=${img2vidClips ? `YES (${Object.keys(img2vidClips).length} keys)` : 'null/undefined'}`);
       rawVideoPath = path.join(jobDir, 'raw.mp4');
@@ -2182,7 +2183,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     }
     
     // Get total video duration for timeline tracking
-    const totalDuration = durations.reduce((sum, d) => sum + d, 0);
+    const totalDuration = durations.length > 0 ? durations.reduce((sum, d) => sum + d, 0) : (audioDuration || 60);
     
     // Build scene timeline info
     let sceneTimeline = [];
