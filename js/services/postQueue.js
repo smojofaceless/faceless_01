@@ -291,48 +291,51 @@ class PostQueueService {
      */
     async getPostsInRange(start, end, filters = {}) {
         if (this.useSupabase) {
-            let query = supabaseClient
-                .from('posts')
-                .select('*')
-                .gte('scheduled_at', start.toISOString())
-                .lte('scheduled_at', end.toISOString())
-                .order('scheduled_at', { ascending: true });
+            try {
+                let query = supabaseClient
+                    .from('posts')
+                    .select('id, title, description, status, scheduled_at, posted_at, platform, platforms, brand_id, video_url, thumbnail_url, duration_seconds, error_message, error, job_id, source_job_id, batch_id, generation_batch_id')
+                    .gte('scheduled_at', start.toISOString())
+                    .lte('scheduled_at', end.toISOString())
+                    .order('scheduled_at', { ascending: true });
 
-            if (filters.brandId) {
-                query = query.eq('brand_id', filters.brandId);
-            }
-            if (filters.status) {
-                if (Array.isArray(filters.status)) {
-                    query = query.in('status', filters.status);
-                } else {
-                    query = query.eq('status', filters.status);
+                if (filters.brandId) {
+                    query = query.eq('brand_id', filters.brandId);
                 }
-            }
-            if (filters.platformId) {
-                // Map short platform names to all DB variants
-                const platformVariants = {
-                    'youtube': ['youtube', 'youtube_shorts'],
-                    'instagram': ['instagram', 'instagram_reels'],
-                    'facebook': ['facebook', 'facebook_reels'],
-                    'tiktok': ['tiktok'],
-                    'twitter': ['twitter'],
-                    'threads': ['threads']
-                };
-                const variants = platformVariants[filters.platformId] || [filters.platformId];
-                // Build OR conditions for both 'platform' (singular) and 'platforms' (array) columns
-                const orParts = variants.flatMap(v => [
-                    `platform.eq.${v}`,
-                    `platforms.cs.{${v}}`
-                ]);
-                query = query.or(orParts.join(','));
-            }
+                if (filters.status) {
+                    if (Array.isArray(filters.status)) {
+                        query = query.in('status', filters.status);
+                    } else {
+                        query = query.eq('status', filters.status);
+                    }
+                }
+                if (filters.platformId) {
+                    const platformVariants = {
+                        'youtube': ['youtube', 'youtube_shorts'],
+                        'instagram': ['instagram', 'instagram_reels'],
+                        'facebook': ['facebook', 'facebook_reels'],
+                        'tiktok': ['tiktok'],
+                        'twitter': ['twitter'],
+                        'threads': ['threads']
+                    };
+                    const variants = platformVariants[filters.platformId] || [filters.platformId];
+                    const orParts = variants.flatMap(v => [
+                        `platform.eq.${v}`,
+                        `platforms.cs.{${v}}`
+                    ]);
+                    query = query.or(orParts.join(','));
+                }
 
-            const { data, error } = await query;
-            if (error) {
-                console.error('Failed to get posts in range:', error);
+                const { data, error } = await query;
+                if (error) {
+                    console.error('getPostsInRange failed:', error);
+                    return [];
+                }
+                return data || [];
+            } catch (e) {
+                console.error('getPostsInRange exception:', e);
                 return [];
             }
-            return data || [];
         } else {
             return Array.from(this.posts.values())
                 .filter(p =>
@@ -360,7 +363,7 @@ class PostQueueService {
         try {
             let query = supabaseClient
                 .from('jobs')
-                .select('id, title, status, vibe_preset, scheduled_post_at, brand_id, batch_id, created_at, meta')
+                .select('id, title, status, vibe_preset, scheduled_post_at, brand_id, batch_id, created_at, platforms:meta->platforms')
                 .not('scheduled_post_at', 'is', null)
                 .gte('scheduled_post_at', start.toISOString())
                 .lte('scheduled_post_at', end.toISOString())
@@ -372,12 +375,12 @@ class PostQueueService {
 
             const { data, error } = await query;
             if (error) {
-                console.error('Failed to get jobs in range:', error);
+                console.error('getJobsInRange failed:', error);
                 return [];
             }
             return data || [];
         } catch (e) {
-            console.error('Error fetching jobs for calendar:', e);
+            console.error('getJobsInRange exception:', e);
             return [];
         }
     }
@@ -463,7 +466,7 @@ class PostQueueService {
                     type: 'job',
                     scheduledAt: new Date(j.scheduled_post_at),
                     status: calStatus,
-                    platformId: j.meta?.platforms?.[0] || 'youtube_shorts',
+                    platformId: j.platforms?.[0] || 'youtube_shorts',
                     brandId: j.brand_id,
                     content: {
                         title: j.title || `${j.vibe_preset || 'Video'} (${calStatus === 'failed' ? 'failed' : calStatus === 'scheduled' ? 'ready' : 'generating...'})`,
@@ -491,7 +494,7 @@ class PostQueueService {
                     'threads': ['threads']
                 };
                 const allowed = variants[filters.platformId] || [filters.platformId];
-                const jobPlatforms = item.raw?.meta?.platforms || [item.platformId];
+                const jobPlatforms = item.raw?.platforms || [item.platformId];
                 return jobPlatforms.some(p => allowed.includes(p));
             });
 
@@ -511,7 +514,7 @@ class PostQueueService {
                 }
             }
         } catch (e) {
-            console.warn('📮 PostQueueService: Metadata enrichment failed (non-fatal):', e);
+            console.warn('Calendar metadata enrichment failed (non-fatal):', e);
         }
 
         return allItems;
@@ -524,27 +527,29 @@ class PostQueueService {
      * @private
      */
     async _fetchMetadataForPosts(postIds) {
-        const { data, error } = await supabaseClient
-            .from('post_metadata')
-            .select('post_id, platform, status, ai_metadata, final_metadata, error, attempt_count, failure_class, next_retry_at, generated_at, edited_at')
-            .in('post_id', postIds);
-
-        if (error || !data) return {};
-
         const map = {};
-        for (const row of data) {
-            map[row.post_id] = {
-                status: row.status,
-                aiMetadata: row.ai_metadata,
-                finalMetadata: row.final_metadata,
-                error: row.error,
-                attemptCount: row.attempt_count,
-                failureClass: row.failure_class,
-                nextRetryAt: row.next_retry_at,
-                generatedAt: row.generated_at,
-                editedAt: row.edited_at,
-                platform: row.platform
-            };
+        const BATCH_SIZE = 100;
+        for (let i = 0; i < postIds.length; i += BATCH_SIZE) {
+            const batch = postIds.slice(i, i + BATCH_SIZE);
+            const { data, error } = await supabaseClient
+                .from('post_metadata')
+                .select('post_id, platform, status, error, attempt_count, failure_class, next_retry_at, generated_at, edited_at')
+                .in('post_id', batch);
+
+            if (error || !data) continue;
+
+            for (const row of data) {
+                map[row.post_id] = {
+                    status: row.status,
+                    error: row.error,
+                    attemptCount: row.attempt_count,
+                    failureClass: row.failure_class,
+                    nextRetryAt: row.next_retry_at,
+                    generatedAt: row.generated_at,
+                    editedAt: row.edited_at,
+                    platform: row.platform
+                };
+            }
         }
         return map;
     }

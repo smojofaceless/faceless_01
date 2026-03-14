@@ -18,8 +18,6 @@ class ContentEngine {
     async init() {
         if (this.initialized) return;
 
-        console.log('🚀 Initializing ContentEngine v' + this.version);
-
         try {
             // Initialize brand manager (with Supabase sync)
             await brandManager.init();
@@ -41,13 +39,12 @@ class ContentEngine {
             }
 
             this.initialized = true;
-            console.log('✅ ContentEngine initialized');
 
             // Dispatch ready event
             window.dispatchEvent(new CustomEvent('contentengine:ready'));
 
         } catch (error) {
-            console.error('❌ Failed to initialize ContentEngine:', error);
+            console.error('ContentEngine init failed:', error);
             throw error;
         }
     }

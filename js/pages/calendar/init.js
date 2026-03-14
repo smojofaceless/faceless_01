@@ -7,8 +7,6 @@
  * Initialize the calendar page
  */
 function calendarInit() {
-    console.log('📅 Initializing Calendar Page');
-    
     // Cache DOM elements
     cacheElements();
     
@@ -29,7 +27,21 @@ function calendarInit() {
     if (typeof contentEngine !== 'undefined' && contentEngine.initialized) {
         initCalendar();
     } else {
-        window.addEventListener('contentengine:ready', initCalendar);
+        let calStarted = false;
+        window.addEventListener('contentengine:ready', () => {
+            if (!calStarted) {
+                calStarted = true;
+                initCalendar();
+            }
+        });
+        // Fallback: if contentEngine never fires, init anyway after 5s
+        setTimeout(() => {
+            if (!calStarted) {
+                console.warn('ContentEngine timeout — starting calendar anyway');
+                calStarted = true;
+                initCalendar();
+            }
+        }, 5000);
     }
 }
 
@@ -37,55 +49,64 @@ function calendarInit() {
  * Initialize the calendar component (async)
  */
 async function initCalendar() {
-    console.log('📅 Creating Calendar instance');
+    try {
+        // Initialize metrics service
+        if (typeof MetricsService !== 'undefined' && typeof metricsService !== 'undefined') {
+            await metricsService.init();
+        }
 
-    // Initialize metrics service
-    if (typeof MetricsService !== 'undefined' && typeof metricsService !== 'undefined') {
-        await metricsService.init();
+        // Initialize time slot service
+        if (typeof TimeSlotService !== 'undefined' && typeof timeSlotService !== 'undefined') {
+            await timeSlotService.init();
+        }
+
+        // Initialize metadata version service
+        if (typeof MetadataVersionService !== 'undefined' && typeof metadataVersionService !== 'undefined') {
+            await metadataVersionService.init();
+        }
+
+        // Build brand filter bar and brand map
+        await buildBrandFilterBar();
+
+        // Create calendar instance
+        calendarInstance = new Calendar({
+            container: calElements.calendarContainer,
+            view: currentView,
+            onDateClick: handleDateClick,
+            onPostClick: handlePostClick,
+            onSlotClick: handleSlotClick,
+            onNavigate: handleNavigate
+        });
+
+        // Set the brand map so calendar can show brand indicators
+        calendarInstance.setBrandMap(buildBrandMap());
+
+        // Initialize calendar (async — loads data from Supabase)
+        await calendarInstance.init();
+
+        // Enrich posted items with metrics badges
+        await enrichCalendarMetrics();
+
+        // Set up page controls
+        setupToolbar();
+        setupFilters();
+        setupBestTimes();
+        setupModal();
+
+        // Update title initially
+        updateCalendarTitle();
+    } catch (err) {
+        console.error('❌ Calendar init failed:', err);
+        // Remove loading spinner so the user sees the error
+        if (calElements.calendarContainer) {
+            calElements.calendarContainer.innerHTML = `
+                <div style="padding:2rem;text-align:center;color:#ef4444;">
+                    <p>Failed to load calendar</p>
+                    <p style="font-size:0.85rem;color:#888;margin-top:0.5rem;">${err.message || err}</p>
+                    <button onclick="location.reload()" style="margin-top:1rem;padding:0.5rem 1rem;background:#ef4444;color:#fff;border:none;border-radius:0.5rem;cursor:pointer;">Retry</button>
+                </div>`;
+        }
     }
-
-    // Initialize time slot service
-    if (typeof TimeSlotService !== 'undefined' && typeof timeSlotService !== 'undefined') {
-        await timeSlotService.init();
-    }
-
-    // Initialize metadata version service
-    if (typeof MetadataVersionService !== 'undefined' && typeof metadataVersionService !== 'undefined') {
-        await metadataVersionService.init();
-    }
-
-    // Build brand filter bar and brand map
-    await buildBrandFilterBar();
-
-    // Create calendar instance
-    calendarInstance = new Calendar({
-        container: calElements.calendarContainer,
-        view: currentView,
-        onDateClick: handleDateClick,
-        onPostClick: handlePostClick,
-        onSlotClick: handleSlotClick,
-        onNavigate: handleNavigate
-    });
-
-    // Set the brand map so calendar can show brand indicators
-    calendarInstance.setBrandMap(buildBrandMap());
-
-    // Initialize calendar (async — loads data from Supabase)
-    await calendarInstance.init();
-
-    // Enrich posted items with metrics badges
-    await enrichCalendarMetrics();
-
-    // Set up page controls
-    setupToolbar();
-    setupFilters();
-    setupBestTimes();
-    setupModal();
-
-    // Update title initially
-    updateCalendarTitle();
-
-    console.log('✅ Calendar initialized');
 }
 
 // Initialize when DOM is ready

@@ -52,7 +52,6 @@ class Calendar {
         this._useSupabase = typeof postQueueService !== 'undefined';
         if (this._useSupabase) {
             await postQueueService.init();
-            console.log('📅 Calendar: Using Supabase via PostQueueService');
         }
 
         await this.render();
@@ -213,9 +212,8 @@ class Calendar {
                     status: this.filters.status,
                     platformId: this.filters.platformId
                 });
-                console.log(`📅 Calendar: Loaded ${this._cachedItems.length} items for ${start.toLocaleDateString()} - ${end.toLocaleDateString()}`);
             } catch (e) {
-                console.error('Failed to load calendar data:', e);
+                console.error('Calendar getCalendarItems failed:', e);
                 this._cachedItems = [];
             }
             this.isLoading = false;
@@ -234,6 +232,22 @@ class Calendar {
         this.setupEventListeners();
         
         // Notify navigation after render
+        this.notifyNavigation();
+    }
+
+    /**
+     * Re-render from cached items without re-fetching data
+     */
+    renderCachedOnly() {
+        if (!this.container || !this._cachedItems) return;
+        const body = this.view === 'month' ? this.renderMonth() : this.renderWeek();
+        const showBrands = !this.filters.brandId && this._brandMap.size > 1;
+        this.container.innerHTML = `
+            <div class="calendar calendar--${this.view}${showBrands ? ' calendar--show-brands' : ''}">
+                ${body}
+            </div>
+        `;
+        this.setupEventListeners();
         this.notifyNavigation();
     }
 

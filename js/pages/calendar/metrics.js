@@ -63,7 +63,7 @@ async function enrichCalendarMetrics() {
 
         if (enriched > 0) {
             console.log(`📊 Calendar: Enriched ${enriched} posts with metrics (${allPostIds.size} total IDs)`);
-            await calendarInstance.render();
+            calendarInstance.renderCachedOnly();
         }
     } catch (e) {
         console.warn('Calendar metrics enrichment failed (non-fatal):', e);
