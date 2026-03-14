@@ -48,13 +48,6 @@
                         </svg>
                         <span>Dashboard</span>
                     </a>
-                    <a href="pages/create.html" class="nav-link">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polygon points="23 7 16 12 23 17 23 7"/>
-                            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
-                        </svg>
-                        <span>Create Video</span>
-                    </a>
                     <a href="pages/campaign.html" class="nav-link">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
@@ -74,16 +67,7 @@
                         </svg>
                         <span>Calendar</span>
                     </a>
-                    <a href="pages/posts.html" class="nav-link">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                            <polyline points="14 2 14 8 20 8"/>
-                            <line x1="16" y1="13" x2="8" y2="13"/>
-                            <line x1="16" y1="17" x2="8" y2="17"/>
-                        </svg>
-                        <span>Posts Queue</span>
-                        <span class="nav-link__badge" id="queue-badge">0</span>
-                    </a>
+
                     <a href="pages/ai-intelligence.html" class="nav-link">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.57-3.25 3.93"/>
@@ -141,14 +125,22 @@
 
         <!-- Main Content -->
         <main class="main">
+            <!-- Atmospheric Background -->
+            <div class="db-bg">
+                <div class="db-bg__orb db-bg__orb--1"></div>
+                <div class="db-bg__orb db-bg__orb--2"></div>
+                <div class="db-bg__orb db-bg__orb--3"></div>
+            </div>
+
             <!-- Header -->
             <header class="header">
                 <div class="header__left">
                     <h1 class="header__title">Command Center</h1>
+                    <span class="header__subtitle" id="header-date"></span>
                 </div>
                 <div class="header__right">
                     <div id="brand-switcher"></div>
-                    <button class="btn btn--primary" onclick="location.href='pages/create.html'">
+                    <button class="btn btn--primary btn--glow" onclick="location.href='pages/campaign.html'">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <line x1="12" y1="5" x2="12" y2="19"/>
                             <line x1="5" y1="12" x2="19" y2="12"/>
@@ -160,219 +152,264 @@
 
             <!-- Dashboard Content -->
             <div class="content">
-                <!-- Status Bar -->
-                <div class="status-bar">
-                    <div class="status-bar__item status-bar__item--success">
-                        <span class="status-bar__indicator"></span>
-                        <span>Scheduler Active</span>
-                    </div>
-                    <div class="status-bar__item" id="next-post-status">
-                        <span class="status-bar__label">Next Post:</span>
-                        <span class="status-bar__value">--</span>
-                    </div>
-                    <div class="status-bar__item">
-                        <span class="status-bar__label">Queue:</span>
-                        <span class="status-bar__value" id="queue-count">0 posts</span>
-                    </div>
-                </div>
-
-                <!-- Stats Grid -->
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-card__icon stat-card__icon--primary">
+                <!-- Hero Stats Row -->
+                <div class="db-hero">
+                    <div class="db-hero__card">
+                        <div class="db-hero__icon db-hero__icon--purple">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <polygon points="23 7 16 12 23 17 23 7"/>
                                 <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
                             </svg>
                         </div>
-                        <div class="stat-card__content">
-                            <span class="stat-card__value" id="stat-posts-today">0</span>
-                            <span class="stat-card__label">Posted Today</span>
+                        <div class="db-hero__data">
+                            <span class="db-hero__value" id="stat-posts-today">0</span>
+                            <span class="db-hero__label">Posted Today</span>
                         </div>
+                        <div class="db-hero__trend" id="trend-today"></div>
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-card__icon stat-card__icon--warning">
+                    <div class="db-hero__card">
+                        <div class="db-hero__icon db-hero__icon--amber">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <circle cx="12" cy="12" r="10"/>
                                 <polyline points="12 6 12 12 16 14"/>
                             </svg>
                         </div>
-                        <div class="stat-card__content">
-                            <span class="stat-card__value" id="stat-scheduled">0</span>
-                            <span class="stat-card__label">Scheduled</span>
+                        <div class="db-hero__data">
+                            <span class="db-hero__value" id="stat-scheduled">0</span>
+                            <span class="db-hero__label">In Queue</span>
                         </div>
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-card__icon stat-card__icon--success">
+                    <div class="db-hero__card">
+                        <div class="db-hero__icon db-hero__icon--green">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
                                 <polyline points="22 4 12 14.01 9 11.01"/>
                             </svg>
                         </div>
-                        <div class="stat-card__content">
-                            <span class="stat-card__value" id="stat-week">0</span>
-                            <span class="stat-card__label">This Week</span>
+                        <div class="db-hero__data">
+                            <span class="db-hero__value" id="stat-week">0</span>
+                            <span class="db-hero__label">This Week</span>
                         </div>
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-card__icon stat-card__icon--error">
+                    <div class="db-hero__card">
+                        <div class="db-hero__icon db-hero__icon--red">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <circle cx="12" cy="12" r="10"/>
                                 <line x1="15" y1="9" x2="9" y2="15"/>
                                 <line x1="9" y1="9" x2="15" y2="15"/>
                             </svg>
                         </div>
-                        <div class="stat-card__content">
-                            <span class="stat-card__value" id="stat-failed">0</span>
-                            <span class="stat-card__label">Failed</span>
+                        <div class="db-hero__data">
+                            <span class="db-hero__value" id="stat-failed">0</span>
+                            <span class="db-hero__label">Failed</span>
                         </div>
                     </div>
                 </div>
 
-                <!-- Main Grid -->
-                <div class="dashboard-grid">
-                    <!-- Upcoming Posts -->
-                    <section class="card dashboard-card">
-                        <div class="card__header">
-                            <h2 class="card__title">Upcoming Posts</h2>
-                            <a href="pages/posts.html" class="card__action">View All →</a>
+                <!-- Live Status Ticker -->
+                <div class="db-ticker">
+                    <div class="db-ticker__item">
+                        <span class="db-ticker__pulse"></span>
+                        <span class="db-ticker__text">Scheduler Active</span>
+                    </div>
+                    <div class="db-ticker__divider"></div>
+                    <div class="db-ticker__item" id="next-post-status">
+                        <span class="db-ticker__label">Next Post</span>
+                        <span class="db-ticker__value">--</span>
+                    </div>
+                    <div class="db-ticker__divider"></div>
+                    <div class="db-ticker__item">
+                        <span class="db-ticker__label">Queue</span>
+                        <span class="db-ticker__value" id="queue-count">0</span>
+                    </div>
+                </div>
+
+                <!-- Primary Grid: 3 columns -->
+                <div class="db-grid db-grid--primary">
+                    <!-- Upcoming Posts (tall left column) -->
+                    <section class="db-card db-card--upcoming">
+                        <div class="db-card__header">
+                            <h2 class="db-card__title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="db-card__title-icon">
+                                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                                    <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
+                                    <line x1="3" y1="10" x2="21" y2="10"/>
+                                </svg>
+                                Upcoming
+                            </h2>
+                            <a href="pages/calendar.html" class="db-card__action">View All</a>
                         </div>
-                        <div class="card__body" id="upcoming-posts">
-                            <div class="empty-state">
-                                <p>No scheduled posts</p>
-                                <p class="text-muted">Schedule content to see it here</p>
-                            </div>
+                        <div class="db-card__body db-card__body--scroll" id="upcoming-posts">
+                            <div class="db-empty"><span>No scheduled posts</span></div>
                         </div>
                     </section>
 
-                    <!-- Platform Status -->
-                    <section class="card dashboard-card">
-                        <div class="card__header">
-                            <h2 class="card__title">Platform Status</h2>
-                            <a href="pages/connections.html" class="card__action">Manage →</a>
+                    <!-- Performance (center) -->
+                    <section class="db-card db-card--performance">
+                        <div class="db-card__header">
+                            <h2 class="db-card__title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="db-card__title-icon">
+                                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                                </svg>
+                                Performance
+                            </h2>
                         </div>
-                        <div class="card__body" id="platform-status">
-                            <div class="platform-list"></div>
-                        </div>
-                    </section>
-
-                    <!-- Performance Overview -->
-                    <section class="card dashboard-card">
-                        <div class="card__header">
-                            <h2 class="card__title">Performance</h2>
-                            <a href="pages/calendar.html" class="card__action">Details →</a>
-                        </div>
-                        <div class="card__body" id="performance-overview">
-                            <div class="empty-state">
-                                <p>Loading performance data...</p>
-                            </div>
+                        <div class="db-card__body" id="performance-overview">
+                            <div class="db-empty"><span>Loading...</span></div>
                         </div>
                     </section>
 
+                    <!-- Platform Status (right) -->
+                    <section class="db-card db-card--platforms">
+                        <div class="db-card__header">
+                            <h2 class="db-card__title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="db-card__title-icon">
+                                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                                </svg>
+                                Platforms
+                            </h2>
+                            <a href="pages/connections.html" class="db-card__action">Manage</a>
+                        </div>
+                        <div class="db-card__body" id="platform-status">
+                            <div class="db-empty"><span>Loading...</span></div>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Secondary Grid: 2 columns -->
+                <div class="db-grid db-grid--secondary">
                     <!-- Cost Overview -->
-                    <section class="card dashboard-card">
-                        <div class="card__header">
-                            <h2 class="card__title">Cost Overview</h2>
-                            <span class="card__action text-muted" id="cost-period">Today</span>
-                        </div>
-                        <div class="card__body" id="cost-overview">
-                            <div class="empty-state">
-                                <p>Loading costs...</p>
+                    <section class="db-card">
+                        <div class="db-card__header">
+                            <h2 class="db-card__title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="db-card__title-icon">
+                                    <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                                </svg>
+                                Costs
+                            </h2>
+                            <div class="db-range-pills" id="cost-range">
+                                <button class="db-range-pill db-range-pill--active" data-days="7">7d</button>
+                                <button class="db-range-pill" data-days="30">30d</button>
+                                <button class="db-range-pill" data-days="90">90d</button>
+                                <button class="db-range-pill" data-days="0">All</button>
                             </div>
                         </div>
-                    </section>
-
-                    <!-- Preset Performance -->
-                    <section class="card dashboard-card">
-                        <div class="card__header">
-                            <h2 class="card__title">Preset Performance</h2>
-                        </div>
-                        <div class="card__body" id="preset-performance">
-                            <div class="empty-state">
-                                <p>Loading preset data...</p>
-                            </div>
+                        <div class="db-card__body" id="cost-overview">
+                            <div class="db-empty"><span>Loading...</span></div>
                         </div>
                     </section>
 
                     <!-- Best Posting Times -->
-                    <section class="card dashboard-card">
-                        <div class="card__header">
-                            <h2 class="card__title">Best Posting Times</h2>
+                    <section class="db-card">
+                        <div class="db-card__header">
+                            <h2 class="db-card__title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="db-card__title-icon">
+                                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                                </svg>
+                                Best Times
+                            </h2>
                         </div>
-                        <div class="card__body" id="best-times">
-                            <div class="empty-state">
-                                <p>Loading time data...</p>
-                            </div>
+                        <div class="db-card__body" id="best-times">
+                            <div class="db-empty"><span>Loading...</span></div>
                         </div>
                     </section>
+                </div>
 
-                    <!-- Quick Actions -->
-                    <section class="card dashboard-card">
-                        <div class="card__header">
-                            <h2 class="card__title">Quick Actions</h2>
+                <!-- Tertiary Grid: 3 columns -->
+                <div class="db-grid db-grid--tertiary">
+                    <!-- Preset Performance -->
+                    <section class="db-card">
+                        <div class="db-card__header">
+                            <h2 class="db-card__title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="db-card__title-icon">
+                                    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
+                                    <line x1="4" y1="22" x2="4" y2="15"/>
+                                </svg>
+                                Presets
+                            </h2>
                         </div>
-                        <div class="card__body">
-                            <div class="quick-actions">
-                                <a href="pages/create.html" class="quick-action">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <polygon points="23 7 16 12 23 17 23 7"/>
-                                        <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
-                                    </svg>
-                                    <span>Generate Video</span>
-                                </a>
-                                <a href="pages/posts.html" class="quick-action">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <line x1="12" y1="5" x2="12" y2="19"/>
-                                        <line x1="5" y1="12" x2="19" y2="12"/>
-                                    </svg>
-                                    <span>Create Post</span>
-                                </a>
-                                <a href="pages/calendar.html" class="quick-action">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                                        <line x1="16" y1="2" x2="16" y2="6"/>
-                                        <line x1="8" y1="2" x2="8" y2="6"/>
-                                        <line x1="3" y1="10" x2="21" y2="10"/>
-                                    </svg>
-                                    <span>View Schedule</span>
-                                </a>
-                                <a href="pages/connections.html" class="quick-action">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-                                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-                                    </svg>
-                                    <span>Connect Platform</span>
-                                </a>
-                            </div>
+                        <div class="db-card__body" id="preset-performance">
+                            <div class="db-empty"><span>Loading...</span></div>
                         </div>
                     </section>
 
                     <!-- Brand Overview -->
-                    <section class="card dashboard-card dashboard-card--wide">
-                        <div class="card__header">
-                            <h2 class="card__title">Brand Overview</h2>
-                            <a href="pages/brands.html" class="card__action">Manage →</a>
+                    <section class="db-card">
+                        <div class="db-card__header">
+                            <h2 class="db-card__title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="db-card__title-icon">
+                                    <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                                    <line x1="7" y1="7" x2="7.01" y2="7"/>
+                                </svg>
+                                Brands
+                            </h2>
+                            <a href="pages/brands.html" class="db-card__action">Manage</a>
                         </div>
-                        <div class="card__body" id="brand-overview">
-                            <div class="empty-state"><p>Loading brands...</p></div>
+                        <div class="db-card__body" id="brand-overview">
+                            <div class="db-empty"><span>Loading...</span></div>
                         </div>
                     </section>
 
                     <!-- Recent Activity -->
-                    <section class="card dashboard-card dashboard-card--wide">
-                        <div class="card__header">
-                            <h2 class="card__title">Recent Activity</h2>
+                    <section class="db-card">
+                        <div class="db-card__header">
+                            <h2 class="db-card__title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="db-card__title-icon">
+                                    <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                                </svg>
+                                Recent Activity
+                            </h2>
                         </div>
-                        <div class="card__body" id="recent-activity">
-                            <div class="empty-state">
-                                <p>Loading activity...</p>
-                            </div>
+                        <div class="db-card__body db-card__body--scroll" id="recent-activity">
+                            <div class="db-empty"><span>Loading...</span></div>
                         </div>
                     </section>
                 </div>
+
+                <!-- Quick Actions Bar -->
+                <div class="db-actions">
+                    <a href="pages/campaign.html" class="db-action">
+                        <div class="db-action__icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="23 7 16 12 23 17 23 7"/>
+                                <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                            </svg>
+                        </div>
+                        <span>Generate Video</span>
+                    </a>
+                    <a href="pages/calendar.html" class="db-action">
+                        <div class="db-action__icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                                <line x1="16" y1="2" x2="16" y2="6"/>
+                                <line x1="8" y1="2" x2="8" y2="6"/>
+                                <line x1="3" y1="10" x2="21" y2="10"/>
+                            </svg>
+                        </div>
+                        <span>Calendar</span>
+                    </a>
+                    <a href="pages/connections.html" class="db-action">
+                        <div class="db-action__icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                            </svg>
+                        </div>
+                        <span>Connect</span>
+                    </a>
+                    <a href="pages/brands.html" class="db-action">
+                        <div class="db-action__icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                                <line x1="7" y1="7" x2="7.01" y2="7"/>
+                            </svg>
+                        </div>
+                        <span>Brands</span>
+                    </a>
+                </div>
             </div>
         </main>
-
     </div>
 
     <!-- Scripts -->
@@ -385,6 +422,17 @@
     <script src="js/components/sidebar.js"></script>
     <script src="js/components/brand-switcher.js"></script>
     <script src="js/services/brandManager.js"></script>
-    <script src="js/pages/dashboard.js"></script>
+    <script src="js/pages/dashboard/state.js"></script>
+    <script src="js/pages/dashboard/helpers.js"></script>
+    <script src="js/pages/dashboard/stats.js"></script>
+    <script src="js/pages/dashboard/upcoming.js"></script>
+    <script src="js/pages/dashboard/platforms.js"></script>
+    <script src="js/pages/dashboard/performance.js"></script>
+    <script src="js/pages/dashboard/costs.js"></script>
+    <script src="js/pages/dashboard/presets.js"></script>
+    <script src="js/pages/dashboard/brands.js"></script>
+    <script src="js/pages/dashboard/activity.js"></script>
+    <script src="js/pages/dashboard/best-times.js"></script>
+    <script src="js/pages/dashboard/init.js"></script>
 </body>
 </html>

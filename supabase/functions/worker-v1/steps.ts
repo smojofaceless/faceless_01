@@ -3603,7 +3603,15 @@ export async function executeImagesStep(
         const envContext = storyAnchor.environment ? storyAnchor.environment.substring(0, 100) : '';
         const timeContext = storyAnchor.timeOfDay || '';
         
+        // v12.0: Front-load illustration medium for non-photorealistic styles
+        const PORTRAIT_ILLUSTRATION_STYLES = new Set(['manga-horror', 'rnmort', 'uncanny-illustrated', 'horror-anime']);
+        const isPortraitIllustration = PORTRAIT_ILLUSTRATION_STYLES.has(artStyle);
+        const portraitMediumLine = isPortraitIllustration
+          ? `MEDIUM: This is a DRAWING / ILLUSTRATION, NOT a photograph. Render as ${stylePrompt}.\n\n`
+          : '';
+        
         const portraitPrompt = [
+          portraitMediumLine,
           `CHARACTER REFERENCE PORTRAIT — This image establishes the definitive look of the main character.`,
           ``,
           `Style: ${stylePrompt}`,
@@ -3622,6 +3630,7 @@ export async function executeImagesStep(
           ``,
           `Portrait orientation 9:16. No text, no words, no letters.`,
           imagePromptConfig?.negative_prompt || '',
+          isPortraitIllustration ? 'NEVER render as a photograph or photorealistic image. This must be a drawn/illustrated character.' : '',
         ].filter(Boolean).join('\n');
 
         // Generate using gpt-image-1 (same as scene images)
@@ -3760,36 +3769,70 @@ export async function executeImagesStep(
   // contradictions (e.g., smartphone in S11 → landline in S13).
   // Runs once and gets cached with the visual cues.
   // Only runs on fresh extraction — cached cues already have fixes applied.
+  //
+  // v15.0: CRITICAL FIX — The audit flag is embedded IN the visual_cues cache
+  // meta (consistency_audited: true). Uses a direct .update() because the
+  // upsert_job_asset RPC is INSERT-only (does NOT update existing records).
+  // Previously, the audit re-ran on each continuation with DIFFERENT GPT
+  // results, causing images from different invocations to have mismatched
+  // cue descriptions vs the final cached visual cues.
   // ======================================================================
   const consistencyCacheKey = `${job.id}:visual_cues_consistency`;
-  const alreadyAudited = await getAssetByKey(supabase, job.id, consistencyCacheKey);
+  // v15.0: Check the visual_cues cache meta for the audit flag (primary),
+  // fall back to the separate marker asset (legacy compatibility)
+  const cachedCuesForAuditCheck = await getAssetByKey(supabase, job.id, visualCuesCacheKey);
+  const alreadyAudited = cachedCuesForAuditCheck?.meta?.consistency_audited === true
+    || !!(await getAssetByKey(supabase, job.id, consistencyCacheKey));
   if (visualCues.length >= 3 && openaiKey && !alreadyAudited) {
     try {
       const auditResult = await auditVisualCueConsistency(visualCues, scenes, openaiKey, storyAnchor);
       if (auditResult.fixes.length > 0) {
         visualCues = auditResult.cues;
-        // Update the cached visual cues with patched versions
-        await upsertAsset(supabase, job.id, visualCuesCacheKey, 'visual_cues', '', '', {
-          cues: visualCues,
-          scene_count: scenes.length,
-          vibe_preset: vibePreset,
-          consistency_fixes: auditResult.fixes,
-        });
         await logger.snapshot('images', 'consistency_audit', {
           fixes_applied: auditResult.fixes.length,
           total_scenes: visualCues.length,
           fixes: auditResult.fixes,
         }, `🔧 Consistency audit: ${auditResult.fixes.length} contradictions fixed (${auditResult.fixes.map(f => `S${f.scene + 1}: ${f.issue}`).join(', ')})`);
       }
-      // Mark audit as done so continuations don't re-run it
-      await upsertAsset(supabase, job.id, consistencyCacheKey, 'consistency_audit', '', '', {
-        audited: true,
-        fixes_count: auditResult.fixes.length,
-        fixes: auditResult.fixes,
-      });
+      // v15.0: Update the visual_cues cache meta with the audit flag + patched cues.
+      // MUST use direct .update() because upsert_job_asset is INSERT-only and will
+      // silently skip updates to existing records.
+      const auditedMeta = {
+        ...(cachedCuesForAuditCheck?.meta || {}),
+        cues: visualCues,
+        scene_count: scenes.length,
+        vibe_preset: vibePreset,
+        consistency_audited: true,
+        consistency_fixes: auditResult.fixes.length > 0 ? auditResult.fixes : [],
+      };
+      const { error: updateErr } = await supabase
+        .from('job_assets')
+        .update({ meta: auditedMeta })
+        .eq('job_id', job.id)
+        .eq('idempotency_key', visualCuesCacheKey);
+      if (updateErr) {
+        console.warn(`[CONSISTENCY] Failed to persist audit flag: ${updateErr.message}`);
+      } else {
+        console.log(`[CONSISTENCY] ✓ Audit flag persisted in visual_cues cache (${auditResult.fixes.length} fixes)`);
+      }
     } catch (auditErr) {
       console.warn(`[CONSISTENCY] Audit error (non-fatal): ${auditErr instanceof Error ? auditErr.message : auditErr}`);
+      // Even on error, mark as audited to prevent re-runs with different results
+      try {
+        const errorMeta = {
+          ...(cachedCuesForAuditCheck?.meta || {}),
+          cues: visualCues,
+          consistency_audited: true,
+        };
+        await supabase
+          .from('job_assets')
+          .update({ meta: errorMeta })
+          .eq('job_id', job.id)
+          .eq('idempotency_key', visualCuesCacheKey);
+      } catch { /* best effort */ }
     }
+  } else if (alreadyAudited) {
+    console.log(`[CONSISTENCY] ✓ Audit already completed — skipping (cues locked for continuation consistency)`);
   }
 
   let generatedCount = 0;
@@ -4388,6 +4431,11 @@ export async function executeImagesStep(
         for (let attempt = 1; attempt <= MAX_IMAGE_RETRIES; attempt++) {
           let response: Response;
           
+          // v14.1: Wrap fetch+parse in try/catch to handle network errors
+          // (e.g. "error reading a body from connection") with retry instead of
+          // killing the entire step. These are transient Deno/TCP errors.
+          try {
+          
           if (useImageReference) {
             // v8.0+8.1: Use /v1/images/edits with reference image(s)
             // Phase 1: character/group scenes get hero portrait for character consistency
@@ -4395,20 +4443,30 @@ export async function executeImagesStep(
             // When both apply, both images are sent as references.
             
             // Build the reference-aware prompt
+            // v13.0: For illustration styles, reinforce the art medium in the reference prompt
+            // to prevent scene-chain drift toward photorealism.
+            const ILLUSTRATION_ART_STYLES = new Set(['manga-horror', 'rnmort', 'uncanny-illustrated', 'horror-anime']);
+            const isIllustrationArtStyle = ILLUSTRATION_ART_STYLES.has(artStyle);
+            const mediumReminder = isIllustrationArtStyle
+              ? `\nCRITICAL: This MUST remain a DRAWN ILLUSTRATION — NOT a photograph. Maintain the ${artStyle} art style (ink, linework, cel-shading). Do NOT drift toward photorealism, sepia tones, or painterly realism.\n`
+              : '';
             let refPrompt: string;
             if (useCharacterReference && useSceneChain) {
               refPrompt = `REFERENCE IMAGES: Image 1 is the CHARACTER REFERENCE — maintain this EXACT character appearance (face, hair, clothing, features).\n` +
                 `Image 2 is the PREVIOUS SCENE — maintain visual style, color palette, and atmosphere continuity.\n` +
+                mediumReminder +
                 `Generate a NEW scene matching this prompt while keeping both consistencies:\n\n` +
                 currentPrompt;
             } else if (useCharacterReference) {
               refPrompt = `IMPORTANT: The attached reference image shows the EXACT character appearance to maintain.\n` +
+                mediumReminder +
                 `Generate a NEW scene matching this prompt, but keep the character looking like the reference:\n\n` +
                 currentPrompt;
             } else {
               // Scene chain only (atmosphere, establishing, object scenes)
               refPrompt = `STYLE REFERENCE: The attached image is the previous scene. Maintain visual consistency —\n` +
                 `same color palette, lighting style, rendering technique, and atmosphere.\n` +
+                mediumReminder +
                 `Generate a NEW, DIFFERENT scene matching this prompt while preserving the visual style:\n\n` +
                 currentPrompt;
             }
@@ -4614,6 +4672,24 @@ export async function executeImagesStep(
           } else {
             throw new Error(`gpt-image-1 returned no image for scene ${i}`);
           }
+
+          } catch (networkErr) {
+            // v14.1: Handle network/connection errors (e.g. "error reading a body from connection")
+            // These are transient Deno TCP/TLS errors, not HTTP errors from the API.
+            const netMsg = networkErr instanceof Error ? networkErr.message : String(networkErr);
+            const isNetworkError = netMsg.includes('body') || netMsg.includes('connection') ||
+              netMsg.includes('tcp') || netMsg.includes('tls') || netMsg.includes('socket') ||
+              netMsg.includes('ECONNRESET') || netMsg.includes('fetch failed');
+            
+            if (isNetworkError && attempt < MAX_IMAGE_RETRIES) {
+              const waitTime = 5000 * attempt;
+              console.warn(`[IMAGES] ⚠️ Network error on scene ${i} attempt ${attempt}/${MAX_IMAGE_RETRIES}: ${netMsg}. Retrying in ${waitTime / 1000}s...`);
+              await new Promise(r => setTimeout(r, waitTime));
+              continue;
+            }
+            // Non-network error or out of retries — rethrow
+            throw networkErr;
+          }
         }
         
         if (!imageGenerated) {
@@ -4747,14 +4823,35 @@ export async function executeImagesStep(
     // BUILD IMAGE SEQUENCE MANIFEST (for assemble step)
     // Resolve all asset URLs and save the ordered sequence with durations + mood levels.
     // This replaces the assembler's uniform-duration calculation.
+    //
+    // v15.0: PROMPT CONSISTENCY FIX — For skipped scenes (already generated in a
+    // prior continuation), entry.prompt is undefined because buildImagePrompt was
+    // never called. Previously, we'd fall through to asset.meta.prompt which may
+    // have been built with a DIFFERENT version of the visual cues (if the consistency
+    // audit ran again with different GPT results on a later invocation).
+    // Now: rebuild prompts for ALL scenes using the current (locked) visual cues,
+    // ensuring the image_sequence has a consistent set of cue descriptions.
     // ======================================================================
+    for (const entry of imageSequence) {
+      if (!entry.prompt) {
+        const scene = scenes[entry.sceneIndex];
+        if (scene) {
+          const idx = entry.sceneIndex;
+          const baseVisualCue = visualCues.find(vc => vc.sceneIndex === idx);
+          const effectiveCue = entry.subIndex > 0
+            ? createSubImageCue(baseVisualCue, entry.subIndex, scene.text)
+            : baseVisualCue;
+          entry.prompt = buildImagePrompt(scene.text, scene.keywords, artStyle, idx, scenes.length, imagePromptConfig, effectiveCue, storyAnchor, artStyleRow);
+        }
+      }
+    }
+
     const resolvedSequence: ImageSequenceEntry[] = [];
     for (const entry of imageSequence) {
       const asset = await getAssetByKey(supabase, job.id, entry.assetKey);
       resolvedSequence.push({
         ...entry,
         url: asset?.public_url || undefined,
-        // Resolve prompt: prefer in-memory (freshly generated) → asset meta (prior continuation) → undefined
         prompt: entry.prompt || (asset?.meta as Record<string, unknown>)?.prompt as string || undefined,
       });
     }
@@ -4990,7 +5087,7 @@ You MUST provide TWO environments:
   const prompt = `You are a visual director. Analyze this story and extract a consistent visual identity for generating images.
 
 ART STYLE: ${stylePrompt}
-${envHint ? `ENVIRONMENT GUIDE: ${envHint}` : ''}
+${envHint ? `ENVIRONMENT GUIDE (stylistic reference only — do NOT list multiple locations from this): ${envHint}` : ''}
 ${moodHint ? `MOOD: ${moodHint}` : ''}
 GENRE/VIBE: ${vibePreset}
 ${contrastInstructions}${arcInstructions}
@@ -4998,8 +5095,8 @@ STORY:
 "${storyText.substring(0, 3500)}"
 
 Extract:
-1. environment: The PRIMARY setting — be specific (not just "forest" but "dense pine forest with twisted roots at dusk")
-2. characterDescription: If ANY humans appear, describe them as a SINGLE STRING with age, clothing, hair, distinguishing features (e.g. "25-year-old woman with messy dark hair in a loose bun, wearing a stained diner uniform, tired eyes with a nervous twitch"). Return null if no humans appear. MUST be a plain string, NOT an object or array.
+1. environment: The SINGLE PRIMARY setting from THIS story — describe ONE specific location where the main action takes place (e.g. "a brightly lit carousel at a small-town fairground at dusk"). Do NOT combine multiple locations. Do NOT list alternative settings. Pick the ONE most important location from the story text.
+2. characterDescription: If ANY humans appear, describe the MAIN CHARACTER (protagonist) as a SINGLE STRING starting with their NAME from the story (if given), then age, clothing, hair, distinguishing features (e.g. "Sarah, 25-year-old woman with messy dark hair in a loose bun, wearing a stained diner uniform, tired eyes with a nervous twitch"). Including the name is critical for visual consistency. Return null if no humans appear. MUST be a plain string, NOT an object or array.
 ${motifGuidance}
 ${genreField}
 5. timeOfDay: Specific lighting/time
@@ -5048,8 +5145,10 @@ Return JSON: { "environment": "...", ${isArcVibe ? '"consequenceEnvironment": ".
       console.log(`[STORY_ANCHOR] ⚠️ Overriding isGroupStory=false: no characterDescription but isGroupStory was true (likely mentioned-not-present misclassification)`);
       parsed.isGroupStory = false;
       parsed.groupCount = null;
-    } else if (parsed.isGroupStory && parsed.groupCount && parsed.groupCount > 8) {
-      // Unreasonable group count — cap or override
+    } else if (parsed.isGroupStory && parsed.groupCount && parsed.groupCount > 12) {
+      // v14.1: Raised cap from 8→12. OTM (one_too_many) stories inherently have
+      // large groups (9-10 friends + 1 extra). The old cap of 8 was overriding
+      // isGroupStory=false for every OTM story, breaking the group rendering.
       console.log(`[STORY_ANCHOR] ⚠️ Capping groupCount from ${parsed.groupCount} to null (unreasonable count)`);
       parsed.isGroupStory = false;
       parsed.groupCount = null;
@@ -5927,15 +6026,39 @@ function buildImagePrompt(
 
     // v5.1: Scene-type reinforcement — explicit instruction before scene description
     // to override any remaining group signals in the text
-    const sceneTypeInstruction: Record<string, string> = {
-      'object': 'FOCUS: Close-up of a single OBJECT or detail. Do NOT show groups of people.',
-      'atmosphere': 'FOCUS: Empty space, environment, mood. Do NOT show groups of people.',
-      'establishing': 'FOCUS: Wide establishing shot of the LOCATION. People may appear as tiny background elements only.',
-      'character': 'FOCUS: ONE single person only — their face, hands, or body language. Do NOT show a group.',
-    };
+    // v14.2: For group stories (OTM), soften anti-group language — the story is
+    // about a group, so non-group scenes should simply focus on their subject
+    // without contradicting the group premise.
+    const groupStory = !!storyAnchor?.isGroupStory;
+    const sceneTypeInstruction: Record<string, string> = groupStory
+      ? {
+          'object': 'FOCUS: Close-up of a single OBJECT or detail.',
+          'atmosphere': 'FOCUS: Empty space, environment, mood.',
+          'establishing': 'FOCUS: Wide establishing shot of the LOCATION showing the full scene.',
+          'character': 'FOCUS: ONE single person only — their face, hands, or body language.',
+        }
+      : {
+          'object': 'FOCUS: Close-up of a single OBJECT or detail. Do NOT show groups of people.',
+          'atmosphere': 'FOCUS: Empty space, environment, mood. Do NOT show groups of people.',
+          'establishing': 'FOCUS: Wide establishing shot of the LOCATION. People may appear as tiny background elements only.',
+          'character': 'FOCUS: ONE single person only — their face, hands, or body language. Do NOT show a group.',
+        };
     const reinforcement = sceneType !== 'group' ? (sceneTypeInstruction[sceneType] || '') : '';
 
+    // v12.0: Style front-loading for illustration/cartoon art styles
+    // gpt-image-1 defaults to photorealism unless the medium is declared prominently
+    // at the very START of the prompt. For non-photorealistic styles, prepend an
+    // unambiguous medium declaration so the model renders in the correct medium.
+    const ILLUSTRATION_STYLES = new Set([
+      'manga-horror', 'rnmort', 'uncanny-illustrated', 'horror-anime',
+    ]);
+    const isIllustrationStyle = ILLUSTRATION_STYLES.has(artStyle) || ILLUSTRATION_STYLES.has(config.art_style || '');
+    const styleFrontLoad = isIllustrationStyle
+      ? `MEDIUM: This is a DRAWING / ILLUSTRATION, NOT a photograph. Render as ${config.style_prompt}.\n\n`
+      : '';
+
     const sceneDescription = [
+      styleFrontLoad,
       reinforcement,
       thumbnailBoost,
       cueDescription,
@@ -5961,11 +6084,16 @@ function buildImagePrompt(
     const isContrastPreset = CONTRAST_PRESETS.has(artStyleName) || artStyleName === 'cinematic-contrast';
     const isArcPreset = ARC_PRESETS.has(artStyleName) || artStyleName === 'surreal-contemplative';
     const pastMidpoint = sceneIndex >= Math.floor(totalScenes * 0.45);
-    if (storyAnchor?.environment && sceneType !== 'establishing' && !isContrastPreset) {
+    if (storyAnchor?.environment && !isContrastPreset) {
       if (isArcPreset && pastMidpoint) {
         // Second half: use consequence environment if available, otherwise fall back to config
         // This lets the visual cues and config environment drive the "cost/rule" imagery
         environment = storyAnchor.consequenceEnvironment || config.environment;
+      } else if (sceneType === 'establishing') {
+        // v14.2: Establishing shots now use anchor environment too — the config environment
+        // is a generic template (e.g. "small-town America") that doesn't match specific stories
+        // (e.g. "remote island"). Keep the ", expansive vista" suffix for wide framing.
+        environment = `${storyAnchor.environment}, expansive vista`;
       } else {
         // Use story-specific environment for consistency
         environment = storyAnchor.environment;
@@ -5977,9 +6105,15 @@ function buildImagePrompt(
     // Only fall back to story anchor environment when no visual cue is available.
     // This prevents a global anchor like "abandoned workshop" from overriding
     // a scene-specific cue like "foggy town street."
+    //
+    // v13.0: ILLUSTRATION STYLE PROTECTION — For non-photorealistic art styles
+    // (manga-horror, uncanny-illustrated, rnmort, horror-anime), keep the config's
+    // authored lighting & color_palette. Dynamic "practical lighting" and "vivid
+    // clothing colors" signals cause GPT-image-1 to drift toward photorealism,
+    // which cascades through the scene-chain reference system.
     let lighting = config.lighting;
     let colorPalette = config.color_palette;
-    if (storyAnchor) {
+    if (storyAnchor && !isIllustrationStyle) {
       const tod = storyAnchor.timeOfDay || '';
       // v10.0: Scene-local environment — prefer visual cue description over global anchor
       const sceneEnv = cueDescription && cueDescription.length > 20
@@ -5994,6 +6128,8 @@ function buildImagePrompt(
         lighting = `${tod ? tod + ' lighting conditions, ' : ''}practical lighting matching the scene (${sceneEnv}), atmospheric ambient light, clear scene visibility`;
         colorPalette = `setting-appropriate colors for: ${sceneEnv}, ${tod ? tod + ' tones, ' : ''}high contrast, rich deep tones`;
       }
+    } else if (storyAnchor && isIllustrationStyle) {
+      console.log(`[IMAGES] v13.0: Preserving config lighting/color for illustration style "${artStyle}" (not overriding with anchor-derived values)`);
     }
 
     const keywordStr = keywords.slice(0, 3).join(', ');
@@ -6026,11 +6162,23 @@ function buildImagePrompt(
     }
 
     // v5.1: For non-group scenes, reinforce "no groups" in the negative prompt
+    // v14.2: Skip entirely for group stories (OTM) — the whole premise involves
+    // a group of people. Individual scene types (character, object, atmosphere)
+    // already have FOCUS instructions that guide single-subject framing.
     let negativePrompt = config.negative_prompt || '';
-    if (sceneType !== 'group') {
+    const isGroupStory = !!storyAnchor?.isGroupStory;
+    if (!isGroupStory && sceneType !== 'group') {
       negativePrompt = negativePrompt
         ? `${negativePrompt}\nABSOLUTELY NO: groups of people, crowds, multiple faces, multiple figures standing together.`
         : `ABSOLUTELY NO: groups of people, crowds, multiple faces, multiple figures standing together.`;
+    }
+
+    // v12.0 / v13.0: For illustration styles, explicitly reject photorealism in negative prompt
+    // v13.0: Expanded blocklist — GPT-image-1 drifts toward sepia, oil painting, and
+    // watercolor landscapes when prompts include "atmosphere" or "environment" scenes.
+    if (isIllustrationStyle) {
+      negativePrompt += '\nNEVER render as a photograph or photorealistic image. This must be a drawn/illustrated image with visible linework, ink, or cel-shading.';
+      negativePrompt += '\nNO: sepia tones, oil painting, watercolor, painterly, soft blending, airbrushed, smooth gradients, bokeh, depth of field, lens flare, film still, DSLR, camera, natural lighting, studio lighting.';
     }
 
     // v8.1: Prevent "back of phone" issue — when scene involves device usage,
@@ -6040,19 +6188,75 @@ function buildImagePrompt(
       negativePrompt += '\nNEVER show back of phone, back of device, phone rear camera facing viewer. Always show phone screen facing viewer, character looking at screen.';
     }
 
+    // v14.1: For character/object close-ups, reduce environment to a brief hint.
+    // gpt-image-1 at low quality renders the most visually concrete text — a full
+    // environment description ("cabin in the mountains with crackling fire") dominates
+    // over abstract subject instructions ("close-up of Mark's face").
+    let environmentLine = `Environment: ${environment}`;
+    if (sceneType === 'character' || sceneType === 'object') {
+      // Extract just the core location name (first clause before commas/dashes)
+      const briefEnv = environment.split(/[,—–]/)[0].trim();
+      environmentLine = `Background hint: ${briefEnv}`;
+    }
+
+    // v14.1: Skip anchor characterBlock when visual cue describes a DIFFERENT named character.
+    // The anchor describes the main character (e.g. "25-year-old woman") but visual cues
+    // may focus on secondary characters (e.g. "Mark's face"). Sending both creates a
+    // contradiction that causes gpt-image-1 to abandon the subject and render the environment.
+    // v14.2: Also drop characterBlock when cue describes unnamed non-protagonist figures
+    // (e.g. "the sixth person's shadowy figure", "a stranger in the doorway"). Without this,
+    // the anchor's protagonist description gets applied to sinister/mysterious entities.
+    let effectiveCharacterBlock = characterBlock;
+    if (sceneType === 'character' && characterBlock && cueDescription) {
+      // Check if the cue mentions a name that differs from the anchor description
+      const cueNameMatch = cueDescription.match(/\b([A-Z][a-z]{2,})(?:'s|\s)/); 
+      if (cueNameMatch) {
+        const cueName = cueNameMatch[1].toLowerCase();
+        const anchorLower = (storyAnchor?.characterDescription || '').toLowerCase();
+        if (!anchorLower.includes(cueName)) {
+          // Visual cue is about a different character — drop the anchor's description
+          effectiveCharacterBlock = '';
+        }
+      } else {
+        // No named character in the cue — check for non-protagonist indicators
+        if (/\b(?:figure|stranger|shadow|silhouette|entity|presence|creature|shape|apparition)\b/i.test(cueDescription)) {
+          // Non-protagonist entity words → drop anchor character
+          effectiveCharacterBlock = '';
+        } else if (/\b(?:unsettling|subtly off|subtly wrong|out of sync|uncanny|distorted|blending in|standing apart|slightly apart)\b/i.test(cueDescription)) {
+          // Uncanny descriptors suggesting the OTM "extra" or a non-protagonist entity
+          effectiveCharacterBlock = '';
+        } else {
+          // No indicators matched — check if the cue refers to a secondary character by role
+          // (e.g. "the attendant", "the guide") while we know the protagonist's name.
+          // Only drop when we can confirm the protagonist name is NOT in the cue.
+          const protagonistMatch = (storyAnchor?.characterDescription || '').match(/^([A-Z][a-z]{2,})\b/);
+          if (protagonistMatch) {
+            const protName = protagonistMatch[1].toLowerCase();
+            const cueLower = cueDescription.toLowerCase();
+            if (!cueLower.includes(protName) && /\b(?:attendant|guide|driver|teacher|officer|bartender|clerk|worker|guard|waiter|nurse|doctor|priest|shopkeeper|captain|pilot|conductor)\b/i.test(cueDescription)) {
+              effectiveCharacterBlock = '';
+            }
+          }
+        }
+      }
+    }
+
     const parts = [
       sceneDescription,
       '',
-      `Style: ${config.style_prompt}`,
-      `Environment: ${environment}`,
+      // v14.0: Skip Style line for illustration styles — styleFrontLoad already contains style_prompt
+      isIllustrationStyle ? '' : `Style: ${config.style_prompt}`,
+      environmentLine,
       `Mood: ${mood}, tension level ${tensionLevel}/10`,
       cameraAngle ? `Camera: ${cameraAngle}` : '',
       `Lighting: ${lighting}`,
       `Color: ${colorPalette}`,
-      characterBlock,
+      effectiveCharacterBlock,
       motifsBlock,
       keywordStr ? `Keywords: ${keywordStr}` : '',
       '',
+      // v12.0: Reinforce illustration style at end to bookend the prompt
+      isIllustrationStyle ? `REMINDER: This MUST be rendered as an illustration/drawing — NOT a photograph. Use ${artStyle} visual style throughout.` : '',
       negativePrompt,
       config.suffix,
     ].filter(Boolean);
@@ -8218,24 +8422,36 @@ async function assembleWithRenderer(
     low_memory: true, // Safe for cloud deployment
   });
 
-  // Start the render job — retry on 503 (renderer busy with another job)
+  // Start the render job — retry on transient errors (502/503/504)
   // Max 4 attempts for campaigns where multiple jobs may queue up
   const MAX_RENDER_ATTEMPTS = 4;
   let response: Response | null = null;
   
   for (let attempt = 1; attempt <= MAX_RENDER_ATTEMPTS; attempt++) {
-    const res = await fetch(`${rendererUrl}/render`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: renderPayload,
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${rendererUrl}/render`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: renderPayload,
+      });
+    } catch (fetchErr) {
+      // Network error (ECONNREFUSED, timeout, etc.) — retry
+      if (attempt < MAX_RENDER_ATTEMPTS) {
+        const backoff = 15 * attempt;
+        console.log(`[ASSEMBLE] Render fetch error: ${fetchErr instanceof Error ? fetchErr.message : fetchErr}, retrying in ${backoff}s (attempt ${attempt}/${MAX_RENDER_ATTEMPTS})...`);
+        await new Promise(r => setTimeout(r, backoff * 1000));
+        continue;
+      }
+      throw new Error(`Video renderer unreachable after ${MAX_RENDER_ATTEMPTS} attempts: ${fetchErr instanceof Error ? fetchErr.message : fetchErr}`);
+    }
 
     if (res.ok) {
       response = res;
       break;
     }
 
-    // Handle 503 (server busy) — wait and retry
+    // Handle 503 (server busy) — wait longer, renderer is processing another job
     if (res.status === 503 && attempt < MAX_RENDER_ATTEMPTS) {
       let retryAfter = 65; // Default wait
       try {
@@ -8248,7 +8464,15 @@ async function assembleWithRenderer(
       continue;
     }
 
-    // Non-503 error or final attempt — throw
+    // Handle 502/504 (gateway error / timeout) — shorter backoff, origin may recover quickly
+    if ([502, 504].includes(res.status) && attempt < MAX_RENDER_ATTEMPTS) {
+      const backoff = 15 * attempt; // 15s, 30s, 45s
+      console.log(`[ASSEMBLE] Renderer gateway error (${res.status}), retrying in ${backoff}s (attempt ${attempt}/${MAX_RENDER_ATTEMPTS})...`);
+      await new Promise(r => setTimeout(r, backoff * 1000));
+      continue;
+    }
+
+    // Non-retryable error or final attempt — throw
     const bodyText = await res.text().catch(() => 'Unable to read response body');
     throw new Error(`Video renderer failed: ${res.status} ${res.statusText} - ${bodyText}`);
   }

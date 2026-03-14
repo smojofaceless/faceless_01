@@ -4,7 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Intelligence - ContentEngine</title>
-    
+
+    <!-- Tailwind CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
     <!-- Core Design System -->
     <link rel="stylesheet" href="../css/core/tokens.css">
     <link rel="stylesheet" href="../css/core/base.css">
@@ -13,8 +16,23 @@
     <link rel="stylesheet" href="../css/core/responsive.css">
     <link rel="stylesheet" href="../css/dashboard.css">
     <link rel="stylesheet" href="../css/ai-intelligence.css">
+
+    <link id="favicon" rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        surface: { DEFAULT: '#16161e', light: '#1e1e2a', border: '#2a2a3a' },
+                        brand: { DEFAULT: '#8b5cf6', light: '#a78bfa', dim: 'rgba(139,92,246,0.12)' },
+                    }
+                }
+            }
+        };
+    </script>
 </head>
-<body>
+<body class="vibe-dark">
     <div class="app">
         <!-- Sidebar -->
         <aside class="sidebar">
@@ -41,13 +59,6 @@
                         </svg>
                         <span>Dashboard</span>
                     </a>
-                    <a href="create.html" class="nav-link">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polygon points="23 7 16 12 23 17 23 7"/>
-                            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
-                        </svg>
-                        <span>Create Video</span>
-                    </a>
                     <a href="campaign.html" class="nav-link">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
@@ -66,15 +77,6 @@
                             <line x1="3" y1="10" x2="21" y2="10"/>
                         </svg>
                         <span>Calendar</span>
-                    </a>
-                    <a href="posts.html" class="nav-link">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                            <polyline points="14 2 14 8 20 8"/>
-                            <line x1="16" y1="13" x2="8" y2="13"/>
-                            <line x1="16" y1="17" x2="8" y2="17"/>
-                        </svg>
-                        <span>Posts Queue</span>
                     </a>
                     <a href="ai-intelligence.html" class="nav-link active">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -133,177 +135,244 @@
 
         <!-- Main Content -->
         <main class="main">
+            <!-- Atmospheric Background -->
+            <div class="ai-bg">
+                <div class="ai-bg__orb ai-bg__orb--1"></div>
+                <div class="ai-bg__orb ai-bg__orb--2"></div>
+                <div class="ai-bg__orb ai-bg__orb--3"></div>
+            </div>
+
             <!-- Header -->
-            <header class="header">
+            <header class="header flex items-center justify-between gap-4 flex-wrap">
                 <div class="header__left">
-                    <h1 class="header__title">AI Intelligence</h1>
-                    <p class="header__subtitle">How the AI learns from your content performance</p>
+                    <h1 class="header__title text-2xl font-bold tracking-tight">AI Intelligence</h1>
+                    <p class="header__subtitle text-sm text-white/50 mt-1">How the AI learns from your content performance</p>
                 </div>
-                <div class="header__right">
+                <div class="header__right flex items-center gap-3">
                     <div id="brand-switcher"></div>
                 </div>
             </header>
 
-            <!-- AI Content -->
-            <div class="content">
+            <!-- Main Content Area -->
+            <div class="content relative z-[1]">
 
-                <!-- Status Bar -->
-                <div class="ai-status-bar" id="ai-status-bar"></div>
+                <!-- Hero Stats Bar -->
+                <div class="ai-hero" id="ai-status-bar">
+                    <div class="ai-hero__card group">
+                        <div class="ai-hero__icon ai-hero__icon--purple transition-transform duration-300 group-hover:scale-110">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.57-3.25 3.93"/>
+                                <path d="M12 2a4 4 0 0 0-4 4c0 1.95 1.4 3.57 3.25 3.93"/>
+                                <path d="M12 18v4"/><path d="M8 22h8"/>
+                            </svg>
+                        </div>
+                        <div class="ai-hero__data">
+                            <span class="ai-hero__value tabular-nums" id="stat-generations">—</span>
+                            <span class="ai-hero__label">AI Generations</span>
+                        </div>
+                    </div>
+                    <div class="ai-hero__card group">
+                        <div class="ai-hero__icon ai-hero__icon--blue transition-transform duration-300 group-hover:scale-110">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <path d="M8 12s1.5 2 4 2 4-2 4-2"/>
+                                <line x1="9" y1="9" x2="9.01" y2="9"/>
+                                <line x1="15" y1="9" x2="15.01" y2="9"/>
+                            </svg>
+                        </div>
+                        <div class="ai-hero__data">
+                            <span class="ai-hero__value tabular-nums" id="stat-stories">—</span>
+                            <span class="ai-hero__label">Stories Tracked</span>
+                        </div>
+                    </div>
+                    <div class="ai-hero__card group">
+                        <div class="ai-hero__icon ai-hero__icon--green transition-transform duration-300 group-hover:scale-110">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26"/>
+                            </svg>
+                        </div>
+                        <div class="ai-hero__data">
+                            <span class="ai-hero__value tabular-nums" id="stat-patterns">—</span>
+                            <span class="ai-hero__label">Winning Patterns</span>
+                        </div>
+                    </div>
+                    <div class="ai-hero__card group">
+                        <div class="ai-hero__icon ai-hero__icon--amber transition-transform duration-300 group-hover:scale-110">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                        </div>
+                        <div class="ai-hero__data">
+                            <span class="ai-hero__value tabular-nums" id="stat-last-computed">—</span>
+                            <span class="ai-hero__label">Last Computed</span>
+                        </div>
+                    </div>
+                </div>
 
-                <!-- Platform Filter Tabs -->
-                <div class="platform-tabs" id="platform-tabs"></div>
+                <!-- Platform Filter Pills -->
+                <div class="ai-filters">
+                    <div class="ai-platform-pills" id="platform-tabs"></div>
+                </div>
 
-                <!-- Section Tabs (main views) -->
-                <div class="ai-section-tabs" id="ai-section-tabs">
-                    <button class="ai-section-tab ai-section-tab--active" data-tab="overview">
+                <!-- Section Tab Navigation -->
+                <div class="ai-tab-nav" id="ai-section-tabs">
+                    <button class="ai-tab-btn ai-tab-btn--active" data-tab="overview">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
                         Overview
                     </button>
-                    <button class="ai-section-tab" data-tab="recent-posts">
+                    <button class="ai-tab-btn" data-tab="recent-posts">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                        Recent Posts &amp; Insights
+                        Recent Posts
                     </button>
-                    <button class="ai-section-tab" data-tab="cross-platform">
+                    <button class="ai-tab-btn" data-tab="cross-platform">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
-                        Cross-Platform &amp; Strategy
+                        Cross-Platform
                     </button>
-                    <button class="ai-section-tab" data-tab="ai-learning">
+                    <button class="ai-tab-btn" data-tab="ai-learning">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93"/><path d="M12 2a4 4 0 0 0-4 4c0 1.95 1.4 3.58 3.25 3.93"/><path d="M12 18v4"/><path d="M8 22h8"/><path d="M9 12h6"/><path d="M10 15h4"/></svg>
                         AI Learning
                     </button>
                 </div>
 
-                <!-- Tab: Overview (existing grid) -->
+                <!-- Tab: Overview -->
                 <div class="ai-tab-panel ai-tab-panel--active" id="tab-overview">
+                    <!-- Latest Post Deep Dive - Compact Summary (click to open modal) -->
+                    <div class="ai-glass group cursor-pointer hover:border-brand/30 transition-all duration-300 mb-5" id="latest-post-summary" onclick="aiOpenDeepDiveModal()">
+                        <div class="ai-glass__head">
+                            <h3 class="ai-glass__title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                                Latest Post Deep Dive
+                            </h3>
+                            <span class="ai-glass__badge ai-glass__badge--green flex items-center gap-1.5">
+                                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M10 14L21 3"/><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/></svg>
+                                Open Analysis
+                            </span>
+                        </div>
+                        <div class="ai-glass__body" id="latest-post-summary-body">
+                            <div class="ai-loading">Analyzing your latest post…</div>
+                        </div>
+                    </div>
 
-                <!-- Latest Post Deep Dive -->
-                <div id="latest-post-dive">
-                    <div class="ai-loading">Analyzing your latest post…</div>
+                    <!-- Two-column grid -->
+                    <div class="ai-grid-2col">
+                        <!-- Performance Trend (full row) -->
+                        <div class="ai-glass ai-glass--full">
+                            <div class="ai-glass__head">
+                                <h3 class="ai-glass__title">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                                    Performance Trend
+                                </h3>
+                                <span class="ai-glass__badge">Live Data</span>
+                            </div>
+                            <div class="ai-glass__body" id="performance-trend">
+                                <div class="ai-loading">Loading performance data…</div>
+                            </div>
+                        </div>
+
+                        <!-- Winning Patterns -->
+                        <div class="ai-glass">
+                            <div class="ai-glass__head">
+                                <h3 class="ai-glass__title">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26"/></svg>
+                                    Winning Patterns
+                                </h3>
+                                <span class="ai-glass__badge ai-glass__badge--green">Injected into AI</span>
+                            </div>
+                            <div class="ai-glass__body" id="winning-patterns">
+                                <div class="ai-loading">Loading winning patterns…</div>
+                            </div>
+                        </div>
+
+                        <!-- Exemplar Library -->
+                        <div class="ai-glass">
+                            <div class="ai-glass__head">
+                                <h3 class="ai-glass__title">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+                                    Exemplar Library
+                                </h3>
+                                <span class="ai-glass__badge ai-glass__badge--amber">Top Performers</span>
+                            </div>
+                            <div class="ai-glass__body" id="exemplar-library">
+                                <div class="ai-loading">Loading exemplars…</div>
+                            </div>
+                        </div>
+
+                        <!-- Time Slot Heatmap (full row) -->
+                        <div class="ai-glass ai-glass--full">
+                            <div class="ai-glass__head">
+                                <h3 class="ai-glass__title">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                                    Best Posting Times
+                                </h3>
+                                <span class="ai-glass__badge">Engagement Heatmap</span>
+                            </div>
+                            <div class="ai-glass__body" id="timeslot-heatmap">
+                                <div class="ai-loading">Loading time slot data…</div>
+                            </div>
+                        </div>
+
+                        <!-- Story DNA & Themes -->
+                        <div class="ai-glass">
+                            <div class="ai-glass__head">
+                                <h3 class="ai-glass__title">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+                                    Story DNA & Themes
+                                </h3>
+                                <span class="ai-glass__badge">Diversity</span>
+                            </div>
+                            <div class="ai-glass__body" id="theme-performance">
+                                <div class="ai-loading">Loading story DNA…</div>
+                            </div>
+                        </div>
+
+                        <!-- Generation History -->
+                        <div class="ai-glass">
+                            <div class="ai-glass__head">
+                                <h3 class="ai-glass__title">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+                                    Generation History
+                                </h3>
+                                <span class="ai-glass__badge">Recent</span>
+                            </div>
+                            <div class="ai-glass__body" id="generation-history">
+                                <div class="ai-loading">Loading generation history…</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-
-                <div class="ai-grid">
-
-                    <!-- Performance Trend -->
-                    <div class="ai-card ai-card--full">
-                        <div class="ai-card__header">
-                            <h3 class="ai-card__title">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-                                Performance Trend
-                            </h3>
-                            <span class="ai-card__badge">Live Data</span>
-                        </div>
-                        <div class="ai-card__body" id="performance-trend">
-                            <div class="ai-loading">Loading performance data…</div>
-                        </div>
-                    </div>
-
-                    <!-- Winning Patterns -->
-                    <div class="ai-card">
-                        <div class="ai-card__header">
-                            <h3 class="ai-card__title">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26"/></svg>
-                                Winning Patterns
-                            </h3>
-                            <span class="ai-card__badge">Injected into AI</span>
-                        </div>
-                        <div class="ai-card__body" id="winning-patterns">
-                            <div class="ai-loading">Loading winning patterns…</div>
-                        </div>
-                    </div>
-
-                    <!-- Exemplar Library -->
-                    <div class="ai-card">
-                        <div class="ai-card__header">
-                            <h3 class="ai-card__title">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
-                                Exemplar Library
-                            </h3>
-                            <span class="ai-card__badge">Top Performers</span>
-                        </div>
-                        <div class="ai-card__body" id="exemplar-library">
-                            <div class="ai-loading">Loading exemplars…</div>
-                        </div>
-                    </div>
-
-                    <!-- Time Slot Heatmap -->
-                    <div class="ai-card ai-card--full">
-                        <div class="ai-card__header">
-                            <h3 class="ai-card__title">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-                                Best Posting Times
-                            </h3>
-                            <span class="ai-card__badge">Engagement Heatmap</span>
-                        </div>
-                        <div class="ai-card__body" id="timeslot-heatmap">
-                            <div class="ai-loading">Loading time slot data…</div>
-                        </div>
-                    </div>
-
-                    <!-- Theme / Story DNA -->
-                    <div class="ai-card">
-                        <div class="ai-card__header">
-                            <h3 class="ai-card__title">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
-                                Story DNA & Themes
-                            </h3>
-                            <span class="ai-card__badge">Diversity Tracking</span>
-                        </div>
-                        <div class="ai-card__body" id="theme-performance">
-                            <div class="ai-loading">Loading story DNA…</div>
-                        </div>
-                    </div>
-
-                    <!-- Generation History -->
-                    <div class="ai-card">
-                        <div class="ai-card__header">
-                            <h3 class="ai-card__title">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
-                                Generation History
-                            </h3>
-                            <span class="ai-card__badge">Recent</span>
-                        </div>
-                        <div class="ai-card__body" id="generation-history">
-                            <div class="ai-loading">Loading generation history…</div>
-                        </div>
-                    </div>
-
-                </div><!-- .ai-grid -->
-                </div><!-- tab-overview -->
 
                 <!-- Tab: Recent Posts & Insights -->
                 <div class="ai-tab-panel" id="tab-recent-posts">
-                    <div id="recent-posts-container">
+                    <div id="recent-posts-container" class="space-y-5">
                         <div class="ai-loading">Loading recent post insights…</div>
                     </div>
                 </div>
 
                 <!-- Tab: Cross-Platform & Strategy -->
                 <div class="ai-tab-panel" id="tab-cross-platform">
-                    <div class="ai-grid">
-                        <!-- Cross-Platform Comparison -->
-                        <div class="ai-card ai-card--full">
-                            <div class="ai-card__header">
-                                <h3 class="ai-card__title">
+                    <div class="ai-grid-2col">
+                        <div class="ai-glass ai-glass--full">
+                            <div class="ai-glass__head">
+                                <h3 class="ai-glass__title">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
                                     Platform Comparison
                                 </h3>
-                                <span class="ai-card__badge">Cross-Platform</span>
+                                <span class="ai-glass__badge">Cross-Platform</span>
                             </div>
-                            <div class="ai-card__body" id="cross-platform-comparison">
+                            <div class="ai-glass__body" id="cross-platform-comparison">
                                 <div class="ai-loading">Loading platform comparison…</div>
                             </div>
                         </div>
-
-                        <!-- Strategy Performance -->
-                        <div class="ai-card ai-card--full">
-                            <div class="ai-card__header">
-                                <h3 class="ai-card__title">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                        <div class="ai-glass ai-glass--full">
+                            <div class="ai-glass__head">
+                                <h3 class="ai-glass__title">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
                                     Strategy Performance
                                 </h3>
-                                <span class="ai-card__badge">Content Strategies</span>
+                                <span class="ai-glass__badge">By Strategy Type</span>
                             </div>
-                            <div class="ai-card__body" id="strategy-performance">
+                            <div class="ai-glass__body" id="strategy-performance">
                                 <div class="ai-loading">Loading strategy data…</div>
                             </div>
                         </div>
@@ -312,12 +381,55 @@
 
                 <!-- Tab: AI Learning -->
                 <div class="ai-tab-panel" id="tab-ai-learning">
-                    <div id="ai-learning-container">
+                    <!-- Learning Delta Dashboard -->
+                    <div class="ai-glass mb-5">
+                        <div class="ai-glass__head">
+                            <h3 class="ai-glass__title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                                Week-over-Week Learning Deltas
+                            </h3>
+                            <span class="ai-glass__badge ai-glass__badge--green">Auto-tracked</span>
+                        </div>
+                        <div class="ai-glass__body" id="learning-delta">
+                            <div class="ai-loading">Computing learning deltas…</div>
+                        </div>
+                    </div>
+
+                    <div id="ai-learning-container" class="space-y-6">
                         <div class="ai-loading">Analyzing AI learning growth…</div>
                     </div>
                 </div>
 
             </div><!-- .content -->
+
+            <!-- ═══ Latest Post Deep Dive Modal ═══ -->
+            <div id="deep-dive-modal" class="fixed inset-0 top-16 left-[260px] max-lg:left-0 z-50 hidden">
+                <!-- Backdrop -->
+                <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" onclick="aiCloseDeepDiveModal()"></div>
+                <!-- Modal Panel -->
+                <div class="absolute inset-4 md:inset-8 lg:inset-y-6 lg:inset-x-[6%] flex flex-col rounded-2xl border border-white/[0.08] bg-surface/95 backdrop-blur-xl shadow-2xl overflow-hidden animate-[modalSlideUp_0.3s_ease-out]">
+                    <!-- Modal Header -->
+                    <div class="flex items-center justify-between px-6 py-4 border-b border-white/[0.06] bg-white/[0.02] shrink-0">
+                        <div class="flex items-center gap-3">
+                            <div class="w-9 h-9 rounded-xl bg-brand-dim flex items-center justify-center text-brand-light">
+                                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                            </div>
+                            <div>
+                                <h2 class="text-base font-bold text-white">Latest Post Deep Dive</h2>
+                                <p class="text-xs text-white/40 mt-0.5" id="deep-dive-modal-subtitle">Full analysis of your most recent post</p>
+                            </div>
+                        </div>
+                        <button onclick="aiCloseDeepDiveModal()" class="w-8 h-8 rounded-lg flex items-center justify-center text-white/40 hover:text-white hover:bg-white/[0.06] transition-all" title="Close">
+                            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+                        </button>
+                    </div>
+                    <!-- Modal Body (scrollable) -->
+                    <div class="flex-1 overflow-y-auto p-6" id="deep-dive-modal-body">
+                        <div class="ai-loading">Loading full analysis…</div>
+                    </div>
+                </div>
+            </div>
+
         </main>
     </div>
 
@@ -325,23 +437,26 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="../js/config.js"></script>
     <script src="../js/supabase.js"></script>
-    
-    <!-- Core Utils -->
     <script src="../js/core/utils.js"></script>
-    
-    <!-- Models -->
     <script src="../js/models/Brand.js"></script>
-    
-    <!-- Components -->
+    <script src="../js/components/toast.js"></script>
     <script src="../js/components/sidebar.js"></script>
     <script src="../js/components/brand-switcher.js"></script>
-    <script src="../js/components/toast.js"></script>
-    
-    <!-- Services -->
     <script src="../js/services/brandManager.js"></script>
-    <script src="../js/services/metricsService.js"></script>
-    
-    <!-- Page Controller -->
-    <script src="../js/pages/ai-intelligence.js"></script>
+    <script src="../js/pages/ai-intelligence/state.js"></script>
+    <script src="../js/pages/ai-intelligence/helpers.js"></script>
+    <script src="../js/pages/ai-intelligence/status-bar.js"></script>
+    <script src="../js/pages/ai-intelligence/performance.js"></script>
+    <script src="../js/pages/ai-intelligence/patterns.js"></script>
+    <script src="../js/pages/ai-intelligence/exemplars.js"></script>
+    <script src="../js/pages/ai-intelligence/heatmap.js"></script>
+    <script src="../js/pages/ai-intelligence/themes.js"></script>
+    <script src="../js/pages/ai-intelligence/history.js"></script>
+    <script src="../js/pages/ai-intelligence/latest-post.js"></script>
+    <script src="../js/pages/ai-intelligence/ai-learning.js"></script>
+    <script src="../js/pages/ai-intelligence/learning-delta.js"></script>
+    <script src="../js/pages/ai-intelligence/recent-posts.js"></script>
+    <script src="../js/pages/ai-intelligence/cross-platform.js"></script>
+    <script src="../js/pages/ai-intelligence/init.js"></script>
 </body>
 </html>

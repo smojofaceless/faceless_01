@@ -819,19 +819,31 @@ export async function loadJob(
 }
 
 /**
- * Update job fields directly
+ * Update job fields directly (with retry on transient DB errors)
  */
 export async function updateJobFields(
   supabase: SupabaseClient,
   jobId: string,
   updates: Record<string, unknown>
 ): Promise<void> {
-  const { error } = await supabase
-    .from('jobs')
-    .update(updates)
-    .eq('id', jobId);
+  const MAX_RETRIES = 3;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const { error } = await supabase
+      .from('jobs')
+      .update(updates)
+      .eq('id', jobId);
 
-  if (error) {
+    if (!error) return;
+
+    // Retry on transient DB/gateway errors (502, 503, 504)
+    const isTransient = /502|503|504|bad gateway|service unavailable|gateway timeout|ECONNRESET|timeout/i.test(error.message);
+    if (isTransient && attempt < MAX_RETRIES) {
+      const backoff = attempt * 2000; // 2s, 4s
+      console.warn(`[updateJobFields] Transient error (attempt ${attempt}/${MAX_RETRIES}): ${error.message}, retrying in ${backoff}ms...`);
+      await new Promise(r => setTimeout(r, backoff));
+      continue;
+    }
+
     throw new Error(`Failed to update job: ${error.message}`);
   }
 }

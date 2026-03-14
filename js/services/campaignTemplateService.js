@@ -67,6 +67,29 @@ class CampaignTemplateService {
         return data;
     }
 
+    // ── Update ───────────────────────────────────────
+
+    /**
+     * Update a template's name, description, config, and/or tags
+     * @param {string} id
+     * @param {{ name?: string, description?: string, config?: object, tags?: string[] }} updates
+     */
+    async updateTemplate(id, updates) {
+        if (!this.sb) throw new Error('No database connection');
+        const payload = {};
+        if (updates.name !== undefined) payload.name = updates.name;
+        if (updates.description !== undefined) payload.description = updates.description;
+        if (updates.config !== undefined) payload.config = updates.config;
+        if (updates.tags !== undefined) payload.tags = updates.tags;
+
+        const { error } = await this.sb
+            .from('campaign_templates')
+            .update(payload)
+            .eq('id', id);
+
+        if (error) throw error;
+    }
+
     // ── Delete (soft) ───────────────────────────────
 
     /**

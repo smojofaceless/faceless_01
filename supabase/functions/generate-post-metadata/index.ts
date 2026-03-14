@@ -548,7 +548,11 @@ These underperformed. Avoid similar title structures, tag choices, and phrasing.
         .slice(0, 10)
         .map((t) => `#${t.tag} (used ${t.count}×, avg perf: ${t.avg_perf})`)
         .join(", ");
-      parts.push(`High-engagement tags: ${tagList}`);
+      const mustUseTags = wp.top_hashtags
+        .slice(0, 6)
+        .map((t) => `#${t.tag}`)
+        .join(", ");
+      parts.push(`High-engagement tags: ${tagList}\nYou MUST include at least 3 of these proven tags in your hashtags array: ${mustUseTags}`);
     }
 
     if (wp.top_ctas && wp.top_ctas.length > 0) {
@@ -563,10 +567,10 @@ These underperformed. Avoid similar title structures, tag choices, and phrasing.
       const ls = wp.length_stats;
       const statParts: string[] = [];
       if (ls.avg_title_len) statParts.push(`title ~${ls.avg_title_len} chars`);
-      if (ls.avg_desc_len) statParts.push(`description ~${ls.avg_desc_len} chars`);
+      if (ls.avg_desc_len) statParts.push(`description/caption ~${ls.avg_desc_len} chars`);
       if (ls.avg_tag_count) statParts.push(`~${ls.avg_tag_count} tags`);
       if (statParts.length > 0) {
-        parts.push(`Optimal lengths: ${statParts.join(", ")}`);
+        parts.push(`Optimal lengths for ${platformConfig.platform}: ${statParts.join(", ")}. These are based on your TOP-performing posts on this specific platform — match these lengths closely.`);
       }
     }
 
@@ -1012,7 +1016,7 @@ async function generateForPost(
       }
     }
 
-    // 7a-iii. Fetch cached winning patterns
+    // 7a-iii. Refresh stale winning patterns if new metrics arrived
     interface WinningPatterns {
       top_hooks?: Array<{ hook: string; perf: number }>;
       top_hashtags?: Array<{ tag: string; count: number; avg_perf: number }>;
@@ -1021,6 +1025,20 @@ async function generateForPost(
     }
     let winningPatterns: WinningPatterns | undefined;
     if (post.brand_id) {
+      try {
+        const { data: refreshed } = await supabase.rpc("refresh_stale_patterns", {
+          p_brand_id: post.brand_id,
+          p_platform: platform,
+          p_vibe_preset: vibePreset,
+        });
+        if (refreshed) {
+          console.log(`[METADATA] 🔄 Refreshed stale winning patterns for ${platform}`);
+        }
+      } catch (refreshErr) {
+        // Non-fatal — will use cached patterns
+        console.warn("[METADATA] Could not refresh stale patterns:", refreshErr);
+      }
+
       try {
         const { data: wpData } = await supabase.rpc("get_winning_patterns", {
           p_brand_id: post.brand_id,

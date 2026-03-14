@@ -530,6 +530,47 @@ serve(async (req) => {
       const errorMsg = `Finalization failed: missing [${missingStr}]`;
       console.error(`[WORKER-V1] ✗ ${errorMsg}`);
       
+      // =========================================
+      // REQUEUE FOR INCOMPLETE IMAGES
+      // If only images are incomplete, reset the images step and requeue
+      // so the worker retries generating the missing images (up to 2 retries)
+      // =========================================
+      const hasIncompleteImages = finalization.missing.some((m: string) => m.startsWith('images_incomplete'));
+      const onlyImagesMissing = finalization.missing.length === 1 && hasIncompleteImages;
+      const currentAttempt = (await loadJob(supabase, jobId))?.attempt_count || 0;
+      
+      if (onlyImagesMissing && currentAttempt < 3) {
+        console.log(`[WORKER-V1] 🔄 Images incomplete — requeueing to images step (attempt ${currentAttempt + 1}/3)`);
+        
+        // Reset images step so it re-runs and picks up only missing scenes
+        await updateStepStatus(supabase, jobId, 'images', 'pending', {
+          requeued_from_finalization: true,
+          reason: missingStr,
+        });
+        // Also reset downstream steps that depend on images
+        for (const downstreamStep of ['subtitles', 'assemble', 'upload', 'schedule']) {
+          await updateStepStatus(supabase, jobId, downstreamStep, 'pending', {
+            requeued_from_finalization: true,
+          });
+        }
+        
+        // Set current_step back to images
+        await supabase.from('jobs').update({ current_step: 'images' }).eq('id', jobId);
+        
+        await releaseJob(supabase, jobId, workerId, 'queued', undefined);
+        
+        return new Response(
+          JSON.stringify({
+            success: true,
+            requeued: true,
+            job_id: jobId,
+            reason: 'images_incomplete_retry',
+            message: `Requeued to images step — ${missingStr}`,
+          }),
+          { status: 202, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+        );
+      }
+      
       // Classify finalization failure (usually permanent - missing assets)
       const finalFailure = classifyError(
         new Error(errorMsg),

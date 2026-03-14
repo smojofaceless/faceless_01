@@ -7,8 +7,11 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>Create Campaign - ContentEngine</title>
-    
-    <!-- Core Design System -->
+
+    <!-- Tailwind CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Core Design System (sidebar, header, layout shell) -->
     <link rel="stylesheet" href="../css/core/tokens.css">
     <link rel="stylesheet" href="../css/core/base.css">
     <link rel="stylesheet" href="../css/core/components.css">
@@ -16,10 +19,23 @@
     <link rel="stylesheet" href="../css/core/responsive.css">
     <link rel="stylesheet" href="../css/styles.css">
     <link rel="stylesheet" href="../css/dashboard.css">
-    <link rel="stylesheet" href="../css/campaign.css">
-    
-    <!-- Favicon -->
+    <!-- Campaign-specific (preset cards, timeline, modal, platform pills) -->
+    <link rel="stylesheet" href="../css/campaigns.css">
+
     <link id="favicon" rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📅</text></svg>">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        surface: { DEFAULT: '#16161e', light: '#1e1e2a', border: '#2a2a3a' },
+                        brand: { DEFAULT: '#8b5cf6', light: '#a78bfa', dim: 'rgba(139,92,246,0.12)' },
+                    }
+                }
+            }
+        };
+    </script>
 </head>
 <body class="vibe-dark">
     <div class="app">
@@ -35,104 +51,51 @@
                     <span class="logo__text">ContentEngine</span>
                 </a>
             </div>
-
             <nav class="sidebar__nav">
                 <div class="nav-section">
                     <span class="nav-section__title">Overview</span>
                     <a href="../index.html" class="nav-link">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="3" y="3" width="7" height="7"/>
-                            <rect x="14" y="3" width="7" height="7"/>
-                            <rect x="14" y="14" width="7" height="7"/>
-                            <rect x="3" y="14" width="7" height="7"/>
-                        </svg>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
                         <span>Dashboard</span>
                     </a>
-                    <a href="create.html" class="nav-link">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polygon points="23 7 16 12 23 17 23 7"/>
-                            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
-                        </svg>
-                        <span>Create Video</span>
-                    </a>
                     <a href="campaign.html" class="nav-link active">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                            <line x1="16" y1="2" x2="16" y2="6"/>
-                            <line x1="8" y1="2" x2="8" y2="6"/>
-                            <line x1="3" y1="10" x2="21" y2="10"/>
-                            <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>
-                        </svg>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>
                         <span>Campaigns</span>
                     </a>
                     <a href="calendar.html" class="nav-link">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                            <line x1="16" y1="2" x2="16" y2="6"/>
-                            <line x1="8" y1="2" x2="8" y2="6"/>
-                            <line x1="3" y1="10" x2="21" y2="10"/>
-                        </svg>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                         <span>Calendar</span>
                     </a>
-                    <a href="posts.html" class="nav-link">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                            <polyline points="14 2 14 8 20 8"/>
-                            <line x1="16" y1="13" x2="8" y2="13"/>
-                            <line x1="16" y1="17" x2="8" y2="17"/>
-                        </svg>
-                        <span>Posts Queue</span>
-                    </a>
+
                     <a href="ai-intelligence.html" class="nav-link">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.57-3.25 3.93"/>
-                            <path d="M12 2a4 4 0 0 0-4 4c0 1.95 1.4 3.57 3.25 3.93"/>
-                            <path d="M9 10l3 12 3-12"/>
-                            <circle cx="12" cy="4" r="1"/>
-                            <path d="M5 18h14"/>
-                            <path d="M3 22h18"/>
-                        </svg>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.57-3.25 3.93"/><path d="M12 2a4 4 0 0 0-4 4c0 1.95 1.4 3.57 3.25 3.93"/><path d="M9 10l3 12 3-12"/><circle cx="12" cy="4" r="1"/><path d="M5 18h14"/><path d="M3 22h18"/></svg>
                         <span>AI Intelligence</span>
                     </a>
                 </div>
-
                 <div class="nav-section">
                     <span class="nav-section__title">Management</span>
                     <a href="brands.html" class="nav-link">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
-                            <line x1="7" y1="7" x2="7.01" y2="7"/>
-                        </svg>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
                         <span>Brands</span>
                     </a>
                     <a href="connections.html" class="nav-link">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-                        </svg>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                         <span>Connections</span>
                     </a>
                     <a href="brand-roadmap.html" class="nav-link">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z" opacity="0.3"/>
-                            <path d="M10 7h4M17 10v4M14 17h-4M7 14v-4"/>
-                        </svg>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z" opacity="0.3"/><path d="M10 7h4M17 10v4M14 17h-4M7 14v-4"/></svg>
                         <span>Brand Roadmap</span>
                     </a>
                 </div>
             </nav>
-
             <div class="sidebar__footer">
                 <a href="settings.html" class="nav-link">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="3"/>
-                        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
-                    </svg>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
                     <span>Settings</span>
                 </a>
                 <div class="sidebar__legal">
                     <a href="terms.html">Terms</a>
-                    <span class="sidebar__legal-sep">·</span>
+                    <span class="sidebar__legal-sep">&middot;</span>
                     <a href="privacy.html">Privacy</a>
                 </div>
             </div>
@@ -140,420 +103,234 @@
 
         <!-- Main Content -->
         <main class="main">
-            <header class="header">
-                <div class="header__left">
-                    <button class="sidebar-toggle btn btn--icon btn--ghost">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="3" y1="12" x2="21" y2="12"/>
-                            <line x1="3" y1="6" x2="21" y2="6"/>
-                            <line x1="3" y1="18" x2="21" y2="18"/>
-                        </svg>
-                    </button>
-                    <div class="header__title-area">
-                        <span class="header__icon">📅</span>
-                        <h1 class="header__title">Create Campaign</h1>
+            <div class="content">
+                <!-- Page Header -->
+                <div class="cp-header">
+                    <div class="cp-header__left">
+                        <h1 class="cp-header__title">Campaigns</h1>
+                        <span class="cp-header__subtitle">Create & manage automated video campaigns across platforms</span>
+                    </div>
+                    <div class="cp-header__actions">
+                        <label class="cp-adv-toggle" title="Unlock advanced scheduling controls">
+                            <input type="checkbox" id="advanced-mode-checkbox">
+                            <span>Advanced</span>
+                            <span>⚙️</span>
+                        </label>
+                        <div id="brand-switcher"></div>
                     </div>
                 </div>
-                <div class="header__right">
-                    <!-- Advanced Mode Toggle -->
-                    <label class="advanced-mode-toggle" title="Unlock power-user controls for scheduling windows, jitter, and preset weights">
-                        <input type="checkbox" id="advanced-mode-checkbox">
-                        <span class="advanced-mode-toggle__label">Advanced</span>
-                        <span class="advanced-mode-toggle__icon">⚙️</span>
-                    </label>
-                    <div id="brand-switcher"></div>
-                </div>
-            </header>
 
-            <div class="content">
                 <!-- Loading State -->
-                <div id="loading-state" class="campaign-loading">
-                    <div class="campaign-loading__spinner"></div>
-                    <p class="campaign-loading__text">Loading...</p>
+                <div id="loading-state" class="flex flex-col items-center justify-center min-h-[400px] gap-5">
+                    <div class="cp-loading__spinner"></div>
+                    <p class="text-sm text-gray-500 uppercase tracking-wider">Initializing</p>
                 </div>
 
                 <!-- No Brand Selected -->
-                <div id="no-brand-state" class="campaign-empty hidden">
-                    <div class="campaign-empty__icon">🎯</div>
-                    <h2 class="campaign-empty__title">Select a Brand</h2>
-                    <p class="campaign-empty__text">Choose a brand from the dropdown above to create a campaign.</p>
+                <div id="no-brand-state" class="hidden flex-col items-center justify-center min-h-[420px] text-center gap-5 p-10 border-2 border-dashed border-surface-border rounded-xl">
+                    <div class="text-5xl opacity-50">🎯</div>
+                    <h2 class="text-xl font-bold text-white">Select a Brand</h2>
+                    <p class="text-gray-500 max-w-sm leading-relaxed">Choose a brand from the dropdown above to start building your campaign.</p>
                     <a href="brands.html" class="btn btn--primary">Manage Brands</a>
                 </div>
 
-                <!-- Preset Gallery -->
-                <div id="preset-gallery" class="preset-gallery hidden">
-                    <div class="preset-gallery__header">
-                        <div class="preset-gallery__title-area">
-                            <h2 class="preset-gallery__title">Story Presets</h2>
-                            <p class="preset-gallery__subtitle">Choose the narrative engine for your campaign videos</p>
-                        </div>
-                    </div>
-                    <div class="preset-gallery__grid" id="preset-gallery-grid">
-                        <!-- Populated by JS -->
+                <!-- ====== PRESET DETAIL MODAL ====== -->
+                <div class="cp-modal" id="preset-detail-modal">
+                    <div class="cp-modal__overlay"></div>
+                    <div class="cp-modal__container">
+                        <button class="cp-modal__close" id="preset-modal-close">&times;</button>
+                        <div class="cp-modal__content" id="preset-modal-content"></div>
                     </div>
                 </div>
 
-                <!-- Preset Detail Modal -->
-                <div class="preset-modal" id="preset-detail-modal">
-                    <div class="preset-modal__overlay"></div>
-                    <div class="preset-modal__container">
-                        <button class="preset-modal__close" id="preset-modal-close">&times;</button>
-                        <div class="preset-modal__content" id="preset-modal-content">
-                            <!-- Populated by JS -->
+                <!-- ====== CAMPAIGN FORM ====== -->
+                <div id="campaign-form" class="hidden">
+
+                    <!-- ROW 1: Presets (left) + Config tiles (right) -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
+
+                        <!-- Story Presets -->
+                        <div id="preset-gallery" class="cp-presets bg-surface rounded-lg border border-surface-border overflow-hidden hidden">
+                            <div class="flex items-baseline justify-between px-3 py-2 border-b border-surface-border">
+                                <h3 class="text-xs font-bold text-white">Story Presets</h3>
+                                <span class="text-[10px] text-gray-500 uppercase tracking-wider">Click to explore</span>
+                            </div>
+                            <div class="p-2 max-h-[380px] overflow-y-auto grid grid-cols-4 gap-2" id="preset-gallery-grid"></div>
+                        </div>
+
+                        <!-- Config tiles (2x2 grid) -->
+                        <div class="grid grid-cols-2 gap-3">
+                            <!-- Tile: Brand -->
+                            <div class="bg-surface rounded-lg border border-surface-border p-3">
+                                <label class="text-[10px] font-medium text-gray-500 uppercase tracking-wider block mb-1.5">Brand</label>
+                                <div class="inline-flex items-center gap-2 text-sm text-white font-medium">
+                                    <span class="text-lg" id="brand-emoji">👻</span>
+                                    <span id="brand-name">Stories That Stalk</span>
+                                </div>
+                            </div>
+
+                            <!-- Tile: Videos -->
+                            <div class="bg-surface rounded-lg border border-surface-border p-3">
+                                <label class="text-[10px] font-medium text-gray-500 uppercase tracking-wider block mb-1.5" for="video-count">Videos</label>
+                                <div class="cp-stepper">
+                                    <button type="button" class="cp-stepper__btn" id="video-count-minus">&minus;</button>
+                                    <input type="number" id="video-count" class="cp-stepper__input" value="7" min="1" max="30">
+                                    <button type="button" class="cp-stepper__btn" id="video-count-plus">+</button>
+                                </div>
+                            </div>
+
+                            <!-- Tile: Start Date -->
+                            <div class="bg-surface rounded-lg border border-surface-border p-3">
+                                <label class="text-[10px] font-medium text-gray-500 uppercase tracking-wider block mb-1.5" for="start-date">Start Date</label>
+                                <input type="date" id="start-date" class="input w-full text-sm">
+                            </div>
+
+                            <!-- Tile: Posts / Day -->
+                            <div class="bg-surface rounded-lg border border-surface-border p-3">
+                                <label class="text-[10px] font-medium text-gray-500 uppercase tracking-wider block mb-1.5" for="posts-per-day">Posts / Day</label>
+                                <div class="flex items-center gap-2">
+                                    <select id="posts-per-day" class="input flex-1 text-sm">
+                                        <option value="1">1</option>
+                                        <option value="2">2</option>
+                                        <option value="3" selected>3</option>
+                                    </select>
+                                    <div class="flex items-center gap-1.5">
+                                        <div class="cp-stepper">
+                                            <button type="button" class="cp-stepper__btn" id="scene-count-minus">&minus;</button>
+                                            <input type="number" id="scene-count-override" class="cp-stepper__input" value="0" min="0" max="30" title="Scene count (0=auto)">
+                                            <button type="button" class="cp-stepper__btn" id="scene-count-plus">+</button>
+                                        </div>
+                                        <span class="text-[9px] text-gray-600 leading-tight">scenes<br>0=auto</span>
+                                    </div>
+                                    <label class="cp-asap-toggle">
+                                        <input type="checkbox" id="asap-mode">
+                                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                                        ASAP
+                                    </label>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- Campaign Templates Bar -->
-                <div id="template-bar" class="template-bar hidden">
-                    <div class="template-bar__header">
-                        <div class="template-bar__title-area">
-                            <h3 class="template-bar__title">📋 Campaign Templates</h3>
-                            <span class="template-bar__subtitle text-muted">Quick-launch from saved configs</span>
+                    <!-- ROW 2: Platforms (full width, compact) -->
+                    <div class="bg-surface rounded-lg border border-surface-border px-3 py-2 mb-3 flex items-center gap-3">
+                        <span class="text-[10px] font-medium text-gray-500 uppercase tracking-wider shrink-0">Platforms</span>
+                        <div class="cp-platforms" id="platform-pills-container">
+                            <!-- Dynamically populated from brand.connectedPlatforms -->
                         </div>
-                        <button class="btn btn--ghost btn--sm" id="btn-save-template" title="Save current form settings as a template">
-                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
-                                <polyline points="17 21 17 13 7 13 7 21"/>
-                                <polyline points="7 3 7 8 15 8"/>
-                            </svg>
-                            Save as Template
+                        <!-- Stats inline with platforms -->
+                        <div class="ml-auto flex items-center gap-2 shrink-0">
+                            <span class="cp-stat-badge">🎬 <strong id="summary-video-count">7</strong></span>
+                            <span class="cp-stat-badge">📅 <strong id="summary-days">7</strong>d</span>
+                            <span class="cp-stat-badge">📡 <strong id="summary-platforms">3</strong></span>
+                            <span class="cp-stat-badge">📊 <strong id="summary-total-posts">21</strong></span>
+                        </div>
+                    </div>
+
+                    <!-- ROW 3: Schedule + Templates side by side -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
+
+                        <!-- Schedule Preview -->
+                        <div class="bg-surface rounded-lg border border-surface-border overflow-hidden">
+                            <div class="flex items-center justify-between px-3 py-2 border-b border-surface-border">
+                                <h3 class="text-xs font-semibold text-white flex items-center gap-1.5">
+                                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                                    Schedule Preview
+                                </h3>
+                                <button type="button" class="btn btn--ghost btn--sm" id="refresh-preview">
+                                    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+                                    Refresh
+                                </button>
+                            </div>
+                            <div class="p-2 max-h-[380px] overflow-y-auto" id="schedule-preview-content">
+                                <div class="flex flex-col items-center gap-2 py-6 text-gray-500">
+                                    <div class="spinner"></div>
+                                    <p class="text-xs">Generating schedule...</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Templates -->
+                        <div id="template-bar" class="bg-surface rounded-lg border border-surface-border overflow-hidden">
+                            <div class="flex items-center justify-between px-3 py-2 border-b border-surface-border">
+                                <h3 class="text-xs font-bold text-white flex items-center gap-1.5">📋 Templates</h3>
+                                <button class="btn btn--ghost btn--sm" id="btn-save-template" title="Save current settings as template">
+                                    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                                    Save
+                                </button>
+                            </div>
+                            <div class="p-2 max-h-[380px] overflow-y-auto grid grid-cols-3 gap-2" id="template-grid"></div>
+                        </div>
+                    </div>
+
+                    <!-- ROW 4: Action bar (compact) -->
+                    <div class="flex items-center justify-between gap-3 bg-surface rounded-lg border border-surface-border px-4 py-2.5">
+                        <button type="button" class="btn btn--secondary btn--sm" id="btn-cancel">Cancel</button>
+                        <button type="button" class="btn btn--primary" id="btn-create-campaign">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                            Launch Campaign
                         </button>
                     </div>
-                    <div class="template-bar__grid" id="template-grid">
-                        <!-- Populated by JS -->
+
+                    <!-- Advanced Settings (hidden by default) -->
+                    <div id="advanced-settings" class="hidden bg-surface rounded-lg border border-surface-border overflow-hidden mt-3">
+                        <div class="flex items-center gap-2 px-3 py-2 border-b border-surface-border">
+                            <h3 class="text-xs font-semibold text-white">⚙️ Advanced Settings</h3>
+                        </div>
+                        <div class="p-3 grid grid-cols-1 lg:grid-cols-3 gap-4">
+                            <div>
+                                <label class="text-[10px] font-medium text-gray-500 uppercase tracking-wider block mb-1">Posting Windows (EST)</label>
+                                <div class="cp-time-windows" id="time-windows">
+                                    <div class="cp-time-block">
+                                        <input type="time" class="cp-time-input" value="08:00" data-window="0">
+                                        <span class="cp-time-block__label">Morning</span>
+                                    </div>
+                                    <div class="cp-time-block">
+                                        <input type="time" class="cp-time-input" value="12:00" data-window="1">
+                                        <span class="cp-time-block__label">Midday</span>
+                                    </div>
+                                    <div class="cp-time-block">
+                                        <input type="time" class="cp-time-input" value="18:00" data-window="2">
+                                        <span class="cp-time-block__label">Evening</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flex items-end gap-3">
+                                <div>
+                                    <label class="text-[10px] font-medium text-gray-500 uppercase tracking-wider block mb-1">Jitter</label>
+                                    <div class="cp-inline-field">
+                                        <span class="cp-inline-field__unit">&plusmn;</span>
+                                        <input type="number" id="jitter-minutes" class="cp-inline-field__input" value="15" min="0" max="60">
+                                        <span class="cp-inline-field__unit">min</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="text-[10px] font-medium text-gray-500 uppercase tracking-wider block mb-1">Stagger</label>
+                                    <div class="cp-inline-field">
+                                        <input type="number" id="platform-offset" class="cp-inline-field__input" value="5" min="0" max="30">
+                                        <span class="cp-inline-field__unit">min</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="text-[10px] font-medium text-gray-500 uppercase tracking-wider block mb-1">Preset Distribution</label>
+                                <div id="preset-weights">
+                                    <div class="cp-weight-empty">Loading presets...</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Campaign Form -->
-                <div id="campaign-form" class="campaign-interface hidden">
-                    <!-- Full-width Campaign Summary Bar -->
-                    <div class="campaign-summary-bar">
-                        <div class="summary-stat">
-                            <span class="summary-stat__icon">🎬</span>
-                            <span class="summary-stat__value" id="summary-video-count">7</span>
-                            <span class="summary-stat__label">Videos</span>
-                        </div>
-                        <div class="campaign-summary-bar__divider"></div>
-                        <div class="summary-stat">
-                            <span class="summary-stat__icon">📅</span>
-                            <span class="summary-stat__value" id="summary-days">7</span>
-                            <span class="summary-stat__label">Days</span>
-                        </div>
-                        <div class="campaign-summary-bar__divider"></div>
-                        <div class="summary-stat">
-                            <span class="summary-stat__icon">📡</span>
-                            <span class="summary-stat__value" id="summary-platforms">3</span>
-                            <span class="summary-stat__label">Platforms</span>
-                        </div>
-                        <div class="campaign-summary-bar__divider"></div>
-                        <div class="summary-stat">
-                            <span class="summary-stat__icon">📊</span>
-                            <span class="summary-stat__value" id="summary-total-posts">21</span>
-                            <span class="summary-stat__label">Total Posts</span>
-                        </div>
+                <!-- ====== EXISTING CAMPAIGNS ====== -->
+                <div id="campaigns-list" class="hidden mt-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-base font-bold text-white flex items-center gap-2">📋 Active Campaigns</h3>
+                        <button type="button" class="btn btn--primary btn--sm" id="btn-new-campaign">+ New Campaign</button>
                     </div>
-
-                    <div class="campaign-layout">
-                        <!-- Left Column: Configuration -->
-                        <div class="campaign-config">
-
-                            <!-- Quick Setup -->
-                            <div class="card campaign-basics">
-                                <div class="card-header">
-                                    <h3 class="card-title">
-                                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" style="opacity:0.6">
-                                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-                                        </svg>
-                                        Quick Setup
-                                    </h3>
-                                </div>
-                                <div class="card-body">
-
-                                    <!-- Row 1: Brand + Video Count side by side -->
-                                    <div class="setup-row setup-row--2col">
-                                        <div class="form-group">
-                                            <label class="form-label">
-                                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-                                                Brand
-                                            </label>
-                                            <div class="brand-display">
-                                                <span class="brand-display__emoji" id="brand-emoji">👻</span>
-                                                <span class="brand-display__name" id="brand-name">Stories That Stalk</span>
-                                            </div>
-                                        </div>
-                                        <div class="form-group">
-                                            <label class="form-label" for="video-count">
-                                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                                                Videos
-                                            </label>
-                                            <div class="input-with-buttons">
-                                                <button type="button" class="btn btn--icon btn--ghost" id="video-count-minus">−</button>
-                                                <input type="number" id="video-count" class="input" value="7" min="1" max="30">
-                                                <button type="button" class="btn btn--icon btn--ghost" id="video-count-plus">+</button>
-                                            </div>
-                                            <p class="form-hint">1–30 per campaign</p>
-                                        </div>
-                                    </div>
-
-                                    <!-- Row 2: Platforms — full width, horizontal cards with brand SVGs -->
-                                    <div class="form-group">
-                                        <label class="form-label">
-                                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                                            Target Platforms
-                                        </label>
-                                        <div class="platform-checkboxes">
-                                            <label class="checkbox-card">
-                                                <input type="checkbox" name="platform" value="youtube_shorts" checked>
-                                                <span class="checkbox-card__content">
-                                                    <span class="checkbox-card__icon">
-                                                        <svg viewBox="0 0 24 24" fill="#FF0000" width="22" height="22"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814z"/><polygon fill="#FFF" points="9.545 15.568 15.818 12 9.545 8.432"/></svg>
-                                                    </span>
-                                                    <span class="checkbox-card__label">YouTube Shorts</span>
-                                                </span>
-                                            </label>
-                                            <label class="checkbox-card">
-                                                <input type="checkbox" name="platform" value="instagram_reels" checked>
-                                                <span class="checkbox-card__content">
-                                                    <span class="checkbox-card__icon">
-                                                        <svg viewBox="0 0 24 24" fill="none" stroke="#E4405F" stroke-width="2" width="22" height="22"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
-                                                    </span>
-                                                    <span class="checkbox-card__label">Instagram Reels</span>
-                                                </span>
-                                            </label>
-                                            <label class="checkbox-card">
-                                                <input type="checkbox" name="platform" value="facebook_reels" checked>
-                                                <span class="checkbox-card__content">
-                                                    <span class="checkbox-card__icon">
-                                                        <svg viewBox="0 0 24 24" fill="#1877F2" width="22" height="22"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
-                                                    </span>
-                                                    <span class="checkbox-card__label">Facebook Reels</span>
-                                                </span>
-                                            </label>
-                                            <label class="checkbox-card">
-                                                <input type="checkbox" name="platform" value="tiktok" checked>
-                                                <span class="checkbox-card__content">
-                                                    <span class="checkbox-card__icon">
-                                                        <svg viewBox="0 0 24 24" fill="#00f2ea" width="22" height="22"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-5.2 1.74 2.89 2.89 0 012.31-4.64 2.93 2.93 0 01.88.13V9.4a6.84 6.84 0 00-1-.05A6.33 6.33 0 005 20.1a6.34 6.34 0 0010.86-4.43v-7a8.16 8.16 0 004.77 1.52v-3.4a4.85 4.85 0 01-1-.1z"/></svg>
-                                                    </span>
-                                                    <span class="checkbox-card__label">TikTok</span>
-                                                </span>
-                                            </label>
-                                            <label class="checkbox-card">
-                                                <input type="checkbox" name="platform" value="threads" checked>
-                                                <span class="checkbox-card__content">
-                                                    <span class="checkbox-card__icon">
-                                                        <svg viewBox="0 0 192 192" fill="#000000" width="22" height="22"><path d="M141.537 88.988a66.6 66.6 0 00-2.518-1.143c-1.482-27.307-16.403-42.94-41.457-43.1h-.335c-14.986 0-27.449 6.396-35.12 18.028l13.661 9.427c5.587-8.586 14.217-13.014 21.459-13.014h.118c8.803.052 15.462 2.952 19.809 8.588 3.275 4.253 5.489 9.848 6.605 17.649-6.728-1.189-13.959-1.658-21.616-1.407-21.15.636-34.74 12.417-33.798 28.355.481 8.054 4.522 15.108 11.324 19.886 5.84 3.879 13.319 5.848 21.101 5.481 10.414-.495 18.784-4.649 24.867-12.383 4.589-5.842 7.671-13.295 9.342-22.632 4.894 2.899 8.626 6.684 10.922 11.32 3.8 7.657 4.033 19.97-3.631 28.591-6.744 7.612-15.336 11.117-29.605 11.229-15.777-.123-27.576-5.002-35.246-14.521C90.38 123.1 86.639 110.29 86.32 94.04c.319-16.251 4.06-29.061 11.127-38.067 7.67-9.518 19.469-14.397 35.246-14.52 15.916.124 27.905 5.004 35.816 14.603 3.862 4.682 6.828 10.445 8.826 17.154l13.437-3.767a63.7 63.7 0 00-11.079-21.305c-10.06-12.243-24.561-18.556-46.902-18.715h-.064c-22.242.159-36.639 6.479-46.53 18.575-8.916 11.096-13.612 26.369-13.959 46.063v.102c.347 19.694 5.043 34.967 13.959 46.063 9.891 12.096 24.288 18.416 46.53 18.576h.064c17.347-.133 28.81-4.863 37.445-14.547 10.952-12.239 10.592-28.26 5.44-38.797-3.549-7.272-9.48-13.296-17.39-17.608zm-47.893 34.655c-9.115.444-17.852-4.883-18.401-11.445-.408-4.801 2.61-13.516 21.502-14.168 2.287-.077 4.528-.114 6.73-.114 5.765 0 11.227.515 16.278 1.5-1.935 18.074-13.519 23.589-26.109 24.227z"/></svg>
-                                                    </span>
-                                                    <span class="checkbox-card__label">Threads</span>
-                                                </span>
-                                            </label>
-                                            <label class="checkbox-card">
-                                                <input type="checkbox" name="platform" value="twitter" checked>
-                                                <span class="checkbox-card__content">
-                                                    <span class="checkbox-card__icon">
-                                                        <svg viewBox="0 0 24 24" fill="#000000" width="22" height="22"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-                                                    </span>
-                                                    <span class="checkbox-card__label">X (Twitter)</span>
-                                                </span>
-                                            </label>
-                                        </div>
-                                    </div>
-
-                                    <!-- Divider -->
-                                    <div class="setup-divider"></div>
-
-                                    <!-- Row 3: Schedule settings — Start Date + Posts/Day side by side -->
-                                    <div class="setup-row setup-row--2col">
-                                        <div class="form-group">
-                                            <label class="form-label" for="start-date">
-                                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                                                Start Date
-                                            </label>
-                                            <input type="date" id="start-date" class="input">
-                                            <p class="form-hint">When the first video posts</p>
-                                        </div>
-                                        <div class="form-group">
-                                            <label class="form-label" for="posts-per-day">
-                                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                                                Posts Per Day
-                                            </label>
-                                            <select id="posts-per-day" class="input">
-                                                <option value="1">1 post / day</option>
-                                                <option value="2">2 posts / day</option>
-                                                <option value="3" selected>3 posts / day</option>
-                                            </select>
-                                            <p class="form-hint">Spread across time windows</p>
-                                        </div>
-                                    </div>
-
-                                    <!-- Divider -->
-                                    <div class="setup-divider"></div>
-
-                                    <!-- Row 4: Testing controls — compact row -->
-                                    <div class="setup-row setup-row--testing">
-                                        <div class="form-group form-group--compact">
-                                            <label class="form-label form-label--sm" for="scene-count-override">
-                                                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                                                Scenes / Video
-                                            </label>
-                                            <div class="input-with-buttons input-with-buttons--sm">
-                                                <button type="button" class="btn btn--icon btn--ghost btn--xs" id="scene-count-minus">−</button>
-                                                <input type="number" id="scene-count-override" class="input input--sm" value="0" min="0" max="30">
-                                                <button type="button" class="btn btn--icon btn--ghost btn--xs" id="scene-count-plus">+</button>
-                                            </div>
-                                            <p class="form-hint">0 = auto</p>
-                                        </div>
-                                        <div class="form-group form-group--compact">
-                                            <label class="checkbox-inline">
-                                                <input type="checkbox" id="asap-mode">
-                                                <span class="checkbox-inline__icon">
-                                                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                                                </span>
-                                                <span class="checkbox-inline__label">ASAP Mode</span>
-                                            </label>
-                                            <p class="form-hint">Posts in ~5 min, skips windows</p>
-                                        </div>
-                                    </div>
-
-                                </div>
-                            </div>
-
-                            <!-- Advanced Settings (Hidden by default) -->
-                            <div id="advanced-settings" class="card campaign-advanced hidden">
-                                <div class="card-header">
-                                    <h3 class="card-title">⚙️ Advanced Settings</h3>
-                                </div>
-                                <div class="card-body">
-                                    <!-- Posting Windows -->
-                                    <div class="form-group">
-                                        <label class="form-label">Posting Windows (EST)</label>
-                                        <div class="time-window-list" id="time-windows">
-                                            <div class="time-window">
-                                                <input type="time" class="input input--time" value="08:00" data-window="0">
-                                                <span class="time-window__label">Morning</span>
-                                            </div>
-                                            <div class="time-window">
-                                                <input type="time" class="input input--time" value="12:00" data-window="1">
-                                                <span class="time-window__label">Midday</span>
-                                            </div>
-                                            <div class="time-window">
-                                                <input type="time" class="input input--time" value="18:00" data-window="2">
-                                                <span class="time-window__label">Evening</span>
-                                            </div>
-                                        </div>
-                                        <p class="form-hint">Base times for posts (jitter will be applied)</p>
-                                    </div>
-
-                                    <!-- Jitter Range -->
-                                    <div class="form-group">
-                                        <label class="form-label">Jitter Range</label>
-                                        <div class="jitter-control">
-                                            <span class="jitter-label">±</span>
-                                            <input type="number" id="jitter-minutes" class="input input--small" value="15" min="0" max="60">
-                                            <span class="jitter-label">minutes</span>
-                                        </div>
-                                        <p class="form-hint">Random offset to avoid exact posting times</p>
-                                    </div>
-
-                                    <!-- Platform Offsets -->
-                                    <div class="form-group">
-                                        <label class="form-label">Platform Stagger Offset</label>
-                                        <div class="offset-control">
-                                            <input type="number" id="platform-offset" class="input input--small" value="5" min="0" max="30">
-                                            <span class="offset-label">minutes between platforms</span>
-                                        </div>
-                                        <p class="form-hint">Delay between posting to different platforms</p>
-                                    </div>
-
-                                    <!-- Preset Weights -->
-                                    <div class="form-group">
-                                        <label class="form-label">Preset Distribution</label>
-                                        <p class="form-hint">Loaded from brand_templates (DB source of truth)</p>
-                                        <div class="preset-weights" id="preset-weights">
-                                            <!-- Populated dynamically from brand_templates -->
-                                            <div class="preset-weight-loading">Loading presets...</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Right Column: Schedule Preview -->
-                        <div class="campaign-preview">
-                            <div class="card schedule-preview">
-                                <div class="card-header">
-                                    <h3 class="card-title">
-                                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" style="opacity: 0.6">
-                                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                                            <line x1="16" y1="2" x2="16" y2="6"/>
-                                            <line x1="8" y1="2" x2="8" y2="6"/>
-                                            <line x1="3" y1="10" x2="21" y2="10"/>
-                                        </svg>
-                                        Schedule Preview
-                                    </h3>
-                                    <button type="button" class="btn btn--ghost btn--sm" id="refresh-preview">
-                                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-                                            <path d="M23 4v6h-6M1 20v-6h6"/>
-                                            <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
-                                        </svg>
-                                        Refresh
-                                    </button>
-                                </div>
-                                <div class="schedule-preview__content" id="schedule-preview-content">
-                                    <!-- Populated by JS -->
-                                    <div class="schedule-preview__loading">
-                                        <div class="spinner"></div>
-                                        <p>Generating schedule...</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Actions -->
-                    <div class="campaign-actions">
-                        <button type="button" class="btn btn--secondary" id="btn-cancel">Cancel</button>
-                        <button type="button" class="btn btn--primary btn--lg" id="btn-create-campaign">
-                            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
-                                <polyline points="22 4 12 14.01 9 11.01"/>
-                            </svg>
-                            Create Campaign
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Existing Campaigns List -->
-                <div id="campaigns-list" class="campaigns-section hidden">
-                    <div class="card">
-                        <div class="card-header">
-                            <h3 class="card-title">📋 Active Campaigns</h3>
-                            <button type="button" class="btn btn--primary btn--sm" id="btn-new-campaign">
-                                + New Campaign
-                            </button>
-                        </div>
-                        <div class="campaigns-table-wrapper">
-                            <table class="campaigns-table campaigns-table--enhanced">
-                                <thead>
-                                    <tr>
-                                        <th>Campaign</th>
-                                        <th>Status</th>
-                                        <th>Jobs</th>
-                                        <th>Posts</th>
-                                        <th>Progress</th>
-                                        <th>Next Up</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="campaigns-tbody">
-                                    <!-- Populated by JS -->
-                                </tbody>
-                            </table>
-                        </div>
-                        <div id="no-campaigns" class="campaigns-empty hidden">
-                            <p>No campaigns yet. Create your first campaign above!</p>
-                        </div>
+                    <div class="cp-campaigns__grid" id="campaigns-grid"></div>
+                    <div id="no-campaigns" class="hidden text-center py-10 text-gray-500">
+                        <p>No campaigns yet. Create your first campaign above!</p>
                     </div>
                 </div>
             </div>
@@ -563,26 +340,33 @@
     <!-- Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="../js/supabase.js"></script>
-    
+
     <!-- Core -->
     <script src="../js/config.js"></script>
     <script src="../js/core/utils.js"></script>
-    
+
     <!-- Models -->
     <script src="../js/models/Brand.js"></script>
-    
+
     <!-- Services -->
     <script src="../js/services/apiKeys.js"></script>
     <script src="../js/services/brandManager.js"></script>
     <script src="../js/services/timeSlotService.js"></script>
     <script src="../js/services/campaignManager.js"></script>
     <script src="../js/services/campaignTemplateService.js"></script>
-    
+
     <!-- Components -->
     <script src="../js/components/brand-switcher.js"></script>
     <script src="../js/components/toast.js"></script>
-    
-    <!-- Page Controller -->
-    <script src="../js/pages/campaign.js?v=nocache-1749782400"></script>
+
+    <!-- Campaign Modules -->
+    <script src="../js/pages/campaigns/state.js"></script>
+    <script src="../js/pages/campaigns/form.js"></script>
+    <script src="../js/pages/campaigns/presets.js"></script>
+    <script src="../js/pages/campaigns/schedule.js"></script>
+    <script src="../js/pages/campaigns/campaigns-list.js"></script>
+    <script src="../js/pages/campaigns/templates.js"></script>
+    <script src="../js/pages/campaigns/modal.js"></script>
+    <script src="../js/pages/campaigns/init.js"></script>
 </body>
 </html>

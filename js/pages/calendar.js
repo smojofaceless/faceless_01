@@ -458,22 +458,12 @@
         const closeBtn = elements.postModal.querySelector('.modal__close');
         const closeBtnFooter = document.getElementById('modal-close-btn');
         const overlay = elements.postModal.querySelector('.modal__overlay');
-        const editBtn = document.getElementById('modal-edit-btn');
 
         [closeBtn, closeBtnFooter, overlay].forEach(el => {
             if (el) {
                 el.addEventListener('click', closeModal);
             }
         });
-
-        // Edit button
-        if (editBtn) {
-            editBtn.addEventListener('click', () => {
-                if (selectedPost) {
-                    window.location.href = `posts.html?edit=${selectedPost.id}`;
-                }
-            });
-        }
 
         // Close on escape key
         document.addEventListener('keydown', (e) => {
@@ -759,6 +749,62 @@
             }
         }
 
+        // Build dynamic footer actions
+        const footer = document.getElementById('post-modal-footer');
+        if (footer) {
+            const actions = [];
+            actions.push('<button class="btn btn--secondary" id="modal-close-btn">Close</button>');
+
+            if (!isJob) {
+                // Retry button for failed posts
+                if (activePost.status === 'failed') {
+                    actions.push('<button class="btn btn--primary" id="modal-retry-btn">&#x21bb; Retry Post</button>');
+                }
+
+                // Cross-post button for posts with video content
+                if (activePost.content?.videoUrl && activePost.status !== 'failed') {
+                    actions.push('<button class="btn btn--outline" id="modal-crosspost-btn">&#x2795; Post to More Platforms</button>');
+                }
+            }
+
+            footer.innerHTML = actions.join('');
+
+            // Re-bind close button
+            const closeBtn = footer.querySelector('#modal-close-btn');
+            if (closeBtn) closeBtn.addEventListener('click', closeModal);
+
+            // Retry handler
+            const retryBtn = footer.querySelector('#modal-retry-btn');
+            if (retryBtn) {
+                retryBtn.addEventListener('click', async () => {
+                    retryBtn.disabled = true;
+                    retryBtn.textContent = 'Retrying...';
+                    try {
+                        await postQueueService.retryPost(activePost.id);
+                        retryBtn.textContent = 'Queued!';
+                        retryBtn.classList.remove('btn--primary');
+                        retryBtn.classList.add('btn--success');
+                        setTimeout(() => {
+                            closeModal();
+                            if (calendar) calendar.render();
+                        }, 800);
+                    } catch (err) {
+                        retryBtn.disabled = false;
+                        retryBtn.textContent = '↻ Retry Post';
+                        console.error('Retry failed:', err);
+                    }
+                });
+            }
+
+            // Cross-post handler
+            const crosspostBtn = footer.querySelector('#modal-crosspost-btn');
+            if (crosspostBtn) {
+                crosspostBtn.addEventListener('click', () => {
+                    showCrossPostPicker(activePost, post);
+                });
+            }
+        }
+
         // Show modal
         elements.postModal.classList.add('active');
         document.body.style.overflow = 'hidden';
@@ -782,6 +828,88 @@
             threads: 'Threads'
         };
         return names[platformId] || platformId;
+    }
+
+    /**
+     * Show a platform picker for cross-posting content
+     */
+    function showCrossPostPicker(activePost, consolidatedPost) {
+        const allPlatforms = ['youtube_shorts', 'tiktok', 'instagram_reels', 'facebook_reels'];
+        const existingPlatforms = consolidatedPost?.platforms
+            ? consolidatedPost.platforms.map(p => p.platformId)
+            : [activePost.platformId];
+
+        const available = allPlatforms.filter(p => !existingPlatforms.includes(p));
+
+        if (available.length === 0) {
+            alert('This post is already scheduled for all available platforms.');
+            return;
+        }
+
+        const pickerHtml = `
+            <div class="crosspost-picker" style="padding: 16px; background: var(--surface-light, #1e1e2a); border-radius: 8px; margin-top: 12px;">
+                <h5 style="margin: 0 0 12px; color: var(--text-primary, #f1f5f9); font-size: 14px;">Select platforms to cross-post:</h5>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    ${available.map(p => `
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 8px; border-radius: 6px; background: rgba(255,255,255,0.04);">
+                            <input type="checkbox" value="${p}" class="crosspost-platform-cb" style="accent-color: #8b5cf6;">
+                            <span style="color: var(--text-primary, #f1f5f9); font-size: 13px;">${getPlatformDisplayName(p)}</span>
+                        </label>
+                    `).join('')}
+                </div>
+                <div style="display: flex; gap: 8px; margin-top: 12px;">
+                    <button class="btn btn--primary btn--sm" id="crosspost-confirm">Cross-Post</button>
+                    <button class="btn btn--secondary btn--sm" id="crosspost-cancel">Cancel</button>
+                </div>
+            </div>
+        `;
+
+        // Insert picker into modal body
+        const existingPicker = document.querySelector('.crosspost-picker');
+        if (existingPicker) existingPicker.remove();
+
+        elements.postModalBody.insertAdjacentHTML('beforeend', pickerHtml);
+
+        document.getElementById('crosspost-cancel')?.addEventListener('click', () => {
+            document.querySelector('.crosspost-picker')?.remove();
+        });
+
+        document.getElementById('crosspost-confirm')?.addEventListener('click', async () => {
+            const selected = [...document.querySelectorAll('.crosspost-platform-cb:checked')].map(cb => cb.value);
+            if (selected.length === 0) return;
+
+            const confirmBtn = document.getElementById('crosspost-confirm');
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Creating...';
+
+            try {
+                // Get the raw post data to duplicate
+                const sourcePost = await postQueueService.getPost(activePost.id || activePost.raw?.id);
+                if (!sourcePost) throw new Error('Source post not found');
+
+                // Update the platforms array to include new ones
+                const currentPlatforms = sourcePost.platforms || [];
+                const updatedPlatforms = [...new Set([...currentPlatforms, ...selected])];
+
+                await postQueueService.updatePost(sourcePost.id, {
+                    platforms: updatedPlatforms
+                });
+
+                confirmBtn.textContent = 'Done!';
+                confirmBtn.classList.remove('btn--primary');
+                confirmBtn.classList.add('btn--success');
+
+                setTimeout(() => {
+                    closeModal();
+                    if (calendar) calendar.render();
+                }, 800);
+            } catch (err) {
+                console.error('Cross-post failed:', err);
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Cross-Post';
+                alert(`Cross-post failed: ${err.message}`);
+            }
+        });
     }
 
     // ==================== Metrics Section ====================

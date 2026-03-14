@@ -263,7 +263,7 @@ class TikTokAdapter implements PlatformAdapter {
       console.log(`[TikTok] Caption: ${safeCaption.slice(0, 100)}...`);
 
       // 4. Query Creator Info to get available privacy levels
-      console.log('[TikTok] Step 1: Querying creator info...');
+      console.log('[TikTok] Querying creator info...');
       const creatorInfoResponse = await fetch(`${this.API_BASE}/post/publish/creator_info/query/`, {
         method: 'POST',
         headers: {
@@ -272,19 +272,75 @@ class TikTokAdapter implements PlatformAdapter {
         },
       });
       const creatorInfo = await creatorInfoResponse.json();
+
+      // Point 1b: Check if creator can post
+      if (creatorInfo.data?.creator_can_post === false) {
+        return { success: false, error_class: 'transient', error_message: 'TikTok: Creator cannot make more posts at this moment. Please try again later.' };
+      }
+
+      // Point 1c: Check max video duration
+      const maxDuration = creatorInfo.data?.max_video_post_duration_sec;
+      const postDuration = (meta as Record<string, unknown>)?.duration_seconds as number | undefined;
+      if (maxDuration && postDuration && postDuration > maxDuration) {
+        return { success: false, error_class: 'permanent', error_message: `TikTok: Video duration (${postDuration}s) exceeds maximum allowed (${maxDuration}s).` };
+      }
+
+      // Use user-reviewed TikTok settings if available (from UX review page)
+      const tiktokSettings = (meta as Record<string, unknown>)?.tiktok_settings as Record<string, unknown> | undefined;
+      const platformContent = (meta as Record<string, unknown>)?.platform_content as Record<string, Record<string, unknown>> | undefined;
+      const userSettings = tiktokSettings || platformContent?.tiktok || null;
+      const userReviewed = userSettings?.user_reviewed === true;
+
       let privacyLevel = 'SELF_ONLY'; // safest default
-      if (creatorInfo.data?.privacy_level_options) {
-        const options = creatorInfo.data.privacy_level_options as string[];
-        console.log(`[TikTok] Available privacy levels: ${options.join(', ')}`);
-        // Prefer PUBLIC > FOLLOWERS > FRIENDS > SELF_ONLY
-        if (options.includes('PUBLIC_TO_EVERYONE')) privacyLevel = 'PUBLIC_TO_EVERYONE';
-        else if (options.includes('FOLLOWER_OF_CREATOR')) privacyLevel = 'FOLLOWER_OF_CREATOR';
-        else if (options.includes('MUTUAL_FOLLOW_FRIENDS')) privacyLevel = 'MUTUAL_FOLLOW_FRIENDS';
-        else if (options.includes('SELF_ONLY')) privacyLevel = 'SELF_ONLY';
+      let disableComment = false;
+      let disableDuet = false;
+      let disableStitch = false;
+      let brandOrganicToggle = false;
+      let brandContentToggle = false;
+
+      if (userReviewed && userSettings) {
+        // Use user-specified settings from the TikTok publish review page
+        console.log('[TikTok] Using user-reviewed settings');
+        privacyLevel = (userSettings.privacy_level as string) || 'SELF_ONLY';
+        disableComment = userSettings.disable_comment === true;
+        disableDuet = userSettings.disable_duet === true;
+        disableStitch = userSettings.disable_stitch === true;
+        brandOrganicToggle = userSettings.brand_organic_toggle === true;
+        brandContentToggle = userSettings.brand_content_toggle === true;
+
+        // Use user-edited title if provided
+        if (userSettings.title && typeof userSettings.title === 'string') {
+          const userCaption = userSettings.title;
+          // Keep the user's version as-is (they already edited it)
+          console.log(`[TikTok] Using user-edited caption: ${(userCaption as string).slice(0, 80)}...`);
+        }
       } else {
-        console.warn('[TikTok] Could not get privacy options, using SELF_ONLY');
+        // Auto-select privacy (legacy behavior)
+        if (creatorInfo.data?.privacy_level_options) {
+          const options = creatorInfo.data.privacy_level_options as string[];
+          console.log(`[TikTok] Available privacy levels: ${options.join(', ')}`);
+          if (options.includes('PUBLIC_TO_EVERYONE')) privacyLevel = 'PUBLIC_TO_EVERYONE';
+          else if (options.includes('FOLLOWER_OF_CREATOR')) privacyLevel = 'FOLLOWER_OF_CREATOR';
+          else if (options.includes('MUTUAL_FOLLOW_FRIENDS')) privacyLevel = 'MUTUAL_FOLLOW_FRIENDS';
+          else if (options.includes('SELF_ONLY')) privacyLevel = 'SELF_ONLY';
+        }
+        console.warn('[TikTok] No user-reviewed settings found, using auto-selected defaults');
+      }
+
+      // Validate privacy level is in available options
+      if (creatorInfo.data?.privacy_level_options) {
+        const validOptions = creatorInfo.data.privacy_level_options as string[];
+        if (!validOptions.includes(privacyLevel)) {
+          console.warn(`[TikTok] Privacy level '${privacyLevel}' not available, falling back to SELF_ONLY`);
+          privacyLevel = 'SELF_ONLY';
+        }
       }
       console.log(`[TikTok] Using privacy level: ${privacyLevel}`);
+
+      // Use user-edited caption if available
+      const finalCaption = (userReviewed && userSettings?.title)
+        ? String(userSettings.title).slice(0, 2200)
+        : safeCaption;
 
       // 5. Download video bytes first (for FILE_UPLOAD)
       console.log('[TikTok] Step 1: Downloading video...');
@@ -301,7 +357,25 @@ class TikTokAdapter implements PlatformAdapter {
       const chunkCount = Math.max(1, Math.ceil(totalBytes / MAX_CHUNK));
 
       // 5. Init video publish via FILE_UPLOAD
-      console.log(`[TikTok] Step 2: Initializing video publish (FILE_UPLOAD, ${chunkCount} chunk(s))...`);
+      console.log(`[TikTok] Initializing video publish (FILE_UPLOAD, ${chunkCount} chunk(s))...`);
+      const postInfo: Record<string, unknown> = {
+        title: (userReviewed && userSettings?.title) ? String(userSettings.title).slice(0, 150) : (title || '').slice(0, 150),
+        description: finalCaption,
+        privacy_level: privacyLevel,
+        disable_duet: disableDuet,
+        disable_comment: disableComment,
+        disable_stitch: disableStitch,
+        video_cover_timestamp_ms: 1000,
+      };
+
+      // Add commercial content disclosure if user specified
+      if (brandOrganicToggle) {
+        postInfo.brand_organic_toggle = true;
+      }
+      if (brandContentToggle) {
+        postInfo.brand_content_toggle = true;
+      }
+
       const initResponse = await fetch(`${this.API_BASE}/post/publish/video/init/`, {
         method: 'POST',
         headers: {
@@ -309,15 +383,7 @@ class TikTokAdapter implements PlatformAdapter {
           'Content-Type': 'application/json; charset=UTF-8',
         },
         body: JSON.stringify({
-          post_info: {
-            title: (title || '').slice(0, 150),
-            description: safeCaption,
-            privacy_level: privacyLevel,
-            disable_duet: false,
-            disable_comment: false,
-            disable_stitch: false,
-            video_cover_timestamp_ms: 1000,
-          },
+          post_info: postInfo,
           source_info: {
             source: 'FILE_UPLOAD',
             video_size: totalBytes,
@@ -570,8 +636,11 @@ class ThreadsAdapter implements PlatformAdapter {
 
       // 3. Build post text
       const caption = description || title || '';
+      // Append hashtags to caption
+      const hashtagStr = (tags || []).slice(0, 5).map((t: string) => t.startsWith('#') ? t : `#${t}`).join(' ');
+      const fullCaption = hashtagStr ? `${caption}\n\n${hashtagStr}` : caption;
       // Threads caption limit: 500 chars
-      const safeCaption = caption.length > 500 ? caption.slice(0, 497) + '...' : caption;
+      const safeCaption = fullCaption.length > 500 ? fullCaption.slice(0, 497) + '...' : fullCaption;
 
       console.log(`[Threads] Text: ${safeCaption.slice(0, 100)}...`);
 
@@ -896,7 +965,7 @@ class YouTubeAdapter implements PlatformAdapter {
       
       // Initiate resumable upload
       const initResponse = await fetch(
-        'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
+        'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status&notifySubscribers=false',
         {
           method: 'POST',
           headers: {
@@ -1943,6 +2012,7 @@ async function processPost(
             };
           } else if (post.platform === 'threads') {
             postDescription = (md as Record<string, unknown>).caption as string || (md as Record<string, unknown>).text as string || postDescription;
+            postTags = (md as Record<string, unknown>).hashtags as string[] || postTags;
             postMeta = {
               ...postMeta,
               metadata_source: metadata.status,
@@ -2052,6 +2122,25 @@ async function processPost(
       // Metadata lookup failed — continue with original post fields
       console.warn(`[POST-WORKER] Metadata lookup failed (using post fields):`, metaErr);
       postMeta = { ...postMeta, metadata_source: 'fallback_error' };
+    }
+
+    // ── Fallback description guard ──────────────────────────────────
+    // When metadata failed/missing, postDescription is still raw story
+    // narration (often 800-1000+ chars). Truncate to a teaser length so
+    // platforms never get a wall of narration text as a caption.
+    const metaSource = (postMeta as Record<string, unknown>).metadata_source as string;
+    if (metaSource && metaSource.startsWith('fallback') && postDescription && postDescription.length > 200) {
+      console.warn(`[POST-WORKER] Fallback description too long (${postDescription.length} chars) — truncating to teaser`);
+      // Find the last sentence boundary within 200 chars
+      const truncTarget = postDescription.slice(0, 200);
+      const lastSentence = Math.max(
+        truncTarget.lastIndexOf('. '),
+        truncTarget.lastIndexOf('? '),
+        truncTarget.lastIndexOf('! ')
+      );
+      postDescription = lastSentence > 80
+        ? postDescription.slice(0, lastSentence + 1)
+        : truncTarget.trimEnd() + '...';
     }
 
     // Call platform API (passes supabase and brandId for real adapters)

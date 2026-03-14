@@ -259,9 +259,9 @@ export class StepLogger {
   }
 
   /**
-   * Truncate an object (shallow)
+   * Truncate an object (with one level of recursion for nested objects)
    */
-  private truncateObject(obj: Record<string, unknown>): Record<string, unknown> {
+  private truncateObject(obj: Record<string, unknown>, depth: number = 0): Record<string, unknown> {
     const result: Record<string, unknown> = {};
     let size = 0;
     const maxSize = 2000; // 2KB per object
@@ -280,6 +280,8 @@ export class StepLogger {
         result[key] = value.slice(0, 5);
       } else if (value === null || value === undefined) {
         // Skip
+      } else if (typeof value === 'object' && depth < 2) {
+        result[key] = this.truncateObject(value as Record<string, unknown>, depth + 1);
       } else {
         result[key] = '[object]';
       }

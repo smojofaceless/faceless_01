@@ -2121,7 +2121,7 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
           '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black',
           '-c:v', 'libx264',
           '-preset', useLowMemory ? 'ultrafast' : 'fast',
-          '-crf', '23',
+          '-crf', '18', // Lower CRF for gameplay — source is already portrait, no AI upscale needed
           '-an', // Remove original audio — we'll add narration
           '-y',
           rawVideoPath,

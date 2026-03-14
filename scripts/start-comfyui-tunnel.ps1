@@ -132,16 +132,16 @@ Write-Log "Tunnel URL: $tunnelUrl"
 $tunnelUrl | Out-File "$PROJECT_DIR\logs\current-tunnel-url.txt" -Force
 
 # ─── STEP 5: Update Supabase secret ─────────────────────────────────────────
-Write-Log "Updating Supabase COMFYUI_RENDERER_URL secret..."
+Write-Log "Updating ALL renderer URL secrets (COMFYUI + VIDEO + FFMPEG)..."
 
 Push-Location $PROJECT_DIR
 try {
-    $result = & $NPX_CMD supabase secrets set "COMFYUI_RENDERER_URL=$tunnelUrl" 2>&1
+    $result = & $NPX_CMD supabase secrets set "COMFYUI_RENDERER_URL=$tunnelUrl" "VIDEO_RENDERER_URL=$tunnelUrl" "FFMPEG_RENDERER_URL=$tunnelUrl" 2>&1
     $exitCode = $LASTEXITCODE
     Write-Log "Supabase secrets set result (exit $exitCode): $result"
     
     if ($exitCode -eq 0) {
-        Write-Log "SUCCESS! Supabase secret updated."
+        Write-Log "SUCCESS! All 3 renderer URL secrets updated."
     } else {
         Write-Log "WARNING: Supabase secrets set may have failed. Exit code: $exitCode"
     }

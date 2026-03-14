@@ -309,9 +309,22 @@ class PostQueueService {
                 }
             }
             if (filters.platformId) {
-                // New posts use singular 'platform', old posts use 'platforms' array
-                // Use OR filter to cover both
-                query = query.or(`platform.eq.${filters.platformId},platforms.cs.{${filters.platformId}}`);
+                // Map short platform names to all DB variants
+                const platformVariants = {
+                    'youtube': ['youtube', 'youtube_shorts'],
+                    'instagram': ['instagram', 'instagram_reels'],
+                    'facebook': ['facebook', 'facebook_reels'],
+                    'tiktok': ['tiktok'],
+                    'twitter': ['twitter'],
+                    'threads': ['threads']
+                };
+                const variants = platformVariants[filters.platformId] || [filters.platformId];
+                // Build OR conditions for both 'platform' (singular) and 'platforms' (array) columns
+                const orParts = variants.flatMap(v => [
+                    `platform.eq.${v}`,
+                    `platforms.cs.{${v}}`
+                ]);
+                query = query.or(orParts.join(','));
             }
 
             const { data, error } = await query;
@@ -347,7 +360,7 @@ class PostQueueService {
         try {
             let query = supabaseClient
                 .from('jobs')
-                .select('id, title, status, vibe_preset, scheduled_post_at, brand_id, batch_id, created_at')
+                .select('id, title, status, vibe_preset, scheduled_post_at, brand_id, batch_id, created_at, meta')
                 .not('scheduled_post_at', 'is', null)
                 .gte('scheduled_post_at', start.toISOString())
                 .lte('scheduled_post_at', end.toISOString())
@@ -465,6 +478,21 @@ class PostQueueService {
                     batchId: j.batch_id,
                     raw: j
                 };
+            })
+            .filter(item => {
+                // Apply platform filter to job items (jobs store platforms in meta)
+                if (!filters.platformId) return true;
+                const variants = {
+                    'youtube': ['youtube', 'youtube_shorts'],
+                    'instagram': ['instagram', 'instagram_reels'],
+                    'facebook': ['facebook', 'facebook_reels'],
+                    'tiktok': ['tiktok'],
+                    'twitter': ['twitter'],
+                    'threads': ['threads']
+                };
+                const allowed = variants[filters.platformId] || [filters.platformId];
+                const jobPlatforms = item.raw?.meta?.platforms || [item.platformId];
+                return jobPlatforms.some(p => allowed.includes(p));
             });
 
         // Combine and sort by scheduled time

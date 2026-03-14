@@ -178,7 +178,7 @@ class PostEditor {
      * Render platform toggle checkboxes
      */
     renderPlatformToggles() {
-        const allPlatforms = ['youtube', 'instagram', 'facebook'];
+        const allPlatforms = ['youtube', 'instagram', 'facebook', 'tiktok'];
         const currentPlatforms = this.post.platforms || ['youtube'];
         
         return allPlatforms.map(p => {
@@ -302,6 +302,15 @@ class PostEditor {
                 <button class="btn btn--sm btn--secondary" data-regenerate="${platformId}">
                     🤖 Regenerate ${config.name} Content
                 </button>
+                ${platformId === 'tiktok' ? `
+                    <button class="btn btn--sm btn--primary" id="tiktok-review-btn" style="margin-left:8px;background:#000;border-color:#000;">
+                        🎵 Review TikTok Settings
+                    </button>
+                    <p class="text-muted text-sm" style="margin-top:8px">
+                        TikTok requires you to review privacy, interactions, and commercial content settings before publishing.
+                        ${content.user_reviewed ? '<span style="color:var(--color-success)">✓ Settings reviewed</span>' : '<span style="color:var(--color-warning)">⚠ Not yet reviewed</span>'}
+                    </p>
+                ` : ''}
             </div>
         `;
         
@@ -488,6 +497,20 @@ class PostEditor {
         
         // Tags input handling
         this.bindTagsInput();
+
+        // TikTok review button
+        modal.querySelector('#tiktok-review-btn')?.addEventListener('click', () => {
+            this.updateContent();
+            this.close();
+            if (typeof tiktokPublishReview !== 'undefined') {
+                tiktokPublishReview.open(this.post, {
+                    onPublished: () => { if (this.onSave) this.onSave(this.post); },
+                    onCancel: () => {}
+                });
+            } else {
+                window.location.href = `pages/tiktok-publish.html?post_id=${this.post.id}`;
+            }
+        });
         
         // Escape key
         document.addEventListener('keydown', (e) => {
@@ -813,6 +836,25 @@ class PostEditor {
                 if (!validation.valid) {
                     Toast.error(`${getPlatformConfig(platform).name}: ${validation.errors[0]}`);
                     this.switchPlatform(platform);
+                    return;
+                }
+            }
+
+            // If TikTok is included, check if user has reviewed TikTok settings
+            if ((this.post.platforms || []).includes('tiktok')) {
+                const ttContent = this.post.platform_content?.tiktok || {};
+                if (!ttContent.user_reviewed) {
+                    Toast.info('Please review TikTok settings before approving.');
+                    this.close();
+                    // Open TikTok publish review
+                    if (typeof tiktokPublishReview !== 'undefined') {
+                        tiktokPublishReview.open(this.post, {
+                            onPublished: () => { if (this.onSave) this.onSave(this.post); },
+                            onCancel: () => {}
+                        });
+                    } else {
+                        window.location.href = `pages/tiktok-publish.html?post_id=${this.post.id}`;
+                    }
                     return;
                 }
             }

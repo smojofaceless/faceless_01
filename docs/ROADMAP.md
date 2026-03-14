@@ -1,7 +1,7 @@
 # Project Roadmap
 
-> **Document Version:** 4.9  
-> **Last Updated:** March 5, 2026  
+> **Document Version:** 5.0  
+> **Last Updated:** March 13, 2026  
 > **Author:** System Architect  
 > **Status:** Active Development
 
@@ -11,6 +11,7 @@
 
 | Date | Version | Changes |
 |------|---------|--------|
+| Mar 13, 2026 | 5.0 | **TikTok UX Guidelines Compliance + YouTube Notify Fix + Gameplay Quality + LLC Financial Tracking Roadmap**: (1) **TikTok UX compliance** — app was declined for not following 5 TikTok UX Guidelines. Built comprehensive publish review system: `css/tiktok-publish.css` (full styling), `js/components/tiktok-publish.js` (`TikTokPublishReview` class implementing all 5 guideline points — creator info fetch, privacy dropdown with no default, interactions off by default, commercial content disclosure, video preview + consent + status polling), `pages/tiktok-publish.html` (standalone review page). Post-editor wired: TikTok added to platform toggles, approval gate checks `user_reviewed` flag, "Review TikTok Settings" button. Post-worker `TikTokAdapter` updated: checks `creator_can_post`, validates video duration vs `max_video_post_duration_sec`, reads user-reviewed settings (privacy, interactions, commercial toggles), validates against available options. (2) **YouTube notifySubscribers=false** — added `notifySubscribers=false` to YouTube resumable upload URL in post-worker. Prevents spamming subscribers during high-volume automated posting. (3) **Gameplay CRF quality bump** — dropped FFmpeg CRF from 23→18 for gameplay mode only in `video-renderer/server.js`. Source gameplay clips are already portrait 1080x1920, so lower CRF preserves more detail without resolution upscaling. Normal image-based videos keep CRF 23. (4) **LLC Financial Tracking Roadmap** — added 3 new roadmap sections for single-member LLC preparation: Revenue/Profits Page (YouTube monetary scope, manual TikTok/affiliate entries), Expenses Page (automated API cost tracking + manual entries), Tax-Ready Page (Schedule C export for Form 1040). |
 | Mar 5, 2026 | 4.9 | **One Too Many → Manga-Horror Preset Differentiation**: One Too Many preset was identical to Urban Legend across all 11 `image_prompt` fields (both `cinematic-dark`). Converted One Too Many to a unique **manga-horror** cartoon style — Junji Ito-inspired dark manga with heavy black ink linework, obsessive cross-hatching, high-contrast monochrome with selective blood-red accents, spiral/counting motifs, and dramatic foreshortening. Changes: (1) **New `manga-horror` art style** added to `art_styles` DB table with full base_prompt, color_override, technical_style, negative_prompt, and comfyui_tokens. (2) **One Too Many `brand_templates` updated** — all 11 `image_prompt` fields rewritten for manga aesthetic: art_style `manga-horror`, style_prompt with Junji Ito/cross-hatching direction, monochrome+blood-red palette, manga lighting, counting-dread mood, manga-distorted environments, manga-specific camera angles (overhead counting shots, extreme close-ups of dread-faces, crosshatch shadows). (3) **Cinematographer counting rules upgraded** — existing `countingRules` enhanced with manga visual style directives (heavy ink, Junji Ito spirals, tally mark motifs). Added `countingRulesSolo` for non-group One Too Many stories to still enforce manga aesthetic. (4) **Legacy fallback template** — `manga-horror` added to hardcoded `styleTemplates` in `buildImagePrompt()`. **Result**: 4 visually distinct presets — 2 cartoon (Reddit=Rick and Morty `rnmort`, One Too Many=manga-horror `manga-horror`) + 2 photorealistic (Urban Legend=`cinematic-dark`, Dark Origins=`vhs-horror`). |
 | Mar 5, 2026 | 4.8 | **Animation Intent Removed + Scene Lighting Fix (v10.0)**: (1) **Animation intent stripped from cinematographer** — since img2vid is disabled (v4.7), the ANIMATION INTENT section in `extractVisualCues()` was wasting tokens and biasing shot selection toward "easily animatable" shots (fog, rain, flickering) instead of the best storytelling shots. Removed the entire block (20-25% animation marking instructions, motionType/animationHint fields from JSON schema, animation field propagation in image_sequence builder). The img2vid step code remains intact for future re-enablement but the cinematographer no longer designs shots around AnimateDiff capability. (2) **Per-scene lighting/color fix** — fixed a bug where `buildImagePrompt()` always injected `storyAnchor.environment` (a single global environment from the whole story, e.g. "abandoned workshop") into the lighting and color_palette prompts for ALL scenes, even when the visual cue described a completely different location (e.g. "foggy town street"). Now uses the visual cue description (per-scene, from the cinematographer) as the primary location signal for lighting/color derivation. Falls back to story anchor only when the visual cue is absent or too short (<20 chars). This prevents a global anchor from leaking the wrong setting into scene-specific image generation. |
 | Mar 5, 2026 | 4.7 | **img2vid Disabled + Story Ending Fix + Dark Origins Overhaul**: (1) **img2vid step disabled** — removed `'img2vid'` from `STEP_ORDER` in `index.ts`. Generated AnimateDiff clips were not being used in the final assembled video (renderer fell back to Ken Burns). All img2vid code remains intact for future re-enablement. **Re-enable plan:** uncomment in `STEP_ORDER` when upgrading to RTX 5090 for local generation or when budget allows a video generation API (Runway, Kling, etc.). (2) **Story ending fix** — replaced "ENGAGEMENT HOOKS (MANDATORY)" section in `buildRedditInspiredPrompt()` with "ENDING (MANDATORY)". Old prompt listed 4 Reddit-style example endings ("I'm posting this from my car", "Has anyone else experienced something like this?") that the AI was copying verbatim into every story. New prompt instructs haunting, unresolved endings appropriate for narrated video — explicitly bans Reddit post framing language. Also removed "like a real Reddit post" and "posting on Reddit at 2 AM" phrasing from narrator style instructions. Same fix applied to `buildDarkOriginsPrompt()` — replaced "COMMENT-BAIT ENDING" with documentary-appropriate unresolved endings. (3) **Dark Origins cinematographer rules** — added `darkOriginsRules` to `extractVisualCues()`. Prevents cinematographer from inventing characters not in the story (e.g. "reaction shot of a woman" when story is about a man). Enforces documentary/archival shot style: evidence photos, empty locations, sealed files, abandoned buildings. Bans random bystander reaction shots. (4) **Dark Origins VHS art style** — updated `brand_templates.config_overrides.image_prompt` for dark_origins preset. New style: eerie VHS tape degradation, warped distorted realism, analog video artifacts, surveillance-camera grain, chromatic aberration, found-footage documentary aesthetic. Color palette: washed-out sickly green/yellow, VHS color bleeding, crushed blacks, sodium vapor orange. Removed disabled img2vid fields from config. |
@@ -54,6 +55,10 @@
 
 | Item | Date | Notes |
 |------|------|-------|
+| **TikTok UX Guidelines Compliance** | Mar 13, 2026 | App was declined for not following 5 TikTok UX Guidelines. Built full publish review system: `TikTokPublishReview` component (creator info, privacy dropdown no default, interactions off by default, commercial content disclosure, video preview + consent + status polling). Post-editor: TikTok in platform toggles, approval gate, review button. Post-worker: `creator_can_post` check, duration validation, user-reviewed settings passthrough. New files: `css/tiktok-publish.css`, `js/components/tiktok-publish.js`, `pages/tiktok-publish.html`. |
+| **YouTube notifySubscribers=false** | Mar 13, 2026 | Added `notifySubscribers=false` to YouTube resumable upload URL in post-worker. Prevents spamming subscribers during automated posting. |
+| **Gameplay CRF Quality Bump** | Mar 13, 2026 | Dropped FFmpeg CRF from 23→18 for gameplay mode only (`video-renderer/server.js`). Source clips are already portrait 1080x1920, lower CRF preserves more detail. Image-based videos unchanged at CRF 23. |
+| **Manga-Horror Preset Differentiation** | Mar 5, 2026 | One Too Many converted to unique manga-horror (Junji Ito-inspired) art style. New `manga-horror` art style in DB. All 11 `image_prompt` fields rewritten. 4 visually distinct presets: 2 cartoon (Reddit=rnmort, OTM=manga-horror) + 2 photorealistic (Urban Legend=cinematic-dark, Dark Origins=vhs-horror). |
 | **TTS Truncation Auto-Retry** | Mar 1, 2026 | `executeVoiceStepOpenAI()` now auto-retries when truncation detected. Attempt 1: normal. Attempt 2: `speed=0.95`. Attempt 3: split text at sentence boundary → two TTS calls → concatenate MP3 bytes. `findSentenceSplitPoint()` finds natural split near text midpoint. Job meta tracks retry info. Resolves silent narration cutoff issue (e.g. "The Dollmaker's Curse" — last 5 words never spoken). |
 | **Video Cutoff Fix** | Mar 1, 2026 | `Math.floor` → `Math.ceil` for Ken Burns frame calculations (4 locations in `server_clean.js`). Removed `-shortest` flag from FFmpeg `addAudioToVideo`. Added 0.5s buffer to last scene. Prevents videos cutting off 0.5-1s early. |
 | **SVC_ROLE_KEY Deployment (All Edge Functions)** | Mar 1, 2026 | All 9 edge functions now use `SVC_ROLE_KEY \|\| SUPABASE_SERVICE_ROLE_KEY` fallback. Fixed silent failure in metadata-scheduler and generate-post-metadata caused by stale auto-injected JWT. Root cause of 8 posts published with 0 tags (metadata records never created). Functions: metadata-scheduler, generate-post-metadata, post-worker, schedule-posts, create-job, check-job, test-scenes, run-job, worker-v1. |
@@ -1165,6 +1170,192 @@ All brand configuration is now in `brand_templates.config_overrides` JSONB with 
 
 ---
 
+## 💰 LEVEL 6 — LLC FINANCIAL TRACKING (Business Prep)
+
+> **Context:** Single-member LLC filing on **Schedule C** (Profit or Loss from Business) attached to personal **Form 1040**. No 1065/K-1 needed — that's for partnerships. Goal: automate what's automatable, provide manual entry for everything else, and generate tax-ready reports.
+
+### 29. Revenue / Profits Page
+
+> **Status:** 📋 PLANNED
+
+**Problem Statement:**
+Revenue comes from multiple sources across platforms. YouTube ad revenue is the only one with an API. TikTok Creator Fund, affiliate commissions, sponsorships, and brand deals must all be tracked manually. Currently no system exists for any revenue tracking.
+
+**Scope:**
+
+**Phase 1 — YouTube Monetary Analytics (Automated)**
+- [ ] Add `yt-analytics-monetary.readonly` scope to YouTube OAuth in `js/services/youtube.js`
+- [ ] Re-authorize YouTube connections with new monetary scope
+- [ ] Extend `metrics-collector` to fetch `estimatedRevenue`, `estimatedAdRevenue`, `estimatedRedPartnerRevenue` from YouTube Analytics API v2
+- [ ] Store revenue data in new `post_revenue` table (append-only, per-post, per-platform)
+- [ ] `record_post_revenue` RPC — idempotent revenue recording
+- [ ] `get_post_revenue` / `get_brand_revenue` / `get_revenue_summary` RPCs
+- [ ] Revenue columns: `platform`, `revenue_type` (ad, creator_fund, affiliate, sponsorship, other), `amount`, `currency`, `period_start`, `period_end`
+
+**Phase 2 — Manual Revenue Entry**
+- [ ] Revenue entry form — platform dropdown, revenue type, amount, date range, notes, receipt upload
+- [ ] Support revenue types: TikTok Creator Fund, affiliate commissions, sponsorships, brand deals, merchandise, other
+- [ ] Attach revenue to specific posts/jobs (optional) or brand-level
+- [ ] Receipt/invoice file upload to Supabase storage (`brands/{brand_id}/receipts/`)
+- [ ] Recurring revenue entries (e.g. monthly TikTok payouts)
+
+**Phase 3 — Revenue Dashboard UI**
+- [ ] `pages/profits.html` — Revenue/Profits page
+- [ ] Revenue summary cards: total revenue, revenue by platform, revenue by type, revenue by brand
+- [ ] Revenue over time chart (daily/weekly/monthly)
+- [ ] Per-brand revenue breakdown
+- [ ] Per-platform revenue comparison (YouTube automated vs TikTok manual vs affiliates)
+- [ ] Revenue per video/post drill-down
+- [ ] RPM (Revenue Per Mille) calculation per platform
+- [ ] Revenue growth trend + projections
+
+**Database Objects (Planned):**
+- Table: `post_revenue` (post_id, brand_id, platform, revenue_type, amount, currency, period_start, period_end, source, notes, receipt_url, created_at)
+- Table: `manual_revenue_entries` (brand_id, platform, revenue_type, amount, currency, date, description, receipt_url, recurring, created_at)
+- Views: `v_revenue_summary`, `v_revenue_by_platform`, `v_revenue_by_brand`
+- RPCs: `record_post_revenue`, `get_post_revenue`, `get_brand_revenue`, `get_revenue_summary`, `add_manual_revenue`, `get_manual_revenue_entries`
+
+---
+
+### 30. Expenses Page
+
+> **Status:** 📋 PLANNED
+
+**Problem Statement:**
+Operating costs include API usage (OpenAI, ElevenLabs), hosting, software subscriptions, music licensing, and other business expenses. API costs are already tracked in `api_usage` / `mv_daily_usage` but not in a financial reporting format. Non-API expenses (hosting, subscriptions, equipment) have no tracking at all.
+
+**Scope:**
+
+**Phase 1 — Automated API Cost Aggregation**
+- [ ] Pull from existing `api_usage` table and `mv_daily_usage` materialized view
+- [ ] Map API service names to actual dollar costs (OpenAI per-token pricing, ElevenLabs per-character, etc.)
+- [ ] `v_expense_from_api_usage` view — transforms api_usage into expense line items
+- [ ] Daily/weekly/monthly cost rollups by service
+
+**Phase 2 — Manual Expense Entry**
+- [ ] Expense entry form — category, vendor, amount, date, description, receipt upload, recurring flag
+- [ ] Expense categories aligned with Schedule C:
+  - Advertising (social media ads, promo)
+  - Car and truck expenses (if applicable)
+  - Commissions and fees (platform fees, payment processing)
+  - Contract labor (freelancer payments)
+  - Insurance
+  - Internet and phone (% business use)
+  - Office supplies and equipment (hardware, peripherals)
+  - Software subscriptions (API services, tools, hosting)
+  - Other expenses
+- [ ] Receipt/invoice upload to Supabase storage (`expenses/{year}/{month}/`)
+- [ ] Recurring expense tracking (monthly subscriptions auto-populate)
+- [ ] Expense tagging (brand-specific vs general business)
+
+**Phase 3 — Expenses Dashboard UI**
+- [ ] `pages/expenses.html` — Expenses page
+- [ ] Expense summary cards: total expenses (MTD/YTD), by category, automated vs manual
+- [ ] Expense breakdown chart (pie by category, bar by month)
+- [ ] API cost detail section (pulls from existing `mv_daily_usage`)
+- [ ] Manual expense list with CRUD (add/edit/delete)
+- [ ] Receipt gallery / attachment viewer
+- [ ] Monthly trend comparison
+- [ ] Budget alerts (optional — notify when category exceeds threshold)
+
+**Database Objects (Planned):**
+- Table: `manual_expenses` (id, brand_id, category, subcategory, vendor, amount, currency, expense_date, description, receipt_url, is_recurring, recurring_period, tax_deductible, schedule_c_line, created_at)
+- Table: `expense_categories` (id, name, schedule_c_line, description, is_system)
+- View: `v_expense_from_api_usage` — transforms `api_usage` into expense format
+- View: `v_expenses_combined` — UNION of automated API expenses + manual entries
+- View: `v_expenses_by_category` — aggregated by Schedule C category
+- RPCs: `add_manual_expense`, `update_manual_expense`, `delete_manual_expense`, `get_expenses`, `get_expense_summary`
+
+---
+
+### 31. Tax-Ready Page (Schedule C Export)
+
+> **Status:** 📋 PLANNED
+
+**Problem Statement:**
+As a single-member LLC, business income/expenses go on **Schedule C (Form 1040)** — Profit or Loss From Business. Need a page that aggregates all revenue and expenses into Schedule C line items, generates reports for tax filing, and stores supporting documentation.
+
+**Key Tax Context:**
+- **Entity:** Single-member LLC (disregarded entity for tax purposes)
+- **Filing:** Schedule C attached to personal Form 1040
+- **NOT needed:** Form 1065 (partnerships), Schedule K-1 (partner distributions)
+- **Self-employment tax:** Schedule SE (calculated from Schedule C net profit)
+- **Quarterly estimates:** May need Form 1040-ES if tax owed > $1,000/year
+
+**Scope:**
+
+**Phase 1 — Schedule C Line Mapping**
+- [ ] Map all revenue types to Schedule C Part I (Income):
+  - Line 1: Gross receipts (YouTube ad revenue + TikTok creator fund + affiliate + sponsorships)
+  - Line 7: Gross income (Line 1 minus returns/cost of goods — likely same as Line 1 for digital)
+- [ ] Map all expense categories to Schedule C Part II (Expenses):
+  - Line 8: Advertising
+  - Line 10: Car and truck (if applicable)
+  - Line 11: Commissions and fees
+  - Line 17: Legal and professional services
+  - Line 18: Office expense
+  - Line 20a: Rent (% of home office if applicable)
+  - Line 22: Supplies
+  - Line 25: Utilities (% of home office)
+  - Line 27a: Other expenses → API costs, software subscriptions, hosting, music licensing
+- [ ] Calculate Line 31: Net profit or loss (revenue - expenses)
+- [ ] Estimate self-employment tax (Schedule SE: ~15.3% on 92.35% of net profit)
+
+**Phase 2 — Tax Reports**
+- [ ] `pages/tax-ready.html` — Tax preparation page
+- [ ] Year selector (default: current tax year)
+- [ ] Schedule C preview — all line items populated from revenue + expense data
+- [ ] Quarterly P&L summary (Q1-Q4) for estimated tax payments
+- [ ] Quarterly estimated tax calculator (income × SE rate ÷ 4)
+- [ ] Export to CSV/PDF — Schedule C summary, full transaction list, quarterly breakdowns
+- [ ] Missing data alerts — flags quarters with no revenue entries, uncategorized expenses, missing receipts
+
+**Phase 3 — Documentation & Audit Trail**
+- [ ] Receipt index — all uploaded receipts organized by category and date
+- [ ] Mileage log (if applicable — optional)
+- [ ] Home office deduction calculator (simplified method: $5/sq ft up to 300 sq ft = $1,500 max)
+- [ ] Year-end checklist — confirms all revenue recorded, expenses categorized, receipts attached
+- [ ] Archive button — snapshots the year's data for permanent record (IRS recommends 3-7 year retention)
+
+**Schedule C Line Reference:**
+```
+PART I — INCOME
+  Line 1:  Gross receipts (all platform revenue)
+  Line 7:  Gross income
+
+PART II — EXPENSES
+  Line 8:  Advertising
+  Line 10: Car/truck expenses
+  Line 11: Commissions and fees
+  Line 17: Legal/professional
+  Line 18: Office expense
+  Line 20a: Rent/lease (vehicles, machinery, equipment)
+  Line 22: Supplies
+  Line 25: Utilities
+  Line 27a: Other expenses (API costs, hosting, software, music licensing)
+
+BOTTOM LINE
+  Line 29: Tentative profit (Line 7 minus total expenses)
+  Line 31: Net profit or (loss) → transfers to Form 1040 Line 8
+```
+
+**Self-Employment Tax (Schedule SE):**
+```
+Net profit from Schedule C Line 31
+  × 92.35% = SE tax base
+  × 15.3% (12.4% Social Security + 2.9% Medicare) = SE tax
+  ÷ 2 = deductible half (goes to Form 1040 Schedule 1 Line 15)
+```
+
+**Quarterly Estimated Payments (Form 1040-ES):**
+```
+Due dates: Apr 15, Jun 15, Sep 15, Jan 15 (following year)
+Amount: (Projected annual tax - withholding) ÷ 4
+Safe harbor: Pay 100% of prior year tax OR 90% of current year tax
+```
+
+---
+
 ## Quick Reference: Priority Order
 
 ```
@@ -1206,6 +1397,11 @@ FINAL (Level 5)
 ├── 26. 🟡 Optimization Engine (Foundation + Adaptive Weights ✅)
 ├── 27. ✅ Dashboard (DONE)
 └── 28. ✅ Alerts (DONE)
+
+LLC BUSINESS PREP (Level 6)
+├── 29. 📋 Revenue / Profits Page (YouTube monetary API + manual entry)
+├── 30. 📋 Expenses Page (API cost aggregation + manual expenses)
+└── 31. 📋 Tax-Ready Page (Schedule C export for Form 1040)
 ```
 
 ---

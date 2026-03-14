@@ -4,19 +4,75 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Campaign Details - ContentEngine</title>
-    
+
+    <!-- Tailwind CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
     <!-- Core Design System -->
     <link rel="stylesheet" href="../css/core/tokens.css">
     <link rel="stylesheet" href="../css/core/base.css">
     <link rel="stylesheet" href="../css/core/components.css">
     <link rel="stylesheet" href="../css/core/layout.css">
     <link rel="stylesheet" href="../css/core/responsive.css">
-    <link rel="stylesheet" href="../css/styles.css">
     <link rel="stylesheet" href="../css/dashboard.css">
-    <link rel="stylesheet" href="../css/campaign.css">
-    
-    <!-- Favicon -->
+    <link rel="stylesheet" href="../css/campaign-detail.css">
+
     <link id="favicon" rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        surface: { DEFAULT: '#16161e', light: '#1e1e2a', lighter: '#252535', border: '#2a2a3a', hover: '#32324a' },
+                        brand: { DEFAULT: '#8b5cf6', light: '#a78bfa', dim: 'rgba(139,92,246,0.12)', glow: 'rgba(139,92,246,0.25)' },
+                        status: {
+                            active: '#3fb950', pending: '#d29922', failed: '#f85149',
+                            complete: '#3fb950', cancelled: '#8b949e', running: '#58a6ff',
+                            paused: '#d29922', planned: '#58a6ff', draft: '#8b949e'
+                        }
+                    }
+                }
+            }
+        };
+    </script>
+
+    <style>
+        @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.4} }
+        @keyframes spin { to{transform:rotate(360deg)} }
+        .glass { background:rgba(30,30,42,.55); backdrop-filter:blur(16px); border:1px solid rgba(139,92,246,.08); }
+        .term-bg { background:#0d1117; }
+        .timeline-scroll { overflow-x:auto; scrollbar-width:thin; scrollbar-color:#30363d transparent; }
+        .timeline-scroll::-webkit-scrollbar { height:4px; }
+        .timeline-scroll::-webkit-scrollbar-track { background:transparent; }
+        .timeline-scroll::-webkit-scrollbar-thumb { background:#30363d; border-radius:2px; }
+        @media(max-width:1024px) {
+            .logs-grid { grid-template-columns:1fr !important; }
+        }
+        /* Custom select dropdowns */
+        .styled-select {
+            appearance:none;
+            -webkit-appearance:none;
+            font-size:12px;
+            font-family:inherit;
+            background:#1e1e2a url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7280'/%3E%3C/svg%3E") no-repeat right 10px center;
+            border:1px solid #2a2a3a;
+            color:#c9d1d9;
+            border-radius:8px;
+            padding:7px 28px 7px 12px;
+            cursor:pointer;
+            transition:all .15s ease;
+            outline:none;
+        }
+        .styled-select:hover { border-color:#8b5cf6; background-color:#252535; }
+        .styled-select:focus { border-color:#8b5cf6; box-shadow:0 0 0 2px rgba(139,92,246,.15); }
+        .styled-select option { background:#1e1e2a; color:#c9d1d9; padding:8px; }
+        /* Progress bar track */
+        .progress-track { display:flex; height:10px; background:#1e1e2a; border-radius:6px; overflow:hidden; border:1px solid #2a2a3a; }
+        .progress-fill { transition:width .5s ease; height:100%; }
+        .progress-fill--done { background:linear-gradient(90deg,#22c55e,#3fb950); }
+        .progress-fill--active { background:linear-gradient(90deg,#7c3aed,#8b5cf6); }
+    </style>
 </head>
 <body class="vibe-dark">
     <div class="app">
@@ -45,13 +101,7 @@
                         </svg>
                         <span>Dashboard</span>
                     </a>
-                    <a href="create.html" class="nav-link">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polygon points="23 7 16 12 23 17 23 7"/>
-                            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
-                        </svg>
-                        <span>Create Video</span>
-                    </a>
+
                     <a href="campaign.html" class="nav-link active">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
@@ -71,15 +121,7 @@
                         </svg>
                         <span>Calendar</span>
                     </a>
-                    <a href="posts.html" class="nav-link">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                            <polyline points="14 2 14 8 20 8"/>
-                            <line x1="16" y1="13" x2="8" y2="13"/>
-                            <line x1="16" y1="17" x2="8" y2="17"/>
-                        </svg>
-                        <span>Posts Queue</span>
-                    </a>
+
                     <a href="ai-intelligence.html" class="nav-link">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.57-3.25 3.93"/>
@@ -164,234 +206,211 @@
 
             <div class="content">
                 <!-- Loading State -->
-                <div id="loading-state" class="campaign-loading">
-                    <div class="campaign-loading__spinner"></div>
-                    <p class="campaign-loading__text">Loading campaign...</p>
+                <div id="loading-state" class="flex flex-col items-center justify-center py-24 gap-4">
+                    <div class="w-10 h-10 border-2 border-brand/30 border-t-brand rounded-full animate-spin"></div>
+                    <p class="text-sm text-gray-500 font-mono">Loading campaign...</p>
                 </div>
 
                 <!-- Campaign Not Found -->
-                <div id="not-found-state" class="campaign-empty hidden">
-                    <div class="campaign-empty__icon">🔍</div>
-                    <h2 class="campaign-empty__title">Campaign Not Found</h2>
-                    <p class="campaign-empty__text">The campaign you're looking for doesn't exist or was deleted.</p>
-                    <a href="campaign.html" class="btn btn--primary">Back to Campaigns</a>
+                <div id="not-found-state" class="hidden flex flex-col items-center justify-center py-24 gap-4">
+                    <div class="text-5xl">🔍</div>
+                    <h2 class="text-xl font-semibold text-gray-200">Campaign Not Found</h2>
+                    <p class="text-sm text-gray-500">The campaign you're looking for doesn't exist or was deleted.</p>
+                    <a href="campaign.html" class="mt-2 px-5 py-2 bg-brand hover:bg-brand-light text-white text-sm font-medium rounded-lg transition">Back to Campaigns</a>
                 </div>
 
                 <!-- Campaign Detail View -->
-                <div id="campaign-detail" class="campaign-detail hidden">
-                    <!-- Status Header -->
-                    <div class="campaign-status-bar">
-                        <div class="status-badge" id="status-badge">
-                            <span class="status-badge__dot"></span>
-                            <span class="status-badge__text">Active</span>
+                <div id="campaign-detail" class="hidden space-y-5">
+
+                    <!-- Status Header Bar -->
+                    <div class="glass rounded-xl px-5 py-4 flex flex-wrap items-center gap-4">
+                        <!-- Status Badge -->
+                        <div id="status-badge" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold tracking-wide border border-surface-border bg-surface-light">
+                            <span id="status-dot" class="w-2 h-2 rounded-full bg-current" style="animation:pulse-dot 2s ease-in-out infinite"></span>
+                            <span id="status-text">Active</span>
                         </div>
-                        <div class="campaign-meta">
-                            <span class="campaign-meta__item">
-                                <strong>Created:</strong> <span id="meta-created">-</span>
-                            </span>
-                            <span class="campaign-meta__item">
-                                <strong>Brand:</strong> <span id="meta-brand">-</span>
-                            </span>
+                        <!-- Meta -->
+                        <div class="flex items-center gap-5 text-xs text-gray-400 flex-1 min-w-0">
+                            <span><strong class="text-gray-300">Created:</strong> <span id="meta-created">-</span></span>
+                            <span><strong class="text-gray-300">Brand:</strong> <span id="meta-brand">-</span></span>
                         </div>
-                        <div class="campaign-controls">
-                            <button type="button" class="btn btn--secondary btn--sm" id="btn-pause" title="Pause campaign">
-                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-                                    <rect x="6" y="4" width="4" height="16"/>
-                                    <rect x="14" y="4" width="4" height="16"/>
-                                </svg>
+                        <!-- Controls -->
+                        <div class="flex items-center gap-2 flex-shrink-0">
+                            <button type="button" id="btn-pause" class="px-3 py-1.5 text-xs font-medium rounded-lg border border-surface-border bg-surface-light hover:bg-surface-hover text-gray-300 transition flex items-center gap-1.5" title="Pause campaign">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
                                 Pause
                             </button>
-                            <button type="button" class="btn btn--primary btn--sm hidden" id="btn-resume" title="Resume campaign">
-                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polygon points="5 3 19 12 5 21 5 3"/>
-                                </svg>
+                            <button type="button" id="btn-resume" class="hidden px-3 py-1.5 text-xs font-medium rounded-lg bg-brand hover:bg-brand-light text-white transition flex items-center gap-1.5" title="Resume campaign">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                                 Resume
                             </button>
-                            <button type="button" class="btn btn--ghost btn--sm btn--danger" id="btn-cancel" title="Cancel campaign">
-                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-                                    <circle cx="12" cy="12" r="10"/>
-                                    <line x1="15" y1="9" x2="9" y2="15"/>
-                                    <line x1="9" y1="9" x2="15" y2="15"/>
-                                </svg>
+                            <button type="button" id="btn-cancel" class="px-3 py-1.5 text-xs font-medium rounded-lg border border-red-800/40 bg-red-900/20 hover:bg-red-900/40 text-red-400 transition flex items-center gap-1.5" title="Cancel campaign">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
                                 Cancel
                             </button>
-                            <button type="button" class="btn btn--secondary btn--sm" id="btn-clone" title="Clone this campaign's config into a new campaign">
-                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
-                                </svg>
+                            <button type="button" id="btn-clone" class="px-3 py-1.5 text-xs font-medium rounded-lg border border-surface-border bg-surface-light hover:bg-surface-hover text-gray-300 transition flex items-center gap-1.5" title="Clone this campaign">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
                                 Clone
                             </button>
                         </div>
                     </div>
 
-                    <!-- Stats + Progress (compact 2-column) -->
-                    <div class="stats-progress-row">
-                        <div class="stats-inline">
-                            <div class="stat-inline stat-inline--primary">
-                                <span class="stat-inline__value" id="stat-total">0</span>
-                                <span class="stat-inline__label">Total</span>
+                    <!-- Stats + Progress Row -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- Stats -->
+                        <div class="glass rounded-xl px-5 py-4 flex items-center gap-6">
+                            <div class="text-center flex-1">
+                                <div id="stat-total" class="text-2xl font-bold text-gray-200">0</div>
+                                <div class="text-[10px] uppercase tracking-widest text-gray-500 mt-0.5">Total</div>
                             </div>
-                            <div class="stat-inline stat-inline--warning">
-                                <span class="stat-inline__value" id="stat-pending">0</span>
-                                <span class="stat-inline__label">Pending</span>
+                            <div class="text-center flex-1">
+                                <div id="stat-pending" class="text-2xl font-bold text-status-pending">0</div>
+                                <div class="text-[10px] uppercase tracking-widest text-gray-500 mt-0.5">Pending</div>
                             </div>
-                            <div class="stat-inline stat-inline--success">
-                                <span class="stat-inline__value" id="stat-completed">0</span>
-                                <span class="stat-inline__label">Done</span>
+                            <div class="text-center flex-1">
+                                <div id="stat-completed" class="text-2xl font-bold text-status-complete">0</div>
+                                <div class="text-[10px] uppercase tracking-widest text-gray-500 mt-0.5">Done</div>
                             </div>
-                            <div class="stat-inline stat-inline--error">
-                                <span class="stat-inline__value" id="stat-failed">0</span>
-                                <span class="stat-inline__label">Failed</span>
+                            <div class="text-center flex-1">
+                                <div id="stat-failed" class="text-2xl font-bold text-status-failed">0</div>
+                                <div class="text-[10px] uppercase tracking-widest text-gray-500 mt-0.5">Failed</div>
                             </div>
                         </div>
-                        <div class="progress-inline">
-                            <span class="progress-inline__pct" id="progress-percentage">0%</span>
-                            <div class="progress-bar">
-                                <div class="progress-bar__fill progress-bar__fill--completed" id="progress-completed" style="width: 0%"></div>
-                                <div class="progress-bar__fill progress-bar__fill--processing" id="progress-processing" style="width: 0%"></div>
+                        <!-- Progress -->
+                        <div class="glass rounded-xl px-5 py-4 flex flex-col justify-center gap-2">
+                            <div class="flex items-center justify-between">
+                                <span id="progress-percentage" class="text-lg font-bold text-gray-200">0%</span>
+                                <div class="flex items-center gap-3 text-[10px] text-gray-500">
+                                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-status-complete inline-block"></span>Done</span>
+                                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-brand inline-block"></span>Active</span>
+                                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-surface-border inline-block"></span>Queued</span>
+                                </div>
                             </div>
-                            <div class="progress-legend">
-                                <span class="legend-item legend-item--completed"><span class="legend-dot"></span>Done</span>
-                                <span class="legend-item legend-item--processing"><span class="legend-dot"></span>Active</span>
-                                <span class="legend-item legend-item--pending"><span class="legend-dot"></span>Queued</span>
+                            <div class="progress-track">
+                                <div id="progress-completed" class="progress-fill progress-fill--done" style="width:0%"></div>
+                                <div id="progress-processing" class="progress-fill progress-fill--active" style="width:0%"></div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Jobs List -->
-                    <div class="card">
-                        <div class="card-header">
-                            <h3 class="card-title">📋 Scheduled Jobs</h3>
-                            <div class="jobs-filters">
-                                <select id="filter-status" class="input input--sm">
-                                    <option value="">All Status</option>
-                                    <option value="pending">Pending</option>
-                                    <option value="processing">Processing</option>
-                                    <option value="completed">Completed</option>
-                                    <option value="failed">Failed</option>
-                                    <option value="cancelled">Cancelled</option>
-                                </select>
-                            </div>
+                    <!-- Jobs Table -->
+                    <div class="glass rounded-xl overflow-hidden">
+                        <div class="flex items-center justify-between px-5 py-3 border-b border-surface-border">
+                            <h3 class="text-sm font-semibold text-gray-200">📋 Scheduled Jobs</h3>
+                            <select id="filter-status" class="styled-select">
+                                <option value="">All Status</option>
+                                <option value="pending">Pending</option>
+                                <option value="processing">Processing</option>
+                                <option value="completed">Completed</option>
+                                <option value="failed">Failed</option>
+                                <option value="cancelled">Cancelled</option>
+                            </select>
                         </div>
-                        <div class="jobs-table-wrapper">
-                            <table class="jobs-table">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-xs">
                                 <thead>
-                                    <tr>
-                                        <th>Scheduled Time</th>
-                                        <th>Preset</th>
-                                        <th>Platforms</th>
-                                        <th>Status</th>
-                                        <th>Actions</th>
+                                    <tr class="text-left text-gray-500 uppercase tracking-wider border-b border-surface-border">
+                                        <th class="px-5 py-2.5 font-medium">Scheduled Time</th>
+                                        <th class="px-5 py-2.5 font-medium">Preset</th>
+                                        <th class="px-5 py-2.5 font-medium">Platforms</th>
+                                        <th class="px-5 py-2.5 font-medium">Status</th>
+                                        <th class="px-5 py-2.5 font-medium">Actions</th>
                                     </tr>
                                 </thead>
-                                <tbody id="jobs-tbody">
+                                <tbody id="jobs-tbody" class="divide-y divide-white/[0.04]">
                                     <!-- Populated by JS -->
                                 </tbody>
                             </table>
                         </div>
-                        <div id="no-jobs" class="jobs-empty hidden">
+                        <div id="no-jobs" class="hidden py-8 text-center text-sm text-gray-500">
                             <p>No jobs match the current filter.</p>
                         </div>
                     </div>
 
-                    <!-- Job Logs Panel — Terminal Style -->
-                    <div class="card" id="job-logs-section">
-                        <div class="card-header">
-                            <h3 class="card-title">
-                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:6px;opacity:0.6">
-                                    <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
-                                </svg>
+                    <!-- Pipeline Logs Panel -->
+                    <div class="glass rounded-xl overflow-hidden" id="job-logs-section">
+                        <!-- Logs Header -->
+                        <div class="flex items-center justify-between px-5 py-3 border-b border-surface-border">
+                            <h3 class="text-sm font-semibold text-gray-200 flex items-center gap-2">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" class="opacity-50"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
                                 pipeline_logs
-                                <span id="realtime-indicator" class="realtime-indicator" title="Live updates active">LIVE</span>
+                                <span id="realtime-indicator" class="realtime-indicator ml-2 text-[10px] font-bold tracking-wider px-2 py-0.5 rounded bg-status-active/10 text-status-active border border-status-active/20" title="Live updates active">LIVE</span>
                             </h3>
-                            <div class="logs-controls">
-                                <select id="log-job-select" class="input input--sm">
+                            <div class="flex items-center gap-2">
+                                <select id="log-job-select" class="styled-select">
                                     <option value="">-- select job --</option>
                                 </select>
-                                <button type="button" class="btn btn--ghost btn--sm" id="btn-copy-logs" title="Copy logs to clipboard" disabled>
-                                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                                    </svg>
+                                <button type="button" id="btn-copy-logs" class="p-1.5 rounded-lg border border-surface-border bg-surface-light hover:bg-surface-hover text-gray-400 transition" title="Copy logs" disabled>
+                                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                                 </button>
-                                <button type="button" class="btn btn--ghost btn--sm" id="btn-refresh-logs" title="Refresh logs">
-                                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                                        <path d="M23 4v6h-6M1 20v-6h6"/>
-                                        <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
-                                    </svg>
+                                <button type="button" id="btn-refresh-logs" class="p-1.5 rounded-lg border border-surface-border bg-surface-light hover:bg-surface-hover text-gray-400 transition" title="Refresh logs">
+                                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
                                 </button>
                             </div>
                         </div>
-                        
-                        <!-- Step Timeline Pipeline (full width) -->
-                        <div class="step-timeline" id="step-timeline">
+
+                        <!-- Step Timeline -->
+                        <div class="step-timeline timeline-scroll" id="step-timeline">
                             <div class="step-timeline__empty">
                                 select a job to view pipeline execution
                             </div>
                         </div>
 
-                        <!-- 2-Column: Pipeline Detail + Worker Output -->
-                        <div class="logs-split">
-                            <!-- Left: Step Detail Panel -->
-                            <div class="logs-split__left">
-                                <div class="step-detail-panel" id="step-detail-panel">
-                                    <div class="step-detail-panel__header">
-                                        <h4 class="step-detail-panel__title" id="step-detail-title">Step Details</h4>
-                                        <button type="button" class="btn btn--ghost btn--sm" id="step-detail-close" title="Close">✕</button>
-                                    </div>
-                                    <div class="step-detail-panel__content" id="step-detail-content">
-                                        <div class="step-detail__empty">click a pipeline step above</div>
-                                    </div>
+                        <!-- 2-Column: Step Detail + Terminal Output -->
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-0 logs-grid" style="min-height:350px">
+                            <!-- Left: Step Detail -->
+                            <div class="border-r border-surface-border" id="step-detail-panel">
+                                <div class="flex items-center justify-between px-4 py-2.5 border-b border-surface-border bg-surface/50">
+                                    <h4 class="text-xs font-semibold text-gray-300 font-mono" id="step-detail-title">Step Details</h4>
+                                    <button type="button" id="step-detail-close" class="text-gray-500 hover:text-gray-300 text-sm transition" title="Close">✕</button>
+                                </div>
+                                <div class="p-4 overflow-y-auto" id="step-detail-content" style="max-height:600px">
+                                    <div class="step-detail__empty">click a pipeline step above</div>
                                 </div>
                             </div>
                             <!-- Right: Terminal Log Output -->
-                            <div class="logs-split__right">
-                                <div class="logs-viewer" id="logs-viewer">
-                                    <div class="logs-viewer__header">
-                                        <span class="logs-viewer__title">worker-v1 — output</span>
-                                        <div class="logs-viewer__filters">
-                                            <label class="checkbox-inline">
-                                                <input type="checkbox" id="log-show-snapshots" checked>
-                                                <span>snapshots</span>
-                                            </label>
-                                            <label class="checkbox-inline">
-                                                <input type="checkbox" id="log-show-progress">
-                                                <span>progress</span>
-                                            </label>
-                                        </div>
+                            <div class="flex flex-col">
+                                <div class="flex items-center justify-between px-4 py-2.5 border-b border-surface-border bg-surface/50">
+                                    <span class="text-xs font-mono text-gray-400">worker-v1 — output</span>
+                                    <div class="flex items-center gap-3 text-[11px] text-gray-500">
+                                        <label class="flex items-center gap-1 cursor-pointer hover:text-gray-400">
+                                            <input type="checkbox" id="log-show-snapshots" checked class="w-3 h-3 rounded border-surface-border bg-surface accent-brand">
+                                            <span>snapshots</span>
+                                        </label>
+                                        <label class="flex items-center gap-1 cursor-pointer hover:text-gray-400">
+                                            <input type="checkbox" id="log-show-progress" class="w-3 h-3 rounded border-surface-border bg-surface accent-brand">
+                                            <span>progress</span>
+                                        </label>
                                     </div>
-                                    <div class="logs-viewer__content" id="logs-content">
-                                        <div class="term-log--empty">waiting for job selection...</div>
-                                    </div>
+                                </div>
+                                <div class="term-bg flex-1 overflow-y-auto font-mono text-xs" id="logs-content" style="max-height:600px">
+                                    <div class="term-log--empty">waiting for job selection...</div>
                                 </div>
                             </div>
                         </div>
                     </div>
+
                 </div>
             </div>
         </main>
     </div>
 
     <!-- Confirmation Modal -->
-    <div id="confirm-modal" class="modal">
-        <div class="modal__overlay"></div>
-        <div class="modal__container">
-            <div class="modal__header">
-                <h3 class="modal__title" id="confirm-title">Confirm Action</h3>
-                <button class="modal__close btn btn--icon btn--ghost">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="18" y1="6" x2="6" y2="18"/>
-                        <line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                </button>
-            </div>
-            <div class="modal__body">
-                <p id="confirm-message">Are you sure?</p>
-            </div>
-            <div class="modal__footer">
-                <button class="btn btn--secondary" id="confirm-cancel">Cancel</button>
-                <button class="btn btn--primary" id="confirm-ok">Confirm</button>
+    <div id="confirm-modal" class="hidden fixed inset-0 z-50">
+        <div class="modal__overlay absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
+        <div class="absolute inset-0 flex items-center justify-center p-4">
+            <div class="modal__container relative glass rounded-2xl w-full max-w-md shadow-2xl shadow-black/40">
+                <div class="flex items-center justify-between px-6 py-4 border-b border-surface-border">
+                    <h3 class="text-sm font-semibold text-gray-200" id="confirm-title">Confirm Action</h3>
+                    <button class="modal__close text-gray-500 hover:text-gray-300 transition text-lg leading-none">✕</button>
+                </div>
+                <div class="px-6 py-5">
+                    <p class="text-sm text-gray-400" id="confirm-message">Are you sure?</p>
+                </div>
+                <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-surface-border">
+                    <button class="px-4 py-2 text-xs font-medium rounded-lg border border-surface-border bg-surface-light hover:bg-surface-hover text-gray-300 transition" id="confirm-cancel">Cancel</button>
+                    <button class="px-4 py-2 text-xs font-medium rounded-lg bg-brand hover:bg-brand-light text-white transition" id="confirm-ok">Confirm</button>
+                </div>
             </div>
         </div>
     </div>
@@ -416,7 +435,12 @@
     <script src="../js/components/brand-switcher.js"></script>
     <script src="../js/components/toast.js"></script>
     
-    <!-- Page Controller -->
-    <script src="../js/pages/campaign-detail.js"></script>
+    <!-- Campaign Detail — Modular -->
+    <script src="../js/pages/campaign-detail/state.js"></script>
+    <script src="../js/pages/campaign-detail/rendering.js"></script>
+    <script src="../js/pages/campaign-detail/actions.js"></script>
+    <script src="../js/pages/campaign-detail/logs.js"></script>
+    <script src="../js/pages/campaign-detail/step-details.js"></script>
+    <script src="../js/pages/campaign-detail/init.js"></script>
 </body>
 </html>

@@ -493,6 +493,10 @@ class CampaignDetailPage {
                     actions.push(`<button class="btn btn--ghost btn--sm btn--warning" onclick="campaignDetailPage.forceRetryJob('${job.id}')" title="Force retry (bypasses policies)">⚠️ Force</button>`);
                 }
             }
+            // Redo button for completed or failed jobs (re-run from scratch)
+            if (job.status === 'complete' || job.status === 'completed' || job.status === 'failed') {
+                actions.push(`<button class="btn btn--ghost btn--sm" onclick="campaignDetailPage.redoJob('${job.id}')" title="Redo job from scratch">🔄 Redo</button>`);
+            }
             
             // Build status cell with failure info
             let statusHtml = this.renderJobStatus(job.status);
@@ -713,6 +717,35 @@ class CampaignDetailPage {
             return;
         }
         await this.retryJob(jobId, true);
+    }
+
+    /**
+     * Redo a completed (or failed) job from scratch
+     * Resets job to pending, clears all generated assets, re-runs full pipeline
+     */
+    async redoJob(jobId) {
+        if (!confirm('This will redo the job from scratch — all generated images, audio, and video will be regenerated. Continue?')) {
+            return;
+        }
+        try {
+            const { data, error } = await supabaseClient
+                .rpc('redo_job', { p_job_id: jobId });
+
+            if (error) throw error;
+
+            if (!data?.success) {
+                this.showToast(`Cannot redo: ${data?.error || 'Unknown error'}`, 'error');
+                return;
+            }
+
+            const cleared = data.assets_cleared || 0;
+            const posts = data.posts_reset || 0;
+            this.showToast(`Job queued for redo (${cleared} assets cleared, ${posts} posts reset)`, 'success');
+            await this.loadCampaign();
+        } catch (error) {
+            console.error('Failed to redo job:', error);
+            this.showToast(`Failed to redo job: ${error.message}`, 'error');
+        }
     }
 
     /**
