@@ -481,6 +481,8 @@ function buildUserPrompt(
     vibePreset: string;
     brandName?: string;
     brandVoice?: string;
+    requiredTags?: string[];
+    bannedTags?: string[];
     exemplars?: Array<{ fields: Record<string, unknown> }>;
     negativeExemplars?: Array<{ fields: Record<string, unknown> }>;
     winningPatterns?: {
@@ -621,12 +623,23 @@ Use these insights to guide your choices — adapt, don't copy.`;
     variantSection = `\n\nA/B VARIANT INSTRUCTIONS:\n${data.variantInstructions}`;
   }
 
+  // Build brand tag identity section
+  let brandTagSection = "";
+  if (data.requiredTags && data.requiredTags.length > 0) {
+    const reqList = data.requiredTags.map(t => `#${t}`).join(", ");
+    brandTagSection += `\nBRAND HASHTAGS (MANDATORY): You MUST include at least 2 of these brand-specific tags in every hashtags/tags array: ${reqList}`;
+  }
+  if (data.bannedTags && data.bannedTags.length > 0) {
+    const banList = data.bannedTags.map(t => `#${t}`).join(", ");
+    brandTagSection += `\nBANNED HASHTAGS: NEVER use any of these tags (they belong to a different brand): ${banList}`;
+  }
+
   return `Generate ${platformConfig.platform} metadata for this horror short video.
 
 VIDEO TITLE: ${data.title || "Untitled"}
 VIBE/GENRE: ${data.vibePreset || "horror"}
 ${data.brandName ? `BRAND: ${data.brandName}` : ""}
-${data.brandVoice ? `BRAND VOICE: ${data.brandVoice}` : ""}
+${data.brandVoice ? `BRAND VOICE: ${data.brandVoice}` : ""}${brandTagSection}
 
 STORY SUMMARY:
 "${storySummary}"
@@ -959,19 +972,24 @@ async function generateForPost(
     // 7. Fetch brand config
     let brandName: string | undefined;
     let brandVoice: string | undefined;
+    let requiredTags: string[] | undefined;
+    let bannedTags: string[] | undefined;
 
     if (post.brand_id) {
       const { data: brand } = await supabase
         .from("brands")
-        .select("name, config")
+        .select("name, settings")
         .eq("id", post.brand_id)
         .single();
 
       if (brand) {
         brandName = brand.name;
-        brandVoice =
-          (brand.config as Record<string, string>)?.voice_description ||
-          (brand.config as Record<string, string>)?.tone;
+        const settings = brand.settings as Record<string, unknown> | null;
+        if (settings) {
+          brandVoice = (settings.voice_description as string) || (settings.tone as string);
+          requiredTags = Array.isArray(settings.required_tags) ? settings.required_tags as string[] : undefined;
+          bannedTags = Array.isArray(settings.banned_tags) ? settings.banned_tags as string[] : undefined;
+        }
       }
     }
 
@@ -1130,6 +1148,8 @@ async function generateForPost(
       vibePreset,
       brandName,
       brandVoice,
+      requiredTags,
+      bannedTags,
       exemplars: exemplars.length > 0 ? exemplars : undefined,
       negativeExemplars: negativeExemplars.length > 0 ? negativeExemplars : undefined,
       winningPatterns,
@@ -1148,6 +1168,28 @@ async function generateForPost(
     // 11. Fetch constraints from DB and validate
     const { constraints, version: constraintsVersion } = await fetchConstraints(supabase, platform);
     const validation = validateMetadata(rawMetadata, constraints);
+
+    // 11a. Enforce brand tag identity (filter banned, ensure required)
+    const tagField = validation.cleaned.hashtags ? "hashtags" : validation.cleaned.tags ? "tags" : null;
+    if (tagField && Array.isArray(validation.cleaned[tagField])) {
+      let tags = validation.cleaned[tagField] as string[];
+      // Remove banned tags
+      if (bannedTags && bannedTags.length > 0) {
+        const bannedSet = new Set(bannedTags.map(t => t.toLowerCase()));
+        tags = tags.filter(t => !bannedSet.has(t.toLowerCase()));
+      }
+      // Ensure at least 2 required tags are present
+      if (requiredTags && requiredTags.length > 0) {
+        const present = new Set(tags.map(t => t.toLowerCase()));
+        const missing = requiredTags.filter(t => !present.has(t.toLowerCase()));
+        const needed = Math.max(0, 2 - (requiredTags.length - missing.length));
+        if (needed > 0) {
+          tags.push(...missing.slice(0, needed));
+        }
+      }
+      validation.cleaned[tagField] = tags;
+    }
+
     if (validation.errors.length > 0) {
       console.warn(
         `[METADATA] Validation notes for ${postId}/${platform}:`,
