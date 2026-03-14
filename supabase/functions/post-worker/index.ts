@@ -180,7 +180,18 @@ async function refreshTikTokToken(
   }
 
   const tokens = await response.json();
-  const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+
+  if (!tokens.access_token) {
+    console.error('[TikTok] Token refresh response missing access_token:', JSON.stringify(tokens));
+    await supabase
+      .from('platform_tokens')
+      .update({ is_valid: false, last_error: 'Token refresh returned no access_token — please reconnect' })
+      .eq('id', tokenData.id);
+    throw new Error('TikTok token refresh returned no access_token. Please reconnect in Settings.');
+  }
+
+  const expiresIn = tokens.expires_in || 86400; // default 24h if missing
+  const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
 
   await supabase
     .from('platform_tokens')
