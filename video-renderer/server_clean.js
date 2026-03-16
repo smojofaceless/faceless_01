@@ -2014,16 +2014,32 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
       rawVideoPath = path.join(jobDir, 'raw.mp4');
       
       const { execFile } = require('child_process');
+      
+      // Probe source video dimensions to decide crop vs pad
+      const sourceWidth = await new Promise((resolve, reject) => {
+        execFile('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', gameplayPath], (err, stdout) => {
+          if (err) return reject(err);
+          const [w, h] = stdout.trim().split(',').map(Number);
+          console.log(`[${jobId}]   Source video: ${w}x${h} (${w > h ? 'landscape' : 'vertical'})`);
+          resolve(w > h ? w : 0); // > 0 means landscape
+        });
+      }).catch(() => 0);
+      
+      // Landscape sources (e.g. Rocket League): center-crop to fill vertical frame
+      // Vertical sources (e.g. Minecraft parkour): scale down and pad with black bars to fit
+      const vf = sourceWidth > 0
+        ? 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920'
+        : 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black';
+      console.log(`[${jobId}]   Using ${sourceWidth > 0 ? 'center-crop' : 'scale+pad'} filter`);
+      
       const GAMEPLAY_TRIM_TIMEOUT_MS = 5 * 60 * 1000;
       await new Promise((resolve, reject) => {
         let timedOut = false;
-        // Center-crop to 9:16 vertical: scale up to cover 1080x1920, then crop center
-        // This handles both landscape (16:9) and vertical source videos correctly
         const args = [
           '-ss', String(backgroundVideoOffset),
           '-i', gameplayPath,
           '-t', String(trimDuration + 1),
-          '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920',
+          '-vf', vf,
           '-c:v', 'libx264',
           '-preset', useLowMemory ? 'ultrafast' : 'fast',
           '-crf', '23',
