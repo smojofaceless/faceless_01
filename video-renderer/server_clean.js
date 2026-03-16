@@ -1,5 +1,5 @@
 /**
- * FFmpeg Video Renderer Service v3.0
+ * FFmpeg Video Renderer Service v3.1
  * 
  * Replaces Creatomate with local FFmpeg rendering.
  * Now with Visual DNA → FFmpeg filter binding!
