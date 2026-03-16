@@ -2017,11 +2017,13 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
       const GAMEPLAY_TRIM_TIMEOUT_MS = 5 * 60 * 1000;
       await new Promise((resolve, reject) => {
         let timedOut = false;
+        // Center-crop to 9:16 vertical: scale up to cover 1080x1920, then crop center
+        // This handles both landscape (16:9) and vertical source videos correctly
         const args = [
           '-ss', String(backgroundVideoOffset),
           '-i', gameplayPath,
           '-t', String(trimDuration + 1),
-          '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black',
+          '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920',
           '-c:v', 'libx264',
           '-preset', useLowMemory ? 'ultrafast' : 'fast',
           '-crf', '23',
