@@ -1079,7 +1079,13 @@ Examples:
 - "One opens. The other locks forever."
 
 BEAT 3 — PATH A (2-3 sentences):
-Describe the first life path. Make it CONCRETE and TANGIBLE. Don't say "freedom and adventure" — describe what the viewer's life actually looks like: what they see when they wake up, who's beside them, what their hands are doing, what sounds they hear. One specific, filmable moment.
+Describe the first life path as A SCENE FROM A RANDOM TUESDAY. Show what the viewer physically sees, hears, does. Give at least ONE specific daily-life moment: a morning routine, a conversation, a physical environment, a specific action.
+Answer this question: "What does this life look like on a random Tuesday?"
+STRONG: "You wake up in a different city every month. No alarm. No emails. Your suitcase is always half-packed."
+STRONG: "Cameras flash when you step out of the car. Your name is on the building."
+WEAK (NEVER write like this): "A life of freedom and adventure." — abstract label, not a scene
+WEAK (NEVER write like this): "A path of quiet fulfillment." — concept, not visible
+WEAK (NEVER write like this): "Luxury and glamour surround you." — tells, doesn't show
 Do NOT label it "Path A" or "Option A." Transition directly from the frame.
 Transition examples:
 - "Behind the first door..."
@@ -1087,7 +1093,12 @@ Transition examples:
 - "One path leads to..."
 
 BEAT 4 — PATH B (2-3 sentences):
-Describe the second life path with equal specificity and equal appeal. It must represent a DIFFERENT VALUE CATEGORY than Path A. If Path A is freedom, Path B should be belonging — NOT a different flavor of freedom.
+Describe the second life path as A DIFFERENT SCENE FROM A DIFFERENT RANDOM TUESDAY. Same rules: physical, concrete, filmable. At least ONE specific daily-life moment.
+It must represent a DIFFERENT VALUE CATEGORY than Path A. If Path A is freedom, Path B should be belonging — NOT a different flavor of freedom.
+STRONG: "The same person sits across from you at dinner every night. Nobody checks the time."
+STRONG: "Kids run to the front door when they hear your car pull in." 
+WEAK (NEVER write like this): "A life of warmth and connection." — value label
+WEAK (NEVER write like this): "Tranquility in every corner of your life." — abstract summary
 Transition examples:
 - "Behind the second door..."
 - "The silver key opens a life where..."
@@ -1125,7 +1136,9 @@ RULES:
 - Do NOT add moral commentary, reflection, or summarization after the paths.
 - Do NOT use horror, supernatural, or fantasy framing. The symbolic device is a metaphor — the paths describe REAL life experiences.
 - Do NOT literally write "Path A" or "Path B" or "Option A" or "Option B." Use natural transitions tied to the framing device.
-- Scenario categories for paths: career, relationships, lifestyle, identity, geography, creativity, knowledge, community, family, legacy.`,
+- Scenario categories for paths: career, relationships, lifestyle, identity, geography, creativity, knowledge, community, family, legacy.
+- NEVER use abstract life labels in path descriptions. These words are BANNED from PATH_A and PATH_B: luxury, fulfillment, happiness, peace, success, greatness, comfort, excitement, prosperity, contentment, serenity, tranquility, harmony, bliss, joy, glamour, elegance, prestige, satisfaction, purpose. Instead, SHOW what the life looks like — a specific scene, a physical detail, an observable moment.
+- Every path MUST contain at least one of: a location (kitchen, airport, trail, office), an action (wake up, cook, walk, build, travel), or a person (partner, children, stranger, coworker). If you can't film it, rewrite it.`,
   };
 
   const vibeDesc = vibeDescriptions[vibePreset] || vibeDescriptions.urban_legend;
@@ -1719,6 +1732,20 @@ function gateTwoDoors(text: string, lower: string, sentences: string[], failures
     const lastSentenceLower = lastSentence.toLowerCase();
     if (!lastSentenceLower.includes(deviceNoun)) {
       console.log(`[GATE] two_doors S6 WARN: Final question doesn't reference the framing device '${deviceNoun}' from the hook — keep consistent`);
+    }
+  }
+
+  // S7 — Sensory concreteness (paths should contain concrete imagery, not abstract value labels)
+  const abstractLabels = /\b(luxury|fulfillment|happiness|peace|success|greatness|comfort|excitement|prosperity|contentment|serenity|tranquility|harmony|bliss|joy|glamour|elegance|prestige|satisfaction|purpose)\b/gi;
+  const concreteIndicators = /\b(kitchen|office|street|airport|mountain|bedroom|car|table|garden|trail|door|window|coffee|morning|night|cook|build|walk|travel|speak|wake up|sit|drive|run|eat|write|sing|carry|hold|pick up|partner|children|kids|coworker|stranger|crowd|audience|neighbor|friend)\b/gi;
+  if (pathSplitMatch && pathSplitMatch.index !== undefined) {
+    const pathsText = text.slice(firstSentence.length); // everything after hook
+    const abstractHits = (pathsText.match(abstractLabels) || []);
+    const concreteHits = (pathsText.match(concreteIndicators) || []);
+    if (abstractHits.length >= 2 && concreteHits.length === 0) {
+      console.log(`[GATE] two_doors S7 WARN: Paths contain abstract labels (${abstractHits.join(', ')}) but no concrete imagery — paths should describe filmable life moments, not value summaries`);
+    } else if (abstractHits.length > concreteHits.length && abstractHits.length >= 2) {
+      console.log(`[GATE] two_doors S7 WARN: Abstract language (${abstractHits.length} hits) outweighs concrete imagery (${concreteHits.length} hits) — aim for more specific, observable details`);
     }
   }
 
