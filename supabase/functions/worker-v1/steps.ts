@@ -1055,15 +1055,18 @@ Strong: "You can heal any injury with a touch."
 Weak: "Imagine a world where you had an incredible ability..." ← BANNED
 Weak: "What if I told you that you could..." ← BANNED
 
-BEAT 2 — QUICK IMAGINATION (1-2 sentences, 15-25 words):
-Let the viewer picture using the power. Imply scope — do NOT enumerate.
+BEAT 2 — QUICK IMAGINATION (2-3 short sentences, 15-25 words):
+Let the viewer picture using the power. 2-3 short punchy scenarios are ENCOURAGED.
+Strong: "You could walk into any room. Hear any conversation. Take anything you want."
 Strong: "Everything stops — people, traffic, the world around you."
-Weak: "You could fly to Paris, time travel, read minds..." ← LISTING, BANNED
+Weak: "You could fly to Paris, time travel, read minds, become invisible, stop wars, cure diseases..." ← TOO MANY, BANNED
 
 BEAT 3 — THE RULE (1-2 sentences, 10-20 words):
 The single restriction. Must be visceral, specific, gut-punch delivery.
-Strong: "But every time you use it, you lose one year of your life."
+Do NOT use transitional phrases like "here's the rule" or "but there's a catch" — just STATE the rule directly.
+Strong: "But every time you freeze time, you age."
 Strong: "But you can never use it on someone you love."
+Weak: "But here's the rule: while time is frozen, you still age." ← TRANSITIONAL FLUFF
 Weak: "But it changes who you are as a person." ← ABSTRACT, BANNED
 
 BEAT 4 — IMPLICATION (1-2 sentences, 15-25 words):
@@ -1081,8 +1084,10 @@ Rules:
 - Calm, confident tone — like offering a deal, not threatening
 - ${wordRange.min}-${wordRange.max} words total
 - ONE power, ONE rule, no exceptions
-- Do NOT list scenarios ("You could do X, Y, Z...")
+- Scenarios: 2-3 short punchy ones are GOOD. Do NOT list more than 3. Keep each under 8 words.
 - Do NOT make the rule trivial or the power useless
+- The power must remain desirable AFTER the rule — most people should genuinely struggle with the choice
+- The power and rule must be easy to visualize in under 2 seconds — no abstract concepts
 - Do NOT use horror framing (no death, blood, torture, murder)
 - Do NOT use filler: "imagine", "think about", "picture this", "what if I told you", "here's the thing", "let that sink in", "in other words"
 - Do NOT use softening: "might", "perhaps", "could potentially", "in the long run"
@@ -1658,10 +1663,16 @@ function gateOneRuleOnePower(text: string, lower: string, sentences: string[], f
     failures.push(`G6: Word count ${totalWords} outside 80-110 range`);
   }
 
-  // Anti-list check (inherited from v1)
-  const listPatterns = /you could[\s\S]{0,30},[\s\S]{0,30},[\s\S]{0,30}(and|or)/i;
-  if (listPatterns.test(text)) {
-    failures.push('Scenario listing detected — should imply uses, not list them');
+  // G7 — Power desirability: rule must not make the power obviously not worth taking
+  const dealBreakerPatterns = /\b(you (will |would )?(instantly |immediately )?(die|be killed|cease to exist|lose (all|every) memor)|everyone (around you |you (love|know) )?(dies|is killed|disappears|ceases)|the (entire |whole )?(world|universe|planet) (ends|is destroyed|collapses))\b/i;
+  if (dealBreakerPatterns.test(lower)) {
+    failures.push('G7: Power desirability — rule makes the power obviously not worth taking for most people');
+  }
+
+  // Anti-excessive-list check (allow 2-3 short scenarios, block 4+)
+  const scenarioLines = text.match(/you could [^.]{3,40}\./gi) || [];
+  if (scenarioLines.length > 3) {
+    failures.push(`Excessive scenario listing (${scenarioLines.length} found) — keep to 2-3 short punchy scenarios max`);
   }
 
   // No horror framing
