@@ -1071,12 +1071,14 @@ Examples of weak hooks (NEVER open like these):
 - "You're standing at a crossroads, the wind carrying whispers of two different futures..." — scene-setting
 - "Imagine a place where every choice leads to a different world..." — abstract and slow
 
-BEAT 2 — FRAME (1 sentence):
-Explain that the choice is permanent and the two options represent different lives. This is the gravity sentence — the viewer understands the stakes. Keep it plain.
-Examples:
-- "You can only pick one. The other disappears forever."
-- "Each one leads to a completely different life. There's no coming back."
-- "One opens. The other locks forever."
+BEAT 2 — FRAME (1 sentence, MAX 2 short sentences):
+The permanence statement. The viewer understands this is irreversible. Make it SHORT and BLUNT.
+Strong: "You can only follow one. The other disappears forever."
+Strong: "Choose one. The other is gone."
+Strong: "One opens. The other locks forever."
+Weak: "Once you choose a direction, the other fades forever." — too soft, too many words
+Weak: "Each one leads to a completely different life and there's no coming back." — run-on
+Aim for ≤15 words. Shorter = stronger.
 
 BEAT 3 — PATH A (2-3 sentences):
 Describe the first life path as A SCENE FROM A RANDOM TUESDAY. Show what the viewer physically sees, hears, does. Give at least ONE specific daily-life moment: a morning routine, a conversation, a physical environment, a specific action.
@@ -1117,16 +1119,29 @@ VALUE CONFLICT PAIRS (use these or invent similar ones):
 - passion vs. safety
 
 BEAT 5 — QUESTION (1 sentence):
-Short, direct question that matches the framing device. No reflection. No summary. No softening. A dare.
+Short, direct question. Two formats work well — pick one:
+
+FORMAT A — Device question (matches the framing device):
 Strong: "Which door do you open?"
 Strong: "Which key do you turn?"
-Strong: "So which life do you choose?"
-Weak: "The choice is yours — what matters more?" — too soft
-Weak: "It all depends on what you value most." — not even a question
+Strong: "Which compass do you trust?"
+
+FORMAT B — Binary label (names the two paths for maximum comment bait):
+Strong: "East or West?"
+Strong: "City or countryside?"
+Strong: "Stage or workshop?"
+Strong: "Passport or front porch?"
+
+Format B typically drives MORE comments because people reply with just one word.
+
+Weak (NEVER): "The choice is yours — what matters more?" — too soft
+Weak (NEVER): "It all depends on what you value most." — not even a question
+Weak (NEVER): "So, which direction do you follow?" — vague, doesn't name the stakes
 
 RULES:
 - Second person throughout ("you", "your"). Never break POV.
 - ${wordRange.min}-${wordRange.max} words total. THIS IS CRITICAL.
+- If your draft is under ${wordRange.min} words, you MUST expand the path descriptions with additional concrete life moments until you reach at least ${wordRange.min} words. Add one more filmable detail per path. Do NOT pad with filler or abstract language — add another specific scene moment.
 - The framing device can be ANYTHING symbolic: doors, keys, envelopes, canvases, mirrors, bridges, roads, coins, buttons, switches, flames, rivers, stairs, windows, books, compasses, maps, bottles, stones, rings, clocks, lanterns, scrolls. The only rule is that there are TWO of them.
 - Spoken-word native. Every sentence must sound natural read aloud. No semicolons. No literary flourishes. No poetic metaphors. No complex clauses.
 - Short sentences dominate. Max one compound sentence per beat.
