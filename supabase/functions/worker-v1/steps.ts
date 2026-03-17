@@ -463,6 +463,16 @@ export async function executeStoryStep(
   const targetWords = Math.round(targetDuration * 2.5);
   const wordRange = { min: Math.round(targetWords * 0.85), max: Math.round(targetWords * 1.15) };
 
+  // Preset-specific word range overrides (v2: shorter, tighter scripts)
+  if (vibePreset === 'no_good_choice') {
+    wordRange.min = 80;
+    wordRange.max = 110;
+  }
+  if (vibePreset === 'two_doors') {
+    wordRange.min = 70;
+    wordRange.max = 95;
+  }
+
   console.log(`[STORY] Generating story for vibe=${vibePreset}, duration=${targetDuration}s (~${targetWords} words)`);
 
   try {
@@ -939,6 +949,12 @@ CRUCIAL TONE RULES:
 
 CRITICAL FORMATTING RULE: NEVER use dashes, em-dashes (—), en-dashes (–), or hyphens (-) as punctuation in the narration. Use commas, periods, semicolons, or ellipses instead. This text will be displayed as on-screen subtitles and used as platform captions where dashes render poorly.`;
   }
+  // DecideThisDaily decision presets: second-person, spoken-word native, no horror
+  if (['no_good_choice', 'one_rule_one_power', 'two_doors'].includes(vibePreset)) {
+    return `You are a short-form content writer specializing in decision and dilemma scripts for Instagram Reels, YouTube Shorts, and TikTok. You write in SECOND-PERSON ("you", "your"), speaking directly to the viewer. Your tone is provocative but neutral, like someone calmly presenting an impossible choice. Every sentence must sound natural when read aloud. Short, punchy, conversational. No literary flourishes. No essays.
+
+CRITICAL FORMATTING RULE: NEVER use dashes, em-dashes (—), en-dashes (–), or hyphens (-) as punctuation in the narration. Use commas, periods, semicolons, or ellipses instead. This text will be displayed as on-screen subtitles and used as platform captions where dashes render poorly.`;
+  }
   return `You are a master storyteller specializing in short-form horror and mystery content. You create gripping, atmospheric stories perfect for TikTok/Reels narration. Your stories are ALWAYS first-person narration that feels personal and immediate.
 
 CRITICAL FORMATTING RULE: NEVER use dashes, em-dashes (—), en-dashes (–), or hyphens (-) as punctuation in the narration. Use commas, periods, semicolons, or ellipses instead. This text will be displayed as on-screen subtitles and used as platform captions where dashes render poorly.`;
@@ -948,27 +964,82 @@ CRITICAL FORMATTING RULE: NEVER use dashes, em-dashes (—), en-dashes (–), or
  * Build story prompt based on vibe preset
  */
 function buildStoryPrompt(vibePreset: string, wordRange: { min: number; max: number }, recentStories?: Array<{ title: string; hook: string | null; setting?: string }>): string {
+  // Comment Multiplier: ~40% of NGC stories get social disagreement framing in the closing
+  const useSocialFraming = vibePreset === 'no_good_choice' && Math.random() < 0.4;
+  if (useSocialFraming) {
+    console.log('[STORY] NGC social framing: ENABLED (comment multiplier)');
+  }
+
   const vibeDescriptions: Record<string, string> = {
     urban_legend: 'an urban legend or creepy internet story, featuring unexplained phenomena, "that one weird thing that happened", or local folklore that turns out to be true',
     one_too_many: buildOneToManyPrompt(wordRange),
     backrooms: 'a liminal space or "backrooms" style horror about accidentally entering wrong places, glitches in reality, or spaces that shouldn\'t exist',
     nosleep: 'a first-person creepypasta/NoSleep style horror that starts mundane but escalates into something terrifying',
     glitch: 'a glitch in the matrix story about strange repetitions, déjà vu, NPCs acting weird, or reality not working right',
-    no_good_choice: `a decision scenario where EVERY option has a genuine downside. The viewer must choose between two equally bad outcomes.
+    no_good_choice: `a short-form spoken narration presenting a lose-lose decision. The viewer hears two options, both carry a genuine, specific, painful cost. There is no escape. They must pick one.
 
-Rules:
-- Second person ("You're standing in front of...")
-- Setup the situation in 4-6 sentences — paint the scene, build the stakes, make the viewer FEEL the pressure before revealing the options
-- Present Option A: describe what happens in detail, then reveal its genuine downside. 3-4 sentences.
-- Present Option B: describe what happens in detail, then reveal its DIFFERENT genuine downside. 3-4 sentences.
-- Add 1-2 sentences of reflection — let the weight of the choice sink in
-- End with a direct question: "Which one do you pick?"
-- No correct answer. No moral. No softening.
-- Punchy sentences mixed with longer descriptive ones. Build tension throughout.
-- ${wordRange.min}-${wordRange.max} words total. THIS IS CRITICAL — write the FULL word count.
-- Do NOT use horror, supernatural, or fantasy elements.
-- Do NOT frame as confession or personal story.
-- Scenarios: career, money, relationships, survival, reputation, trust, time`,
+FORMAT — 7 beats, strict order:
+
+BEAT 1 — HOOK (1 sentence):
+State the dilemma immediately. First sentence. No scene-setting, no atmosphere, no "you're standing in..." openers. The viewer must understand the core conflict within 2 seconds of hearing it. Lead with a forced action, an ultimatum, a revelation, or a loss, not with a location or mood.
+Examples of strong hooks:
+- "Your sister just admitted she's been stealing from your parents, and she's begging you to stay quiet."
+- "Your company offered to keep you, but only if you let your entire team get laid off."
+Examples of weak hooks (NEVER open like these):
+- "You're sitting in a crowded café..." — scene description, no stakes
+- "It's late at night and your phone keeps buzzing..." — atmosphere, no conflict
+- "The room feels tense as everyone waits..." — mood painting, no dilemma
+
+BEAT 2 — SITUATION (1-2 sentences):
+Add only the context needed to make the choice real. Who's involved, what's at stake, why you can't avoid it. No atmosphere. No adjectives that don't carry information. One specific grounding detail (a number, a name, a place, a deadline).
+
+BEAT 3 — OPTION A (1-2 sentences):
+State the first path in natural spoken language. Describe what you'd actually DO. No labels. Don't literally write "Option A." Use action-forward phrasing:
+- Strong: "You tell your boss the truth."
+- Weak: "Option A: You choose to call your partner."
+
+BEAT 4 — COST A (1-2 sentences):
+Reveal what that path actually costs you. Be concrete and specific. The viewer should physically react. Use observable consequences: things lost, relationships broken, money gone, reputations destroyed, doors permanently closed. No "might" or "could", state the cost as fact.
+
+BEAT 5 — OPTION B (1-2 sentences):
+State the second path. Different direction entirely, not a slight variation of A. Transition naturally:
+- Strong: "Or you keep quiet and let it happen."
+- Weak: "Option B: You focus on the presentation."
+
+BEAT 6 — COST B (1-2 sentences):
+Reveal what this path costs you. Different CATEGORY of pain than Cost A (e.g., if A costs money, B costs a relationship; if A costs trust, B costs safety). Same level of specificity. Same gut-punch energy.
+
+BEAT 7 — QUESTION (${useSocialFraming ? '2-3 sentences' : '1 sentence'}):
+${useSocialFraming ? `Before the final question, add 1-2 SHORT sentences implying that other people disagree about which choice is right. Reference the SPECIFIC options from your story, not generic statements. Do NOT use "Option A" or "Option B" labels.
+Examples:
+- "Most people say you stay quiet. What would you actually do?"
+- "Some people say loyalty comes first. Others say honesty does. What do you pick?"
+- "Half the people report them. Half stay quiet. Which one do you choose?"
+The social framing + question together must be under 25 words.
+Then end` : 'End'} with a direct question. Short. Confrontational. No reflection, no summary, no "it's up to you," no moral. Just the question.
+${useSocialFraming ? '' : 'Strong: "So which one do you pick?"\nWeak: "The choice is yours, what matters more to you?"'}
+
+RULES:
+- Second person throughout ("you", "your"). Never break POV.
+- Write approximately 120-150 words.
+- Spoken-word native. Every sentence must sound natural read aloud. No semicolons. No literary flourishes. No complex subordinate clauses.
+- Short sentences dominate. Max one compound sentence per beat.
+- DO NOT literally write "Option A" or "Option B" in the output. Express the two paths as natural spoken actions ("You tell them..." / "Or you stay quiet..."). The binary structure must be clear from the narration, not from labels.
+- Both options must be genuinely painful. If 80%+ of people would obviously pick the same one, the dilemma is broken. Rebalance.
+- Both costs must be CONCRETE: dollar amounts, lost relationships by name, specific career consequences, observable social fallout. Never vague.
+- Both costs must be DIFFERENT CATEGORIES of loss. Don't make it "lose money vs. lose slightly more money." Make it "lose money vs. lose trust."
+- No horror, supernatural, fantasy, sci-fi, or speculative elements. Real-world only.
+- No confession framing. No first-person narrator. No "I".
+- No softening language: avoid "might," "perhaps," "could potentially," "in the long run."
+- No reflection or philosophical commentary. The dilemma speaks for itself.
+- No third option. No compromise. No way out.
+- Scenarios must be widely relatable to a broad mainstream adult audience. No niche professions, specialized knowledge, or narrow demographics required to understand the stakes.
+- Scenario categories: career, money, family, friendship, trust, reputation, health, loyalty, fairness, time pressure, survival.
+
+REMINDER:
+Your story MUST be at least 100 words. Aim for 120-150 words.
+Stories shorter than 100 words will be rejected.
+Count your words carefully before finishing.`,
     one_rule_one_power: `a power-fantasy trade-off. Present ONE supernatural or impossible power and EXACTLY ONE restriction that meaningfully limits it.
 
 Rules:
@@ -984,20 +1055,77 @@ Rules:
 - Do NOT make the rule trivial or the power useless
 - Do NOT use horror framing
 - The outcome should be ambiguous, not tragic, not utopian`,
-    two_doors: `a symbolic binary choice using a framing device (two doors, two pills, two paths, two envelopes, two timelines). Each option leads to a radically different life.
+    two_doors: `a symbolic binary choice presenting two desirable but incompatible life paths through a framing device. The viewer must sacrifice one to gain the other.
 
-Rules:
-- Second person ("Two doors appear in front of you...")
-- State the framing device in ONE sentence, no backstory
-- Describe Path A: vivid, specific, genuinely appealing
-- Describe Path B: equally vivid, contrasting, equally appealing
-- Both paths must be TEMPTING, no obvious villain option
-- Use parallel sentence structure (A mirrors B's rhythm)
-- End with: "Which door do you open?" or similar
-- Do NOT reveal consequences or outcomes
-- Do NOT make one path clearly better
-- ${wordRange.min}-${wordRange.max} words total
-- Contrast types: adventure/stability, knowledge/bliss, power/love, freedom/belonging`,
+FORMAT — 5 beats, strict order:
+
+BEAT 1 — HOOK (1 sentence):
+Present the framing device immediately. First sentence. The viewer sees two objects, two paths, two options within the first two seconds. No backstory. No atmosphere. No "you find yourself in..." openers. State the device plainly.
+Examples of strong hooks:
+- "Two doors appear in front of you."
+- "Two envelopes sit on the table."
+- "A coin lands in your hand. Heads or tails."
+- "Two keys. One gold. One silver."
+Examples of weak hooks (NEVER open like these):
+- "In an old studio, two blank canvases stand before you, each vibrant and swirling..." — too atmospheric
+- "You're standing at a crossroads, the wind carrying whispers of two different futures..." — scene-setting
+- "Imagine a place where every choice leads to a different world..." — abstract and slow
+
+BEAT 2 — FRAME (1 sentence):
+Explain that the choice is permanent and the two options represent different lives. This is the gravity sentence — the viewer understands the stakes. Keep it plain.
+Examples:
+- "You can only pick one. The other disappears forever."
+- "Each one leads to a completely different life. There's no coming back."
+- "One opens. The other locks forever."
+
+BEAT 3 — PATH A (2-3 sentences):
+Describe the first life path. Make it CONCRETE and TANGIBLE. Don't say "freedom and adventure" — describe what the viewer's life actually looks like: what they see when they wake up, who's beside them, what their hands are doing, what sounds they hear. One specific, filmable moment.
+Do NOT label it "Path A" or "Option A." Transition directly from the frame.
+Transition examples:
+- "Behind the first door..."
+- "The gold key opens a life where..."
+- "One path leads to..."
+
+BEAT 4 — PATH B (2-3 sentences):
+Describe the second life path with equal specificity and equal appeal. It must represent a DIFFERENT VALUE CATEGORY than Path A. If Path A is freedom, Path B should be belonging — NOT a different flavor of freedom.
+Transition examples:
+- "Behind the second door..."
+- "The silver key opens a life where..."
+- "The other path leads to..."
+
+VALUE CONFLICT PAIRS (use these or invent similar ones):
+- freedom vs. security
+- adventure vs. stability
+- power vs. love
+- knowledge vs. peace
+- ambition vs. belonging
+- truth vs. happiness
+- creativity vs. comfort
+- independence vs. family
+- fame vs. privacy
+- passion vs. safety
+
+BEAT 5 — QUESTION (1 sentence):
+Short, direct question that matches the framing device. No reflection. No summary. No softening. A dare.
+Strong: "Which door do you open?"
+Strong: "Which key do you turn?"
+Strong: "So which life do you choose?"
+Weak: "The choice is yours — what matters more?" — too soft
+Weak: "It all depends on what you value most." — not even a question
+
+RULES:
+- Second person throughout ("you", "your"). Never break POV.
+- ${wordRange.min}-${wordRange.max} words total. THIS IS CRITICAL.
+- The framing device can be ANYTHING symbolic: doors, keys, envelopes, canvases, mirrors, bridges, roads, coins, buttons, switches, flames, rivers, stairs, windows, books, compasses, maps, bottles, stones, rings, clocks, lanterns, scrolls. The only rule is that there are TWO of them.
+- Spoken-word native. Every sentence must sound natural read aloud. No semicolons. No literary flourishes. No poetic metaphors. No complex clauses.
+- Short sentences dominate. Max one compound sentence per beat.
+- Both paths must be GENUINELY DESIRABLE. Neither is "the bad one." The viewer must want both.
+- Both paths must represent DIFFERENT VALUE CATEGORIES. Not two flavors of the same thing.
+- Do NOT reveal consequences, downsides, or outcomes. The viewer chooses blind.
+- Do NOT add moral commentary, reflection, or summarization after the paths.
+- Do NOT use horror, supernatural, or fantasy framing. The symbolic device is a metaphor — the paths describe REAL life experiences.
+- Do NOT literally write "Path A" or "Path B" or "Option A" or "Option B." Use natural transitions tied to the framing device.
+- Scenario categories for paths: career, relationships, lifestyle, identity, geography, creativity, knowledge, community, family, legacy.`,
   };
 
   const vibeDesc = vibeDescriptions[vibePreset] || vibeDescriptions.urban_legend;
@@ -1235,30 +1363,188 @@ function sharedDecisionGateChecks(text: string, lower: string, sentences: string
 }
 
 /**
- * no_good_choice: Both options must be negative. Realistic scenarios only.
+ * no_good_choice v2: Hook-first, concrete costs, natural phrasing, no labels.
+ * G1-G10 structural gates + S1-S6 soft gates.
+ * See ngcStoryUpgrade_001.md Section 6 for full spec.
  */
 function gateNoGoodChoice(text: string, lower: string, sentences: string[], failures: string[]): QualityGateResult {
   sharedDecisionGateChecks(text, lower, sentences, failures);
 
-  // Check for two distinct options
-  // Look for structural markers: "Option A/B", "First/Second", "on one hand/other", or parallel "If you..." patterns
-  const twoOptionPatterns = /\b(option [ab]|choice [ab12]|on one hand|on the other|first option|second option|if you choose|either way|path [ab12]|door [12])\b/i;
-  const orPattern = /\bor\b/i;
-  if (!twoOptionPatterns.test(text) && (text.match(orPattern) || []).length < 1) {
-    failures.push('Cannot identify two distinct options — needs clear binary structure');
+  const firstSentence = (sentences[0] || '').toLowerCase();
+  const lastSentence = sentences[sentences.length - 1] || '';
+
+  // ── G1: Hook-first (dilemma trigger) — WARN ONLY during calibration ──
+  // Pass: first sentence contains a revelation, ultimatum, consequence, or forced action
+  // Fail: first sentence is purely scene/mood/atmosphere
+  const hookPassPatterns = [
+    /\byou(r|\b).*(told|admitted|confessed|found out|discovered|just learned|offered|asked you|says if|texted|called|sent|demanded|threatened|begged)/i,
+    /\b(fired|caught|cheating|stealing|dying|pregnant|leaving|gone|over|owes|hit someone|been lying|laid off|arrested|exposed|bankrupt|kicked out|kicked you|blocked|deleted|emptied|drained|sold|broke|quit|resigned)\b/i,
+    /\b(or else|or i'm done|if you don't|right now or|last chance|by (tonight|tomorrow|friday|monday|morning|midnight|the end of)|deadline|expires|ultimatum)\b/i,
+  ];
+  const hookFailPatterns = [
+    /^you'?re\s+(sitting|standing|walking|lying|waiting|looking|staring|driving)\s+(in|at|on|by|through)/i,
+    /^it'?s\s+(late|early|dark|morning|night|quiet|raining)/i,
+    /^the\s+(room|air|house|office|street|city|night|morning|silence)\s+(feels?|is|seems|was|smells?|looks?)/i,
+    /^you'?re\s+(thinking about|looking at|staring at|watching|wondering)/i,
+  ];
+  const hookHasPass = hookPassPatterns.some(p => p.test(firstSentence));
+  const hookHasFail = hookFailPatterns.some(p => p.test(firstSentence));
+  if (!hookHasPass || hookHasFail) {
+    // G1 is WARN-ONLY during calibration — do NOT push to failures
+    console.warn(`[GATE] no_good_choice G1 WARN: Hook may be atmospheric — "${sentences[0]?.slice(0, 80)}..."`);
+  } else {
+    console.log(`[GATE] no_good_choice G1 PASS`);
   }
 
-  // No supernatural/fantasy elements
-  const supernaturalPatterns = /\b(magic|spell|ghost|demon|vampire|werewolf|zombie|supernatural|teleport|superpow|immortal|wizard|witch|dragon|curse|haunted|potion|enchant)\b/i;
+  // ── G2: Two distinct paths — HARD FAIL ──
+  // Detect action-forking language: "you + verb" ... transition ... "you + different verb"
+  const actionForkTransitions = /\b(or you|or,? you|but if you|the other option|instead,? you|alternatively,? you)\b/i;
+  const twoOptionPatterns = /\b(option [ab]|choice [ab12]|on one hand|on the other|first option|second option|if you choose|path [ab12]|door [12])\b/i;
+  const youVerbCount = (text.match(/\byou\s+(tell|stay|take|leave|call|keep|go|walk|say|accept|refuse|turn|ignore|answer|report|hide|confront|sign|pay|quit|lie|confess|reveal|delete|block|mute|step|hand|give|send|show|ask|run|wait|stop|move)\b/gi) || []).length;
+  if (!actionForkTransitions.test(text) && !twoOptionPatterns.test(text) && youVerbCount < 2) {
+    failures.push('G2: Cannot identify two distinct paths — needs clear binary action structure (two different "you + verb" paths)');
+    console.warn(`[GATE] no_good_choice G2 FAIL`);
+  } else {
+    console.log(`[GATE] no_good_choice G2 PASS`);
+  }
+
+  // ── G3: Concrete cost A — WARN ONLY during calibration ──
+  // After first path, at least one concrete consequence marker
+  const concreteCostPattern = /(\$|%|\d+,?\d*\b|\b(friend|partner|parent|boss|sister|brother|spouse|mom|dad|wife|husband|job|house|apartment|career|degree|savings|retirement)\b|\b(never|forever|years|gone|permanently)\b|\b(fired|expelled|arrested|divorced|evicted|bankrupt|blocked|dead|ruined|destroyed|cut off|blacklisted|homeless|alone)\b)/i;
+  // Split text roughly in half to check each cost zone
+  const midpoint = Math.floor(text.length / 2);
+  const firstHalf = text.slice(0, midpoint);
+  const secondHalf = text.slice(midpoint);
+  if (!concreteCostPattern.test(firstHalf)) {
+    console.warn(`[GATE] no_good_choice G3 WARN: First path consequence may be too vague`);
+  } else {
+    console.log(`[GATE] no_good_choice G3 PASS`);
+  }
+
+  // ── G4: Concrete cost B — WARN ONLY during calibration ──
+  if (!concreteCostPattern.test(secondHalf)) {
+    console.warn(`[GATE] no_good_choice G4 WARN: Second path consequence may be too vague`);
+  } else {
+    console.log(`[GATE] no_good_choice G4 PASS`);
+  }
+
+  // ── G5: Costs are different categories — WARN ONLY ──
+  const categoryPatterns: Record<string, RegExp> = {
+    financial: /\b(\$|\d+k|\bsavings?\b|\bmoney\b|\brent\b|\bdebt\b|\bloan\b|\bsalary\b|\bincome\b|\bpay\b|\bbankrupt\b|\bpay(ment|check)\b|\bretirement\b)\b/i,
+    relationship: /\b(friend|partner|parent|spouse|wife|husband|mom|dad|sister|brother|family|marriage|divorce|breakup|trust|loyal|betray|alone|block(ed)?|silence|ghoste?d?)\b/i,
+    career: /\b(job|career|boss|fired|promotion|team|project|office|colleague|manager|resign|laid off|blacklist|reference|reputation|professional)\b/i,
+    health: /\b(health|hospital|surgery|sick|injury|pain|dying|medical|therapy|recovery|disability)\b/i,
+    legal: /\b(arrest|jail|prison|court|lawyer|police|criminal|charged|lawsuit|sue|convicted|probation)\b/i,
+  };
+  const costACategories = new Set<string>();
+  const costBCategories = new Set<string>();
+  for (const [cat, pattern] of Object.entries(categoryPatterns)) {
+    if (pattern.test(firstHalf)) costACategories.add(cat);
+    if (pattern.test(secondHalf)) costBCategories.add(cat);
+  }
+  // Check if there's at least one category in B that's not in A
+  const uniqueToB = [...costBCategories].filter(c => !costACategories.has(c));
+  if (costACategories.size > 0 && costBCategories.size > 0 && uniqueToB.length === 0) {
+    console.warn(`[GATE] no_good_choice G5 WARN: Both costs appear to be the same category (${[...costACategories].join(', ')})`);
+  } else {
+    console.log(`[GATE] no_good_choice G5 PASS`);
+  }
+
+  // ── G6: Direct final question — HARD FAIL ──
+  const lastWords = lastSentence.trim().split(/\s+/);
+  if (lastSentence.trim().endsWith('?')) {
+    if (lastWords.length > 15) {
+      failures.push(`G6: Final question too long (${lastWords.length} words) — must be ≤ 15 words`);
+      console.warn(`[GATE] no_good_choice G6 FAIL: question too long`);
+    } else {
+      const softeningPatterns = /\b(it's up to you|what matters more|only you can decide|whatever you choose|it all depends|it comes down to)\b/i;
+      if (softeningPatterns.test(lastSentence)) {
+        failures.push('G6: Final question contains softening language — must be short and direct');
+        console.warn(`[GATE] no_good_choice G6 FAIL: softening language`);
+      } else {
+        console.log(`[GATE] no_good_choice G6 PASS`);
+      }
+    }
+  }
+  // Note: question mark check is already in sharedDecisionGateChecks
+
+  // ── G7: No supernatural — HARD FAIL ──
+  const supernaturalPatterns = /\b(magic|spell|ghost|demon|vampire|werewolf|zombie|supernatural|teleport|superpow|immortal|wizard|witch|dragon|curse|haunted|potion|enchant|alien|time.?travel|parallel.?universe)\b/i;
   if (supernaturalPatterns.test(lower)) {
-    failures.push('Supernatural/fantasy elements detected — no_good_choice must be realistic');
+    failures.push('G7: Supernatural/fantasy elements detected — must be realistic');
+    console.warn(`[GATE] no_good_choice G7 FAIL`);
+  } else {
+    console.log(`[GATE] no_good_choice G7 PASS`);
   }
 
-  // No first-person narration
+  // ── G8: Second person only — HARD FAIL ──
   const textWithoutQuotes = text.replace(/[""\u201C\u201D].*?[""\u201C\u201D]|".*?"/g, '');
   const narratorICount = (textWithoutQuotes.match(/\bI\b/g) || []).length;
   if (narratorICount > 1) {
-    failures.push(`First-person narrator detected (${narratorICount} uses of "I") — must be second-person address`);
+    failures.push(`G8: First-person narrator detected (${narratorICount} uses of "I") — must be second-person address`);
+    console.warn(`[GATE] no_good_choice G8 FAIL`);
+  } else {
+    console.log(`[GATE] no_good_choice G8 PASS`);
+  }
+
+  // ── G9: No reflection/moral — HARD FAIL ──
+  // Check last 2 sentences before the question for moralizing
+  const preQuestionSentences = sentences.slice(-3, -1).join(' ').toLowerCase();
+  const moralizingPatterns = /\b(the choice is|each path|carries weight|in the end|whatever you choose|no right answer|both options|it all depends|no matter what|either way,? you lose|there is no (right|easy|good) answer|it's a reminder|life rarely)\b/i;
+  if (moralizingPatterns.test(preQuestionSentences)) {
+    failures.push('G9: Reflection/moralizing detected — dilemma should speak for itself');
+    console.warn(`[GATE] no_good_choice G9 FAIL`);
+  } else {
+    console.log(`[GATE] no_good_choice G9 PASS`);
+  }
+
+  // ── G10: No literal option labels — HARD FAIL ──
+  if (/option [ab]/i.test(text)) {
+    failures.push('G10: Literal "Option A/B" labels detected — use natural spoken phrasing instead');
+    console.warn(`[GATE] no_good_choice G10 FAIL`);
+  } else {
+    console.log(`[GATE] no_good_choice G10 PASS`);
+  }
+
+  // ── Soft Gates (log only, never fail) ──
+
+  // S1: Hook length
+  const hookWordCount = (sentences[0] || '').split(/\s+/).length;
+  if (hookWordCount > 20) {
+    console.warn(`[GATE] no_good_choice S1 WARN: Hook may be too long (${hookWordCount} words) — aim for ≤ 15`);
+  }
+
+  // S2: Setup length (sentences before first action-fork transition)
+  const forkIndex = sentences.findIndex(s => actionForkTransitions.test(s) || /\byou\s+(tell|stay|take|leave|call|keep|go|walk|say|accept|refuse|turn)\b/i.test(s));
+  if (forkIndex > 3) {
+    console.warn(`[GATE] no_good_choice S2 WARN: Excessive setup — ${forkIndex} sentences before first path`);
+  }
+
+  // S3: Word count outside target range — HARD FAIL
+  const totalWords = text.split(/\s+/).length;
+  if (totalWords < 80 || totalWords > 110) {
+    failures.push(`S3: Word count ${totalWords} outside required range 80-110`);
+    console.warn(`[GATE] no_good_choice S3 FAIL: Word count ${totalWords} outside target range 80-110`);
+  }
+
+  // S4: Hedging language
+  const hedgingCount = (lower.match(/\b(might|perhaps|maybe|could potentially|somewhat|in a way|kind of|sort of)\b/g) || []).length;
+  if (hedgingCount >= 2) {
+    console.warn(`[GATE] no_good_choice S4 WARN: Hedging language detected (${hedgingCount} instances) — be declarative`);
+  }
+
+  // S5: Balance sniff test (rough heuristic — are both paths using the same action verbs?)
+  const pathVerbs = text.match(/\byou\s+(tell|stay|take|leave|call|keep|go|walk|say|accept|refuse|turn|ignore|answer|report|hide|confront)\b/gi) || [];
+  if (pathVerbs.length >= 2) {
+    const verbRoots = pathVerbs.map(v => v.replace(/^you\s+/i, '').toLowerCase());
+    if (new Set(verbRoots).size === 1) {
+      console.warn(`[GATE] no_good_choice S5 WARN: Both paths may use the same action ("${verbRoots[0]}") — ensure genuinely different paths`);
+    }
+  }
+
+  // S6: Label usage (redundant with G10 — informational layer)
+  if (/option [ab]/i.test(text)) {
+    console.warn(`[GATE] no_good_choice S6 WARN: Literal option labels detected — consider natural spoken phrasing`);
   }
 
   return { passed: failures.length === 0, failures };
@@ -1292,27 +1578,147 @@ function gateOneRuleOnePower(text: string, lower: string, sentences: string[], f
 }
 
 /**
- * two_doors: Must use a framing device and present two parallel paths.
+ * two_doors v2: Framing device in sentence one, two paths with value conflict,
+ * no consequences, no labels, no reflection.
+ * G3 (value conflict) starts in warn mode — logs only, does not block.
  */
 function gateTwoDoors(text: string, lower: string, sentences: string[], failures: string[]): QualityGateResult {
   sharedDecisionGateChecks(text, lower, sentences, failures);
 
-  // Check for framing device
-  const framingPatterns = /\b(two (doors|pills|paths|portals|envelopes|timelines|keys|boxes|buttons|corridors|gates|roads)|door (one|two|1|2)|pill (one|two|1|2)|path (one|two|1|2)|behind (door|the first|the second)|left (door|path|pill)|right (door|path|pill))\b/i;
-  if (!framingPatterns.test(text)) {
-    failures.push('No framing device found — needs doors/pills/paths/portals/envelopes/timelines');
+  // G1 — Framing device in sentence one
+  const firstSentence = sentences[0] || '';
+  const deviceRegex = /(two|2|pair of|both)\s+(doors?|keys?|paths?|roads?|pills?|envelopes?|canvases?|mirrors?|bridges?|books?|buttons?|switches?|coins?|flames?|rivers?|stairs?|staircases?|windows?|scrolls?|clocks?|bottles?|stones?|rings?|lamps?|lanterns?|compasses?|maps?|photos?|letters?|tunnels?|hallways?|corridors?|gates?|portals?|boxes?|chests?|cups?|chalices?|orbs?|gems?|feathers?|masks?|cards?|levers?|ropes?|ladders?|ships?|trains?|tickets?|journals?|screens?|lights?|shadows?|worlds?|lives?)/i;
+  const altDeviceRegex = /(heads or tails|left or right|one .* or the other|door (one|1)|the first .* the second)/i;
+  if (!deviceRegex.test(firstSentence) && !altDeviceRegex.test(firstSentence)) {
+    failures.push('Framing device not found in first sentence — must open with a symbolic binary device (two doors, two keys, etc.)');
   }
 
-  // Check for parallel structure (both paths described)
-  // Simple heuristic: text mentions "first/one" and "second/other" or "behind...behind"
-  const parallelA = /\b(behind the first|the first (door|path|pill)|door (one|1)|on the left|path a)\b/i;
-  const parallelB = /\b(behind the second|the second (door|path|pill)|door (two|2)|on the right|path b)\b/i;
-  const genericParallel = /\b(one leads|the other leads|on one side|on the other)\b/i;
-  if (!((parallelA.test(text) && parallelB.test(text)) || genericParallel.test(text))) {
-    // Softer check: at least has contrast language
-    const contrastPatterns = /\b(but|while|whereas|instead|the other|or you|alternatively)\b/i;
-    if (!contrastPatterns.test(text)) {
-      failures.push('Cannot identify two parallel paths — needs clear A vs B structure');
+  // G2 — Two paths described (transition language detection)
+  const pathTransitions = /(behind the (first|second|other)|the (first|gold|silver|left|right|red|blue) (door|key|path|envelope|mirror|coin|road|book|button|canvas|ticket|staircase)|one (leads?|opens?|takes? you|shows?|reveals?)|the other (leads?|opens?|takes? you|shows?|reveals?)|on one side|on the other)/gi;
+  const transitionMatches = text.match(pathTransitions) || [];
+  if (transitionMatches.length < 2) {
+    // Fallback: check for contrast connectors between descriptive passages
+    const fallbackTransition = /(or|the other|the second|alternatively|but the other)/i;
+    if (!fallbackTransition.test(text)) {
+      failures.push('Cannot identify two parallel paths — needs clear first path / second path structure with transitions');
+    }
+  }
+
+  // G3 — Value conflict present (WARN MODE — soft gate, does not block)
+  const valueBuckets: Record<string, RegExp> = {
+    freedom: /\b(free|freedom|travel|wander|explore|adventure|open road|no rules|no limits|no schedule|anywhere|no alarm|no boss|no routine|no obligations|wherever you want)\b/i,
+    security: /\b(safe|secure|stable|steady|certain|guaranteed|protected|routine|predictable|reliable)\b/i,
+    love: /\b(love|partner|family|children|kids|heart|beside you|together|hold|connection|relationship|marriage|spouse|bedtime stories|kitchen table)\b/i,
+    power: /\b(power|influence|control|lead|command|authority|throne|empire|rule|shape the world|people follow)\b/i,
+    knowledge: /\b(know|learn|truth|understand|discover|wisdom|answers|curiosity|library|books|science|history|language|mind)\b/i,
+    peace: /\b(peace|quiet|calm|still|silence|rest|content|simple|serene|cabin|garden|modest)\b/i,
+    ambition: /\b(ambition|career|success|build|create|achieve|legacy|famous|recognition|your name is known|fill rooms|work changes)\b/i,
+    belonging: /\b(belong|community|roots|hometown|neighbors|tradition|history|family table|sunday dinners?|grew up)\b/i,
+  };
+  // Try to split text into two path sections at the second transition marker
+  const pathSplitMatch = text.match(/(?:behind the second|the second|the other (leads?|opens?|takes? you|shows?|reveals?)|the (silver|other|right|blue) (door|key|path|envelope|mirror|coin|road|book|button|canvas|ticket|staircase))/i);
+  if (pathSplitMatch && pathSplitMatch.index !== undefined) {
+    const pathAText = text.slice(0, pathSplitMatch.index).toLowerCase();
+    const pathBText = text.slice(pathSplitMatch.index).toLowerCase();
+    const bucketsA = new Set<string>();
+    const bucketsB = new Set<string>();
+    for (const [bucket, regex] of Object.entries(valueBuckets)) {
+      if (regex.test(pathAText)) bucketsA.add(bucket);
+      if (regex.test(pathBText)) bucketsB.add(bucket);
+    }
+    // Check for overlap — if both hit only the same bucket(s), warn
+    const hasDistinctValues = [...bucketsA].some(b => !bucketsB.has(b)) || [...bucketsB].some(b => !bucketsA.has(b));
+    if (!hasDistinctValues && (bucketsA.size > 0 || bucketsB.size > 0)) {
+      console.log(`[GATE] two_doors G3 WARN: Value conflict missing — both paths hit same value buckets: [${[...bucketsA].join(',')}] vs [${[...bucketsB].join(',')}]`);
+    } else if (bucketsA.size === 0 && bucketsB.size === 0) {
+      console.log(`[GATE] two_doors G3 WARN: Could not detect value categories in either path — may lack clear value conflict`);
+    }
+  } else {
+    console.log(`[GATE] two_doors G3 WARN: Could not split text into two path sections for value conflict analysis`);
+  }
+
+  // G4 — No consequences revealed
+  const consequenceRegex = /(you lose|you'll lose|the cost|the price|the catch|downside|but you (can't|won't|never|lose)|consequence|sacrifice|risk|giving up|at the expense|trade.?off|but it means losing)/i;
+  if (consequenceRegex.test(text)) {
+    failures.push('Consequence or cost language detected — two_doors paths must be blind choices with no revealed downsides');
+  }
+
+  // G5 — Direct final question (≤12 words, no softening)
+  const lastSentence = sentences[sentences.length - 1] || '';
+  const lastWordCount = lastSentence.trim().split(/\s+/).length;
+  if (lastWordCount > 12) {
+    failures.push(`Final question too long (${lastWordCount} words) — must be ≤12 words`);
+  }
+  const softeningRegex = /(it's up to you|what matters more|only you can decide|whatever you choose|it all depends|it comes down to|what do you value|depends on who you are)/i;
+  if (softeningRegex.test(lastSentence)) {
+    failures.push('Final question uses softening language — must be a short, direct challenge');
+  }
+
+  // G6 — No supernatural/fantasy
+  const supernaturalRegex = /(magic|spell|ghost|demon|vampire|werewolf|zombie|supernatural|teleport|superpow|immortal|wizard|witch|dragon|curse|haunted|potion|enchant|alien|time.?travel|parallel.?universe|prophecy|sorcerer|mystical|enchanted)/i;
+  if (supernaturalRegex.test(text)) {
+    failures.push('Supernatural/fantasy elements detected — paths must describe real-world lives');
+  }
+
+  // G7 — No literal option labels ("Path A:", "Option 1:", etc.)
+  const labelRegex = /(option|path|choice|door)\s*(a|b|1|2|one|two)\s*:/i;
+  if (labelRegex.test(text)) {
+    failures.push('Literal option labels detected (\'Path A:\', \'Option 1:\', etc.) — use natural framing-device transitions instead');
+  }
+
+  // G8 — No reflection or moralizing (last 2 non-question sentences)
+  const nonQuestionSentences = sentences.filter(s => !s.trim().endsWith('?'));
+  const lastTwo = nonQuestionSentences.slice(-2);
+  const reflectionRegex = /(the choice is|each path|carries weight|in the end|whatever you choose|no right answer|both options|it all depends|no matter what|either way|the decision|only you know|it reveals|it says something about|what kind of person)/i;
+  for (const s of lastTwo) {
+    if (reflectionRegex.test(s)) {
+      failures.push('Reflection/moralizing detected — the paths should speak for themselves');
+      break;
+    }
+  }
+
+  // === SOFT GATES (log only) ===
+
+  // S1 — Hook length
+  const hookWordCount = firstSentence.trim().split(/\s+/).length;
+  if (hookWordCount > 12) {
+    console.log(`[GATE] two_doors S1 WARN: Hook is ${hookWordCount} words — aim for ≤10 words for instant framing device recognition`);
+  }
+
+  // S2 — Word count range
+  const totalWords = text.trim().split(/\s+/).length;
+  if (totalWords < 70 || totalWords > 95) {
+    console.log(`[GATE] two_doors S2 WARN: Word count ${totalWords} outside target range (70-95)`);
+  }
+
+  // S3 — Poetic language
+  const poeticWords = (text.match(/\b(swirling|whisper|shimmer|ethereal|vibrant|glow|radiant|luminous|cascade|blooming|dancing|caress|velvet|crystalline|iridescent|transcendent)\b/gi) || []);
+  if (poeticWords.length >= 2) {
+    console.log(`[GATE] two_doors S3 WARN: Poetic language detected (${poeticWords.join(', ')}) — use clear, concrete description instead`);
+  }
+
+  // S4 — Path balance (rough check)
+  if (pathSplitMatch && pathSplitMatch.index !== undefined) {
+    const pathAWords = text.slice(0, pathSplitMatch.index).trim().split(/\s+/).length;
+    const pathBWords = text.slice(pathSplitMatch.index).trim().split(/\s+/).length;
+    if (pathAWords > pathBWords * 2 || pathBWords > pathAWords * 2) {
+      console.log(`[GATE] two_doors S4 WARN: Paths are unbalanced (${pathAWords} vs ${pathBWords} words) — both should receive roughly equal description`);
+    }
+  }
+
+  // S5 — Both paths desirable (no negative language)
+  const negativeRegex = /\b(lonely|alone|empty|cold|boring|monoton|dull|bleak|gray|grim|harsh|suffer|pain|miserable|unhappy|trapped)\b/i;
+  if (negativeRegex.test(text)) {
+    console.log(`[GATE] two_doors S5 WARN: Negative language in a path — both paths must be genuinely desirable, not one good and one bad`);
+  }
+
+  // S6 — Framing device consistency (hook device matches question device)
+  const deviceNounMatch = firstSentence.match(/\b(doors?|keys?|paths?|roads?|pills?|envelopes?|canvases?|mirrors?|bridges?|books?|buttons?|switches?|coins?|flames?|rivers?|stairs?|staircases?|windows?|scrolls?|clocks?|bottles?|stones?|rings?|lamps?|lanterns?|compasses?|maps?|photos?|letters?|tunnels?|hallways?|corridors?|gates?|portals?|boxes?|tickets?|journals?|screens?|lights?)\b/i);
+  if (deviceNounMatch) {
+    const deviceNoun = deviceNounMatch[0].toLowerCase().replace(/s$/, ''); // singular form
+    const lastSentenceLower = lastSentence.toLowerCase();
+    if (!lastSentenceLower.includes(deviceNoun)) {
+      console.log(`[GATE] two_doors S6 WARN: Final question doesn't reference the framing device '${deviceNoun}' from the hook — keep consistent`);
     }
   }
 
@@ -7987,10 +8393,23 @@ export async function executeAssembleStep(
       await assertCanSpend(costHelper, rendererService, 'assemble', 1);
     } catch (costError) {
       if (isCostLimitError(costError)) {
-        console.error(`[ASSEMBLE] ❌ Cost limit hit: ${costError instanceof Error ? costError.message : costError}`);
+        const costMsg = costError instanceof Error ? costError.message : String(costError);
+        console.error(`[ASSEMBLE] ❌ Cost limit hit: ${costMsg}`);
+
+        // Concurrent slot exhaustion is temporary contention — requeue like renderer busy
+        if (/max concurrent|concurrent slots/i.test(costMsg)) {
+          console.log(`[ASSEMBLE] 🔄 Concurrent slot full — requeue for next cycle`);
+          return {
+            success: false,
+            requeue: true,
+            error: `cost_limit_exceeded: ${rendererService} - ${costMsg}`,
+          };
+        }
+
+        // Actual budget/daily limit — permanent, needs operator action
         return { 
           success: false, 
-          error: `cost_limit_exceeded: ${rendererService} - ${costError instanceof Error ? costError.message : 'budget reached'}`,
+          error: `cost_limit_exceeded: ${rendererService} - ${costMsg}`,
           data: { 
             duration,
             cost_limit_hit: true,

@@ -1034,29 +1034,31 @@ export const PRESET_STORY_PROFILES: Record<string, PartialStoryProfile> = {
   // =====================================================
 
   // =====================================================
-  // NO_GOOD_CHOICE - Lose-Lose Decision Engine
+  // NO_GOOD_CHOICE v2 - Lose-Lose Decision Engine
   // =====================================================
-  // Forces a decision where every option has a downside.
+  // Forces a decision where every option has a painful downside.
   // Viewer is uncomfortable either way. No correct answer.
   //
-  // STRUCTURAL RULES:
+  // v2 STRUCTURAL RULES:
   // - Second-person direct address (always)
-  // - Exactly two options, both negative
-  // - No correct answer — both suck
-  // - Short sentences, rising tension
-  // - End with a direct question
-  // - 100-140 words (strict for 30-45s TTS timing)
+  // - 7-beat structure: HOOK → SITUATION → OPTION_A → COST_A → OPTION_B → COST_B → QUESTION
+  // - Hook-first: dilemma in the first sentence, no scene-painting
+  // - Natural spoken phrasing — no literal "Option A/B" labels
+  // - Short sentences dominate, spoken-word native
+  // - Both costs concrete and different categories
+  // - End with a short, direct question
+  // - 80-110 words (strict for 40-50s TTS timing)
   // - No supernatural/fantasy elements
-  // - Every sentence must be concrete and specific
   //
   // VISUAL: Gameplay only (no AI images)
   //
   // FAILURE MODES:
-  // - Word count outside 100-140 = fail
+  // - Word count outside 80-110 = fail
   // - First-person narration = fail (must be second-person)
-  // - Less than 2 clear options = fail
+  // - Less than 2 clear paths = fail
   // - No final question = fail
   // - Supernatural elements = fail
+  // - Literal "Option A/B" labels = fail
   // =====================================================
   no_good_choice: {
     profile_name: "no_good_choice",
@@ -1066,7 +1068,7 @@ export const PRESET_STORY_PROFILES: Record<string, PartialStoryProfile> = {
       structuralMarkers: [],
       enforceMarkers: false,
       povConstraint: "second" as any,
-      styleNotes: "Second-person address — speaking TO the viewer. Short declarative sentences. No hedging ('maybe', 'perhaps'). No softening consequences. Present both options with equal weight — never hint at the 'right' answer. Final sentence MUST be a direct question.",
+      styleNotes: "Second-person address — speaking TO the viewer. Short declarative sentences. No hedging ('maybe', 'perhaps'). No softening consequences. Natural spoken phrasing — no literal 'Option A/B' labels. Short sentences dominate. Max one compound sentence per beat. Every sentence must sound natural read aloud. Present both options with equal weight — never hint at the 'right' answer. Final sentence MUST be a direct question.",
     },
 
     motif: {
@@ -1083,12 +1085,12 @@ export const PRESET_STORY_PROFILES: Record<string, PartialStoryProfile> = {
     },
 
     beatStructure: {
-      beatCount: 4,
-      beatLabels: ["SETUP", "OPTION_A", "OPTION_B", "PRESSURE"],
+      beatCount: 7,
+      beatLabels: ["HOOK", "SITUATION", "OPTION_A", "COST_A", "OPTION_B", "COST_B", "QUESTION"],
       requireGroundingDetail: true,
       groundingTypes: ["object", "consequence", "social", "time_pressure"],
-      minWordsPerBeat: 15,
-      maxWordsPerBeat: 45,
+      minWordsPerBeat: 5,
+      maxWordsPerBeat: 30,
       minGroundingPerBeat: 1,
       repairOnMissingGrounding: false,
     },
@@ -1112,8 +1114,8 @@ export const PRESET_STORY_PROFILES: Record<string, PartialStoryProfile> = {
     },
 
     wordCount: {
-      target: 120,
-      variance: 20,
+      target: 95,
+      variance: 15,
       priority: "structure",
       strictEnforcement: true,
     },
@@ -1268,7 +1270,7 @@ export const PRESET_STORY_PROFILES: Record<string, PartialStoryProfile> = {
       structuralMarkers: [],
       enforceMarkers: false,
       povConstraint: "second" as any,
-      styleNotes: "Parallel sentence structure between the two options. Neutral delivery — both options described with equal weight and appeal. Neither path is 'the good one'. Use contrast in texture: one warm/organic, one cool/technological. Or one adventurous, one peaceful. The framing metaphor (doors/pills/paths) is stated once at the top and never explained. End BEFORE revealing what happens. Let the viewer choose blind.",
+      styleNotes: "Short, punchy sentences. Framing device stated immediately in sentence one. Two paths described with concrete, tangible life moments. Value conflict between paths (freedom vs. love, ambition vs. peace, etc.). No poetic language. No literary flourishes. Each sentence must sound natural read aloud. Direct question at end matching the framing device.",
     },
 
     motif: {
@@ -1285,12 +1287,12 @@ export const PRESET_STORY_PROFILES: Record<string, PartialStoryProfile> = {
     },
 
     beatStructure: {
-      beatCount: 4,
-      beatLabels: ["FRAME", "PATH_A", "PATH_B", "CUT"],
+      beatCount: 5,
+      beatLabels: ["HOOK", "FRAME", "PATH_A", "PATH_B", "QUESTION"],
       requireGroundingDetail: false,
       groundingTypes: ["symbolic", "contrast", "sensory"],
-      minWordsPerBeat: 10,
-      maxWordsPerBeat: 50,
+      minWordsPerBeat: 4,
+      maxWordsPerBeat: 30,
       minGroundingPerBeat: 0,
       repairOnMissingGrounding: false,
     },
@@ -1314,8 +1316,8 @@ export const PRESET_STORY_PROFILES: Record<string, PartialStoryProfile> = {
     },
 
     wordCount: {
-      target: 110,
-      variance: 15,
+      target: 80,
+      variance: 10,
       priority: "structure",
       strictEnforcement: true,
     },
