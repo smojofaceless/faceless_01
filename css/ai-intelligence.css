@@ -2656,6 +2656,139 @@
     padding: var(--space-5);
 }
 
+/* ==========================================================================
+   VIDEO RETENTION
+   ========================================================================== */
+
+.retention-summary {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+}
+
+.retention-summary__stat {
+    text-align: center;
+    padding: var(--space-3);
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.retention-summary__value {
+    font-size: var(--text-xl);
+    font-weight: 700;
+    color: var(--color-text-primary);
+    display: block;
+}
+
+.retention-summary__label {
+    font-size: var(--text-xs);
+    color: var(--color-text-tertiary);
+    margin-top: 2px;
+    display: block;
+}
+
+.retention-summary__tag {
+    display: inline-block;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-top: 4px;
+}
+
+.retention-good { color: #34d399; }
+.retention-good.retention-summary__tag { background: rgba(52, 211, 153, 0.15); color: #34d399; }
+.retention-good.retention-row__bar { background: linear-gradient(90deg, rgba(52, 211, 153, 0.3), rgba(52, 211, 153, 0.7)); }
+
+.retention-ok { color: #fbbf24; }
+.retention-ok.retention-summary__tag { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
+.retention-ok.retention-row__bar { background: linear-gradient(90deg, rgba(251, 191, 36, 0.3), rgba(251, 191, 36, 0.7)); }
+
+.retention-low { color: #f87171; }
+.retention-low.retention-summary__tag { background: rgba(248, 113, 113, 0.15); color: #f87171; }
+.retention-low.retention-row__bar { background: linear-gradient(90deg, rgba(248, 113, 113, 0.3), rgba(248, 113, 113, 0.7)); }
+
+.retention-chart {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.retention-row {
+    display: grid;
+    grid-template-columns: 180px 1fr 50px 80px;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--text-xs);
+}
+
+.retention-row__label {
+    color: var(--color-text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.retention-row__plat {
+    display: inline-block;
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--color-text-tertiary);
+    padding: 1px 5px;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.retention-row__bar-wrap {
+    height: 14px;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 7px;
+    overflow: hidden;
+}
+
+.retention-row__bar {
+    height: 100%;
+    border-radius: 7px;
+    transition: width 0.4s ease;
+}
+
+.retention-row__pct {
+    font-weight: 700;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.retention-row__watch {
+    color: var(--color-text-tertiary);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.retention-note {
+    font-size: var(--text-xs);
+    color: var(--color-text-tertiary);
+    margin-top: var(--space-3);
+    opacity: 0.7;
+}
+
+@media (max-width: 768px) {
+    .retention-summary {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .retention-row {
+        grid-template-columns: 120px 1fr 45px 65px;
+    }
+}
+
 .ai-learn__tag-grid {
     display: flex;
     flex-direction: column;

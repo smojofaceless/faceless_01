@@ -86,6 +86,7 @@ async function aiLoadAll() {
         await Promise.all([
             aiLoadLatestPostDive(),
             aiLoadPerformanceTrend(),
+            aiLoadRetention(),
             aiLoadWinningPatterns(),
             aiLoadExemplars(),
             aiLoadTimeSlotHeatmap(),
