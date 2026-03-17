@@ -472,6 +472,10 @@ export async function executeStoryStep(
     wordRange.min = 70;
     wordRange.max = 95;
   }
+  if (vibePreset === 'one_rule_one_power') {
+    wordRange.min = 80;
+    wordRange.max = 110;
+  }
 
   console.log(`[STORY] Generating story for vibe=${vibePreset}, duration=${targetDuration}s (~${targetWords} words)`);
 
@@ -1042,19 +1046,50 @@ Stories shorter than 100 words will be rejected.
 Count your words carefully before finishing.`,
     one_rule_one_power: `a power-fantasy trade-off. Present ONE supernatural or impossible power and EXACTLY ONE restriction that meaningfully limits it.
 
+FORMAT — 5 beats, strict order:
+
+BEAT 1 — HOOK (1 sentence, 8-15 words):
+State the power in one clean sentence. Second person. No preamble, no scene-setting.
+Strong: "You can freeze time whenever you want."
+Strong: "You can heal any injury with a touch."
+Weak: "Imagine a world where you had an incredible ability..." ← BANNED
+Weak: "What if I told you that you could..." ← BANNED
+
+BEAT 2 — QUICK IMAGINATION (1-2 sentences, 15-25 words):
+Let the viewer picture using the power. Imply scope — do NOT enumerate.
+Strong: "Everything stops — people, traffic, the world around you."
+Weak: "You could fly to Paris, time travel, read minds..." ← LISTING, BANNED
+
+BEAT 3 — THE RULE (1-2 sentences, 10-20 words):
+The single restriction. Must be visceral, specific, gut-punch delivery.
+Strong: "But every time you use it, you lose one year of your life."
+Strong: "But you can never use it on someone you love."
+Weak: "But it changes who you are as a person." ← ABSTRACT, BANNED
+
+BEAT 4 — IMPLICATION (1-2 sentences, 15-25 words):
+Show what the rule actually costs. One concrete scenario — the real weight.
+Strong: "Every hour you steal costs you an hour of your life."
+Weak: "This would have deep consequences for your existence." ← ABSTRACT
+
+BEAT 5 — QUESTION (1 sentence, ≤8 words):
+Clean exit. No reflection. No commentary. Just the question.
+Strong: "Would you take it?" / "Still worth it?" / "Deal?"
+Weak: "So what do you think — is this something you would actually consider taking?" ← TOO LONG
+
 Rules:
-- Second person ("You can now...")
-- Open with the power stated cleanly in one sentence
-- Briefly let the viewer imagine 2-3 implications (don't list, imply)
-- Introduce THE RULE: one specific, visceral limitation
-- The rule must make the power genuinely hard to use, not impossible
-- End with: "Would you take it?" or similar
-- Calm, confident tone, like offering a deal
+- Second person throughout ("You can now...")
+- Calm, confident tone — like offering a deal, not threatening
 - ${wordRange.min}-${wordRange.max} words total
+- ONE power, ONE rule, no exceptions
 - Do NOT list scenarios ("You could do X, Y, Z...")
 - Do NOT make the rule trivial or the power useless
-- Do NOT use horror framing
-- The outcome should be ambiguous, not tragic, not utopian`,
+- Do NOT use horror framing (no death, blood, torture, murder)
+- Do NOT use filler: "imagine", "think about", "picture this", "what if I told you", "here's the thing", "let that sink in", "in other words"
+- Do NOT use softening: "might", "perhaps", "could potentially", "in the long run"
+- Do NOT end with reflection or philosophical commentary
+- The outcome should be ambiguous — not tragic, not utopian
+
+If your draft is under ${wordRange.min} words, expand the IMAGINATION or IMPLICATION beat with an additional concrete moment.`,
     two_doors: `a symbolic binary choice presenting two desirable but incompatible life paths through a framing device. The viewer must sacrifice one to gain the other.
 
 FORMAT — 5 beats, strict order:
@@ -1579,18 +1614,51 @@ function gateNoGoodChoice(text: string, lower: string, sentences: string[], fail
 }
 
 /**
- * one_rule_one_power: Exactly one power, exactly one restriction.
+ * one_rule_one_power v2: 5-beat structure, single power + single rule,
+ * punchy delivery, no filler, short final question.
  */
 function gateOneRuleOnePower(text: string, lower: string, sentences: string[], failures: string[]): QualityGateResult {
   sharedDecisionGateChecks(text, lower, sentences, failures);
 
-  // Check for restriction/rule language
-  const rulePatterns = /\b(but|however|the (rule|catch|cost|price|condition|restriction|limitation)|here's the (thing|catch|rule)|there's (one|a) (rule|catch|condition)|except|only if|every time you|each time you|whenever you|the moment you|you (can't|cannot|lose|sacrifice|give up|forget))\b/i;
-  if (!rulePatterns.test(text)) {
-    failures.push('No restriction/rule language found — needs clear "but here\'s the catch" moment');
+  // G1 — Power in first sentence
+  const firstSentence = sentences[0] || '';
+  const powerRegex = /\b(you can|you are able|you have the (power|ability)|you gain|you possess|you now|you wake up)\b/i;
+  if (!powerRegex.test(firstSentence)) {
+    failures.push('G1: Power must appear in first sentence — open with "You can..."');
   }
 
-  // Check it's not listing scenarios (anti-list check: no "you could X, Y, and Z" patterns)
+  // G2 — Single rule only (detect multiple restrictions)
+  const ruleMarkers = text.match(/\b(but |however |the catch |the rule |the cost |the price |except |only if |there's (one|a) (catch|rule|condition) )\b/gi) || [];
+  if (ruleMarkers.length > 2) {
+    failures.push(`G2: Multiple restrictions detected (${ruleMarkers.length} markers) — must have exactly ONE rule`);
+  }
+
+  // G3 — Rule clarity: restriction language must be present
+  const rulePresent = /\b(but|however|the (rule|catch|cost|price|condition|restriction|limitation)|here's the (thing|catch|rule)|there's (one|a) (rule|catch|condition)|except|only if|every time you|each time you|whenever you|the moment you|you (can't|cannot|lose|sacrifice|give up|forget))\b/i;
+  if (!rulePresent.test(text)) {
+    failures.push('G3: No restriction/rule language found — needs clear "but here\'s the catch" moment');
+  }
+
+  // G4 — No filler language
+  const fillerPatterns = /\b(imagine|think about|picture this|what if I told you|here's the thing|let that sink in|in other words)\b/i;
+  if (fillerPatterns.test(lower)) {
+    failures.push('G4: Filler language detected — remove "imagine", "picture this", "let that sink in", etc.');
+  }
+
+  // G5 — Short final question (≤8 words)
+  const lastSentence = sentences[sentences.length - 1] || '';
+  const lastWordCount = lastSentence.trim().split(/\s+/).length;
+  if (lastWordCount > 8) {
+    failures.push(`G5: Final question too long (${lastWordCount} words) — must be ≤8 words`);
+  }
+
+  // G6 — Word count check
+  const totalWords = text.trim().split(/\s+/).length;
+  if (totalWords < 80 || totalWords > 110) {
+    failures.push(`G6: Word count ${totalWords} outside 80-110 range`);
+  }
+
+  // Anti-list check (inherited from v1)
   const listPatterns = /you could[\s\S]{0,30},[\s\S]{0,30},[\s\S]{0,30}(and|or)/i;
   if (listPatterns.test(text)) {
     failures.push('Scenario listing detected — should imply uses, not list them');

@@ -1187,12 +1187,12 @@ export const PRESET_STORY_PROFILES: Record<string, PartialStoryProfile> = {
     },
 
     beatStructure: {
-      beatCount: 4,
-      beatLabels: ["HOOK", "EXPANSION", "THE_RULE", "QUESTION"],
+      beatCount: 5,
+      beatLabels: ["HOOK", "IMAGINATION", "THE_RULE", "IMPLICATION", "QUESTION"],
       requireGroundingDetail: false,
       groundingTypes: ["symbolic", "consequence", "sensory"],
-      minWordsPerBeat: 10,
-      maxWordsPerBeat: 45,
+      minWordsPerBeat: 5,
+      maxWordsPerBeat: 30,
       minGroundingPerBeat: 0,
       repairOnMissingGrounding: false,
     },
@@ -1216,8 +1216,8 @@ export const PRESET_STORY_PROFILES: Record<string, PartialStoryProfile> = {
     },
 
     wordCount: {
-      target: 100,
-      variance: 15,
+      target: 95,
+      variance: 10,
       priority: "structure",
       strictEnforcement: true,
     },
