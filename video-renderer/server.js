@@ -529,11 +529,13 @@ async function createVideoFromImages(jobId, images, durations, outputPath, optio
       '-pix_fmt', 'yuv420p',
       '-r', String(fps),  // Maintain consistent framerate
       '-threads', '2',
+      '-movflags', '+faststart',
     ] : [
       '-c:v', 'libx264',
       '-preset', 'medium',
       '-crf', '22',
       '-pix_fmt', 'yuv420p',
+      '-movflags', '+faststart',
     ];
     
     ffmpeg()
@@ -575,6 +577,7 @@ async function addAudioToVideo(videoPath, audioPath, outputPath) {
       '-b:a', '192k',
       '-map', '0:v:0',
       '-map', '1:a:0',
+      '-movflags', '+faststart',
     ];
     
     // Use explicit -t instead of -shortest to prevent truncating the last image.
@@ -758,6 +761,7 @@ async function mixBackgroundMusic(videoPath, musicPath, outputPath, musicVolume 
         '-map', '0:v:0',
         '-map', '[out]',
         '-shortest',
+        '-movflags', '+faststart',
       ])
       .output(outputPath)
       .on('end', resolve)
@@ -1686,11 +1690,13 @@ async function burnSubtitles(inputPath, assPath, outputPath, lowMemory = false) 
       '-crf', '24',
       '-c:a', 'copy',
       '-threads', '2',
+      '-movflags', '+faststart',
     ] : [
       '-c:v', 'libx264',
       '-preset', 'medium',
       '-crf', '23',
       '-c:a', 'copy',
+      '-movflags', '+faststart',
     ];
     
     ffmpeg(inputPath)
