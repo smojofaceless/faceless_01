@@ -2561,10 +2561,28 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     
     job.progress = 95;
     
-    // Final step: Move to output directory
+    // Final step: Remux with faststart (moves moov atom to front for streaming)
+    // This is a pure copy pass — no re-encoding, very fast
     const finalPath = path.join(OUTPUT_DIR, `${jobId}.mp4`);
-    await fs.copyFile(currentVideo, finalPath);
-    console.log(`[${jobId}] ✓ Final video saved locally`);
+    const faststartTmp = path.join(WORK_DIR, `${jobId}_faststart.mp4`);
+    await new Promise((resolve, reject) => {
+      ffmpeg(currentVideo)
+        .outputOptions(['-c', 'copy', '-movflags', '+faststart'])
+        .output(faststartTmp)
+        .on('end', resolve)
+        .on('error', (err) => {
+          console.error(`[${jobId}] Faststart remux failed, using original:`, err.message);
+          resolve(); // Non-fatal — fall back to original
+        })
+        .run();
+    });
+    // Use faststart version if it exists, otherwise fall back to original
+    const faststartSource = await fs.access(faststartTmp).then(() => faststartTmp).catch(() => currentVideo);
+    await fs.copyFile(faststartSource, finalPath);
+    if (faststartSource === faststartTmp) {
+      await fs.unlink(faststartTmp).catch(() => {});
+    }
+    console.log(`[${jobId}] ✓ Final video saved locally (faststart: ${faststartSource === faststartTmp})`);
     
     // Step 8: Upload to Supabase Storage
     let supabaseUrl = null;
