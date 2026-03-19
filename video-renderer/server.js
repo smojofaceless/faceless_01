@@ -526,6 +526,8 @@ async function createVideoFromImages(jobId, images, durations, outputPath, optio
       '-c:v', 'libx264',
       '-preset', 'superfast',
       '-crf', '24',
+      '-profile:v', 'high',
+      '-level', '4.0',
       '-pix_fmt', 'yuv420p',
       '-r', String(fps),  // Maintain consistent framerate
       '-threads', '2',
@@ -534,6 +536,8 @@ async function createVideoFromImages(jobId, images, durations, outputPath, optio
       '-c:v', 'libx264',
       '-preset', 'medium',
       '-crf', '22',
+      '-profile:v', 'high',
+      '-level', '4.0',
       '-pix_fmt', 'yuv420p',
       '-movflags', '+faststart',
     ];
@@ -1688,6 +1692,9 @@ async function burnSubtitles(inputPath, assPath, outputPath, lowMemory = false) 
       '-preset', 'superfast',
       '-tune', 'fastdecode',
       '-crf', '24',
+      '-profile:v', 'high',
+      '-level', '4.0',
+      '-pix_fmt', 'yuv420p',
       '-c:a', 'copy',
       '-threads', '2',
       '-movflags', '+faststart',
@@ -1695,6 +1702,9 @@ async function burnSubtitles(inputPath, assPath, outputPath, lowMemory = false) 
       '-c:v', 'libx264',
       '-preset', 'medium',
       '-crf', '23',
+      '-profile:v', 'high',
+      '-level', '4.0',
+      '-pix_fmt', 'yuv420p',
       '-c:a', 'copy',
       '-movflags', '+faststart',
     ];
