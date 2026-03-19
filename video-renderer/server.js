@@ -175,7 +175,65 @@ async function uploadToSupabase(localPath, jobId) {
   
   try {
     console.log(`[${jobId}] Uploading to Supabase Storage...`);
-    const fileBuffer = await fs.readFile(localPath);
+    let fileBuffer = await fs.readFile(localPath);
+    
+    // Apply faststart: move moov atom before mdat for streaming compatibility
+    try {
+      let off = 0;
+      const topBoxes = [];
+      while (off < fileBuffer.length - 8) {
+        const sz = fileBuffer.readUInt32BE(off);
+        const tp = fileBuffer.toString('ascii', off + 4, off + 8);
+        if (sz < 8) break;
+        topBoxes.push({ offset: off, size: sz, type: tp });
+        off += sz;
+      }
+      const moov = topBoxes.find(b => b.type === 'moov');
+      const mdat = topBoxes.find(b => b.type === 'mdat');
+      if (moov && mdat && moov.offset > mdat.offset) {
+        const beforeMdat = fileBuffer.slice(0, mdat.offset);
+        const moovBuf = Buffer.from(fileBuffer.slice(moov.offset, moov.offset + moov.size));
+        const mdatBuf = fileBuffer.slice(mdat.offset, mdat.offset + mdat.size);
+        const delta = moov.size; // mdat moves right by moov.size
+        // Fix stco/co64 offsets inside moov
+        function patchOffsets(buf, start, end) {
+          let p = start;
+          while (p < end - 8) {
+            let bSz = buf.readUInt32BE(p);
+            const bTp = buf.toString('ascii', p + 4, p + 8);
+            if (bSz < 8 || bSz > end - p) break;
+            if (bTp === 'stco') {
+              const cnt = buf.readUInt32BE(p + 12);
+              for (let i = 0; i < cnt; i++) {
+                const pos = p + 16 + i * 4;
+                buf.writeUInt32BE(buf.readUInt32BE(pos) + delta, pos);
+              }
+            } else if (bTp === 'co64') {
+              const cnt = buf.readUInt32BE(p + 12);
+              for (let i = 0; i < cnt; i++) {
+                const pos = p + 16 + i * 8;
+                const hi = buf.readUInt32BE(pos);
+                const lo = buf.readUInt32BE(pos + 4);
+                const val = hi * 0x100000000 + lo + delta;
+                buf.writeUInt32BE(Math.floor(val / 0x100000000), pos);
+                buf.writeUInt32BE(val >>> 0, pos + 4);
+              }
+            } else if (['moov','trak','mdia','minf','stbl','edts','udta','meta','dinf'].includes(bTp)) {
+              patchOffsets(buf, p + 8, p + bSz);
+            }
+            p += bSz;
+          }
+        }
+        patchOffsets(moovBuf, 0, moovBuf.length);
+        fileBuffer = Buffer.concat([beforeMdat, moovBuf, mdatBuf]);
+        console.log(`[${jobId}] ✓ Faststart: moov (${moov.size}b) moved before mdat, delta=${delta}`);
+      } else {
+        console.log(`[${jobId}] Faststart: moov already at front (or not found)`);
+      }
+    } catch (fsErr) {
+      console.error(`[${jobId}] Faststart failed (non-fatal):`, fsErr.message);
+    }
+    
     const storagePath = `${jobId}/final_video.mp4`;
     
     const { data, error } = await supabase.storage
@@ -2561,80 +2619,12 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     
     job.progress = 95;
     
-    // Final step: Move moov atom to front (faststart) for streaming compatibility
-    // Pure Node.js — also updates stco/co64 chunk offsets after relocation
+    // Copy to output directory (faststart moov relocation happens during upload)
     const finalPath = path.join(OUTPUT_DIR, `${jobId}.mp4`);
-    try {
-      const buf = await fs.readFile(currentVideo);
-      // Parse top-level MP4 boxes
-      let offset = 0;
-      const boxes = [];
-      while (offset < buf.length - 8) {
-        const size = buf.readUInt32BE(offset);
-        const type = buf.toString('ascii', offset + 4, offset + 8);
-        if (size < 8) break;
-        boxes.push({ offset, size, type });
-        offset += size;
-      }
-      const moovBox = boxes.find(b => b.type === 'moov');
-      const mdatBox = boxes.find(b => b.type === 'mdat');
-      if (moovBox && mdatBox && moovBox.offset > mdatBox.offset) {
-        // moov is after mdat — need to relocate
-        const beforeMdat = buf.slice(0, mdatBox.offset);
-        const moovData = Buffer.from(buf.slice(moovBox.offset, moovBox.offset + moovBox.size));
-        const mdatData = buf.slice(mdatBox.offset, mdatBox.offset + mdatBox.size);
-        
-        // Update stco/co64 chunk offsets inside moov
-        // mdat shifts right by moovData.length bytes
-        const delta = moovData.length;
-        function fixOffsets(data, off, end) {
-          while (off < end - 8) {
-            let bSize = data.readUInt32BE(off);
-            const bType = data.toString('ascii', off + 4, off + 8);
-            if (bSize === 0) break;
-            if (bSize === 1 && off + 16 <= end) {
-              // 64-bit extended size — skip for simplicity
-              break;
-            }
-            if (bType === 'stco') {
-              const count = data.readUInt32BE(off + 12);
-              for (let i = 0; i < count; i++) {
-                const pos = off + 16 + i * 4;
-                data.writeUInt32BE(data.readUInt32BE(pos) + delta, pos);
-              }
-            } else if (bType === 'co64') {
-              const count = data.readUInt32BE(off + 12);
-              for (let i = 0; i < count; i++) {
-                const pos = off + 16 + i * 8;
-                // Read as two 32-bit values (high, low)
-                const hi = data.readUInt32BE(pos);
-                const lo = data.readUInt32BE(pos + 4);
-                const val = hi * 0x100000000 + lo + delta;
-                data.writeUInt32BE(Math.floor(val / 0x100000000), pos);
-                data.writeUInt32BE(val >>> 0, pos + 4);
-              }
-            } else if (['moov','trak','mdia','minf','stbl','edts','udta','meta'].includes(bType)) {
-              // Container box — recurse into children (skip 8-byte header)
-              fixOffsets(data, off + 8, off + bSize);
-            }
-            off += bSize;
-          }
-        }
-        fixOffsets(moovData, 0, moovData.length);
-        
-        const faststarted = Buffer.concat([beforeMdat, moovData, mdatData]);
-        await fs.writeFile(finalPath, faststarted);
-        console.log(`[${jobId}] ✓ Final video saved (faststart: moov ${moovBox.size}b moved before mdat, delta=${delta})`);
-      } else {
-        await fs.copyFile(currentVideo, finalPath);
-        console.log(`[${jobId}] ✓ Final video saved (moov already at front or not found)`);
-      }
-    } catch (err) {
-      console.error(`[${jobId}] Faststart processing failed, using original:`, err.message);
-      await fs.copyFile(currentVideo, finalPath);
-    }
+    await fs.copyFile(currentVideo, finalPath);
+    console.log(`[${jobId}] ✓ Final video saved locally`);
     
-    // Step 8: Upload to Supabase Storage
+    // Step 8: Upload to Supabase Storage (includes faststart moov relocation)
     let supabaseUrl = null;
     if (supabase && supabaseJobId) {
       supabaseUrl = await uploadToSupabase(finalPath, supabaseJobId);
