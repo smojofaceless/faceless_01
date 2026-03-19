@@ -2561,23 +2561,77 @@ async function processRender(jobId, imageUrls, audioUrl, durations, captions, ef
     
     job.progress = 95;
     
-    // Final step: Remux with faststart (moves moov atom to front for streaming)
-    // Uses execSync for reliability — fluent-ffmpeg can swallow the movflags flag
+    // Final step: Move moov atom to front (faststart) for streaming compatibility
+    // Pure Node.js — also updates stco/co64 chunk offsets after relocation
     const finalPath = path.join(OUTPUT_DIR, `${jobId}.mp4`);
-    const faststartTmp = path.join(jobDir, `${jobId}_faststart.mp4`);
     try {
-      const { execSync } = require('child_process');
-      execSync(`ffmpeg -i "${currentVideo}" -c copy -movflags +faststart -y "${faststartTmp}"`, {
-        timeout: 30000,
-        stdio: 'pipe'
-      });
-      await fs.copyFile(faststartTmp, finalPath);
-      await fs.unlink(faststartTmp).catch(() => {});
-      console.log(`[${jobId}] ✓ Final video saved locally (faststart: true)`);
+      const buf = await fs.readFile(currentVideo);
+      // Parse top-level MP4 boxes
+      let offset = 0;
+      const boxes = [];
+      while (offset < buf.length - 8) {
+        const size = buf.readUInt32BE(offset);
+        const type = buf.toString('ascii', offset + 4, offset + 8);
+        if (size < 8) break;
+        boxes.push({ offset, size, type });
+        offset += size;
+      }
+      const moovBox = boxes.find(b => b.type === 'moov');
+      const mdatBox = boxes.find(b => b.type === 'mdat');
+      if (moovBox && mdatBox && moovBox.offset > mdatBox.offset) {
+        // moov is after mdat — need to relocate
+        const beforeMdat = buf.slice(0, mdatBox.offset);
+        const moovData = Buffer.from(buf.slice(moovBox.offset, moovBox.offset + moovBox.size));
+        const mdatData = buf.slice(mdatBox.offset, mdatBox.offset + mdatBox.size);
+        
+        // Update stco/co64 chunk offsets inside moov
+        // mdat shifts right by moovData.length bytes
+        const delta = moovData.length;
+        function fixOffsets(data, off, end) {
+          while (off < end - 8) {
+            let bSize = data.readUInt32BE(off);
+            const bType = data.toString('ascii', off + 4, off + 8);
+            if (bSize === 0) break;
+            if (bSize === 1 && off + 16 <= end) {
+              // 64-bit extended size — skip for simplicity
+              break;
+            }
+            if (bType === 'stco') {
+              const count = data.readUInt32BE(off + 12);
+              for (let i = 0; i < count; i++) {
+                const pos = off + 16 + i * 4;
+                data.writeUInt32BE(data.readUInt32BE(pos) + delta, pos);
+              }
+            } else if (bType === 'co64') {
+              const count = data.readUInt32BE(off + 12);
+              for (let i = 0; i < count; i++) {
+                const pos = off + 16 + i * 8;
+                // Read as two 32-bit values (high, low)
+                const hi = data.readUInt32BE(pos);
+                const lo = data.readUInt32BE(pos + 4);
+                const val = hi * 0x100000000 + lo + delta;
+                data.writeUInt32BE(Math.floor(val / 0x100000000), pos);
+                data.writeUInt32BE(val >>> 0, pos + 4);
+              }
+            } else if (['moov','trak','mdia','minf','stbl','edts','udta','meta'].includes(bType)) {
+              // Container box — recurse into children (skip 8-byte header)
+              fixOffsets(data, off + 8, off + bSize);
+            }
+            off += bSize;
+          }
+        }
+        fixOffsets(moovData, 0, moovData.length);
+        
+        const faststarted = Buffer.concat([beforeMdat, moovData, mdatData]);
+        await fs.writeFile(finalPath, faststarted);
+        console.log(`[${jobId}] ✓ Final video saved (faststart: moov ${moovBox.size}b moved before mdat, delta=${delta})`);
+      } else {
+        await fs.copyFile(currentVideo, finalPath);
+        console.log(`[${jobId}] ✓ Final video saved (moov already at front or not found)`);
+      }
     } catch (err) {
-      console.error(`[${jobId}] Faststart remux failed, using original:`, err.message);
+      console.error(`[${jobId}] Faststart processing failed, using original:`, err.message);
       await fs.copyFile(currentVideo, finalPath);
-      console.log(`[${jobId}] ✓ Final video saved locally (faststart: false, fallback)`);
     }
     
     // Step 8: Upload to Supabase Storage
