@@ -3385,6 +3385,7 @@ app.get('/health', async (req, res) => {
   
   res.json({ 
     status: 'ok',
+    version: 'faststart-v7',
     ffmpeg: ffmpegOk,
     supabase: !!supabase,
     active_renders: activeRenders,
